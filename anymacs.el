@@ -6,6 +6,7 @@
                     (file-name-directory (or load-file-name buffer-file-name)))
   "Location of the native module built by build.sh.")
 
+(declare-function anymacs--load-url "anymacs" (url))
 (declare-function anymacs--bind "anymacs" (title))
 (declare-function anymacs--set-layout "anymacs" (layout))
 (declare-function anymacs--destroy "anymacs" ())
@@ -21,7 +22,7 @@
 Nil means no layout has been sent yet.")
 
 (define-derived-mode anymacs-mode special-mode "Anymacs"
-  "Major mode for the native green rectangle demonstration."
+  "Major mode for Anymacs native views."
   (setq-local cursor-type nil))
 
 (keymap-set anymacs-mode-map "q" #'anymacs-hide)
@@ -85,23 +86,41 @@ Nil means no layout has been sent yet.")
 Each window showing the buffer in the current frame gets its own native view.
 All views share the buffer's native content."
   (interactive)
+  (anymacs--show))
+
+;;;###autoload
+(defun anymacs-open-url (url)
+  "Open URL in a native WKWebView in *anymacs-web*.
+Each pane gets an independent webview starting at URL.  Click the page to
+interact; Escape or C-g returns keyboard focus to Emacs.  HTTP(S), file,
+data and about URLs are supported.  This replaces the active Anymacs content."
+  (interactive (list (read-string "Open URL: " "https://")))
+  (unless (and (stringp url)
+               (string-match-p "\\`\\(?:https?://[^/[:space:]]+\\|file:///\\|data:\\|about:\\)" url))
+    (user-error "Enter an absolute http, https, file, data or about URL"))
+  (anymacs--show url))
+
+(defun anymacs--show (&optional url)
+  "Display native content, loading URL when non-nil."
   (unless (and (eq window-system 'ns) (fboundp 'module-load))
     (user-error "Anymacs needs graphical macOS Emacs with module support"))
   (unless (fboundp 'anymacs--bind)
     (module-load anymacs--module-file))
-  (unless (fboundp 'anymacs--set-layout)
+  (unless (and (fboundp 'anymacs--set-layout)
+               (fboundp 'anymacs--load-url))
     (user-error "Restart Emacs to load the rebuilt Anymacs module"))
   (anymacs-hide)
   (let (ready)
     (unwind-protect
         (progn
-          (switch-to-buffer (get-buffer-create "*anymacs-green*"))
+          (switch-to-buffer (get-buffer-create (if url "*anymacs-web*" "*anymacs-green*")))
           (unless (derived-mode-p 'anymacs-mode)
             (anymacs-mode))
           (redisplay t)
           (setq anymacs--buffer (current-buffer)
                 anymacs--frame (selected-frame))
           (anymacs--bind-frame anymacs--frame)
+          (when url (anymacs--load-url url))
           ;; Attach before registering redisplay callbacks, so errors reach
           ;; the caller instead of being swallowed by redisplay's safe_call.
           (anymacs--sync anymacs--frame)
@@ -110,7 +129,9 @@ All views share the buffer's native content."
           (add-hook 'window-state-change-functions #'anymacs--sync)
           (add-hook 'delete-frame-functions #'anymacs--frame-deleted)
           (setq ready t)
-          (message "Swift native views attached. Press q or M-x anymacs-hide to remove them."))
+          (message (if url
+                       "Webview opened. Escape/C-g returns to Emacs; q hides the view."
+                     "Swift native views attached. Press q or M-x anymacs-hide to remove them.")))
       (unless ready (anymacs-hide)))))
 
 ;;;###autoload

@@ -6,8 +6,10 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'windmove)
+(require 'browse-url)
 (require 'anymacs)
 
+(declare-function anymacs--load-url "anymacs" (url))
 (declare-function anymacs--set-layout "anymacs" (layout))
 (declare-function anymacs--native-views "anymacs" ())
 
@@ -223,3 +225,83 @@
     (should-not (anymacs-test--views))
     (anymacs-show)
     (anymacs-test--expect-window (selected-window))))
+
+(defun anymacs-test--wait-for-page (title count)
+  "Wait for COUNT real WebKit documents to finish loading with TITLE."
+  (let ((deadline (+ (float-time) 15)) views)
+    (while (progn
+             (setq views (anymacs-test--views))
+             (and (< (float-time) deadline)
+                  (not (and (= (length views) count)
+                            (seq-every-p
+                             (lambda (view)
+                               (and (equal (plist-get view :title) title)
+                                    (not (plist-get view :loading))
+                                    (not (plist-get view :error))))
+                             views)))))
+      (sleep-for 0.05))
+    (should (= (length views) count))
+    (dolist (view views)
+      (should-not (plist-get view :loading))
+      (should-not (plist-get view :error))
+      (should (equal (plist-get view :title) title)))
+    views))
+
+(defmacro anymacs-test--with-web (&rest body)
+  (declare (indent 0))
+  `(anymacs-test--with-view
+     (unwind-protect
+         (progn ,@body)
+       (anymacs-hide)
+       (when (get-buffer "*anymacs-web*") (kill-buffer "*anymacs-web*")))))
+
+(ert-deftest anymacs-web-renders-javascript-and-survives-pane-changes ()
+  (anymacs-test--with-web
+    (anymacs-open-url
+     "data:text/html,<title>Initial</title><h1>WebKit works</h1><script>document.title='JS works'</script>")
+    (anymacs-test--wait-for-page "JS works" 1)
+    (let* ((buffer (current-buffer))
+           (left (selected-window))
+           (right (split-window-right)))
+      (anymacs-test--wait-for-page "JS works" 2)
+      (anymacs-test--expect-windows left right)
+      (window-resize left -5 t)
+      (anymacs-test--expect-windows left right)
+      (set-window-buffer left (get-buffer-create "*scratch*"))
+      (anymacs-test--expect-window right)
+      (set-window-buffer right (get-buffer "*scratch*"))
+      (should-not (anymacs-test--views))
+      (set-window-buffer right buffer)
+      (anymacs-test--wait-for-page "JS works" 1)
+      (anymacs-test--expect-window right)
+      (kill-buffer buffer)
+      (should-not (anymacs-test--views)))))
+
+(ert-deftest anymacs-web-loads-local-file-with-relative-javascript ()
+  (anymacs-test--with-web
+    (let ((directory (make-temp-file "anymacs-web-" t)))
+      (unwind-protect
+          (progn
+            (with-temp-file (expand-file-name "page.html" directory)
+              (insert "<title>Initial</title><script src='script.js'></script>"))
+            (with-temp-file (expand-file-name "script.js" directory)
+              (insert "document.title = 'Local assets work';"))
+            (anymacs-open-url
+             (browse-url-file-url (expand-file-name "page.html" directory)))
+            (anymacs-test--wait-for-page "Local assets work" 1))
+        (anymacs-hide)
+        (delete-directory directory t)))))
+
+(ert-deftest anymacs-web-can-navigate-again-and-rejects-invalid-input ()
+  (anymacs-test--with-web
+    (anymacs-open-url "data:text/html,<title>First</title>")
+    (anymacs-test--wait-for-page "First" 1)
+    (dolist (url '("" "relative/path" "javascript:alert(1)" "https://"))
+      (should-error (anymacs-open-url url) :type 'user-error))
+    (should-error (anymacs--load-url 42) :type 'wrong-type-argument)
+    (should-error (anymacs--load-url "relative/path"))
+    (anymacs-test--wait-for-page "First" 1)
+    (anymacs-open-url "data:text/html,<title>Second</title>")
+    (anymacs-test--wait-for-page "Second" 1)
+    (anymacs-hide)
+    (should-not (anymacs-test--views))))

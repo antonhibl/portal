@@ -18,7 +18,7 @@ xcrun clang -Wall -Wextra -Werror -fPIC -I "$EMACS_INCLUDE" \
     -c native/bootstrap.c -o build/bootstrap.o
 xcrun swiftc -swift-version 6 -warnings-as-errors -emit-library -module-name Anymacs \
     -import-objc-header "$EMACS_INCLUDE/emacs-module.h" \
-    native/Module.swift native/NativeView.swift build/bootstrap.o -framework AppKit \
+    native/Module.swift native/NativeView.swift build/bootstrap.o -framework AppKit -framework WebKit \
     -o build/.anymacs.dylib
 # Replace atomically so rebuilding cannot overwrite a library mapped by Emacs.
 mv -f build/.anymacs.dylib build/anymacs.dylib

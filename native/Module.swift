@@ -38,6 +38,21 @@ private let bind: emacs_function = { env, _, args, _ in
     return bound ? symbol(env, "t") : fail(env, "Cannot find the requested native Emacs frame")
 }
 
+private let loadURL: emacs_function = { env, _, args, _ in
+    let env = env!
+    let nilValue = symbol(env, "nil")
+    var size = 0
+    guard env.pointee.copy_string_contents(env, args![0], nil, &size) else { return nilValue }
+    var bytes = [CChar](repeating: 0, count: size)
+    guard env.pointee.copy_string_contents(env, args![0], &bytes, &size) else { return nilValue }
+    let url = String(decoding: bytes.dropLast().map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    guard Thread.isMainThread else {
+        return fail(env, "Anymacs must be called on Emacs's main thread")
+    }
+    let loaded = MainActor.assumeIsolated { NativeView.loadURL(url) }
+    return loaded ? symbol(env, "t") : fail(env, "Expected an absolute http, https, file, data or about URL and a bound frame")
+}
+
 private let setLayout: emacs_function = { env, _, args, _ in
     let env = env! // Emacs guarantees a valid environment for module callbacks.
     let nilValue = symbol(env, "nil")
@@ -100,11 +115,19 @@ private let inspect: emacs_function = { env, _, _, _ in
     }
     let snapshots = MainActor.assumeIsolated { NativeView.snapshots() }
     return list(env, snapshots.map { snapshot in
+        func string(_ value: String?) -> emacs_value? {
+            guard let value else { return symbol(env, "nil") }
+            return value.withCString { env.pointee.make_string(env, $0, value.utf8.count) }
+        }
         let edges = list(env, snapshot.edges.map { env.pointee.make_integer(env, $0) })
         return list(env, [
             symbol(env, ":visible"), symbol(env, snapshot.visible ? "t" : "nil"),
             symbol(env, ":edges"), edges,
-            symbol(env, ":window"), env.pointee.make_integer(env, snapshot.windowNumber)
+            symbol(env, ":window"), env.pointee.make_integer(env, snapshot.windowNumber),
+            symbol(env, ":url"), string(snapshot.url),
+            symbol(env, ":title"), string(snapshot.title),
+            symbol(env, ":loading"), symbol(env, snapshot.loading ? "t" : "nil"),
+            symbol(env, ":error"), string(snapshot.error)
         ])
     })
 }
@@ -113,11 +136,12 @@ private let inspect: emacs_function = { env, _, _, _ in
 public func initializeAnymacs(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
     for (name, arity, callback, doc) in [
         ("anymacs--bind", 1, bind, "Bind shared native content to the frame identified by TITLE."),
+        ("anymacs--load-url", 1, loadURL, "Load URL in all web panes; new panes start at this URL."),
         ("anymacs--set-layout", 1, setLayout,
          "Apply a vector of ID LEFT TOP RIGHT BOTTOM entries; [] removes all pane views."),
         ("anymacs--destroy", 0, destroy, "Release all native views, shared content and host."),
         ("anymacs--native-views", 0, inspect,
-         "Inspect attached native views as plists with :visible, :edges and :window.")
+         "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
     ] {
         let nameSymbol = symbol(env, name)
         let function = doc.withCString {
