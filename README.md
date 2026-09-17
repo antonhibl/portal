@@ -6,8 +6,10 @@ The native views follow splits, resizing, and buffer visibility.
 
 ## Build and run
 
-Requires graphical macOS Emacs with dynamic modules, its `emacs-module.h`, and
-Apple's Swift 6/Clang toolchain. There are no third-party package dependencies.
+Requires graphical macOS Emacs with dynamic modules, its `emacs-module.h`,
+Apple's Swift 6/Clang toolchain (Xcode), CMake 3.29 or newer, and Ninja.
+Install the build tools with `brew install cmake ninja` or your tool manager.
+There are no third-party runtime library dependencies.
 
 ```sh
 ./build.sh
@@ -29,13 +31,37 @@ focus to Emacs, then `q` or `M-x anymacs-hide` to remove the views. The mode lin
 and minibuffer remain available. Run `anymacs-open-url` again to open another URL.
 `M-x anymacs-show` still opens the green-square demo in `*anymacs-green*`.
 
-Build against the Emacs installation that will load the module. The script
-locates its header relative to the chosen Emacs installation. Override `EMACS`
-or `EMACS_INCLUDE` if needed:
+`./build.sh` runs the `dev` CMake configure and build presets. For development,
+configure once before opening native source files; this generates editor metadata
+without compiling the module:
 
 ```sh
-EMACS_INCLUDE=/path/to/include ./build.sh
+cmake --preset dev
+cmake --build --preset dev
 ```
+
+CMake describes both C and Swift, including the Emacs bridging header, Swift 6,
+and AppKit/WebKit linkage. Configuration generates `build/compile_commands.json`
+and a symlink at the repository root. clangd uses its C command; SourceKit-LSP
+uses its Swift commands. Both get the same settings used by the build. Generated
+files stay out of Git. Reconfigure after changing sources, dependencies, or SDKs.
+
+In Emacs, use Eglot with clangd for C and SourceKit-LSP for `swift-mode`. Xcode
+provides both servers. If buffers were opened before configuration, run
+`M-x eglot-reconnect` in a C buffer and a Swift buffer (or `M-x eglot` if not yet
+connected). No project-specific header paths belong in your Emacs configuration.
+
+Build against the Emacs installation that will load the module. Configuration
+locates its header beside the app's resources or in system include directories.
+Override the cached choices when needed:
+
+```sh
+cmake --preset dev -DEMACS=/path/to/emacs -DEMACS_INCLUDE=/path/to/include
+```
+
+`EMACS` and `EMACS_INCLUDE` environment overrides also work with `./build.sh`.
+When changing Emacs installations, pass its include directory too, or run
+`cmake --fresh --preset dev` to rediscover everything.
 
 Restart Emacs after rebuilding a module it has already loaded. The build replaces
 the library atomically, so rebuilding leaves the old loaded library intact; it
