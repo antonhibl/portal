@@ -343,3 +343,56 @@
           (should (anymacs-server-url))
           (anymacs-test--wait-for-page "Keep this page" 1))
       (anymacs-stop-server))))
+
+(ert-deftest anymacs-markdown-previews-refreshes-and-survives-host-restart ()
+  (anymacs-test--with-web
+    (let* ((directory (make-temp-file "anymacs-markdown-web-" t))
+           (name "Résumé & notes #%?.md")
+           (file (expand-file-name name directory)))
+      (unwind-protect
+          (progn
+            (with-temp-file file
+              (insert "# Markdown in WebKit\n\n**Rendered by Bun.**\n\n"
+                      "<script>document.title = 'Injected';</script>\n"))
+            (anymacs-stop-server)
+            (anymacs-preview-markdown file)
+            (anymacs-test--wait-for-page name 1)
+            (split-window-right)
+            (anymacs-test--wait-for-page name 2)
+            (let ((process (anymacs-start-server)))
+              ;; Refresh must read disk again and display a useful HTTP error.
+              (delete-file file)
+              (anymacs-refresh)
+              (anymacs-test--wait-for-page "Markdown preview unavailable" 2)
+              (with-temp-file file (insert "# Restored file\n"))
+              (call-interactively (key-binding (kbd "g")))
+              (anymacs-test--wait-for-page name 2)
+              (should (eq process (anymacs-start-server)))
+              (anymacs-stop-server)
+              (anymacs-test--wait-for-page "Anymacs server stopped" 2)
+              (anymacs-refresh)
+              (anymacs-test--wait-for-page name 2)
+              (should-not (eq process (anymacs-start-server))))
+            (should-error (anymacs-preview-markdown directory) :type 'user-error)
+            (should-error (anymacs-preview-markdown "/ssh:host:/file.md") :type 'user-error)
+            (anymacs-test--wait-for-page name 2))
+        (anymacs-hide)
+        (anymacs-stop-server)
+        (delete-directory directory t)))))
+
+(ert-deftest anymacs-markdown-cancelled-start-does-not-replace-new-content ()
+  (anymacs-test--with-web
+    (let ((file (make-temp-file "anymacs-markdown-" nil ".md" "# Preview\n")))
+      (unwind-protect
+          (progn
+            (anymacs-stop-server)
+            (anymacs-preview-markdown file)
+            (anymacs-open-url "data:text/html,<title>Keep this page</title>")
+            (anymacs-test--wait-for-page "Keep this page" 1)
+            (let ((deadline (+ (float-time) 5)))
+              (while (and (not (anymacs-server-url)) (< (float-time) deadline))
+                (sleep-for 0.05)))
+            (should (anymacs-server-url))
+            (anymacs-test--wait-for-page "Keep this page" 1))
+        (anymacs-stop-server)
+        (delete-file file)))))

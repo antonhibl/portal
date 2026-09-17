@@ -18,6 +18,12 @@ if(NOT APPLE)
 endif()
 
 find_program(BUN NAMES bun HINTS "$ENV{HOME}/.bun/bin" REQUIRED)
+execute_process(COMMAND "${BUN}" -e
+    "if (typeof Bun.markdown?.html !== 'function') process.exit(1)"
+    RESULT_VARIABLE bun_markdown_status)
+if(NOT bun_markdown_status EQUAL 0)
+    message(FATAL_ERROR "Bun must support Bun.markdown.html (tested with Bun 1.3.14)")
+endif()
 # The executable includes Bun and all UI assets; Bun is only a build dependency.
 # Publish atomically so a running host can survive a rebuild.
 add_custom_command(
@@ -28,7 +34,8 @@ add_custom_command(
         --outfile "${CMAKE_BINARY_DIR}/.anymacs-host"
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.anymacs-host" "${CMAKE_BINARY_DIR}/anymacs-host"
-    DEPENDS host/server.ts host/hello.html "${BUN}"
+    DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
+        host/package.json host/tsconfig.json "${BUN}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Compiling the standalone Bun UI host"
     VERBATIM)

@@ -1,0 +1,12 @@
+{
+  "name": "anymacs-host",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "6"
+  }
+}

@@ -2,7 +2,7 @@
 
 A minimal macOS proof of concept: Emacs loads a Swift dynamic module that embeds
 native WebKit (`WKWebView`) pages or an AppKit green square in its panes.
-A bundled Bun server hosts the Hello World page. The native views follow splits,
+A bundled Bun server hosts Hello World and local Markdown previews. The native views follow splits,
 resizing, and buffer visibility.
 
 ## Build and run
@@ -11,6 +11,7 @@ Requires graphical macOS Emacs with dynamic modules, its `emacs-module.h`,
 Apple's Swift 6/Clang toolchain (Xcode), CMake 3.29 or newer, Ninja, and Bun
 (tested with Bun 1.3.14). Install CMake and Ninja with `brew install cmake ninja`
 or your tool manager, and install Bun for building.
+The build checks that Bun provides `Bun.markdown.html`.
 The resulting host executable includes Bun and its page assets: users do not
 need Bun, Node, npm packages, or server source files at runtime.
 
@@ -26,6 +27,8 @@ or HTML changes. Set `-DBUN=/absolute/path/to/bun` through `./build.sh` or CMake
 if Bun is not discoverable. Both binaries are built for the current Mac.
 
 Or load `anymacs.el` in graphical Emacs and run `M-x anymacs-hello`.
+Run `M-x anymacs-preview-markdown` to preview the current Markdown file or
+select another local file.
 To distribute this layout, include both Lisp files at the package root and both
 binaries in `build/`; the host needs no adjacent web assets.
 
@@ -63,6 +66,22 @@ provides both servers. If buffers were opened before configuration, run
 `M-x eglot-reconnect` in a C buffer and a Swift buffer (or `M-x eglot` if not yet
 connected). No project-specific header paths belong in your Emacs configuration.
 
+For TypeScript editing, install the host's development dependencies and run its
+type check:
+
+```sh
+bun install --cwd host --frozen-lockfile
+bun run --cwd host typecheck
+```
+
+`host/tsconfig.json` supplies strict TypeScript settings and Bun/Node API types.
+The asset declarations describe HTML and CSS imports loaded as strings.
+Bun types match the tested 1.3.14 runtime; TypeScript 6 retains `tsserver`
+support for editors using `typescript-language-server`, including Eglot.
+If an existing TypeScript session still shows old diagnostics, run
+`M-x eglot-reconnect`. These packages are development dependencies; CMake
+continues to compile the standalone host directly with Bun.
+
 Build against the Emacs installation that will load the module. Configuration
 locates its header beside the app's resources or in system include directories.
 Override the cached choices when needed:
@@ -82,12 +101,17 @@ does not hot-reload that library.
 ## Bun UI host
 
 Loading the Lisp package or native module does not start a server. The first
-`anymacs-hello` starts one shared child process asynchronously, waits for its
-readiness message, then loads `/hello` in the native webview. Opening external
+`anymacs-hello` or `anymacs-preview-markdown` starts one shared child process
+asynchronously, waits for its readiness message, then loads the requested page
+in the native webview. Opening external
 URLs does not require the server.
 
 - The host binds to `127.0.0.1` on an OS-assigned port. Each Emacs process owns
   its own host; all its panes reuse that host.
+- Each host generates a fresh access token and sends it through the readiness
+  pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello` or
+  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
+  validates the token and Host header; responses suppress outgoing referrers.
 - Closing or hiding a view keeps the server running. `M-x anymacs-start-server`
   can prewarm it explicitly; `M-x anymacs-stop-server` stops it, and
   `M-x anymacs-restart-server` starts a replacement and reloads active hosted views.
@@ -102,9 +126,33 @@ URLs does not require the server.
   launched directly, without a shell or any lookup of Bun on PATH. Runtime
   loading of `.env` and `bunfig.toml` is disabled in the compiled binary.
 
-The first control protocol only announces readiness; it is not yet a general
-UI RPC API. Rebuilding publishes the host executable atomically. An already
+Control protocol version 2 announces readiness, port, and access token; it is
+not yet a general UI RPC API. Rebuilding publishes the host executable atomically. An already
 running host keeps its old code until `anymacs-restart-server` is called.
+
+## Markdown previews
+
+Run `M-x anymacs-preview-markdown` in a Markdown file buffer to preview it
+directly. Markdown modes and common file extensions are recognised. From other
+buffers, the command prompts for a saved local file. Use `C-u M-x
+anymacs-preview-markdown` to choose another file explicitly.
+The Bun server reads the file, renders
+it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
+and returns a complete HTML page with embedded light/dark CSS. Rendering happens
+in memory, without temporary HTML files or additional npm dependencies.
+
+Headings, lists, fenced code, tables, strikethrough, task lists, and heading
+anchors are supported. Press Escape or `C-g` to return focus to Emacs, then
+`g` (`anymacs-refresh`) to reread the file from disk. Refresh also restarts a
+stopped host; the selected Markdown file is retained across host restarts.
+Missing or unreadable files produce an error page.
+
+This version previews saved contents only, with no automatic refresh. It does
+not serve relative images or linked local files, or add syntax highlighting,
+Mermaid, or math rendering. HTTP(S) images and links can use their absolute URLs.
+Raw HTML is displayed as text, and a page-specific Content Security Policy
+blocks scripts. Bun currently marks its Markdown API unstable; it is tested
+here with the Bun version listed above.
 
 ## Webview behaviour
 
@@ -161,6 +209,8 @@ with text beside the remaining view.
 | `anymacs-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
+| `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
+| `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
 | `native/NativeView.swift` | AppKit/WebKit views, URL loading, focus return, and inspection |
 | `native/bootstrap.c` | Required C entry point and Emacs ABI size checks |
@@ -201,7 +251,10 @@ and relative local assets, and exercise splits, resizing, hidden-buffer reloads,
 repeated navigation, input validation, and cleanup. The hosted-page tests also
 exercise process reuse, restart, and cancellation while the server starts;
 a separate HTTPS smoke check loaded `https://example.com` successfully.
-All 17 graphical tests pass with the bundled UI host.
+The Markdown tests exercise file paths with Unicode and URL punctuation,
+refresh after file deletion/restoration, split panes, host recovery, and
+cancellation during startup.
+All 19 graphical tests pass with the bundled UI host.
 They do not assert Lisp caches, hook names, or implementation call counts.
 
 Run them in a disposable graphical Emacs. Batch Emacs has no native window and
@@ -233,6 +286,8 @@ ctest --test-dir build --output-on-failure
 They exercise real HTTP requests, a relocated binary with no Bun on PATH,
 shared startup, graceful shutdown, restart, crash recovery, startup timeout,
 and partial or incompatible readiness messages.
+They also check Markdown output, rereading saved changes, invalid paths,
+access-token and Host validation, and non-executable raw HTML.
 
 ## Scope
 

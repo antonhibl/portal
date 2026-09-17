@@ -60,6 +60,12 @@
                   (should (string-match-p "HTTP/1.1 200" page))
                   (should (string-match-p "text/html; charset=utf-8" page))
                   (should (string-match-p "<h1>Hello, world!</h1>" page)))
+                (let ((file (expand-file-name "note.md" directory)))
+                  (with-temp-file file (insert "# Standalone Markdown\n"))
+                  (let ((page (anymacs-server-test--get
+                               (concat "/markdown?path=" (url-hexify-string file)))))
+                    (should (string-match-p "Standalone Markdown</h1>" page))
+                    (should (string-match-p "color-scheme: light dark" page))))
                 (should (string-match-p "HTTP/1.1 404"
                                         (anymacs-server-test--get "/missing")))
                 (anymacs-stop-server)
@@ -85,6 +91,74 @@
           (anymacs-server-test--wait #'anymacs-server-url)
           (should (string-match-p "Hello, world!" (anymacs-server-test--get "/hello"))))))))
 
+(ert-deftest anymacs-server-markdown-renders-saved-files-and-rereads-changes ()
+  (let* ((directory (make-temp-file "anymacs-markdown-" t))
+         (file (expand-file-name "Résumé & <notes> #%?.md" directory))
+         (path (concat "/markdown?path=" (url-hexify-string file))))
+    (unwind-protect
+        (anymacs-server-test--with-host
+          (with-temp-file file
+            (insert "# Preview\n\n**Bold** and ~~old~~.\n\n"
+                    "| Name | Value |\n| --- | --- |\n| One | Two |\n\n"
+                    "- [x] Done\n\n```js\nconst value = 1 < 2;\n```\n\n"
+                    "<script>document.title = 'Injected';</script>\n\n"
+                    "<img src=x onerror=alert(1)>\n"))
+          (anymacs-start-server)
+          (anymacs-server-test--wait #'anymacs-server-url)
+          (let ((page (anymacs-server-test--get path)))
+            (dolist (text '("HTTP/1.1 200" "text/html; charset=utf-8"
+                            "<h1 id=\"preview\">Preview</h1>" "<strong>Bold</strong>"
+                            "<del>old</del>" "<table>" "type=\"checkbox\""
+                            "<pre><code" "1 &lt; 2" "&amp; &lt;notes&gt;"
+                            "&lt;script&gt;" "&lt;img"))
+              (should (string-match-p (regexp-quote text) page)))
+            (should-not (string-match-p "<script>" page))
+            (should-not (string-match-p "<img src=x" page))
+            (let ((case-fold-search t))
+              (should (string-match-p "content-security-policy:.*default-src 'none'" page))
+              (should (string-match-p "referrer-policy: no-referrer" page))
+              (should (string-match-p "cache-control: no-store" page))))
+          (with-temp-file file (insert "# Updated on disk\n"))
+          (let ((page (anymacs-server-test--get path)))
+            (should (string-match-p "Updated on disk</h1>" page))
+            (should-not (string-match-p "<strong>Bold</strong>" page))))
+      (delete-directory directory t))))
+
+(ert-deftest anymacs-server-markdown-rejects-invalid-requests ()
+  (let ((directory (make-temp-file "anymacs-markdown-" t)))
+    (unwind-protect
+        (anymacs-server-test--with-host
+          (anymacs-start-server)
+          (anymacs-server-test--wait #'anymacs-server-url)
+          (dolist (path (list "/markdown" "/markdown?path=relative.md"
+                             "/markdown?path=%2Ftmp%2Fbad%00.md"
+                             (concat "/markdown?path=" (url-hexify-string directory))))
+            (let ((page (anymacs-server-test--get path)))
+              (should (string-match-p "HTTP/1.1 400" page))
+              (should (string-match-p "Cannot preview this file" page))))
+          (should (string-match-p
+                   "HTTP/1.1 404"
+                   (anymacs-server-test--get
+                    (concat "/markdown?path="
+                            (url-hexify-string (expand-file-name "missing.md" directory))))))
+          (let ((url-request-method "POST"))
+            (should (string-match-p "HTTP/1.1 405"
+                                    (anymacs-server-test--get "/markdown"))))
+          (let ((url-request-method "HEAD"))
+            (let ((page (anymacs-server-test--get "/hello")))
+              (should (string-match-p "HTTP/1.1 200" page))
+              (should-not (string-match-p "Hello, world!" page))))
+          ;; Changing the capability or Host header must never reach file reads.
+          (let ((base (anymacs-server-url)))
+            (cl-letf (((symbol-function 'anymacs-server-url)
+                       (lambda () (concat base "wrong"))))
+              (should (string-match-p "HTTP/1.1 404"
+                                      (anymacs-server-test--get "/markdown")))))
+          (let ((url-request-extra-headers '(("Host" . "example.invalid"))))
+            (should (string-match-p "HTTP/1.1 404"
+                                    (anymacs-server-test--get "/markdown")))))
+      (delete-directory directory t))))
+
 (ert-deftest anymacs-server-startup-timeout-cleans-up ()
   (let ((anymacs-server-program "/bin/cat")
         (anymacs-server-start-timeout 0.05))
@@ -108,13 +182,14 @@
         (progn
           (with-temp-file program
             (insert "#!/bin/sh\nprintf '%s' '{\"type\":\"ready\",'\nsleep 0.05\n"
-                    "printf '%s\\n' '\"protocol\":1,\"port\":12345}'\ncat >/dev/null\n"))
+                    "printf '%s\\n' '\"protocol\":2,\"port\":12345,\"token\":\"0123456789abcdef0123456789abcdef\"}'\ncat >/dev/null\n"))
           (set-file-modes program #o700)
           (let ((anymacs-server-program program))
             (anymacs-server-test--with-host
               (anymacs-start-server)
               (anymacs-server-test--wait #'anymacs-server-url)
-              (should (equal (anymacs-server-url) "http://127.0.0.1:12345")))))
+              (should (equal (anymacs-server-url)
+                             "http://127.0.0.1:12345/0123456789abcdef0123456789abcdef")))))
       (delete-file program))))
 
 (ert-deftest anymacs-server-rejects-incompatible-handshake ()
@@ -122,7 +197,7 @@
     (unwind-protect
         (progn
           (with-temp-file program
-            (insert "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"ready\",\"protocol\":2,\"port\":12345}'\n"
+            (insert "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"ready\",\"protocol\":1,\"port\":12345}'\n"
                     "exec cat >/dev/null\n"))
           (set-file-modes program #o700)
           (let ((anymacs-server-program program))

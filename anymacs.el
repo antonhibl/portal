@@ -1,6 +1,7 @@
 ;;; anymacs.el --- A Swift native-view experiment -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
+(require 'url-util)
 (require 'anymacs-server
          (expand-file-name "anymacs-server"
                            (file-name-directory
@@ -24,7 +25,7 @@
 (defvar anymacs--frame nil "Frame hosting the native presentations.")
 (defvar anymacs--panes nil "Alist mapping displayed Emacs windows to native IDs.")
 (defvar anymacs--next-id 0 "Last allocated native pane ID in this session.")
-(defvar anymacs--hosted-p nil "Non-nil when the active view uses the Bun host.")
+(defvar anymacs--hosted-path nil "Request path for the active hosted view, or nil.")
 (defvar anymacs--geometry nil
   "Last sent geometry: frame height paired with the native layout vector.
 Nil means no layout has been sent yet.")
@@ -34,6 +35,7 @@ Nil means no layout has been sent yet.")
   (setq-local cursor-type nil))
 
 (keymap-set anymacs-mode-map "q" #'anymacs-hide)
+(keymap-set anymacs-mode-map "g" #'anymacs-refresh)
 
 ;; Host binding and presentation geometry.
 (defun anymacs--bind-frame (frame)
@@ -112,8 +114,48 @@ data and about URLs are supported.  This replaces the active Anymacs content."
 (defun anymacs-hello ()
   "Open Hello World, starting the bundled UI host on first use."
   (interactive)
+  (anymacs--open-hosted "/hello"))
+
+;;;###autoload
+(defun anymacs-preview-markdown (file)
+  "Preview the saved contents of local Markdown FILE using the Bun host.
+Use the current buffer's file when it has a Markdown mode or extension;
+otherwise prompt for FILE.  With a prefix argument, always prompt.
+Press g in the preview buffer to reread it from disk.  Unsaved edits are
+not included."
+  (interactive
+   (list
+    (if (and (not current-prefix-arg) buffer-file-name
+             (or (derived-mode-p 'markdown-mode 'gfm-mode 'markdown-ts-mode)
+                 (let ((case-fold-search t))
+                   (string-match-p "\\.\\(?:md\\|markdown\\|mdown\\|mkd\\|mkdn\\)\\'"
+                                   buffer-file-name))))
+        buffer-file-name
+      (read-file-name "Preview Markdown file: " nil buffer-file-name t))))
+  (let ((path (expand-file-name file)))
+    (when (file-remote-p path)
+      (user-error "Choose a local Markdown file"))
+    (unless (and (file-regular-p path) (file-readable-p path))
+      (user-error "Choose a readable regular file: %s" path))
+    (anymacs--open-hosted
+     (concat "/markdown?path=" (url-hexify-string path)))))
+
+;;;###autoload
+(defun anymacs-refresh ()
+  "Reload the active hosted page, starting its server again if needed."
+  (interactive)
+  (unless anymacs--hosted-path
+    (user-error "No hosted Anymacs page to refresh"))
+  (anymacs--ensure-host))
+
+(defun anymacs--open-hosted (path)
+  "Display hosted PATH, starting the shared server if necessary."
   (anymacs--show "about:blank")
-  (setq anymacs--hosted-p t)
+  (setq anymacs--hosted-path path)
+  (anymacs--ensure-host))
+
+(defun anymacs--ensure-host ()
+  "Start the host if necessary and load the current hosted page when ready."
   (condition-case err
       (progn
         (anymacs-start-server)
@@ -124,18 +166,18 @@ data and about URLs are supported.  This replaces the active Anymacs content."
 
 (defun anymacs--host-ready ()
   "Navigate the current hosted view when the server becomes ready."
-  (when (and anymacs--hosted-p (buffer-live-p anymacs--buffer)
+  (when (and anymacs--hosted-path (buffer-live-p anymacs--buffer)
              (frame-live-p anymacs--frame) (anymacs-server-url))
-    (anymacs--load-url (concat (anymacs-server-url) "/hello"))))
+    (anymacs--load-url (concat (anymacs-server-url) anymacs--hosted-path))))
 
 (defun anymacs--host-stopped ()
   "Show a retry message if the currently displayed UI loses its host."
-  (when (and anymacs--hosted-p (buffer-live-p anymacs--buffer)
+  (when (and anymacs--hosted-path (buffer-live-p anymacs--buffer)
              (frame-live-p anymacs--frame))
     (anymacs--load-url
      (concat "data:text/html;charset=utf-8,"
              "<title>Anymacs server stopped</title><h1>UI server stopped</h1>"
-             "<p>Run M-x anymacs-hello to retry. See *anymacs-server* for details.</p>"))))
+             "<p>Press g or run M-x anymacs-refresh to retry. See *anymacs-server* for details.</p>"))))
 
 (add-hook 'anymacs-server-ready-hook #'anymacs--host-ready)
 (add-hook 'anymacs-server-stopped-hook #'anymacs--host-stopped)
@@ -184,7 +226,7 @@ data and about URLs are supported.  This replaces the active Anymacs content."
     (with-current-buffer anymacs--buffer
       (remove-hook 'kill-buffer-hook #'anymacs-hide t)
       (remove-hook 'change-major-mode-hook #'anymacs-hide t)))
-  (setq anymacs--hosted-p nil
+  (setq anymacs--hosted-path nil
         anymacs--buffer nil
         anymacs--frame nil
         anymacs--panes nil

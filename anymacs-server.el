@@ -23,7 +23,7 @@
 (defvar anymacs--server-process nil "The shared UI host process, if started.")
 
 (defun anymacs-server-url ()
-  "Return the ready UI host's base URL, or nil."
+  "Return the ready UI host's base URL, including its access token, or nil."
   (when (and anymacs--server-process
              (process-live-p anymacs--server-process))
     (process-get anymacs--server-process 'url)))
@@ -58,13 +58,16 @@
            ((string-match "\n" pending)
             (let* ((record (json-parse-string (substring pending 0 (match-beginning 0))
                                               :object-type 'plist))
-                   (port (plist-get record :port)))
+                   (port (plist-get record :port))
+                   (token (plist-get record :token)))
               (unless (and (equal (plist-get record :type) "ready")
-                           (equal (plist-get record :protocol) 1)
-                           (integerp port) (< 0 port 65536))
+                           (equal (plist-get record :protocol) 2)
+                           (integerp port) (< 0 port 65536)
+                           (stringp token)
+                           (string-match-p "\\`[[:xdigit:]]\\{32\\}\\'" token))
                 (error "Invalid UI host readiness message"))
               (process-put process 'pending nil)
-              (process-put process 'url (format "http://127.0.0.1:%d" port))
+              (process-put process 'url (format "http://127.0.0.1:%d/%s" port token))
               (anymacs--server-cancel-timer process 'startup-timer))))
         (error (anymacs--server-fail process (error-message-string err))))
       (when (and (eq process anymacs--server-process)
