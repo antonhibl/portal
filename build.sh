@@ -8,4 +8,4 @@ if [ -n "${EMACS:-}" ]; then set -- "$@" "-DEMACS=$EMACS"; fi
 if [ -n "${EMACS_INCLUDE:-}" ]; then set -- "$@" "-DEMACS_INCLUDE=$EMACS_INCLUDE"; fi
 cmake --preset dev "$@"
 cmake --build --preset dev
-echo "Built build/anymacs.dylib"
+echo "Built build/anymacs.dylib and build/anymacs-host"

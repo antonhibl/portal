@@ -17,10 +17,37 @@ if(NOT APPLE)
     message(FATAL_ERROR "Anymacs requires macOS with AppKit and WebKit")
 endif()
 
+find_program(BUN NAMES bun HINTS "$ENV{HOME}/.bun/bin" REQUIRED)
+# The executable includes Bun and all UI assets; Bun is only a build dependency.
+# Publish atomically so a running host can survive a rebuild.
+add_custom_command(
+    OUTPUT "${CMAKE_BINARY_DIR}/anymacs-host"
+    COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
+        --compile --minify --sourcemap
+        --no-compile-autoload-dotenv --no-compile-autoload-bunfig
+        --outfile "${CMAKE_BINARY_DIR}/.anymacs-host"
+    COMMAND "${CMAKE_COMMAND}" -E rename
+        "${CMAKE_BINARY_DIR}/.anymacs-host" "${CMAKE_BINARY_DIR}/anymacs-host"
+    DEPENDS host/server.ts host/hello.html "${BUN}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Compiling the standalone Bun UI host"
+    VERBATIM)
+add_custom_target(anymacs-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/anymacs-host")
+
 if(DEFINED ENV{EMACS} AND NOT DEFINED EMACS)
     set(EMACS "$ENV{EMACS}" CACHE FILEPATH "Emacs executable")
 endif()
 find_program(EMACS NAMES emacs REQUIRED)
+include(CTest)
+if(BUILD_TESTING)
+    add_test(NAME ui-host
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "ANYMACS_TEST_HOST=${CMAKE_BINARY_DIR}/anymacs-host"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/anymacs-server-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(ui-host PROPERTIES TIMEOUT 30)
+endif()
 set(EMACS_INCLUDE "$ENV{EMACS_INCLUDE}" CACHE PATH "Directory containing emacs-module.h")
 if(NOT EMACS_INCLUDE)
     execute_process(COMMAND "${EMACS}" --batch -Q --eval

@@ -2,24 +2,36 @@
 
 A minimal macOS proof of concept: Emacs loads a Swift dynamic module that embeds
 native WebKit (`WKWebView`) pages or an AppKit green square in its panes.
-The native views follow splits, resizing, and buffer visibility.
+A bundled Bun server hosts the Hello World page. The native views follow splits,
+resizing, and buffer visibility.
 
 ## Build and run
 
 Requires graphical macOS Emacs with dynamic modules, its `emacs-module.h`,
-Apple's Swift 6/Clang toolchain (Xcode), CMake 3.29 or newer, and Ninja.
-Install the build tools with `brew install cmake ninja` or your tool manager.
-There are no third-party runtime library dependencies.
+Apple's Swift 6/Clang toolchain (Xcode), CMake 3.29 or newer, Ninja, and Bun
+(tested with Bun 1.3.14). Install CMake and Ninja with `brew install cmake ninja`
+or your tool manager, and install Bun for building.
+The resulting host executable includes Bun and its page assets: users do not
+need Bun, Node, npm packages, or server source files at runtime.
 
 ```sh
 ./build.sh
 emacs -Q -l "$PWD/anymacs.el" \
-  --eval '(anymacs-open-url "https://example.com")'
+  --eval '(anymacs-hello)'
 ```
 
-Or load `anymacs.el` in graphical Emacs and run `M-x anymacs-open-url`, then enter
-an absolute URL. It opens `*anymacs-web*`. HTTP, HTTPS, `file:`, `data:`, and `about:`
-URLs are supported. To open a local HTML file with its adjacent assets:
+The single build command produces `build/anymacs.dylib` and
+`build/anymacs-host`. CMake recompiles the host when its TypeScript entry point
+or HTML changes. Set `-DBUN=/absolute/path/to/bun` through `./build.sh` or CMake
+if Bun is not discoverable. Both binaries are built for the current Mac.
+
+Or load `anymacs.el` in graphical Emacs and run `M-x anymacs-hello`.
+To distribute this layout, include both Lisp files at the package root and both
+binaries in `build/`; the host needs no adjacent web assets.
+
+`M-x anymacs-open-url` still opens an arbitrary absolute URL in `*anymacs-web*`.
+HTTP, HTTPS, `file:`, `data:`, and `about:` URLs are supported. To open a local
+HTML file with its adjacent assets:
 
 ```elisp
 (require 'browse-url)
@@ -67,6 +79,33 @@ Restart Emacs after rebuilding a module it has already loaded. The build replace
 the library atomically, so rebuilding leaves the old loaded library intact; it
 does not hot-reload that library.
 
+## Bun UI host
+
+Loading the Lisp package or native module does not start a server. The first
+`anymacs-hello` starts one shared child process asynchronously, waits for its
+readiness message, then loads `/hello` in the native webview. Opening external
+URLs does not require the server.
+
+- The host binds to `127.0.0.1` on an OS-assigned port. Each Emacs process owns
+  its own host; all its panes reuse that host.
+- Closing or hiding a view keeps the server running. `M-x anymacs-start-server`
+  can prewarm it explicitly; `M-x anymacs-stop-server` stops it, and
+  `M-x anymacs-restart-server` starts a replacement and reloads active hosted views.
+- Startup is bounded by `anymacs-server-start-timeout` (five seconds by default).
+  Failures leave diagnostics in `*anymacs-server*`; run `anymacs-hello` to retry.
+  There is no automatic restart loop.
+- Emacs supervises the child through a pipe. stdout carries a versioned JSON
+  readiness line; stderr carries diagnostics. Closing stdin requests shutdown,
+  including when Emacs exits unexpectedly. Normal shutdown also handles OS
+  termination signals and has a forced-termination fallback.
+- `anymacs-server-program` selects the standalone executable. At runtime it is
+  launched directly, without a shell or any lookup of Bun on PATH. Runtime
+  loading of `.env` and `bunfig.toml` is disabled in the compiled binary.
+
+The first control protocol only announces readiness; it is not yet a general
+UI RPC API. Rebuilding publishes the host executable atomically. An already
+running host keeps its old code until `anymacs-restart-server` is called.
+
 ## Webview behaviour
 
 The existing native host accepts `WKWebView` directly. Remote pages use
@@ -97,8 +136,8 @@ Buffers hold content; Emacs windows are the panes displaying that content and
 have coordinates. Anymacs creates one native view per pane showing the green
 buffer within the frame where `anymacs-show` was invoked.
 
-- Splitting shows green in both panes. Each view follows its own pane's size and
-  position, including when resizing the macOS window.
+- Splitting shows a green square in both panes. Each square stays 32×32 points
+  and centered in its pane's text area as the panes or macOS window resize.
 - Changing focus leaves all views in place. Switching one pane to another buffer,
   or closing it, removes only that pane's native view.
 - Switching the buffer out of every pane releases all views while retaining the
@@ -119,6 +158,9 @@ with text beside the remaining view.
 | File | Responsibility |
 | --- | --- |
 | `anymacs.el` | Buffer mode, pane tracking, geometry, and lifecycle hooks |
+| `anymacs-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
+| `host/server.ts` | Local HTTP server and parent-process lifetime |
+| `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
 | `native/NativeView.swift` | AppKit/WebKit views, URL loading, focus return, and inspection |
 | `native/bootstrap.c` | Required C entry point and Emacs ABI size checks |
@@ -156,8 +198,10 @@ repeated show/stop/restart, buffer and frame cleanup, invalid layouts, and failu
 recovery after multiple views have been attached.
 The webview tests also wait for real WebKit page loads, verify JavaScript execution
 and relative local assets, and exercise splits, resizing, hidden-buffer reloads,
-repeated navigation, input validation, and cleanup. All 15 graphical tests pass;
+repeated navigation, input validation, and cleanup. The hosted-page tests also
+exercise process reuse, restart, and cancellation while the server starts;
 a separate HTTPS smoke check loaded `https://example.com` successfully.
+All 17 graphical tests pass with the bundled UI host.
 They do not assert Lisp caches, hook names, or implementation call counts.
 
 Run them in a disposable graphical Emacs. Batch Emacs has no native window and
@@ -178,6 +222,17 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
+
+The compiled-host integration tests run without a graphical display:
+
+```sh
+./build.sh
+ctest --test-dir build --output-on-failure
+```
+
+They exercise real HTTP requests, a relocated binary with no Bun on PATH,
+shared startup, graceful shutdown, restart, crash recovery, startup timeout,
+and partial or incompatible readiness messages.
 
 ## Scope
 

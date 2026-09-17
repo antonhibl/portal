@@ -1,6 +1,13 @@
 ;;; anymacs.el --- A Swift native-view experiment -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
+(require 'anymacs-server
+         (expand-file-name "anymacs-server"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
+
 (defconst anymacs--module-file
   (expand-file-name "build/anymacs.dylib"
                     (file-name-directory (or load-file-name buffer-file-name)))
@@ -17,6 +24,7 @@
 (defvar anymacs--frame nil "Frame hosting the native presentations.")
 (defvar anymacs--panes nil "Alist mapping displayed Emacs windows to native IDs.")
 (defvar anymacs--next-id 0 "Last allocated native pane ID in this session.")
+(defvar anymacs--hosted-p nil "Non-nil when the active view uses the Bun host.")
 (defvar anymacs--geometry nil
   "Last sent geometry: frame height paired with the native layout vector.
 Nil means no layout has been sent yet.")
@@ -100,6 +108,38 @@ data and about URLs are supported.  This replaces the active Anymacs content."
     (user-error "Enter an absolute http, https, file, data or about URL"))
   (anymacs--show url))
 
+;;;###autoload
+(defun anymacs-hello ()
+  "Open Hello World, starting the bundled UI host on first use."
+  (interactive)
+  (anymacs--show "about:blank")
+  (setq anymacs--hosted-p t)
+  (condition-case err
+      (progn
+        (anymacs-start-server)
+        (when (anymacs-server-url) (anymacs--host-ready)))
+    (error
+     (anymacs--host-stopped)
+     (signal (car err) (cdr err)))))
+
+(defun anymacs--host-ready ()
+  "Navigate the current hosted view when the server becomes ready."
+  (when (and anymacs--hosted-p (buffer-live-p anymacs--buffer)
+             (frame-live-p anymacs--frame) (anymacs-server-url))
+    (anymacs--load-url (concat (anymacs-server-url) "/hello"))))
+
+(defun anymacs--host-stopped ()
+  "Show a retry message if the currently displayed UI loses its host."
+  (when (and anymacs--hosted-p (buffer-live-p anymacs--buffer)
+             (frame-live-p anymacs--frame))
+    (anymacs--load-url
+     (concat "data:text/html;charset=utf-8,"
+             "<title>Anymacs server stopped</title><h1>UI server stopped</h1>"
+             "<p>Run M-x anymacs-hello to retry. See *anymacs-server* for details.</p>"))))
+
+(add-hook 'anymacs-server-ready-hook #'anymacs--host-ready)
+(add-hook 'anymacs-server-stopped-hook #'anymacs--host-stopped)
+
 (defun anymacs--show (&optional url)
   "Display native content, loading URL when non-nil."
   (unless (and (eq window-system 'ns) (fboundp 'module-load))
@@ -144,7 +184,8 @@ data and about URLs are supported.  This replaces the active Anymacs content."
     (with-current-buffer anymacs--buffer
       (remove-hook 'kill-buffer-hook #'anymacs-hide t)
       (remove-hook 'change-major-mode-hook #'anymacs-hide t)))
-  (setq anymacs--buffer nil
+  (setq anymacs--hosted-p nil
+        anymacs--buffer nil
         anymacs--frame nil
         anymacs--panes nil
         anymacs--next-id 0

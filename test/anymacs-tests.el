@@ -305,3 +305,41 @@
     (anymacs-test--wait-for-page "Second" 1)
     (anymacs-hide)
     (should-not (anymacs-test--views))))
+
+(ert-deftest anymacs-hello-loads-shares-and-restarts-the-bundled-host ()
+  (anymacs-test--with-web
+    (unwind-protect
+        (progn
+          (anymacs-hello)
+          ;; The title is set by the served page's JavaScript.
+          (anymacs-test--wait-for-page "Hello, world!" 1)
+          (let ((process (anymacs-start-server)))
+            (split-window-right)
+            (anymacs-test--wait-for-page "Hello, world!" 2)
+            (anymacs-hide)
+            (should-not (anymacs-test--views))
+            (should (process-live-p process))
+            (anymacs-hello)
+            (anymacs-test--wait-for-page "Hello, world!" 2)
+            (should (eq process (anymacs-start-server)))
+            (anymacs-restart-server)
+            (anymacs-test--wait-for-page "Hello, world!" 2)
+            (should-not (eq process (anymacs-start-server))))
+          (anymacs-stop-server)
+          (anymacs-test--wait-for-page "Anymacs server stopped" 2))
+      (anymacs-stop-server))))
+
+(ert-deftest anymacs-hello-cancelled-start-does-not-replace-new-content ()
+  (anymacs-test--with-web
+    (unwind-protect
+        (progn
+          (anymacs-stop-server)
+          (anymacs-hello)
+          (anymacs-open-url "data:text/html,<title>Keep this page</title>")
+          (anymacs-test--wait-for-page "Keep this page" 1)
+          (let ((deadline (+ (float-time) 5)))
+            (while (and (not (anymacs-server-url)) (< (float-time) deadline))
+              (sleep-for 0.05)))
+          (should (anymacs-server-url))
+          (anymacs-test--wait-for-page "Keep this page" 1))
+      (anymacs-stop-server))))
