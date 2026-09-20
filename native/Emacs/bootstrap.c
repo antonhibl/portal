@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The C ABI entry point; module behaviour lives in Swift. */
-#include <emacs-module.h>
+#include "CEmacs.h"
 
 int plugin_is_GPL_compatible;
 extern int anymacs_swift_init(emacs_env *env);

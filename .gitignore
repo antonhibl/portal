@@ -3,3 +3,6 @@
 /.cache/
 node_modules/
 *.elc
+.swiftpm/
+/.build/
+/native/.build/

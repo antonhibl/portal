@@ -1,9 +1,9 @@
-# Anymacs: a native view in Emacs
+# Anymacs: native views in Emacs
 
-A minimal macOS proof of concept: Emacs loads a Swift dynamic module that embeds
-native WebKit (`WKWebView`) pages or an AppKit green square in its panes.
-A bundled Bun server hosts Hello World and local Markdown previews. The native views follow splits,
-resizing, and buffer visibility.
+Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
+one Swift dynamic module. A bundled Bun server hosts Hello World and local
+Markdown previews. Native views follow splits, resizing, and buffer visibility;
+hidden terminal sessions keep running. An AppKit green-square demo is also included.
 
 ## Build and run
 
@@ -14,6 +14,10 @@ or your tool manager, and install Bun for building.
 The build checks that Bun provides `Bun.markdown.html`.
 The resulting host executable includes Bun and its page assets: users do not
 need Bun, Node, npm packages, or server source files at runtime.
+The native module uses SwiftPM to download a pinned GhosttyKit binary
+(about 77 MB on the first build) and its native Swift wrapper. No Zig installation
+is needed. The versions and binary checksum are pinned by
+`native/Package.swift` and `native/Package.resolved`.
 
 ```sh
 ./build.sh
@@ -21,30 +25,151 @@ emacs -Q -l "$PWD/anymacs.el" \
   --eval '(anymacs-hello)'
 ```
 
-The single build command produces `build/anymacs.dylib` and
-`build/anymacs-host`. CMake recompiles the host when its TypeScript entry point
+The single build command produces `build/anymacs.bundle` and
+`build/anymacs-host`. The bundle contains the one native Emacs module at
+`Contents/MacOS/anymacs.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
 or HTML changes. Set `-DBUN=/absolute/path/to/bun` through `./build.sh` or CMake
 if Bun is not discoverable. Both binaries are built for the current Mac.
 
 Or load `anymacs.el` in graphical Emacs and run `M-x anymacs-hello`.
 Run `M-x anymacs-preview-markdown` to preview the current Markdown file or
 select another local file.
-To distribute this layout, include both Lisp files at the package root and both
-binaries in `build/`; the host needs no adjacent web assets.
+To distribute this layout, include the four `anymacs*.el` files at the package root,
+`build/anymacs-host`, and the complete `build/anymacs.bundle`;
+the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
+and shell integration resources. Restart Emacs when upgrading from the former
+separate web and terminal modules, or after rebuilding a loaded native module.
+
+Run `M-x anymacs-preview-html` in a `.html` or `.htm` file buffer to open its
+saved contents in the embedded webview, including relative scripts, styles,
+and images from its directory. From other buffers, it prompts for a local
+path or URL. Relative paths use the current buffer's `default-directory`;
+`C-u M-x anymacs-preview-html` always prompts. Unsaved edits are not included.
 
 `M-x anymacs-open-url` still opens an arbitrary absolute URL in `*anymacs-web*`.
-HTTP, HTTPS, `file:`, `data:`, and `about:` URLs are supported. To open a local
-HTML file with its adjacent assets:
+Both commands accept HTTP, HTTPS, `file:`, `data:`, and `about:` URLs.
+To open a local HTML file programmatically:
 
 ```elisp
-(require 'browse-url)
-(anymacs-open-url (browse-url-file-url "/absolute/path/index.html"))
+(anymacs-preview-html "/absolute/path/index.html")
 ```
 
 Click inside a page to interact with it. Press Escape or `C-g` to return keyboard
 focus to Emacs, then `q` or `M-x anymacs-hide` to remove the views. The mode line
 and minibuffer remain available. Run `anymacs-open-url` again to open another URL.
 `M-x anymacs-show` still opens the green-square demo in `*anymacs-green*`.
+
+## Native Ghostty terminal
+
+To compare terminal performance, run `./benchmark.sh --label anymacs` inside the
+embedded shell and `./benchmark.sh --label ghostty` in standalone Ghostty.
+See [benchmark methodology and FPS research](docs/terminal-benchmark.md) for
+latency, frame timing, optional Instruments captures and interpretation limits.
+
+After `./build.sh`, load `anymacs.el` and run `M-x anymacs-terminal`, or launch a
+fresh graphical Emacs:
+
+```sh
+emacs -Q -l "$PWD/anymacs.el" --eval '(anymacs-terminal)'
+```
+
+This embeds a real Ghostty Metal terminal surface inside the pane. Ghostty owns
+the PTY, shell, terminal state, fonts, rendering, selection and scrollback.
+It starts your normal shell in the current local `default-directory`; interactive
+commands, Vim and other TUIs use the real terminal protocol engine. It does not
+convert output to Emacs text or use WebKit or the Bun server.
+
+- Click the terminal or press `RET` in its buffer to give it keyboard focus.
+- Press **`C-b`**, then a command from the table below. A prompt in the echo
+  area shows that Emacs is reading a command. There is no prefix timeout.
+- **`C-b d`**, `Command-Escape`, or clicking **Return to Emacs** leaves keyboard
+  control with Emacs. Use normal Emacs bindings, then `RET` to re-enter Ghostty.
+- **`C-b C-b`** sends a literal Control-B. `C-g` cancels a pending prefix;
+  ordinary Escape, `C-g`, `C-c`, and other terminal keys otherwise go to the shell.
+- Select with the mouse and use `Command-C` / `Command-V` for the macOS clipboard.
+  Scroll with the trackpad or mouse wheel. Non-Latin IME composition has not
+  been manually verified.
+- Hidden buffers keep their shells running. Killing a terminal buffer, running
+  `anymacs-terminal-close` in it, or deleting its frame ends that shell.
+  `anymacs-terminal-close-all` ends all embedded shells.
+
+Defaults follow [tmux's key bindings](https://man.openbsd.org/tmux#DEFAULT_KEY_BINDINGS)
+where an Emacs counterpart exists. Every row follows the prefix (`C-b` by default):
+
+| Key | Action |
+| --- | --- |
+| `c` | New independent terminal buffer |
+| `"` / `%` | Split below / right with a new shell |
+| `o` / arrow keys | Next / directional Emacs pane |
+| `n` / `p` / `l` | Next / previous / last terminal buffer |
+| `0`–`9` | Select a terminal by its current creation-order index |
+| `w` | Choose a terminal with Emacs completion |
+| `,` | Rename the terminal buffer |
+| `z` | Zoom the pane; repeat to restore the layout |
+| `x` | Confirm, end the shell, and close its pane |
+| `d` | Stay in Emacs; keep the shell running |
+| `:` | Run `M-x` and stay in Emacs afterward |
+| `?` | Show the current bindings, including customizations |
+| repeated prefix | Send the actual prefix keystroke to the shell |
+
+These are Emacs operations: terminal buffers stand in for tmux windows and Emacs
+windows stand in for panes. There are no tmux session servers, saved per-terminal
+pane layouts, or tmux copy mode. Each terminal belongs to its creating frame and
+has one native view; displaying the same buffer twice moves that view to the
+selected pane. Different terminal buffers can display and run simultaneously.
+
+Configure in Lisp after loading `anymacs.el` (changes apply to running terminals):
+
+```elisp
+(setq anymacs-terminal-prefix "C-a") ; default: "C-b"
+(keymap-set anymacs-terminal-prefix-map "v" #'anymacs-terminal-split-right)
+(keymap-set anymacs-terminal-prefix-map "b" #'switch-to-buffer)
+(keymap-set anymacs-terminal-prefix-map "e" #'anymacs-terminal-unfocus)
+```
+
+The prefix accepts one modified ASCII key in `kbd` notation; Meta means Option
+and Super means Command. Customize the map or add nested prefix maps with normal
+Emacs keymap functions. Commands finish their minibuffer interaction before focus
+returns to the selected terminal. Switching to an ordinary buffer keeps Emacs in
+control. A custom command can call `anymacs-terminal-unfocus` to stay in Emacs even
+when a terminal is selected. Errors also leave focus in Emacs.
+
+Native code catches the leader and notifies Emacs through an event pipe. It holds
+fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
+command. Ordinary terminal input and output stay native; there is no polling timer
+or terminal redraw through Lisp.
+
+The terminal uses the pinned [GhosttyTerminal Swift wrapper](https://github.com/Lakr233/libghostty-spm/tree/1.6.20260909)
+and its Ghostty build. It uses the wrapper's default configuration and system
+appearance, independently of your standalone Ghostty preferences. Ghostty's
+app-level window/tab commands are not implemented here. The Emacs buffer contains
+instructions, not live terminal text, so ordinary Emacs search and movement do not
+operate on the terminal. The native view still shares Emacs's main thread for
+input and presentation; this is not a guarantee of latency parity during Emacs GC
+or long-running Lisp.
+
+`(anymacs--terminal-state)` (optionally with a native session ID) reports the actual native surface, grid, bounds, focus
+and title. `(anymacs--terminal-text)` selects all native scrollback and returns its
+text for inspection; it leaves that selection active. Neither is polled during
+normal use. Restart Emacs after rebuilding a module it has already loaded.
+
+The graphical terminal tests exercise a real shell, alternate-screen output,
+native keyboard and clipboard input, focus return, resizing, hidden-session
+continuity, shell termination, and editing/saving a file in Vim. They also exercise
+rapid native prefix sequences, multiple sessions and splits, live prefix/map
+customization, literal prefix bytes, cancellation, and minibuffer focus. Build their
+test-only AppKit event injector (no Accessibility permission required):
+
+```sh
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
+  -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
+  -framework AppKit -framework WebKit \
+  -o build/test-terminal-input.dylib
+emacs -Q --module-assertions -l "$PWD/anymacs.el" \
+  --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
+  -l "$PWD/test/anymacs-terminal-tests.el" \
+  --eval '(ert-run-tests-interactively "^anymacs-terminal-")'
+```
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,
 configure once before opening native source files; this generates editor metadata
@@ -55,16 +180,16 @@ cmake --preset dev
 cmake --build --preset dev
 ```
 
-CMake describes both C and Swift, including the Emacs bridging header, Swift 6,
-and AppKit/WebKit linkage. Configuration generates `build/compile_commands.json`
-and a symlink at the repository root. clangd uses its C command; SourceKit-LSP
-uses its Swift commands. Both get the same settings used by the build. Generated
-files stay out of Git. Reconfigure after changing sources, dependencies, or SDKs.
+CMake locates Emacs, builds the Bun host, and invokes the native Swift package.
+`native/Package.swift` defines one Swift target containing the host, web, terminal,
+and Emacs bridge code, plus the small required C entry point. There are no separate
+feature libraries or plugin builds. Configuration writes the discovered header
+path to `build/emacs-include.txt`, which the package also reads for editor support.
 
-In Emacs, use Eglot with clangd for C and SourceKit-LSP for `swift-mode`. Xcode
-provides both servers. If buffers were opened before configuration, run
-`M-x eglot-reconnect` in a C buffer and a Swift buffer (or `M-x eglot` if not yet
-connected). No project-specific header paths belong in your Emacs configuration.
+Use SourceKit-LSP with Eglot for Swift and the C bridge, with `native/` as its
+SwiftPM project root. Xcode provides the server. Reconnect Eglot after switching
+from the former CMake compilation database. No project-specific header paths
+belong in your Emacs configuration. Reconfigure after changing Emacs or SDKs.
 
 For TypeScript editing, install the host's development dependencies and run its
 type check:
@@ -205,17 +330,34 @@ with text beside the remaining view.
 
 | File | Responsibility |
 | --- | --- |
-| `anymacs.el` | Buffer mode, pane tracking, geometry, and lifecycle hooks |
+| `anymacs-native.el` | Shared module loading and native frame identification |
+| `anymacs.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
+| `anymacs-terminal.el` | Terminal buffers, configurable prefix commands, geometry, and lifecycle |
 | `anymacs-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
-| `native/NativeView.swift` | AppKit/WebKit views, URL loading, focus return, and inspection |
-| `native/bootstrap.c` | Required C entry point and Emacs ABI size checks |
+| `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
+| `native/WebView.swift` | WebKit/demo views, navigation, and inspection |
+| `native/Terminal.swift` | Ghostty sessions, terminal input policy, and prefix buffering |
+| `native/Emacs/` | Required C entry point, Emacs header import, and ABI size checks |
+| `native/Package.swift` | One native library and pinned Ghostty dependency |
 
-The Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
+These are ordinary source boundaries within one native module. A small
+`NativeSurface` protocol lets each feature expose its view and keyboard handler.
+`NativeHost` knows neither WebKit nor Ghostty: it attaches views to the correct
+frame, remembers the original Emacs responder, and uses one event monitor to
+route keys to the focused surface or a pending terminal prefix. A key released
+after focus changes is not delivered to the newly focused feature.
+
+Features own their state and cleanup. Removing a web view does not destroy a
+terminal, and closing a terminal does not remove web views. Hidden web views are
+released and recreated when shown; hidden terminals stay attached so their PTYs
+continue running. The Emacs bridge converts arguments and registers both APIs.
+
+For web/demo views, the Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
 during redisplay. Each pane receives a stable numeric ID. Lisp sends the complete
 layout when geometry or pane membership changes; Swift validates the layout, then
 creates, updates, or removes views on the main thread. An empty layout removes all
@@ -254,15 +396,21 @@ a separate HTTPS smoke check loaded `https://example.com` successfully.
 The Markdown tests exercise file paths with Unicode and URL punctuation,
 refresh after file deletion/restoration, split panes, host recovery, and
 cancellation during startup.
-All 19 graphical tests pass with the bundled UI host.
+All 32 tests in the combined graphical suite pass. They include the web/demo and terminal tests, plus
+coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
+delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
 
-Run them in a disposable graphical Emacs. Batch Emacs has no native window and
+Build the test-only event injector shown above, then run the suite in a disposable
+graphical Emacs. Batch Emacs has no native window and
 cannot exercise these behaviours:
 
 ```sh
 emacs -Q --module-assertions -l "$PWD/anymacs.el" \
+  --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
   -l "$PWD/test/anymacs-tests.el" \
+  -l "$PWD/test/anymacs-terminal-tests.el" \
+  -l "$PWD/test/anymacs-integration-tests.el" \
   --eval '(ert-run-tests-interactively "^anymacs-")'
 ```
 
@@ -271,7 +419,7 @@ also verifies Escape, `C-g`, and focused-view removal return focus to the editor
 
 ```sh
 xcrun swiftc -swift-version 6 -warnings-as-errors \
-  native/NativeView.swift test/native-focus.swift \
+  native/NativeHost.swift native/WebView.swift test/native-focus.swift \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -291,9 +439,10 @@ access-token and Host validation, and non-executable raw HTML.
 
 ## Scope
 
-One active native buffer and any number of pane views within one host frame.
-Multiple native buffers and automatic presentation across frames are outside this
-experiment.
+The web/demo feature supports one active buffer and any number of pane views
+within one host frame. Terminals support multiple independent buffers and frames,
+with each terminal bound to its creating frame. Automatic migration of a terminal
+to another frame is not implemented.
 To choose a different host frame, invoke `anymacs-open-url` (or `anymacs-show`
 for the green demo) from that frame again.
 

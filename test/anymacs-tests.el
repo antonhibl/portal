@@ -279,15 +279,17 @@
 
 (ert-deftest anymacs-web-loads-local-file-with-relative-javascript ()
   (anymacs-test--with-web
-    (let ((directory (make-temp-file "anymacs-web-" t)))
+    (let* ((directory (make-temp-file "anymacs-web-" t))
+           (file (expand-file-name "Résumé #%?.HTML" directory)))
       (unwind-protect
           (progn
-            (with-temp-file (expand-file-name "page.html" directory)
+            (with-temp-file file
               (insert "<title>Initial</title><script src='script.js'></script>"))
             (with-temp-file (expand-file-name "script.js" directory)
               (insert "document.title = 'Local assets work';"))
-            (anymacs-open-url
-             (browse-url-file-url (expand-file-name "page.html" directory)))
+            (with-temp-buffer
+              (setq buffer-file-name file)
+              (call-interactively #'anymacs-preview-html))
             (anymacs-test--wait-for-page "Local assets work" 1))
         (anymacs-hide)
         (delete-directory directory t)))))

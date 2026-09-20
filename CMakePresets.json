@@ -4,11 +4,7 @@
     {
       "name": "dev",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_OSX_SYSROOT": "macosx"
-      }
+      "binaryDir": "${sourceDir}/build"
     }
   ],
   "buildPresets": [

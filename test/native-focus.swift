@@ -16,9 +16,9 @@ struct CheckFocus {
         window.contentView!.addSubview(editor)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editor)
-        precondition(NativeView.bind(title: window.title))
-        precondition(NativeView.loadURL("data:text/html,<input autofocus><title>Focus</title>"))
-        precondition(NativeView.setLayout([PaneLayout(id: 1, rectangle: editor.bounds)]))
+        precondition(WebViews.bind(title: window.title))
+        precondition(WebViews.loadURL("data:text/html,<input autofocus><title>Focus</title>"))
+        precondition(WebViews.setLayout([PaneLayout(id: 1, rectangle: editor.bounds)]))
         let web = window.contentView!.subviews.first { $0 is WKWebView }!
         // A responder nested below the webview exercises the same ancestry test
         // as WebKit's internal text input views.
@@ -36,9 +36,9 @@ struct CheckFocus {
             precondition(window.firstResponder === editor, "Focus did not return")
         }
         precondition(window.makeFirstResponder(input))
-        precondition(NativeView.setLayout([]))
+        precondition(WebViews.setLayout([]))
         precondition(window.firstResponder === editor, "Removal did not restore focus")
-        NativeView.destroy()
+        WebViews.destroy()
         print("Escape, C-g, and view removal restore focus")
     }
 }

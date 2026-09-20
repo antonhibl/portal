@@ -1,17 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.29)
 
-# SourceKit-LSP needs the compiler inside the toolchain, not /usr/bin/swiftc.
-if(NOT DEFINED CMAKE_Swift_COMPILER)
-    execute_process(COMMAND xcrun --find swiftc
-        OUTPUT_VARIABLE CMAKE_Swift_COMPILER OUTPUT_STRIP_TRAILING_WHITESPACE
-        COMMAND_ERROR_IS_FATAL ANY)
-endif()
-project(anymacs LANGUAGES C Swift)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# Both clangd and SourceKit-LSP discover the database at the source root.
-file(CREATE_LINK "${CMAKE_BINARY_DIR}/compile_commands.json"
-    "${CMAKE_SOURCE_DIR}/compile_commands.json" SYMBOLIC)
+# CMake orchestrates the native Swift package, Bun host and integration tests.
+project(anymacs LANGUAGES NONE)
 
 if(NOT APPLE)
     message(FATAL_ERROR "Anymacs requires macOS with AppKit and WebKit")
@@ -68,24 +59,33 @@ if(NOT EXISTS "${EMACS_INCLUDE}/emacs-module.h")
     message(FATAL_ERROR "Set -DEMACS_INCLUDE=/path/to/include containing emacs-module.h")
 endif()
 
-add_library(anymacs MODULE native/bootstrap.c native/Module.swift native/NativeView.swift)
-set_target_properties(anymacs PROPERTIES
-    PREFIX "" SUFFIX ".dylib"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/native"
-    Swift_MODULE_NAME Anymacs
-    Swift_LANGUAGE_VERSION 6)
-target_include_directories(anymacs PRIVATE "${EMACS_INCLUDE}")
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/pch")
-target_compile_options(anymacs PRIVATE
-    "$<$<COMPILE_LANGUAGE:C>:-Wall;-Wextra;-Werror>"
-    "$<$<COMPILE_LANGUAGE:Swift>:-warnings-as-errors;-import-objc-header;${EMACS_INCLUDE}/emacs-module.h;-pch-output-dir;${CMAKE_BINARY_DIR}/pch>")
-find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
-find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
-target_link_libraries(anymacs PRIVATE "${APPKIT_FRAMEWORK}" "${WEBKIT_FRAMEWORK}")
-
-# Publish a copy atomically; never relink a library already mapped by Emacs.
-add_custom_command(TARGET anymacs POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:anymacs>" "${CMAKE_BINARY_DIR}/.anymacs.dylib"
-    COMMAND "${CMAKE_COMMAND}" -E rename "${CMAKE_BINARY_DIR}/.anymacs.dylib" "${CMAKE_BINARY_DIR}/anymacs.dylib"
-    BYPRODUCTS "${CMAKE_BINARY_DIR}/anymacs.dylib"
+# SwiftPM builds the one native module, including its small C entry point.
+# Keep the bundle intact: Ghostty locates terminfo and shell integration here.
+file(WRITE "${CMAKE_BINARY_DIR}/emacs-include.txt" "${EMACS_INCLUDE}\n")
+set(native_package "${CMAKE_SOURCE_DIR}/native")
+set(native_scratch "${CMAKE_BINARY_DIR}/swift")
+set(native_bundle "${CMAKE_BINARY_DIR}/anymacs.bundle/Contents")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env "EMACS_INCLUDE=${EMACS_INCLUDE}"
+        xcrun swift build --package-path "${native_package}"
+        --scratch-path "${native_scratch}" -c release --show-bin-path
+    OUTPUT_VARIABLE native_bin OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+add_custom_target(anymacs ALL
+    COMMAND "${CMAKE_COMMAND}" -E env "EMACS_INCLUDE=${EMACS_INCLUDE}"
+        xcrun swift build --package-path "${native_package}"
+        --scratch-path "${native_scratch}" -c release --product anymacs
+        --force-resolved-versions
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${native_bundle}/MacOS" "${native_bundle}/Resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${native_package}/Info.plist" "${native_bundle}/Info.plist"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${native_bin}/GhosttyKit_GhosttyTerminal.bundle"
+        "${native_bundle}/Resources/GhosttyKit_GhosttyTerminal.bundle"
+    # Publish atomically: never overwrite a library already mapped by Emacs.
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "${native_bin}/libanymacs.dylib" "${native_bundle}/MacOS/.anymacs.dylib"
+    COMMAND "${CMAKE_COMMAND}" -E rename
+        "${native_bundle}/MacOS/.anymacs.dylib" "${native_bundle}/MacOS/anymacs.dylib"
+    BYPRODUCTS "${native_bundle}/MacOS/anymacs.dylib"
+    COMMENT "Building the Anymacs native module"
     VERBATIM)

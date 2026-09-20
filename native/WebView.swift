@@ -10,7 +10,9 @@ private final class NativeContent {
 }
 
 @MainActor
-private final class GreenView: NSView {
+private final class GreenView: NSView, NativeSurface {
+    var nativeView: NSView { self }
+    func handleKeyEvent(_ event: NSEvent) -> Bool { false }
     let content: NativeContent
 
     init(content: NativeContent, frame: NSRect) {
@@ -37,7 +39,18 @@ private final class GreenView: NSView {
 
 /// A separate browsing session per pane; the buffer shares only its requested URL.
 @MainActor
-private final class WebView: WKWebView, WKNavigationDelegate {
+private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
+    var nativeView: NSView { self }
+    weak var host: NativeHost?
+
+    func handleKeyEvent(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown else { return false }
+        let controlG = event.modifierFlags.contains(.control) && event.charactersIgnoringModifiers == "g"
+        guard event.keyCode == 53 || controlG else { return false }
+        host?.returnFocus(from: self)
+        return true
+    }
+
     var loadError: String?
 
     init(frame: NSRect, url: URL) {
@@ -94,19 +107,10 @@ struct ViewSnapshot: Sendable {
 
 /// Owns shared content and one view per pane, without retaining Emacs values.
 @MainActor
-enum NativeView {
+enum WebViews {
     private static var content: NativeContent?
-    private static var views: [Int: NSView] = [:]
-    private static weak var host: NSView?
-    private static weak var emacsResponder: NSResponder?
-    private static var keyMonitor: Any?
-
-    /// Escape or C-g returns focus even when a WebKit child owns the keyboard.
-    private static func returnFocus(from view: NSView) {
-        guard let responder = view.window?.firstResponder as? NSView,
-              responder === view || responder.isDescendant(of: view) else { return }
-        view.window?.makeFirstResponder(emacsResponder)
-    }
+    private static var views: [Int: any NativeSurface] = [:]
+    private static var host: NativeHost?
 
     static func loadURL(_ text: String) -> Bool {
         guard let content, let url = URL(string: text),
@@ -123,29 +127,10 @@ enum NativeView {
 
     /// Lisp briefly gives the requested frame a unique title, then restores it.
     static func bind(title: String) -> Bool {
-        guard let target = NSApp?.windows.first(where: { $0.title == title })?.contentView
-        else { return false }
+        guard let host = NativeHost.bind(title: title) else { return false }
         destroy()
-        host = target
+        self.host = host
         content = NativeContent()
-        emacsResponder = target.window?.firstResponder
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let handled = MainActor.assumeIsolated {
-                let controlG = event.modifierFlags.contains(.control)
-                    && event.charactersIgnoringModifiers == "g"
-                if event.keyCode == 53 || controlG {
-                    for view in views.values where view is WebView && view.window === event.window {
-                        if let responder = event.window?.firstResponder as? NSView,
-                           responder === view || responder.isDescendant(of: view) {
-                            returnFocus(from: view)
-                            return true
-                        }
-                    }
-                }
-                return false
-            }
-            return handled ? nil : event
-        }
         return true
     }
 
@@ -157,51 +142,38 @@ enum NativeView {
         let wanted = Set(layout.map(\.id))
         for id in Set(views.keys).subtracting(wanted) {
             if let view = views.removeValue(forKey: id) {
-                returnFocus(from: view)
                 (view as? WKWebView)?.stopLoading()
-                view.removeFromSuperview()
+                host.remove(view)
             }
         }
         for pane in layout {
-            var frame = pane.rectangle
-            frame.origin.x += host.bounds.minX
-            frame.origin.y = host.isFlipped
-                ? host.bounds.minY + pane.rectangle.minY
-                : host.bounds.maxY - pane.rectangle.maxY
-
             if let child = views[pane.id], content.url != nil && !(child is WebView) {
-                child.removeFromSuperview()
+                host.remove(child)
                 views.removeValue(forKey: pane.id)
             }
-            if let child = views[pane.id] {
-                if child.frame != frame {
-                    child.frame = frame
-                    child.needsDisplay = true
-                }
+            let child: any NativeSurface
+            if let existing = views[pane.id] {
+                child = existing
+            } else if let url = content.url {
+                let web = WebView(frame: .zero, url: url)
+                web.host = host
+                child = web
+                views[pane.id] = child
             } else {
-                let child: NSView
-                if let url = content.url {
-                    child = WebView(frame: frame, url: url)
-                } else {
-                    child = GreenView(content: content, frame: frame)
-                }
-                host.addSubview(child)
-                child.needsDisplay = true
+                child = GreenView(content: content, frame: .zero)
                 views[pane.id] = child
             }
+            guard host.place(child, rectangle: pane.rectangle) else { return false }
+            child.nativeView.needsDisplay = true
         }
         return true
     }
 
     static func destroy() {
-        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        keyMonitor = nil
         for view in views.values {
-            returnFocus(from: view)
             (view as? WKWebView)?.stopLoading()
-            view.removeFromSuperview()
+            host?.remove(view)
         }
-        emacsResponder = nil
         views.removeAll()
         content = nil
         host = nil

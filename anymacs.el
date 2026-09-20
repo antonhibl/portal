@@ -1,18 +1,20 @@
-;;; anymacs.el --- A Swift native-view experiment -*- lexical-binding: t; -*-
+;;; anymacs.el --- Native web views and terminals for macOS -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'url-util)
+(require 'browse-url)
+(require 'anymacs-terminal
+         (expand-file-name "anymacs-terminal"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
 (require 'anymacs-server
          (expand-file-name "anymacs-server"
                            (file-name-directory
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
-
-(defconst anymacs--module-file
-  (expand-file-name "build/anymacs.dylib"
-                    (file-name-directory (or load-file-name buffer-file-name)))
-  "Location of the native module built by build.sh.")
 
 (declare-function anymacs--load-url "anymacs" (url))
 (declare-function anymacs--bind "anymacs" (title))
@@ -40,13 +42,7 @@ Nil means no layout has been sent yet.")
 ;; Host binding and presentation geometry.
 (defun anymacs--bind-frame (frame)
   "Identify FRAME to AppKit without depending on asynchronous focus changes."
-  (let ((title (frame-parameter frame 'title))
-        (token (make-temp-name "anymacs-host-")))
-    (unwind-protect
-        (progn
-          (set-frame-parameter frame 'title token)
-          (anymacs--bind token))
-      (set-frame-parameter frame 'title title))))
+  (anymacs-native--call-with-frame frame #'anymacs--bind))
 
 (defun anymacs--update-layout ()
   "Reconcile all panes showing the buffer with their native presentations."
@@ -109,6 +105,32 @@ data and about URLs are supported.  This replaces the active Anymacs content."
                (string-match-p "\\`\\(?:https?://[^/[:space:]]+\\|file:///\\|data:\\|about:\\)" url))
     (user-error "Enter an absolute http, https, file, data or about URL"))
   (anymacs--show url))
+
+;;;###autoload
+(defun anymacs-preview-html (file-or-url)
+  "Open local HTML FILE-OR-URL or a URL in the embedded webview.
+Use the current buffer's file when its extension is .html or .htm;
+otherwise prompt for a path or URL.  With a prefix argument, always prompt.
+Local paths are relative to `default-directory'.  Only saved contents are
+shown; unsaved edits are not included.  Relative assets can load from the
+file's containing directory.  URLs supported by `anymacs-open-url' are accepted."
+  (interactive
+   (list
+    (if (and (not current-prefix-arg) buffer-file-name
+             (let ((case-fold-search t))
+               (string-match-p "\\.html?\\'" buffer-file-name)))
+        buffer-file-name
+      (read-string "Open HTML file or URL: "))))
+  (unless (and (stringp file-or-url) (not (string-empty-p file-or-url)))
+    (user-error "Enter a local HTML path or URL"))
+  (if (string-match-p "\\`[[:alpha:]][[:alnum:]+.-]*:" file-or-url)
+      (anymacs-open-url file-or-url)
+    (let ((path (expand-file-name file-or-url)))
+      (when (file-remote-p path)
+        (user-error "Choose a local HTML file or an HTTP(S) URL"))
+      (unless (and (file-regular-p path) (file-readable-p path))
+        (user-error "Choose a readable regular file: %s" path))
+      (anymacs-open-url (browse-url-file-url path)))))
 
 ;;;###autoload
 (defun anymacs-hello ()
@@ -184,13 +206,7 @@ not included."
 
 (defun anymacs--show (&optional url)
   "Display native content, loading URL when non-nil."
-  (unless (and (eq window-system 'ns) (fboundp 'module-load))
-    (user-error "Anymacs needs graphical macOS Emacs with module support"))
-  (unless (fboundp 'anymacs--bind)
-    (module-load anymacs--module-file))
-  (unless (and (fboundp 'anymacs--set-layout)
-               (fboundp 'anymacs--load-url))
-    (user-error "Restart Emacs to load the rebuilt Anymacs module"))
+  (anymacs-native--load)
   (anymacs-hide)
   (let (ready)
     (unwind-protect
@@ -218,7 +234,7 @@ not included."
 
 ;;;###autoload
 (defun anymacs-hide ()
-  "Release all native views and content, and stop tracking window changes."
+  "Release web/demo views and content; terminal sessions are unaffected."
   (interactive)
   (remove-hook 'window-state-change-functions #'anymacs--sync)
   (remove-hook 'delete-frame-functions #'anymacs--frame-deleted)
