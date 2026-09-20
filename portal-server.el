@@ -1,54 +1,54 @@
-;;; anymacs-server.el --- Shared Bun UI host -*- lexical-binding: t; -*-
+;;; portal-server.el --- Shared Bun UI host -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'json)
 (require 'subr-x)
 
-(defgroup anymacs nil "Native views and hosted UIs in Emacs." :group 'applications)
+(defgroup portal nil "Native views and hosted UIs in Emacs." :group 'applications)
 
-(defcustom anymacs-server-program
-  (expand-file-name "build/anymacs-host"
+(defcustom portal-server-program
+  (expand-file-name "build/portal-host"
                     (file-name-directory (or load-file-name buffer-file-name)))
   "Standalone UI host executable, including its Bun runtime."
   :type 'file)
 
-(defcustom anymacs-server-start-timeout 5
+(defcustom portal-server-start-timeout 5
   "Seconds to wait asynchronously for the UI host to become ready."
   :type 'number)
 
-(defvar anymacs-server-ready-hook nil
+(defvar portal-server-ready-hook nil
   "Hook run when the shared UI host is ready, including after a restart.")
-(defvar anymacs-server-stopped-hook nil
+(defvar portal-server-stopped-hook nil
   "Hook run when the shared UI host stops or fails to start.")
-(defvar anymacs--server-process nil "The shared UI host process, if started.")
+(defvar portal--server-process nil "The shared UI host process, if started.")
 
-(defun anymacs-server-url ()
+(defun portal-server-url ()
   "Return the ready UI host's base URL, including its access token, or nil."
-  (when (and anymacs--server-process
-             (process-live-p anymacs--server-process))
-    (process-get anymacs--server-process 'url)))
+  (when (and portal--server-process
+             (process-live-p portal--server-process))
+    (process-get portal--server-process 'url)))
 
-(defun anymacs--server-cancel-timer (process property)
+(defun portal--server-cancel-timer (process property)
   "Cancel PROCESS's timer stored in PROPERTY."
   (when-let* ((timer (process-get process property)))
     (cancel-timer timer)
     (process-put process property nil)))
 
-(defun anymacs--server-report (text)
+(defun portal--server-report (text)
   "Record TEXT in the host log and report it in the echo area."
-  (with-current-buffer (get-buffer-create "*anymacs-server*")
+  (with-current-buffer (get-buffer-create "*portal-server*")
     (goto-char (point-max))
     (insert "\n" text "\n"))
-  (message "%s (see *anymacs-server*)" text))
+  (message "%s (see *portal-server*)" text))
 
-(defun anymacs--server-fail (process reason)
+(defun portal--server-fail (process reason)
   "Terminate PROCESS after a startup failure with REASON."
   (process-put process 'failure reason)
   (when (process-live-p process) (delete-process process)))
 
-(defun anymacs--server-filter (process output)
+(defun portal--server-filter (process output)
   "Read the readiness record from PROCESS's OUTPUT, allowing partial lines."
-  (when (and (eq process anymacs--server-process)
+  (when (and (eq process portal--server-process)
              (not (process-get process 'url)))
     (let ((pending (concat (process-get process 'pending) output)))
       (process-put process 'pending pending)
@@ -68,59 +68,59 @@
                 (error "Invalid UI host readiness message"))
               (process-put process 'pending nil)
               (process-put process 'url (format "http://127.0.0.1:%d/%s" port token))
-              (anymacs--server-cancel-timer process 'startup-timer))))
-        (error (anymacs--server-fail process (error-message-string err))))
-      (when (and (eq process anymacs--server-process)
+              (portal--server-cancel-timer process 'startup-timer))))
+        (error (portal--server-fail process (error-message-string err))))
+      (when (and (eq process portal--server-process)
                  (process-get process 'url))
-        (message "Anymacs UI server ready")
-        (run-hooks 'anymacs-server-ready-hook)))))
+        (message "Portal UI server ready")
+        (run-hooks 'portal-server-ready-hook)))))
 
-(defun anymacs--server-sentinel (process event)
+(defun portal--server-sentinel (process event)
   "Handle PROCESS exiting with EVENT, without restarting it automatically."
   (when (memq (process-status process) '(exit signal failed))
-    (anymacs--server-cancel-timer process 'startup-timer)
-    (anymacs--server-cancel-timer process 'stop-timer)
-    (when (eq process anymacs--server-process)
-      (setq anymacs--server-process nil)
-      (anymacs--server-report
-       (format "Anymacs UI server stopped: %s"
+    (portal--server-cancel-timer process 'startup-timer)
+    (portal--server-cancel-timer process 'stop-timer)
+    (when (eq process portal--server-process)
+      (setq portal--server-process nil)
+      (portal--server-report
+       (format "Portal UI server stopped: %s"
                (or (process-get process 'failure) (string-trim event))))
-      (run-hooks 'anymacs-server-stopped-hook))))
+      (run-hooks 'portal-server-stopped-hook))))
 
 ;;;###autoload
-(defun anymacs-start-server ()
+(defun portal-start-server ()
   "Start the shared UI host asynchronously, or reuse the running process.
 The ready hook runs after the server has bound its HTTP listener."
   (interactive)
-  (unless (and anymacs--server-process (process-live-p anymacs--server-process))
-    (let* ((program (expand-file-name anymacs-server-program))
+  (unless (and portal--server-process (process-live-p portal--server-process))
+    (let* ((program (expand-file-name portal-server-program))
            (default-directory (file-name-directory program)))
       (unless (file-executable-p program)
-        (user-error "Build the Anymacs UI host with ./build.sh: %s" program))
-      (setq anymacs--server-process
-            (make-process :name "anymacs-server" :command (list program)
+        (user-error "Build the Portal UI host with ./build.sh: %s" program))
+      (setq portal--server-process
+            (make-process :name "portal-server" :command (list program)
                           :connection-type 'pipe :coding 'utf-8-unix :noquery t
-                          :stderr (get-buffer-create "*anymacs-server*")
-                          :filter #'anymacs--server-filter
-                          :sentinel #'anymacs--server-sentinel))
-      (let ((process anymacs--server-process))
+                          :stderr (get-buffer-create "*portal-server*")
+                          :filter #'portal--server-filter
+                          :sentinel #'portal--server-sentinel))
+      (let ((process portal--server-process))
         (process-put process 'startup-timer
-                     (run-at-time anymacs-server-start-timeout nil
+                     (run-at-time portal-server-start-timeout nil
                                   (lambda ()
-                                    (when (and (eq process anymacs--server-process)
+                                    (when (and (eq process portal--server-process)
                                                (not (process-get process 'url)))
-                                      (anymacs--server-fail process "Startup timed out"))))))
-      (message "Starting Anymacs UI server…")))
-  anymacs--server-process)
+                                      (portal--server-fail process "Startup timed out"))))))
+      (message "Starting Portal UI server…")))
+  portal--server-process)
 
 ;;;###autoload
-(defun anymacs-stop-server ()
+(defun portal-stop-server ()
   "Stop the UI host, giving it a bounded interval to shut down gracefully."
   (interactive)
-  (when-let* ((process anymacs--server-process))
+  (when-let* ((process portal--server-process))
     ;; Detach first: a late sentinel from this process must not reset a new host.
-    (setq anymacs--server-process nil)
-    (anymacs--server-cancel-timer process 'startup-timer)
+    (setq portal--server-process nil)
+    (portal--server-cancel-timer process 'startup-timer)
     (when (process-live-p process)
       (process-put process 'stop-timer
                    (run-at-time 1.5 nil
@@ -128,21 +128,21 @@ The ready hook runs after the server has bound its HTTP listener."
                                   (when (process-live-p process)
                                     (delete-process process)))))
       (process-send-eof process))
-    (run-hooks 'anymacs-server-stopped-hook)))
+    (run-hooks 'portal-server-stopped-hook)))
 
 ;;;###autoload
-(defun anymacs-restart-server ()
+(defun portal-restart-server ()
   "Restart the shared UI host and notify hosted views when it is ready."
   (interactive)
-  (anymacs-stop-server)
-  (anymacs-start-server))
+  (portal-stop-server)
+  (portal-start-server))
 
-(defun anymacs--server-exit ()
+(defun portal--server-exit ()
   "Stop the host on Emacs exit without waiting for its event loop."
-  (when (and anymacs--server-process (process-live-p anymacs--server-process))
-    (process-send-eof anymacs--server-process)))
+  (when (and portal--server-process (process-live-p portal--server-process))
+    (process-send-eof portal--server-process)))
 
-(add-hook 'kill-emacs-hook #'anymacs--server-exit)
+(add-hook 'kill-emacs-hook #'portal--server-exit)
 
-(provide 'anymacs-server)
-;;; anymacs-server.el ends here
+(provide 'portal-server)
+;;; portal-server.el ends here

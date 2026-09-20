@@ -12,9 +12,9 @@ guard let emacsInclude = ProcessInfo.processInfo.environment["EMACS_INCLUDE"]
 }
 
 let package = Package(
-    name: "Anymacs",
+    name: "Portal",
     platforms: [.macOS(.v13)],
-    products: [.library(name: "anymacs", type: .dynamic, targets: ["Anymacs"])],
+    products: [.library(name: "portal", type: .dynamic, targets: ["Portal"])],
     dependencies: [
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909")
     ],
@@ -22,7 +22,7 @@ let package = Package(
         // The C ABI entry point and header import; all Swift features share one target.
         .target(name: "CEmacs", path: "Emacs",
                 cSettings: [.unsafeFlags(["-I", emacsInclude, "-Wall", "-Wextra", "-Werror"])]),
-        .target(name: "Anymacs", dependencies: [
+        .target(name: "Portal", dependencies: [
             "CEmacs", .product(name: "GhosttyTerminal", package: "libghostty-spm")
         ], path: ".", exclude: ["Emacs", "Info.plist"],
            sources: ["Module.swift", "NativeHost.swift", "WebView.swift", "Terminal.swift"],

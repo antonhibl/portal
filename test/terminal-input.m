@@ -73,15 +73,15 @@ int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
     emacs_value args[] = {
-        env->intern(env, "anymacs-test-native-key"),
+        env->intern(env, "portal-test-native-key"),
         env->make_function(env, 3, 4, key, "Send an AppKit key event: CODE FLAGS TEXT &optional WINDOWLESS.", NULL)
     };
     env->funcall(env, env->intern(env, "fset"), 2, args);
-    args[0] = env->intern(env, "anymacs-test-native-post-key");
+    args[0] = env->intern(env, "portal-test-native-post-key");
     args[1] = env->make_function(env, 3, 4, key,
         "Queue an AppKit key event: CODE FLAGS TEXT &optional WINDOWLESS.", (void *)1);
     env->funcall(env, env->intern(env, "fset"), 2, args);
-    args[0] = env->intern(env, "anymacs-test-native-focus-web");
+    args[0] = env->intern(env, "portal-test-native-focus-web");
     args[1] = env->make_function(env, 0, 0, focusWeb, "Focus the visible native webview.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;

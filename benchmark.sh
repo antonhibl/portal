@@ -50,7 +50,7 @@ parser = argparse.ArgumentParser(
     epilog="FPS here means frames submitted and parser-acknowledged, NOT displayed FPS. "
            "Use --trace with --mode frames for a macOS Instruments display trace. "
            "See docs/terminal-benchmark.md. Ctrl-C restores the terminal.")
-parser.add_argument("--label", default="terminal", help="e.g. ghostty, anymacs, ghostel")
+parser.add_argument("--label", default="terminal", help="e.g. ghostty, portal, ghostel")
 parser.add_argument("--notes", default="", help="record font, display refresh rate, power mode or Emacs load")
 parser.add_argument("--mode", choices=("all", "throughput", "latency", "frames"), default="all")
 parser.add_argument("--runs", type=bounded_number(int, 1, 30), default=3)

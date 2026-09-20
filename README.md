@@ -1,4 +1,4 @@
-# Anymacs: native views in Emacs
+# Portal: native views in Emacs
 
 Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
 one Swift dynamic module. A bundled Bun server hosts Hello World and local
@@ -21,56 +21,56 @@ is needed. The versions and binary checksum are pinned by
 
 ```sh
 ./build.sh
-emacs -Q -l "$PWD/anymacs.el" \
-  --eval '(anymacs-hello)'
+emacs -Q -l "$PWD/portal.el" \
+  --eval '(portal-hello)'
 ```
 
-The single build command produces `build/anymacs.bundle` and
-`build/anymacs-host`. The bundle contains the one native Emacs module at
-`Contents/MacOS/anymacs.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
+The single build command produces `build/portal.bundle` and
+`build/portal-host`. The bundle contains the one native Emacs module at
+`Contents/MacOS/portal.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
 or HTML changes. Set `-DBUN=/absolute/path/to/bun` through `./build.sh` or CMake
 if Bun is not discoverable. Both binaries are built for the current Mac.
 
-Or load `anymacs.el` in graphical Emacs and run `M-x anymacs-hello`.
-Run `M-x anymacs-preview-markdown` to preview the current Markdown file or
+Or load `portal.el` in graphical Emacs and run `M-x portal-hello`.
+Run `M-x portal-preview-markdown` to preview the current Markdown file or
 select another local file.
-To distribute this layout, include the four `anymacs*.el` files at the package root,
-`build/anymacs-host`, and the complete `build/anymacs.bundle`;
+To distribute this layout, include the four `portal*.el` files at the package root,
+`build/portal-host`, and the complete `build/portal.bundle`;
 the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
 and shell integration resources. Restart Emacs when upgrading from the former
 separate web and terminal modules, or after rebuilding a loaded native module.
 
-Run `M-x anymacs-preview-html` in a `.html` or `.htm` file buffer to open its
+Run `M-x portal-preview-html` in a `.html` or `.htm` file buffer to open its
 saved contents in the embedded webview, including relative scripts, styles,
 and images from its directory. From other buffers, it prompts for a local
 path or URL. Relative paths use the current buffer's `default-directory`;
-`C-u M-x anymacs-preview-html` always prompts. Unsaved edits are not included.
+`C-u M-x portal-preview-html` always prompts. Unsaved edits are not included.
 
-`M-x anymacs-open-url` still opens an arbitrary absolute URL in `*anymacs-web*`.
+`M-x portal-open-url` still opens an arbitrary absolute URL in `*portal-web*`.
 Both commands accept HTTP, HTTPS, `file:`, `data:`, and `about:` URLs.
 To open a local HTML file programmatically:
 
 ```elisp
-(anymacs-preview-html "/absolute/path/index.html")
+(portal-preview-html "/absolute/path/index.html")
 ```
 
 Click inside a page to interact with it. Press Escape or `C-g` to return keyboard
-focus to Emacs, then `q` or `M-x anymacs-hide` to remove the views. The mode line
-and minibuffer remain available. Run `anymacs-open-url` again to open another URL.
-`M-x anymacs-show` still opens the green-square demo in `*anymacs-green*`.
+focus to Emacs, then `q` or `M-x portal-hide` to remove the views. The mode line
+and minibuffer remain available. Run `portal-open-url` again to open another URL.
+`M-x portal-show` still opens the green-square demo in `*portal-green*`.
 
 ## Native Ghostty terminal
 
-To compare terminal performance, run `./benchmark.sh --label anymacs` inside the
+To compare terminal performance, run `./benchmark.sh --label portal` inside the
 embedded shell and `./benchmark.sh --label ghostty` in standalone Ghostty.
 See [benchmark methodology and FPS research](docs/terminal-benchmark.md) for
 latency, frame timing, optional Instruments captures and interpretation limits.
 
-After `./build.sh`, load `anymacs.el` and run `M-x anymacs-terminal`, or launch a
+After `./build.sh`, load `portal.el` and run `M-x portal-terminal`, or launch a
 fresh graphical Emacs:
 
 ```sh
-emacs -Q -l "$PWD/anymacs.el" --eval '(anymacs-terminal)'
+emacs -Q -l "$PWD/portal.el" --eval '(portal-terminal)'
 ```
 
 This embeds a real Ghostty Metal terminal surface inside the pane. Ghostty owns
@@ -90,8 +90,8 @@ convert output to Emacs text or use WebKit or the Bun server.
   Scroll with the trackpad or mouse wheel. Non-Latin IME composition has not
   been manually verified.
 - Hidden buffers keep their shells running. Killing a terminal buffer, running
-  `anymacs-terminal-close` in it, or deleting its frame ends that shell.
-  `anymacs-terminal-close-all` ends all embedded shells.
+  `portal-terminal-close` in it, or deleting its frame ends that shell.
+  `portal-terminal-close-all` ends all embedded shells.
 
 Defaults follow [tmux's key bindings](https://man.openbsd.org/tmux#DEFAULT_KEY_BINDINGS)
 where an Emacs counterpart exists. Every row follows the prefix (`C-b` by default):
@@ -118,20 +118,20 @@ pane layouts, or tmux copy mode. Each terminal belongs to its creating frame and
 has one native view; displaying the same buffer twice moves that view to the
 selected pane. Different terminal buffers can display and run simultaneously.
 
-Configure in Lisp after loading `anymacs.el` (changes apply to running terminals):
+Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
 ```elisp
-(setq anymacs-terminal-prefix "C-a") ; default: "C-b"
-(keymap-set anymacs-terminal-prefix-map "v" #'anymacs-terminal-split-right)
-(keymap-set anymacs-terminal-prefix-map "b" #'switch-to-buffer)
-(keymap-set anymacs-terminal-prefix-map "e" #'anymacs-terminal-unfocus)
+(setq portal-terminal-prefix "C-a") ; default: "C-b"
+(keymap-set portal-terminal-prefix-map "v" #'portal-terminal-split-right)
+(keymap-set portal-terminal-prefix-map "b" #'switch-to-buffer)
+(keymap-set portal-terminal-prefix-map "e" #'portal-terminal-unfocus)
 ```
 
 The prefix accepts one modified ASCII key in `kbd` notation; Meta means Option
 and Super means Command. Customize the map or add nested prefix maps with normal
 Emacs keymap functions. Commands finish their minibuffer interaction before focus
 returns to the selected terminal. Switching to an ordinary buffer keeps Emacs in
-control. A custom command can call `anymacs-terminal-unfocus` to stay in Emacs even
+control. A custom command can call `portal-terminal-unfocus` to stay in Emacs even
 when a terminal is selected. Errors also leave focus in Emacs.
 
 Native code catches the leader and notifies Emacs through an event pipe. It holds
@@ -148,8 +148,8 @@ operate on the terminal. The native view still shares Emacs's main thread for
 input and presentation; this is not a guarantee of latency parity during Emacs GC
 or long-running Lisp.
 
-`(anymacs--terminal-state)` (optionally with a native session ID) reports the actual native surface, grid, bounds, focus
-and title. `(anymacs--terminal-text)` selects all native scrollback and returns its
+`(portal--terminal-state)` (optionally with a native session ID) reports the actual native surface, grid, bounds, focus
+and title. `(portal--terminal-text)` selects all native scrollback and returns its
 text for inspection; it leaves that selection active. Neither is polled during
 normal use. Restart Emacs after rebuilding a module it has already loaded.
 
@@ -165,10 +165,10 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
   -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
   -framework AppKit -framework WebKit \
   -o build/test-terminal-input.dylib
-emacs -Q --module-assertions -l "$PWD/anymacs.el" \
+emacs -Q --module-assertions -l "$PWD/portal.el" \
   --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
-  -l "$PWD/test/anymacs-terminal-tests.el" \
-  --eval '(ert-run-tests-interactively "^anymacs-terminal-")'
+  -l "$PWD/test/portal-terminal-tests.el" \
+  --eval '(ert-run-tests-interactively "^portal-terminal-")'
 ```
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,
@@ -226,7 +226,7 @@ does not hot-reload that library.
 ## Bun UI host
 
 Loading the Lisp package or native module does not start a server. The first
-`anymacs-hello` or `anymacs-preview-markdown` starts one shared child process
+`portal-hello` or `portal-preview-markdown` starts one shared child process
 asynchronously, waits for its readiness message, then loads the requested page
 in the native webview. Opening external
 URLs does not require the server.
@@ -237,30 +237,30 @@ URLs does not require the server.
   pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello` or
   `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
   validates the token and Host header; responses suppress outgoing referrers.
-- Closing or hiding a view keeps the server running. `M-x anymacs-start-server`
-  can prewarm it explicitly; `M-x anymacs-stop-server` stops it, and
-  `M-x anymacs-restart-server` starts a replacement and reloads active hosted views.
-- Startup is bounded by `anymacs-server-start-timeout` (five seconds by default).
-  Failures leave diagnostics in `*anymacs-server*`; run `anymacs-hello` to retry.
+- Closing or hiding a view keeps the server running. `M-x portal-start-server`
+  can prewarm it explicitly; `M-x portal-stop-server` stops it, and
+  `M-x portal-restart-server` starts a replacement and reloads active hosted views.
+- Startup is bounded by `portal-server-start-timeout` (five seconds by default).
+  Failures leave diagnostics in `*portal-server*`; run `portal-hello` to retry.
   There is no automatic restart loop.
 - Emacs supervises the child through a pipe. stdout carries a versioned JSON
   readiness line; stderr carries diagnostics. Closing stdin requests shutdown,
   including when Emacs exits unexpectedly. Normal shutdown also handles OS
   termination signals and has a forced-termination fallback.
-- `anymacs-server-program` selects the standalone executable. At runtime it is
+- `portal-server-program` selects the standalone executable. At runtime it is
   launched directly, without a shell or any lookup of Bun on PATH. Runtime
   loading of `.env` and `bunfig.toml` is disabled in the compiled binary.
 
 Control protocol version 2 announces readiness, port, and access token; it is
 not yet a general UI RPC API. Rebuilding publishes the host executable atomically. An already
-running host keeps its old code until `anymacs-restart-server` is called.
+running host keeps its old code until `portal-restart-server` is called.
 
 ## Markdown previews
 
-Run `M-x anymacs-preview-markdown` in a Markdown file buffer to preview it
+Run `M-x portal-preview-markdown` in a Markdown file buffer to preview it
 directly. Markdown modes and common file extensions are recognised. From other
 buffers, the command prompts for a saved local file. Use `C-u M-x
-anymacs-preview-markdown` to choose another file explicitly.
+portal-preview-markdown` to choose another file explicitly.
 The Bun server reads the file, renders
 it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
 and returns a complete HTML page with embedded light/dark CSS. Rendering happens
@@ -268,7 +268,7 @@ in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
 anchors are supported. Press Escape or `C-g` to return focus to Emacs, then
-`g` (`anymacs-refresh`) to reread the file from disk. Refresh also restarts a
+`g` (`portal-refresh`) to reread the file from disk. Refresh also restarts a
 stopped host; the selected Markdown file is retained across host restarts.
 Missing or unreadable files produce an error page.
 
@@ -286,19 +286,19 @@ The existing native host accepts `WKWebView` directly. Remote pages use
 local pages use `loadFileURL` with read access to the containing directory so
 relative scripts, styles, and images can load. JavaScript is enabled by default.
 
-- Each pane displaying `*anymacs-web*` gets an independent webview starting at the
+- Each pane displaying `*portal-web*` gets an independent webview starting at the
   requested URL. Cookies use WebKit's default data store, but navigation, DOM,
   scroll position, and form state are independent between panes.
 - Resizing a pane preserves its webview. Hiding or closing a pane releases its
   webview; showing the buffer again loads the originally requested URL anew.
-- Opening another URL replaces the current Anymacs content. There is one active
+- Opening another URL replaces the current Portal content. There is one active
   native buffer and one host frame, as in the original demo.
 - Escape and `C-g` are reserved for returning to Emacs while a page has focus.
   Clicking a webview does not change Emacs's selected pane; use Emacs window
   navigation after returning focus.
 - This is a URL viewer, without browser chrome, history commands, downloads,
   popup windows, or JavaScript dialog UI. Failed loads can be inspected through
-  `:error` in `(anymacs--native-views)`.
+  `:error` in `(portal--native-views)`.
 
 A shared, persistent browser session mirrored across splits would require a
 separate design; this first version shares the requested URL only.
@@ -306,8 +306,8 @@ separate design; this first version shares the requested URL only.
 ## Green demo behaviour
 
 Buffers hold content; Emacs windows are the panes displaying that content and
-have coordinates. Anymacs creates one native view per pane showing the green
-buffer within the frame where `anymacs-show` was invoked.
+have coordinates. Portal creates one native view per pane showing the green
+buffer within the frame where `portal-show` was invoked.
 
 - Splitting shows a green square in both panes. Each square stays 32×32 points
   and centered in its pane's text area as the panes or macOS window resize.
@@ -315,9 +315,9 @@ buffer within the frame where `anymacs-show` was invoked.
   or closing it, removes only that pane's native view.
 - Switching the buffer out of every pane releases all views while retaining the
   shared content. Showing the buffer again creates the required views automatically.
-- `q`, `anymacs-hide`, killing the buffer, changing its major mode, or deleting the
+- `q`, `portal-hide`, killing the buffer, changing its major mode, or deleting the
   host frame releases all views and shared content, and stops tracking.
-- Failed attachment or layout updates remove all views. Run `anymacs-show` to retry.
+- Failed attachment or layout updates remove all views. Run `portal-show` to retry.
 
 Moving the whole macOS window needs no extra positioning code because the native
 views are already its children.
@@ -330,10 +330,10 @@ with text beside the remaining view.
 
 | File | Responsibility |
 | --- | --- |
-| `anymacs-native.el` | Shared module loading and native frame identification |
-| `anymacs.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
-| `anymacs-terminal.el` | Terminal buffers, configurable prefix commands, geometry, and lifecycle |
-| `anymacs-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
+| `portal-native.el` | Shared module loading and native frame identification |
+| `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
+| `portal-terminal.el` | Terminal buffers, configurable prefix commands, geometry, and lifecycle |
+| `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
@@ -372,7 +372,7 @@ Initial attachment briefly assigns the requested frame a unique title so Swift
 can find its native window, then immediately restores the title. The native host
 stays bound until cleanup. This avoids relying on asynchronous window focus.
 
-For diagnostics, `(anymacs--native-views)` reports the actual AppKit views as
+For diagnostics, `(portal--native-views)` reports the actual AppKit views as
 plists containing `:visible`, `:edges`, the native `:window` number, and WebKit's
 `:url`, `:title`, `:loading`, and `:error` state. Native navigation callbacks only
 update Swift state; they never call back into Lisp.
@@ -406,12 +406,12 @@ graphical Emacs. Batch Emacs has no native window and
 cannot exercise these behaviours:
 
 ```sh
-emacs -Q --module-assertions -l "$PWD/anymacs.el" \
+emacs -Q --module-assertions -l "$PWD/portal.el" \
   --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
-  -l "$PWD/test/anymacs-tests.el" \
-  -l "$PWD/test/anymacs-terminal-tests.el" \
-  -l "$PWD/test/anymacs-integration-tests.el" \
-  --eval '(ert-run-tests-interactively "^anymacs-")'
+  -l "$PWD/test/portal-tests.el" \
+  -l "$PWD/test/portal-terminal-tests.el" \
+  -l "$PWD/test/portal-integration-tests.el" \
+  --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
 The Lisp tests use only Emacs's built-in libraries. A standalone AppKit check
@@ -443,7 +443,7 @@ The web/demo feature supports one active buffer and any number of pane views
 within one host frame. Terminals support multiple independent buffers and frames,
 with each terminal bound to its creating frame. Automatic migration of a terminal
 to another frame is not implemented.
-To choose a different host frame, invoke `anymacs-open-url` (or `anymacs-show`
+To choose a different host frame, invoke `portal-open-url` (or `portal-show`
 for the green demo) from that frame again.
 
 The buffer remains an ordinary Emacs buffer. This does not add native widgets to

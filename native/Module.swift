@@ -107,7 +107,7 @@ private let setLayout: emacs_function = { env, _, args, _ in
         }
         let edges = values[(index + 1)..<(index + 5)].map { CGFloat($0) }
         guard edges[2] > edges[0], edges[3] > edges[1] else {
-            return fail(env, "Anymacs needs rectangles with positive width and height")
+            return fail(env, "Portal needs rectangles with positive width and height")
         }
         layout.append(PaneLayout(id: id, rectangle: CGRect(
             x: edges[0], y: edges[1],
@@ -275,30 +275,30 @@ private let sendPrefix: emacs_function = { env, _, args, _ in
     } convert: { boolean(env, $0) }
 }
 
-@_cdecl("anymacs_swift_init")
-public func initializeAnymacs(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
+@_cdecl("portal_swift_init")
+public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
     let webFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("anymacs--bind", 1, 1, bind, "Bind shared native content to the frame identified by TITLE."),
-        ("anymacs--load-url", 1, 1, loadURL, "Load URL in all web panes; new panes start at this URL."),
-        ("anymacs--set-layout", 1, 1, setLayout,
+        ("portal--bind", 1, 1, bind, "Bind shared native content to the frame identified by TITLE."),
+        ("portal--load-url", 1, 1, loadURL, "Load URL in all web panes; new panes start at this URL."),
+        ("portal--set-layout", 1, 1, setLayout,
          "Apply a vector of ID LEFT TOP RIGHT BOTTOM entries; [] removes all pane views."),
-        ("anymacs--destroy", 0, 0, destroy, "Release web/demo views and content; terminal sessions are unaffected."),
-        ("anymacs--native-views", 0, 0, inspect,
+        ("portal--destroy", 0, 0, destroy, "Release web/demo views and content; terminal sessions are unaffected."),
+        ("portal--native-views", 0, 0, inspect,
          "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
     ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("anymacs--terminal-open", 2, 2, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY."),
-        ("anymacs--terminal-layout", 1, 2, layoutTerminal, "Set native terminal EDGES, or [] to hide without ending the session."),
-        ("anymacs--terminal-focus", 0, 1, focusTerminal, "Give the visible Ghostty view keyboard focus."),
-        ("anymacs--terminal-unfocus", 0, 1, unfocusTerminal, "Return native keyboard focus to Emacs without ending the session."),
-        ("anymacs--terminal-close", 0, 1, closeTerminal, "Destroy the terminal view and end its session."),
-        ("anymacs--terminal-input", 2, 3, inputTerminal, "Paste TEXT into the terminal; press Enter if ENTER is non-nil."),
-        ("anymacs--terminal-text", 0, 1, snapshotTerminal, "Select all terminal scrollback and return its text. Leaves the native selection active."),
-        ("anymacs--terminal-state", 0, 1, inspectTerminal, "Inspect the native terminal's actual surface, focus and grid."),
-        ("anymacs--terminal-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
-        ("anymacs--terminal-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
-        ("anymacs--terminal-ack", 2, 2, acknowledgePrefix, "Acknowledge a prefix for ID, replaying held events if REPLAY."),
-        ("anymacs--terminal-send-prefix", 1, 1, sendPrefix, "Send the captured prefix key to terminal ID using native key events.")
+        ("portal--terminal-open", 2, 2, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY."),
+        ("portal--terminal-layout", 1, 2, layoutTerminal, "Set native terminal EDGES, or [] to hide without ending the session."),
+        ("portal--terminal-focus", 0, 1, focusTerminal, "Give the visible Ghostty view keyboard focus."),
+        ("portal--terminal-unfocus", 0, 1, unfocusTerminal, "Return native keyboard focus to Emacs without ending the session."),
+        ("portal--terminal-close", 0, 1, closeTerminal, "Destroy the terminal view and end its session."),
+        ("portal--terminal-input", 2, 3, inputTerminal, "Paste TEXT into the terminal; press Enter if ENTER is non-nil."),
+        ("portal--terminal-text", 0, 1, snapshotTerminal, "Select all terminal scrollback and return its text. Leaves the native selection active."),
+        ("portal--terminal-state", 0, 1, inspectTerminal, "Inspect the native terminal's actual surface, focus and grid."),
+        ("portal--terminal-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
+        ("portal--terminal-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
+        ("portal--terminal-ack", 2, 2, acknowledgePrefix, "Acknowledge a prefix for ID, replaying held events if REPLAY."),
+        ("portal--terminal-send-prefix", 1, 1, sendPrefix, "Send the captured prefix key to terminal ID using native key events.")
     ]
     for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions {
         let function = doc.withCString { env.pointee.make_function(env, minimum, maximum, callback, $0, nil) }
@@ -306,7 +306,7 @@ public func initializeAnymacs(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         _ = env.pointee.funcall(env, symbol(env, "fset"), args.count, &args)
         if env.pointee.non_local_exit_check(env) != emacs_funcall_exit_return { return 1 }
     }
-    var feature = [symbol(env, "anymacs-native-module")]
+    var feature = [symbol(env, "portal-native-module")]
     _ = env.pointee.funcall(env, symbol(env, "provide"), 1, &feature)
     return env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return ? 0 : 1
 }

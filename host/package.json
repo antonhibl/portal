@@ -1,5 +1,5 @@
 {
-  "name": "anymacs-host",
+  "name": "portal-host",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,57 +1,57 @@
-;;; anymacs.el --- Native web views and terminals for macOS -*- lexical-binding: t; -*-
+;;; portal.el --- Native web views and terminals for macOS -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'url-util)
 (require 'browse-url)
-(require 'anymacs-terminal
-         (expand-file-name "anymacs-terminal"
+(require 'portal-terminal
+         (expand-file-name "portal-terminal"
                            (file-name-directory
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
-(require 'anymacs-server
-         (expand-file-name "anymacs-server"
+(require 'portal-server
+         (expand-file-name "portal-server"
                            (file-name-directory
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
-(declare-function anymacs--load-url "anymacs" (url))
-(declare-function anymacs--bind "anymacs" (title))
-(declare-function anymacs--set-layout "anymacs" (layout))
-(declare-function anymacs--destroy "anymacs" ())
-(declare-function anymacs--native-views "anymacs" ())
+(declare-function portal--load-url "portal" (url))
+(declare-function portal--bind "portal" (title))
+(declare-function portal--set-layout "portal" (layout))
+(declare-function portal--destroy "portal" ())
+(declare-function portal--native-views "portal" ())
 
 ;; One buffer's content, with a native presentation in each of its host panes.
-(defvar anymacs--buffer nil "Buffer owning the shared native content.")
-(defvar anymacs--frame nil "Frame hosting the native presentations.")
-(defvar anymacs--panes nil "Alist mapping displayed Emacs windows to native IDs.")
-(defvar anymacs--next-id 0 "Last allocated native pane ID in this session.")
-(defvar anymacs--hosted-path nil "Request path for the active hosted view, or nil.")
-(defvar anymacs--geometry nil
+(defvar portal--buffer nil "Buffer owning the shared native content.")
+(defvar portal--frame nil "Frame hosting the native presentations.")
+(defvar portal--panes nil "Alist mapping displayed Emacs windows to native IDs.")
+(defvar portal--next-id 0 "Last allocated native pane ID in this session.")
+(defvar portal--hosted-path nil "Request path for the active hosted view, or nil.")
+(defvar portal--geometry nil
   "Last sent geometry: frame height paired with the native layout vector.
 Nil means no layout has been sent yet.")
 
-(define-derived-mode anymacs-mode special-mode "Anymacs"
-  "Major mode for Anymacs native views."
+(define-derived-mode portal-mode special-mode "Portal"
+  "Major mode for Portal native views."
   (setq-local cursor-type nil))
 
-(keymap-set anymacs-mode-map "q" #'anymacs-hide)
-(keymap-set anymacs-mode-map "g" #'anymacs-refresh)
+(keymap-set portal-mode-map "q" #'portal-hide)
+(keymap-set portal-mode-map "g" #'portal-refresh)
 
 ;; Host binding and presentation geometry.
-(defun anymacs--bind-frame (frame)
+(defun portal--bind-frame (frame)
   "Identify FRAME to AppKit without depending on asynchronous focus changes."
-  (anymacs-native--call-with-frame frame #'anymacs--bind))
+  (portal-native--call-with-frame frame #'portal--bind))
 
-(defun anymacs--update-layout ()
+(defun portal--update-layout ()
   "Reconcile all panes showing the buffer with their native presentations."
   (let* ((panes
           (mapcar (lambda (window)
-                    (or (assq window anymacs--panes)
-                        (cons window (setq anymacs--next-id
-                                           (1+ anymacs--next-id)))))
-                  (get-buffer-window-list anymacs--buffer nil anymacs--frame)))
+                    (or (assq window portal--panes)
+                        (cons window (setq portal--next-id
+                                           (1+ portal--next-id)))))
+                  (get-buffer-window-list portal--buffer nil portal--frame)))
          ;; Window enumeration can change order with focus; native IDs do not.
          (panes (sort panes (lambda (a b) (< (cdr a) (cdr b)))))
          (layout (vconcat
@@ -61,59 +61,59 @@ Nil means no layout has been sent yet.")
                                          (window-inside-pixel-edges (car pane))))
                                  panes))))
          ;; An unflipped AppKit host also needs the frame's height.
-         (geometry (cons (frame-pixel-height anymacs--frame) layout)))
-    (unless (equal geometry anymacs--geometry)
+         (geometry (cons (frame-pixel-height portal--frame) layout)))
+    (unless (equal geometry portal--geometry)
       ;; Send the complete layout, including an empty one when hidden.
-      (anymacs--set-layout layout)
-      (setq anymacs--geometry geometry))
-    (setq anymacs--panes panes)))
+      (portal--set-layout layout)
+      (setq portal--geometry geometry))
+    (setq portal--panes panes)))
 
-(defun anymacs--sync (frame)
+(defun portal--sync (frame)
   "Update native presentations after FRAME's window layout changes."
-  (when (and anymacs--frame (eq frame anymacs--frame))
+  (when (and portal--frame (eq frame portal--frame))
     (condition-case err
-        (if (and (frame-live-p frame) (buffer-live-p anymacs--buffer))
-            (anymacs--update-layout)
-          (anymacs-hide))
+        (if (and (frame-live-p frame) (buffer-live-p portal--buffer))
+            (portal--update-layout)
+          (portal-hide))
       (error
        ;; A failing redisplay callback must not leave a stale overlay behind.
-       (anymacs-hide)
+       (portal-hide)
        (signal (car err) (cdr err))))))
 
-(defun anymacs--frame-deleted (frame)
+(defun portal--frame-deleted (frame)
   "Stop tracking when the host FRAME is deleted."
-  (when (eq frame anymacs--frame)
-    (anymacs-hide)))
+  (when (eq frame portal--frame)
+    (portal-hide)))
 
 ;; Public lifecycle.  All hook registration is owned by these two commands.
 ;;;###autoload
-(defun anymacs-show ()
-  "Display Swift-drawn green rectangles in *anymacs-green*.
+(defun portal-show ()
+  "Display Swift-drawn green rectangles in *portal-green*.
 Each window showing the buffer in the current frame gets its own native view.
 All views share the buffer's native content."
   (interactive)
-  (anymacs--show))
+  (portal--show))
 
 ;;;###autoload
-(defun anymacs-open-url (url)
-  "Open URL in a native WKWebView in *anymacs-web*.
+(defun portal-open-url (url)
+  "Open URL in a native WKWebView in *portal-web*.
 Each pane gets an independent webview starting at URL.  Click the page to
 interact; Escape or C-g returns keyboard focus to Emacs.  HTTP(S), file,
-data and about URLs are supported.  This replaces the active Anymacs content."
+data and about URLs are supported.  This replaces the active Portal content."
   (interactive (list (read-string "Open URL: " "https://")))
   (unless (and (stringp url)
                (string-match-p "\\`\\(?:https?://[^/[:space:]]+\\|file:///\\|data:\\|about:\\)" url))
     (user-error "Enter an absolute http, https, file, data or about URL"))
-  (anymacs--show url))
+  (portal--show url))
 
 ;;;###autoload
-(defun anymacs-preview-html (file-or-url)
+(defun portal-preview-html (file-or-url)
   "Open local HTML FILE-OR-URL or a URL in the embedded webview.
 Use the current buffer's file when its extension is .html or .htm;
 otherwise prompt for a path or URL.  With a prefix argument, always prompt.
 Local paths are relative to `default-directory'.  Only saved contents are
 shown; unsaved edits are not included.  Relative assets can load from the
-file's containing directory.  URLs supported by `anymacs-open-url' are accepted."
+file's containing directory.  URLs supported by `portal-open-url' are accepted."
   (interactive
    (list
     (if (and (not current-prefix-arg) buffer-file-name
@@ -124,22 +124,22 @@ file's containing directory.  URLs supported by `anymacs-open-url' are accepted.
   (unless (and (stringp file-or-url) (not (string-empty-p file-or-url)))
     (user-error "Enter a local HTML path or URL"))
   (if (string-match-p "\\`[[:alpha:]][[:alnum:]+.-]*:" file-or-url)
-      (anymacs-open-url file-or-url)
+      (portal-open-url file-or-url)
     (let ((path (expand-file-name file-or-url)))
       (when (file-remote-p path)
         (user-error "Choose a local HTML file or an HTTP(S) URL"))
       (unless (and (file-regular-p path) (file-readable-p path))
         (user-error "Choose a readable regular file: %s" path))
-      (anymacs-open-url (browse-url-file-url path)))))
+      (portal-open-url (browse-url-file-url path)))))
 
 ;;;###autoload
-(defun anymacs-hello ()
+(defun portal-hello ()
   "Open Hello World, starting the bundled UI host on first use."
   (interactive)
-  (anymacs--open-hosted "/hello"))
+  (portal--open-hosted "/hello"))
 
 ;;;###autoload
-(defun anymacs-preview-markdown (file)
+(defun portal-preview-markdown (file)
   "Preview the saved contents of local Markdown FILE using the Bun host.
 Use the current buffer's file when it has a Markdown mode or extension;
 otherwise prompt for FILE.  With a prefix argument, always prompt.
@@ -159,97 +159,97 @@ not included."
       (user-error "Choose a local Markdown file"))
     (unless (and (file-regular-p path) (file-readable-p path))
       (user-error "Choose a readable regular file: %s" path))
-    (anymacs--open-hosted
+    (portal--open-hosted
      (concat "/markdown?path=" (url-hexify-string path)))))
 
 ;;;###autoload
-(defun anymacs-refresh ()
+(defun portal-refresh ()
   "Reload the active hosted page, starting its server again if needed."
   (interactive)
-  (unless anymacs--hosted-path
-    (user-error "No hosted Anymacs page to refresh"))
-  (anymacs--ensure-host))
+  (unless portal--hosted-path
+    (user-error "No hosted Portal page to refresh"))
+  (portal--ensure-host))
 
-(defun anymacs--open-hosted (path)
+(defun portal--open-hosted (path)
   "Display hosted PATH, starting the shared server if necessary."
-  (anymacs--show "about:blank")
-  (setq anymacs--hosted-path path)
-  (anymacs--ensure-host))
+  (portal--show "about:blank")
+  (setq portal--hosted-path path)
+  (portal--ensure-host))
 
-(defun anymacs--ensure-host ()
+(defun portal--ensure-host ()
   "Start the host if necessary and load the current hosted page when ready."
   (condition-case err
       (progn
-        (anymacs-start-server)
-        (when (anymacs-server-url) (anymacs--host-ready)))
+        (portal-start-server)
+        (when (portal-server-url) (portal--host-ready)))
     (error
-     (anymacs--host-stopped)
+     (portal--host-stopped)
      (signal (car err) (cdr err)))))
 
-(defun anymacs--host-ready ()
+(defun portal--host-ready ()
   "Navigate the current hosted view when the server becomes ready."
-  (when (and anymacs--hosted-path (buffer-live-p anymacs--buffer)
-             (frame-live-p anymacs--frame) (anymacs-server-url))
-    (anymacs--load-url (concat (anymacs-server-url) anymacs--hosted-path))))
+  (when (and portal--hosted-path (buffer-live-p portal--buffer)
+             (frame-live-p portal--frame) (portal-server-url))
+    (portal--load-url (concat (portal-server-url) portal--hosted-path))))
 
-(defun anymacs--host-stopped ()
+(defun portal--host-stopped ()
   "Show a retry message if the currently displayed UI loses its host."
-  (when (and anymacs--hosted-path (buffer-live-p anymacs--buffer)
-             (frame-live-p anymacs--frame))
-    (anymacs--load-url
+  (when (and portal--hosted-path (buffer-live-p portal--buffer)
+             (frame-live-p portal--frame))
+    (portal--load-url
      (concat "data:text/html;charset=utf-8,"
-             "<title>Anymacs server stopped</title><h1>UI server stopped</h1>"
-             "<p>Press g or run M-x anymacs-refresh to retry. See *anymacs-server* for details.</p>"))))
+             "<title>Portal server stopped</title><h1>UI server stopped</h1>"
+             "<p>Press g or run M-x portal-refresh to retry. See *portal-server* for details.</p>"))))
 
-(add-hook 'anymacs-server-ready-hook #'anymacs--host-ready)
-(add-hook 'anymacs-server-stopped-hook #'anymacs--host-stopped)
+(add-hook 'portal-server-ready-hook #'portal--host-ready)
+(add-hook 'portal-server-stopped-hook #'portal--host-stopped)
 
-(defun anymacs--show (&optional url)
+(defun portal--show (&optional url)
   "Display native content, loading URL when non-nil."
-  (anymacs-native--load)
-  (anymacs-hide)
+  (portal-native--load)
+  (portal-hide)
   (let (ready)
     (unwind-protect
         (progn
-          (switch-to-buffer (get-buffer-create (if url "*anymacs-web*" "*anymacs-green*")))
-          (unless (derived-mode-p 'anymacs-mode)
-            (anymacs-mode))
+          (switch-to-buffer (get-buffer-create (if url "*portal-web*" "*portal-green*")))
+          (unless (derived-mode-p 'portal-mode)
+            (portal-mode))
           (redisplay t)
-          (setq anymacs--buffer (current-buffer)
-                anymacs--frame (selected-frame))
-          (anymacs--bind-frame anymacs--frame)
-          (when url (anymacs--load-url url))
+          (setq portal--buffer (current-buffer)
+                portal--frame (selected-frame))
+          (portal--bind-frame portal--frame)
+          (when url (portal--load-url url))
           ;; Attach before registering redisplay callbacks, so errors reach
           ;; the caller instead of being swallowed by redisplay's safe_call.
-          (anymacs--sync anymacs--frame)
-          (add-hook 'kill-buffer-hook #'anymacs-hide nil t)
-          (add-hook 'change-major-mode-hook #'anymacs-hide nil t)
-          (add-hook 'window-state-change-functions #'anymacs--sync)
-          (add-hook 'delete-frame-functions #'anymacs--frame-deleted)
+          (portal--sync portal--frame)
+          (add-hook 'kill-buffer-hook #'portal-hide nil t)
+          (add-hook 'change-major-mode-hook #'portal-hide nil t)
+          (add-hook 'window-state-change-functions #'portal--sync)
+          (add-hook 'delete-frame-functions #'portal--frame-deleted)
           (setq ready t)
           (message (if url
                        "Webview opened. Escape/C-g returns to Emacs; q hides the view."
-                     "Swift native views attached. Press q or M-x anymacs-hide to remove them.")))
-      (unless ready (anymacs-hide)))))
+                     "Swift native views attached. Press q or M-x portal-hide to remove them.")))
+      (unless ready (portal-hide)))))
 
 ;;;###autoload
-(defun anymacs-hide ()
+(defun portal-hide ()
   "Release web/demo views and content; terminal sessions are unaffected."
   (interactive)
-  (remove-hook 'window-state-change-functions #'anymacs--sync)
-  (remove-hook 'delete-frame-functions #'anymacs--frame-deleted)
-  (when (buffer-live-p anymacs--buffer)
-    (with-current-buffer anymacs--buffer
-      (remove-hook 'kill-buffer-hook #'anymacs-hide t)
-      (remove-hook 'change-major-mode-hook #'anymacs-hide t)))
-  (setq anymacs--hosted-path nil
-        anymacs--buffer nil
-        anymacs--frame nil
-        anymacs--panes nil
-        anymacs--next-id 0
-        anymacs--geometry nil)
-  (when (fboundp 'anymacs--destroy)
-    (anymacs--destroy)))
+  (remove-hook 'window-state-change-functions #'portal--sync)
+  (remove-hook 'delete-frame-functions #'portal--frame-deleted)
+  (when (buffer-live-p portal--buffer)
+    (with-current-buffer portal--buffer
+      (remove-hook 'kill-buffer-hook #'portal-hide t)
+      (remove-hook 'change-major-mode-hook #'portal-hide t)))
+  (setq portal--hosted-path nil
+        portal--buffer nil
+        portal--frame nil
+        portal--panes nil
+        portal--next-id 0
+        portal--geometry nil)
+  (when (fboundp 'portal--destroy)
+    (portal--destroy)))
 
-(provide 'anymacs)
-;;; anymacs.el ends here
+(provide 'portal)
+;;; portal.el ends here

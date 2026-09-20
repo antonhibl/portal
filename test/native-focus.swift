@@ -11,7 +11,7 @@ struct CheckFocus {
         app.setActivationPolicy(.regular)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Anymacs focus check"
+        window.title = "Portal focus check"
         let editor = NSTextView(frame: window.contentView!.bounds)
         window.contentView!.addSubview(editor)
         window.makeKeyAndOrderFront(nil)

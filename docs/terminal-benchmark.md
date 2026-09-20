@@ -5,7 +5,7 @@ font size, display/refresh rate, power mode and scrollback settings:
 
 ```sh
 ./benchmark.sh --label ghostty
-./benchmark.sh --label anymacs
+./benchmark.sh --label portal
 ./benchmark.sh --label ghostel
 ```
 
@@ -28,7 +28,7 @@ stopped, and alternate their order across repeated comparisons.
 | Frame supply FPS | Full-grid updates submitted and parser-acknowledged per second. The default target is 60. **Not displayed FPS.** |
 | Frame service p95 | Time to submit one prepared frame and receive its reply, excluding pacing sleeps. Shows tail stalls; it is not GPU frame time. |
 | Missed supply slots | Producer could not keep its requested schedule. Does not count frames skipped by the renderer. |
-| Optional CPU / sampled peak RSS | Host process CPU over the suite, as a percentage of one core, and maximum RSS sampled every 0.5 seconds. For Anymacs this includes all of Emacs. |
+| Optional CPU / sampled peak RSS | Host process CPU over the suite, as a percentage of one core, and maximum RSS sampled every 0.5 seconds. For Portal this includes all of Emacs. |
 
 Payloads and animation frames are prepared before timing. Writes handle partial
 completion and time out. Cursor-position replies fence each trial so the script
@@ -41,7 +41,7 @@ Its scrolling test excludes scrollback accumulation. To include your configured
 scrollback storage, run this separately in both terminals:
 
 ```sh
-./benchmark.sh --label anymacs-scrollback --mode throughput --scrollback
+./benchmark.sh --label portal-scrollback --mode throughput --scrollback
 ```
 
 This writes into the main screen and leaves benchmark output in scrollback. Do not
@@ -76,7 +76,7 @@ case, attach to **Emacs**, since Ghostty's renderer lives in that process.
 Monitor; do not use the shell's PID.
 
 ```sh
-./benchmark.sh --label anymacs-trace --mode frames --seconds 15 --runs 1 \
+./benchmark.sh --label portal-trace --mode frames --seconds 15 --runs 1 \
   --target-fps 120 --pid 12345 --trace
 ```
 
@@ -111,7 +111,7 @@ in a second pane while the native terminal stays visible. Record that workload
 and its duration so it can be repeated. Run resource sampling separately too:
 
 ```sh
-./benchmark.sh --label anymacs-resources --pid 12345
+./benchmark.sh --label portal-resources --pid 12345
 ```
 
 Match the exact Ghostty engine/configuration where possible: the embedded wrapper
@@ -119,6 +119,6 @@ and an installed Ghostty release may contain different engine revisions. A singl
 throughput score or composite “winner” hides these differences.
 
 Research checked 2026-09-18. Verified execution in standalone Ghostty and native
-Anymacs, including an Instruments capture. These smoke runs used different grids
+Portal, including an Instruments capture. These smoke runs used different grids
 and are not a comparative performance result. Local harness verification:
 `python3 -B -m unittest discover -s test -p 'test_benchmark.py'`.

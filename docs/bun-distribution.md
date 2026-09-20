@@ -5,7 +5,7 @@ Recorded: 2026-09-17. Status: decision deferred.
 ## Current behaviour
 
 `./build.sh` uses CMake to build the native Emacs module and compile the
-TypeScript server into `build/anymacs-host`. CMake currently requires an
+TypeScript server into `build/portal-host`. CMake currently requires an
 installed Bun executable; `-DBUN=/absolute/path/to/bun` can select it explicitly.
 
 Bun is a **build dependency**, but users running the compiled host do not need
@@ -22,7 +22,7 @@ not remove these native build requirements.
 | --- | --- | --- |
 | Keep the current build requirement | Install Bun, then run `./build.sh`. | Simplest build setup, but requires users building from source to manage Bun. |
 | Automatically download Bun during the build | Run `./build.sh`; CMake obtains its own Bun compiler. | No manual Bun installation; first build needs a download or a supplied local executable. |
-| Distribute a prebuilt host | Install a release containing the matching `anymacs-host`, or have the build download it. | No Bun compiler needed on the user's machine; we maintain release artifacts for each supported architecture. |
+| Distribute a prebuilt host | Install a release containing the matching `portal-host`, or have the build download it. | No Bun compiler needed on the user's machine; we maintain release artifacts for each supported architecture. |
 
 ### Automatically download Bun
 
@@ -48,7 +48,7 @@ executable or a previously populated cache.
 
 Proposed implementation:
 
-- Build and test `anymacs-host` in CI for macOS Apple Silicon and Intel.
+- Build and test `portal-host` in CI for macOS Apple Silicon and Intel.
 - Publish versioned artifacts with checksums, paired with the matching Lisp
   package and control protocol.
 - Include the host in release packages, or download the matching artifact

@@ -20,7 +20,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: ["INSIDE_EMACS": "anymacs-ghostty"],
+            envVars: ["INSIDE_EMACS": "portal-ghostty"],
             waitAfterCommand: true)
         controller = TerminalController { builder in
             builder.withFontThicken(false)
