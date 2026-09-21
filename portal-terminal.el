@@ -15,7 +15,9 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
-(declare-function portal--terminal-open "portal-terminal" (title directory))
+(declare-function portal--terminal-open "portal-terminal" (title directory &optional theme))
+(declare-function portal--terminal-theme "portal-terminal" (theme))
+(declare-function portal--terminal-themes "portal-terminal" ())
 (declare-function portal--terminal-layout "portal-terminal" (edges &optional id))
 (declare-function portal--terminal-focus "portal-terminal" (&optional id))
 (declare-function portal--terminal-unfocus "portal-terminal" (&optional id))
@@ -37,6 +39,31 @@
 (defvar-local portal-terminal--window nil)
 (defvar-local portal-terminal--geometry nil)
 (defvar-local portal-terminal--last-buffer nil)
+
+(defun portal-terminal--theme-changed (_symbol value operation _where)
+  "Validate and apply theme VALUE to running terminals on OPERATION."
+  (when (eq operation 'set)
+    (unless (or (null value) (stringp value))
+      (error "Terminal theme must be a theme name or nil"))
+    (when (fboundp 'portal--terminal-theme)
+      (portal--terminal-theme value))))
+
+(defcustom portal-terminal-theme nil
+  "Color theme for all Portal terminals.
+Use an exact, case-sensitive name from `portal-terminal-themes', such as
+\"Dracula\".  Nil follows native system appearance, using Alabaster in light
+mode and Afterglow in dark mode.  Named themes stay fixed in both modes.
+Changes with `setq' or Customize apply to running and future terminals
+without restarting their shells.  May be set before loading Portal;
+the name is validated when the native module is available."
+  :type '(choice (const :tag "System appearance" nil) string)
+  :group 'portal-terminal)
+(add-variable-watcher 'portal-terminal-theme #'portal-terminal--theme-changed)
+
+(defun portal-terminal-themes ()
+  "Return the available terminal theme names from the bundled catalog."
+  (portal-native--load)
+  (portal--terminal-themes))
 
 (defun portal-terminal--prefix-description (value)
   "Validate VALUE and return its native character and modifier mask."
@@ -217,7 +244,8 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
                     "This buffer has one live view, which follows its selected pane.\n"))
           (redisplay t)
           (setq portal-terminal--id
-                (portal-native--call-with-frame frame #'portal--terminal-open directory))
+                (portal-native--call-with-frame frame #'portal--terminal-open
+                                               directory portal-terminal-theme))
           (setq portal-terminal--buffers (append portal-terminal--buffers (list buffer)))
           (add-hook 'window-state-change-functions #'portal-terminal--sync)
           (add-hook 'window-selection-change-functions #'portal-terminal--sync)

@@ -2,13 +2,34 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'ert)
+(require 'json)
 (require 'portal-terminal)
 (declare-function portal--terminal-text "portal-terminal" (&optional id))
 (declare-function portal--terminal-input "portal-terminal" (text enter &optional id))
 (declare-function portal--terminal-state "portal-terminal" (&optional id))
 (declare-function portal--terminal-focus "portal-terminal" (&optional id))
+(declare-function portal--terminal-close "portal-terminal" (&optional id))
 (declare-function portal-test-native-key "test-terminal-input" (code flags text &optional windowless))
 (declare-function portal-test-native-post-key "test-terminal-input" (code flags text &optional windowless))
+
+(defconst portal-terminal-test--color-probe
+  (expand-file-name "terminal-colors.py" (file-name-directory load-file-name)))
+
+(defun portal-terminal-test--colors (id)
+  "Query ID's actual colors and shell PID over its PTY."
+  (let* ((directory (make-temp-file "portal-colors-" t))
+         (receipt (expand-file-name "colors.json" directory)))
+    (unwind-protect
+        (progn
+          (portal--terminal-input
+           (format "/usr/bin/python3 %s %s"
+                   (shell-quote-argument portal-terminal-test--color-probe)
+                   (shell-quote-argument receipt)) t id)
+          (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
+          (with-temp-buffer
+            (insert-file-contents receipt)
+            (json-parse-buffer :object-type 'plist)))
+      (delete-directory directory t))))
 
 (defun portal-terminal-test--wait (predicate)
   "Wait for a real shell or native UI event, with a bounded timeout."
@@ -29,6 +50,42 @@
                   (sit-for 0.1)
                   (portal-terminal) ,@body)
          (portal-terminal-close-all)))))
+
+(ert-deftest portal-terminal-theme-live-and-new-sessions ()
+  (skip-unless (eq window-system 'ns))
+  (let ((original portal-terminal-theme))
+    (unwind-protect
+        (progn
+          (setq portal-terminal-theme "Dracula")
+          (portal-terminal-test--session
+            (should (member "Dracula" (portal-terminal-themes)))
+            (let* ((first portal-terminal--id)
+                   (initial (portal-terminal-test--colors first)))
+              (should (equal (plist-get initial :background) "282a36"))
+              (should (equal (plist-get initial :foreground) "f8f8f2"))
+              (should (equal (plist-get initial :cursor) "f8f8f2"))
+              (should (equal (plist-get initial :red) "ff5555"))
+              ;; Hide the first shell, then recolor both existing sessions.
+              (portal-terminal-new)
+              (let ((second portal-terminal--id))
+                (should-not (plist-get (portal--terminal-state first) :visible))
+                (setopt portal-terminal-theme "Alabaster")
+                (dolist (id (list first second))
+                  (should (equal (plist-get (portal-terminal-test--colors id) :background)
+                                 "f7f7f7")))
+                (should-error (setq portal-terminal-theme "No such Portal theme"))
+                (should-error (setq portal-terminal-theme 42))
+                (should (equal portal-terminal-theme "Alabaster"))
+                ;; New shells use the same setting; the original shell survives.
+                (portal-terminal-new)
+                (should (equal (plist-get (portal-terminal-test--colors portal-terminal--id)
+                                         :background) "f7f7f7"))
+                (should (equal (plist-get (portal-terminal-test--colors first) :pid)
+                               (plist-get initial :pid)))
+                (setq portal-terminal-theme nil)
+                (should (member (plist-get (portal-terminal-test--colors first) :background)
+                                '("f7f7f7" "212121")))))))
+      (setq portal-terminal-theme original))))
 
 (ert-deftest portal-terminal-real-shell-survives-hiding-and-resizes ()
   (portal-terminal-test--session

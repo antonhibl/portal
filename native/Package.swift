@@ -23,7 +23,8 @@ let package = Package(
         .target(name: "CEmacs", path: "Emacs",
                 cSettings: [.unsafeFlags(["-I", emacsInclude, "-Wall", "-Wextra", "-Werror"])]),
         .target(name: "Portal", dependencies: [
-            "CEmacs", .product(name: "GhosttyTerminal", package: "libghostty-spm")
+            "CEmacs", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+            .product(name: "GhosttyTheme", package: "libghostty-spm")
         ], path: ".", exclude: ["Emacs", "Info.plist"],
            sources: ["Module.swift", "NativeHost.swift", "WebView.swift", "Terminal.swift"],
            swiftSettings: [.unsafeFlags(["-warnings-as-errors", "-Xcc", "-I" + emacsInclude])])

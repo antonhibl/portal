@@ -146,14 +146,39 @@ private let inspect: emacs_function = { env, _, _, _ in
     })
 }
 
-private let openTerminal: emacs_function = { env, _, args, _ in
+private let openTerminal: emacs_function = { env, nargs, args, _ in
     let env = env!
     guard let title = readString(env, args![0]), let directory = readString(env, args![1]) else {
         return symbol(env, "nil")
     }
+    var theme: String?
+    if nargs > 2, env.pointee.is_not_nil(env, args![2]) {
+        guard let name = readString(env, args![2]) else { return symbol(env, "nil") }
+        theme = name
+    }
     return call(env) {
-        try Terminals.open(title: title, directory: directory)
+        try Terminals.open(title: title, directory: directory, themeName: theme)
     } convert: { env.pointee.make_integer(env, $0) }
+}
+
+private let setTerminalTheme: emacs_function = { env, _, args, _ in
+    let env = env!
+    var theme: String?
+    if env.pointee.is_not_nil(env, args![0]) {
+        guard let name = readString(env, args![0]) else { return symbol(env, "nil") }
+        theme = name
+    }
+    return call(env) {
+        try Terminals.setTheme(theme)
+        return true
+    } convert: { boolean(env, $0) }
+}
+
+private let terminalThemes: emacs_function = { env, _, _, _ in
+    let env = env!
+    return call(env, { Terminals.themeNames() }, convert: { names in
+        list(env, names.map { string(env, $0) })
+    })
 }
 
 private let layoutTerminal: emacs_function = { env, nargs, args, _ in
@@ -287,7 +312,9 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
          "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
     ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("portal--terminal-open", 2, 2, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY."),
+        ("portal--terminal-open", 2, 3, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY with optional THEME."),
+        ("portal--terminal-theme", 1, 1, setTerminalTheme, "Apply named THEME to all terminals; nil restores system appearance defaults."),
+        ("portal--terminal-themes", 0, 0, terminalThemes, "Return the available terminal theme names."),
         ("portal--terminal-layout", 1, 2, layoutTerminal, "Set native terminal EDGES, or [] to hide without ending the session."),
         ("portal--terminal-focus", 0, 1, focusTerminal, "Give the visible Ghostty view keyboard focus."),
         ("portal--terminal-unfocus", 0, 1, unfocusTerminal, "Return native keyboard focus to Emacs without ending the session."),

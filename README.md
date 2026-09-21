@@ -122,10 +122,18 @@ Configure in Lisp after loading `portal.el` (changes apply to running terminals)
 
 ```elisp
 (setq portal-terminal-prefix "C-a") ; default: "C-b"
+(setq portal-terminal-theme "Dracula") ; nil follows system light/dark appearance
 (keymap-set portal-terminal-prefix-map "v" #'portal-terminal-split-right)
 (keymap-set portal-terminal-prefix-map "b" #'switch-to-buffer)
 (keymap-set portal-terminal-prefix-map "e" #'portal-terminal-unfocus)
 ```
+
+`portal-terminal-theme` accepts an exact, case-sensitive name from
+`(portal-terminal-themes)`. Set it with `setq` or Customize, including in your
+init file before loading Portal. Changes recolor all running terminals, including
+hidden ones, and apply to new terminals without restarting existing shells.
+Set it to `nil` to restore Alabaster in light mode and Afterglow in dark mode.
+Named themes stay fixed across system appearance changes.
 
 The prefix accepts one modified ASCII key in `kbd` notation; Meta means Option
 and Super means Command. Customize the map or add nested prefix maps with normal
@@ -140,8 +148,8 @@ command. Ordinary terminal input and output stay native; there is no polling tim
 or terminal redraw through Lisp.
 
 The terminal uses the pinned [GhosttyTerminal Swift wrapper](https://github.com/Lakr233/libghostty-spm/tree/1.6.20260909)
-and its Ghostty build. It uses the wrapper's default configuration and system
-appearance, independently of your standalone Ghostty preferences. Ghostty's
+and its Ghostty build. Themes come from the wrapper's bundled catalog; standalone
+Ghostty preferences are not loaded. Ghostty's
 app-level window/tab commands are not implemented here. The Emacs buffer contains
 instructions, not live terminal text, so ordinary Emacs search and movement do not
 operate on the terminal. The native view still shares Emacs's main thread for

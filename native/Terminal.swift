@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import GhosttyTerminal
+import GhosttyTheme
 import Darwin
 
 @MainActor
@@ -15,14 +16,14 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var terminalSurface: TerminalSurface?
     var closed = false
 
-    init(directory: String) {
+    init(directory: String, theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
             envVars: ["INSIDE_EMACS": "portal-ghostty"],
             waitAfterCommand: true)
-        controller = TerminalController { builder in
+        controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
@@ -61,10 +62,10 @@ private final class TerminalSession: NativeInputHandler {
     private var readingPrefix = false
     private var pendingEvents: [NSEvent] = []
 
-    init(id: Int, host: NativeHost, directory: String) throws {
+    init(id: Int, host: NativeHost, directory: String, theme: TerminalTheme) throws {
         self.id = id
         self.host = host
-        terminal = HostedTerminal(directory: directory)
+        terminal = HostedTerminal(directory: directory, theme: theme)
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         terminal.session = self
     }
@@ -202,12 +203,34 @@ enum Terminals {
 
     static func didFocus(_ id: Int) { activeID = id }
 
-    static func open(title: String, directory: String) throws -> Int {
+    static func themeNames() -> [String] { GhosttyThemeCatalog.allThemes.map(\.name).sorted() }
+
+    private static func resolveTheme(_ name: String?) throws -> TerminalTheme {
+        guard let name else { return .default }
+        guard let theme = GhosttyThemeCatalog.theme(named: name) else {
+            throw NativeError.message("Unknown terminal theme: \(name)")
+        }
+        return theme.toTerminalTheme()
+    }
+
+    static func setTheme(_ name: String?) throws {
+        // Resolve before touching any session, including when none are open.
+        let theme = try resolveTheme(name)
+        for session in sessions.values {
+            guard let controller = session.terminal.controller, controller.theme != theme else { continue }
+            guard controller.setTheme(theme) else {
+                throw NativeError.message(controller.lastConfigurationIssue ?? "Could not apply terminal theme")
+            }
+        }
+    }
+
+    static func open(title: String, directory: String, themeName: String?) throws -> Int {
+        let theme = try resolveTheme(themeName)
         guard let host = NativeHost.bind(title: title) else {
             throw NativeError.message("Cannot find the requested native Emacs frame")
         }
         nextID += 1
-        sessions[nextID] = try TerminalSession(id: nextID, host: host, directory: directory)
+        sessions[nextID] = try TerminalSession(id: nextID, host: host, directory: directory, theme: theme)
         activeID = nextID
         return nextID
     }
