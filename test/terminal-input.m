@@ -53,8 +53,10 @@ static emacs_value key(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void 
     NSString *unmodified = text;
     if ((flags & NSEventModifierFlagControl) && text.length == 1) {
         unichar character = [text characterAtIndex:0];
-        if (character >= 1 && character <= 26) {
-            character += 'a' - 1;
+        if (character <= 31) {
+            // Match AppKit's unmodified character for control punctuation too
+            // (e.g. C-] is byte 29, but charactersIgnoringModifiers is "]").
+            character += character >= 1 && character <= 26 ? 'a' - 1 : '@';
             unmodified = [NSString stringWithCharacters:&character length:1];
         }
     }

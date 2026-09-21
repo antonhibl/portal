@@ -156,8 +156,9 @@ private let openTerminal: emacs_function = { env, nargs, args, _ in
         guard let name = readString(env, args![2]) else { return symbol(env, "nil") }
         theme = name
     }
+    let quick = nargs > 3 && env.pointee.is_not_nil(env, args![3])
     return call(env) {
-        try Terminals.open(title: title, directory: directory, themeName: theme)
+        try Terminals.open(title: title, directory: directory, themeName: theme, quick: quick)
     } convert: { env.pointee.make_integer(env, $0) }
 }
 
@@ -274,6 +275,15 @@ private let connectChannel: emacs_function = { env, _, args, _ in
     } convert: { boolean(env, $0) }
 }
 
+private let configureBindings: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let json = readString(env, args![0]) else { return symbol(env, "nil") }
+    return call(env) {
+        try Terminals.configureBindings(json)
+        return true
+    } convert: { boolean(env, $0) }
+}
+
 private let configurePrefix: emacs_function = { env, _, args, _ in
     let env = env!
     guard let character = readString(env, args![0]) else { return symbol(env, "nil") }
@@ -312,7 +322,7 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
          "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
     ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("portal--terminal-open", 2, 3, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY with optional THEME."),
+        ("portal--terminal-open", 2, 4, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY with optional THEME and QUICK flag."),
         ("portal--terminal-theme", 1, 1, setTerminalTheme, "Apply named THEME to all terminals; nil restores system appearance defaults."),
         ("portal--terminal-themes", 0, 0, terminalThemes, "Return the available terminal theme names."),
         ("portal--terminal-layout", 1, 2, layoutTerminal, "Set native terminal EDGES, or [] to hide without ending the session."),
@@ -323,6 +333,7 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--terminal-text", 0, 1, snapshotTerminal, "Select all terminal scrollback and return its text. Leaves the native selection active."),
         ("portal--terminal-state", 0, 1, inspectTerminal, "Inspect the native terminal's actual surface, focus and grid."),
         ("portal--terminal-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
+        ("portal--terminal-bindings", 1, 1, configureBindings, "Atomically replace runtime binding profiles from JSON."),
         ("portal--terminal-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
         ("portal--terminal-ack", 2, 2, acknowledgePrefix, "Acknowledge a prefix for ID, replaying held events if REPLAY."),
         ("portal--terminal-send-prefix", 1, 1, sendPrefix, "Send the captured prefix key to terminal ID using native key events.")

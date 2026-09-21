@@ -45,6 +45,16 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-server-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(ui-host PROPERTIES TIMEOUT 30)
+    add_test(NAME quick-terminal
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-quick-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(quick-terminal PROPERTIES TIMEOUT 30)
+    add_test(NAME terminal-bindings
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-bindings-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(terminal-bindings PROPERTIES TIMEOUT 30)
 endif()
 set(EMACS_INCLUDE "$ENV{EMACS_INCLUDE}" CACHE PATH "Directory containing emacs-module.h")
 if(NOT EMACS_INCLUDE)

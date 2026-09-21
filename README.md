@@ -59,6 +59,74 @@ focus to Emacs, then `q` or `M-x portal-hide` to remove the views. The mode line
 and minibuffer remain available. Run `portal-open-url` again to open another URL.
 `M-x portal-show` still opens the green-square demo in `*portal-green*`.
 
+## Quick project terminal
+
+Run `M-x portal-terminal-toggle` to summon a scratch terminal in the bottom half
+of the frame. Run it again to dismiss the panel and return to your editing
+window, even if the terminal no longer has keyboard focus. No global shortcut
+is installed. Call `(portal-terminal-toggle)` from Lisp or bind the command to
+whatever Emacs key sequence you prefer. For example, in your own configuration:
+
+```elisp
+(keymap-global-set "s-`" #'portal-terminal-toggle)
+(portal-terminal-bind-key portal-terminal-quick-native-map
+                          "s-`" #'portal-terminal-toggle)
+```
+
+The second binding handles Command-backtick while Ghostty has keyboard focus.
+It applies immediately, including to hidden quick terminals. Both bindings are
+optional user configuration. You can instead use the existing terminal prefix:
+
+```elisp
+(keymap-set portal-terminal-quick-prefix-map "t" #'portal-terminal-toggle)
+```
+
+That example runs the command after your terminal prefix followed by `t`.
+See [the input bridge](docs/terminal-input-bridge.md) for runtime binding APIs
+and how native events reach Elisp.
+
+Each project has one quick shell per Emacs frame. A new shell starts at the
+`project.el` root of the current file or Dired buffer. Help and other auxiliary
+buffers use the most recently selected file/Dired directory in that frame.
+Outside a project, the file's directory is used; with no editing context,
+`portal-terminal-quick-directory` defaults to home. Remote contexts are rejected.
+
+Dismissal only hides the panel: the shell, current directory, environment,
+partially typed input, scrollback, and foreground programs remain intact.
+Reopening never sends `cd` or starts a replacement shell. A command such as
+`npm run dev` keeps running while hidden; reopen and use `C-c` to interrupt it.
+Switching files or projects does not automatically change an already visible
+panel. Dismiss it, then summon again to select the new project's quick shell.
+
+Quick terminals have a restricted native prefix map (`C-b` by default):
+
+| Key | Action |
+| --- | --- |
+| `q` | Dismiss without ending the shell |
+| `d` | Return keyboard control to Emacs, leaving the panel visible |
+| `r` | Confirm and reset to a fresh shell at this project's root |
+| `k` | Confirm and forget this project's quick shell |
+| `:` | Run an Emacs command with `M-x` |
+| `?` | Show quick-terminal bindings |
+
+The corresponding commands are `portal-terminal-quick-dismiss`,
+`portal-terminal-quick-reset`, and `portal-terminal-quick-forget`. Reset/forget
+target the visible panel when there is one, otherwise the current editing
+project. Bare Escape, `q`, and `C-g` remain terminal input. Clicking into the
+editor leaves the panel visible. Its initial height is controlled by
+`portal-terminal-quick-height` (default `0.5`); dismissal remembers manual resizing.
+
+Quick terminals are excluded from ordinary Portal terminal selection, numbering,
+and cycling. They have no naming or multiple-instance workflow. A busy quick
+shell remains busy until its command finishes or you interrupt/reset it.
+Deleting its owning frame or quitting Emacs ends the session; this does not
+provide persistence across Emacs restarts. A shell that exits is not silently
+restarted: use reset when you want a new one.
+
+Run the buffer/window/project tests with `ctest --test-dir build -R quick-terminal`.
+The graphical terminal suite also tests a user-configured native prefix binding and a real
+foreground process continuing while the quick panel is hidden.
+
 ## Native Ghostty terminal
 
 To compare terminal performance, run `./benchmark.sh --label portal` inside the
@@ -142,8 +210,15 @@ returns to the selected terminal. Switching to an ordinary buffer keeps Emacs in
 control. A custom command can call `portal-terminal-unfocus` to stay in Emacs even
 when a terminal is selected. Errors also leave focus in Emacs.
 
-Native code catches the leader and notifies Emacs through an event pipe. It holds
-fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
+`portal-terminal-native-map` adds opt-in standalone or nested shortcuts to all
+terminals; `portal-terminal-quick-native-map` overlays it for quick terminals.
+Use `portal-terminal-bind-key` / `portal-terminal-unbind-key` for live changes,
+or call `portal-terminal-refresh-bindings` after direct keymap edits. These maps
+start empty and do not install global shortcuts. First chords use the same
+modified ASCII syntax as the leader; prefix tails use normal Emacs keys.
+
+Native code catches registered first chords and notifies Emacs through an event
+pipe. It holds fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
 command. Ordinary terminal input and output stay native; there is no polling timer
 or terminal redraw through Lisp.
 
@@ -165,8 +240,10 @@ The graphical terminal tests exercise a real shell, alternate-screen output,
 native keyboard and clipboard input, focus return, resizing, hidden-session
 continuity, shell termination, and editing/saving a file in Vim. They also exercise
 rapid native prefix sequences, multiple sessions and splits, live prefix/map
-customization, literal prefix bytes, cancellation, and minibuffer focus. Build their
-test-only AppKit event injector (no Accessibility permission required):
+customization, runtime binding registration/unbinding, quick-only shortcuts,
+shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
+Batch binding tests run with `ctest --test-dir build -R terminal-bindings`.
+Build the test-only AppKit event injector (no Accessibility permission required):
 
 ```sh
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
@@ -341,6 +418,8 @@ with text beside the remaining view.
 | `portal-native.el` | Shared module loading and native frame identification |
 | `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
 | `portal-terminal.el` | Terminal buffers, configurable prefix commands, geometry, and lifecycle |
+| `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
+| `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
 | `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |

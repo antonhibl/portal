@@ -397,3 +397,201 @@
         (delete-directory directory t)))))
 
 ;;; portal-terminal-tests.el ends here
+
+(ert-deftest portal-terminal-quick-real-process-and-native-toggle ()
+  (skip-unless (and (eq window-system 'ns) (fboundp 'portal-test-native-key)))
+  (let* ((directory (make-temp-file "portal-quick-native-" t))
+         (receipt (expand-file-name "started" directory))
+         (finished (expand-file-name "finished" directory))
+         (resumed (expand-file-name "resumed" directory))
+         (source (generate-new-buffer "quick-native-source"))
+         (context (frame-parameter nil 'portal-terminal-quick-context)))
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (setq buffer-file-name (expand-file-name "source.el" directory)
+                  default-directory (file-name-as-directory directory))
+            (select-frame-set-input-focus (selected-frame))
+            (sit-for 0.1)
+            (portal-terminal-toggle)
+            (let ((id portal-terminal--id) (quick (current-buffer)))
+              (portal--terminal-input
+               (format "export PORTAL_QUICK_VALUE=preserved; cd /; printf '%%s' \"$$\" > %s; sleep 1; printf 'done' > %s"
+                       (shell-quote-argument receipt) (shell-quote-argument finished)) t id)
+              (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
+              ;; Users can bind the command to any sequence in the prefix map.
+              (let ((portal-terminal-quick-prefix-map
+                     (copy-keymap portal-terminal-quick-prefix-map)))
+                (keymap-set portal-terminal-quick-prefix-map "t" #'portal-terminal-toggle)
+                (portal-terminal-test--prefix '(17 0 "t")))
+              (should (eq (current-buffer) source))
+              (should-not (plist-get (portal--terminal-state id) :visible))
+              (should-not (plist-get (portal--terminal-state id) :focused))
+              (portal-terminal-test--wait (lambda () (file-exists-p finished)))
+              (portal-terminal-toggle)
+              (should (eq (current-buffer) quick))
+              (should (= portal-terminal--id id))
+              (should (plist-get (portal--terminal-state id) :focused))
+              (portal--terminal-input
+               (format "printf '%%s:%%s:%%s' \"$$\" \"$PORTAL_QUICK_VALUE\" \"$PWD\" > %s"
+                       (shell-quote-argument resumed)) t id)
+              (portal-terminal-test--wait (lambda () (file-exists-p resumed)))
+              (should (equal (with-temp-buffer (insert-file-contents resumed) (buffer-string))
+                             (concat (with-temp-buffer (insert-file-contents receipt) (buffer-string))
+                                     ":preserved:/")))
+              ;; The restricted native prefix also dismisses without killing.
+              (portal-terminal-test--prefix '(12 0 "q"))
+              (should (eq (current-buffer) source))
+              (should (plist-get (portal--terminal-state id) :ready))
+              (should-not (portal-terminal--regular-buffers))
+              (kill-buffer quick)
+              (should-not (portal--terminal-state id))))
+        (portal-terminal-close-all)
+        (kill-buffer source)
+        (set-frame-parameter nil 'portal-terminal-quick-context context)
+        (delete-directory directory t)))))
+
+(defmacro portal-terminal-test--native-maps (&rest body)
+  (declare (indent 0))
+  `(unwind-protect
+       (let ((portal-terminal-native-map (make-sparse-keymap))
+             (portal-terminal-quick-native-map (make-sparse-keymap))
+             (portal-terminal--native-maps (cons (make-sparse-keymap) (make-sparse-keymap))))
+         (portal-terminal-refresh-bindings)
+         ,@body)
+     (portal-terminal-refresh-bindings)))
+
+(defun portal-terminal-test--native-binding (trigger &rest strokes)
+  "Send TRIGGER and immediate follow-up STROKES through the native bridge."
+  (select-frame-set-input-focus (selected-frame))
+  (portal-terminal-focus)
+  (should (apply #'portal-test-native-key trigger))
+  (dolist (stroke strokes) (should (apply #'portal-test-native-key stroke)))
+  (let* ((keys (with-timeout (3 (ert-fail "Native binding did not wake Emacs"))
+                 (read-key-sequence-vector nil)))
+         (event (aref keys 0)))
+    (should (eq (car-safe event) 'portal-terminal-binding))
+    (should (eq (key-binding keys) #'portal-terminal--dispatch))
+    (with-timeout (3 (ert-fail "Native binding command did not finish"))
+      (portal-terminal--dispatch event))))
+
+(defun portal-terminal-test--raw-byte (sender expected)
+  "Use a real raw-mode PTY to check that SENDER delivers exactly EXPECTED."
+  (let* ((directory (make-temp-file "portal-native-byte-" t))
+         (ready (expand-file-name "ready" directory))
+         (receipt (expand-file-name "byte" directory)))
+    (unwind-protect
+        (progn
+          (portal--terminal-input
+           (format "old=$(stty -g); stty -icanon -echo min 1 time 0; touch %s; dd bs=1 count=1 2>/dev/null | od -An -tu1 > %s; stty \"$old\""
+                   (shell-quote-argument ready) (shell-quote-argument receipt)) t)
+          (portal-terminal-test--wait (lambda () (file-exists-p ready)))
+          (funcall sender)
+          (portal-terminal-test--wait
+           (lambda () (and (file-exists-p receipt)
+                           (> (file-attribute-size (file-attributes receipt)) 0))))
+          (should (= expected (with-temp-buffer (insert-file-contents receipt)
+                                                 (string-to-number (buffer-string))))))
+      (delete-directory directory t))))
+
+(defun portal-terminal-test--binding-failure ()
+  (interactive)
+  (user-error "Deliberate native binding failure"))
+
+(ert-deftest portal-terminal-bindings-live-rebind-prompt-error-and-unbind ()
+  (portal-terminal-test--native-maps
+    (portal-terminal-test--session
+      (let ((id portal-terminal--id))
+        (portal-terminal-bind-key portal-terminal-native-map "C-]" #'ignore)
+        (portal-terminal-test--native-binding (list 30 (ash 1 18) "\C-]" t))
+        (should (plist-get (portal--terminal-state id) :focused))
+        ;; Rebind a live session; rapid follow-ups must reach the minibuffer.
+        (portal-terminal-bind-key portal-terminal-native-map "C-]" #'portal-terminal-test--prompt)
+        (setq portal-terminal-test--answer nil)
+        (portal-terminal-test--native-binding
+         (list 30 (ash 1 18) "\C-]" t) '(4 0 "h") '(34 0 "i") '(36 0 "\r"))
+        (should (equal portal-terminal-test--answer "hi"))
+        (should (= portal-terminal--id id))
+        (should (plist-get (portal--terminal-state id) :focused))
+        (portal-terminal-bind-key portal-terminal-native-map "C-]" #'portal-terminal-test--binding-failure)
+        (portal-terminal-test--native-binding (list 30 (ash 1 18) "\C-]" t))
+        (should-not (plist-get (portal--terminal-state id) :focused))
+        ;; Unbinding restores the actual terminal control byte, not a Lisp stub.
+        (portal-terminal-unbind-key portal-terminal-native-map "C-]")
+        (portal-terminal-focus)
+        (portal-terminal-test--raw-byte
+         (lambda () (portal-test-native-key 30 (ash 1 18) "\C-]" t)) 29)))))
+
+(ert-deftest portal-terminal-bindings-nested-prefix-cancel-and-literal ()
+  (portal-terminal-test--native-maps
+    (portal-terminal-test--session
+      (portal-terminal-bind-key portal-terminal-native-map "C-] x y" #'portal-terminal-test--prompt)
+      (setq portal-terminal-test--answer nil)
+      (portal-terminal-test--native-binding
+       (list 30 (ash 1 18) "\C-]" t)
+       '(7 0 "x") '(16 0 "y") '(0 0 "a") '(36 0 "\r"))
+      (should (equal portal-terminal-test--answer "a"))
+      (portal-terminal-test--raw-byte
+       (lambda ()
+         ;; Cancel and unknown suffixes must not leak into the PTY.
+         (portal-terminal-test--native-binding
+          (list 30 (ash 1 18) "\C-]" t) (list 5 (ash 1 18) "\C-g"))
+         (portal-terminal-test--native-binding
+          (list 30 (ash 1 18) "\C-]" t) '(6 0 "z"))
+         ;; Repeating this custom prefix sends its own original native event.
+         (portal-terminal-test--native-binding
+          (list 30 (ash 1 18) "\C-]" t) (list 30 (ash 1 18) "\C-]")))
+       29))))
+
+(ert-deftest portal-terminal-bindings-quick-only-toggle-and-hidden-session-updates ()
+  (portal-terminal-test--native-maps
+    (portal-terminal-test--session
+      (let ((regular (current-buffer)) (regular-id portal-terminal--id))
+        (portal-terminal-bind-key portal-terminal-quick-native-map "C-]" #'portal-terminal-toggle)
+        ;; A quick-only binding must still reach an ordinary terminal's PTY.
+        (portal-terminal-test--raw-byte
+         (lambda () (portal-test-native-key 30 (ash 1 18) "\C-]" t)) 29)
+        (portal-terminal-quick--show (file-name-as-directory temporary-file-directory))
+        (let ((quick (current-buffer)) (id portal-terminal--id))
+          (portal-terminal-quick-dismiss)
+          (portal-terminal-bind-key portal-terminal-quick-native-map "s-`" #'portal-terminal-toggle)
+          (portal-terminal-quick--show (file-name-as-directory temporary-file-directory))
+          (should (= portal-terminal--id id))
+          (portal-terminal-test--native-binding (list 50 (ash 1 20) "`" t))
+          (should (eq (current-buffer) regular))
+          (should-not (plist-get (portal--terminal-state id) :visible))
+          (should (plist-get (portal--terminal-state id) :ready))
+          (should (plist-get (portal--terminal-state regular-id) :ready))
+          (kill-buffer quick))))))
+
+(ert-deftest portal-terminal-bindings-new-session-and-native-validation ()
+  (portal-terminal-test--native-maps
+    (portal-terminal-bind-key portal-terminal-native-map "s-j" #'portal-terminal-test--prompt)
+    (portal-terminal-test--session
+      ;; Bad JSON or either bad profile cannot partially replace live bindings.
+      (should-error (portal--terminal-bindings "{"))
+      (should-error (portal--terminal-bindings
+                     "{\"regular\":[],\"quick\":[{\"character\":\"x\",\"flags\":0,\"event\":120}]}"))
+      (setq portal-terminal-test--answer nil)
+      (portal-terminal-test--native-binding
+       (list 38 (ash 1 20) "j" t) '(0 0 "a") '(36 0 "\r"))
+      (should (equal portal-terminal-test--answer "a"))
+      (portal-terminal-new)
+      (setq portal-terminal-test--answer nil)
+      (portal-terminal-test--native-binding
+       (list 38 (ash 1 20) "j" t) '(11 0 "b") '(36 0 "\r"))
+      (should (equal portal-terminal-test--answer "b")))))
+
+(ert-deftest portal-terminal-bindings-shifted-characters ()
+  (portal-terminal-test--native-maps
+    (portal-terminal-test--session
+      (dolist (binding '(("s-!" 18 "!") ("s-J" 38 "J")))
+        (portal-terminal-bind-key portal-terminal-native-map (car binding)
+                                  #'portal-terminal-test--prompt)
+        (setq portal-terminal-test--answer nil)
+        (portal-terminal-test--native-binding
+         (list (cadr binding) (+ (ash 1 20) (ash 1 17)) (caddr binding))
+         '(0 0 "a") '(36 0 "\r"))
+        (should (equal portal-terminal-test--answer "a"))))))
