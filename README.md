@@ -2,7 +2,7 @@
 
 Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
 one Swift dynamic module. A bundled Bun server hosts Hello World and local
-Markdown previews. Native views follow splits, resizing, and buffer visibility;
+Markdown previews and an offline Excalidraw editor. Native views follow splits, resizing, and buffer visibility;
 hidden terminal sessions keep running. An AppKit green-square demo is also included.
 
 ## Build and run
@@ -34,7 +34,7 @@ if Bun is not discoverable. Both binaries are built for the current Mac.
 Or load `portal.el` in graphical Emacs and run `M-x portal-hello`.
 Run `M-x portal-preview-markdown` to preview the current Markdown file or
 select another local file.
-To distribute this layout, include the four `portal*.el` files at the package root,
+To distribute this layout, include all `portal*.el` files at the package root,
 `build/portal-host`, and the complete `build/portal.bundle`;
 the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
 and shell integration resources. Restart Emacs when upgrading from the former
@@ -58,6 +58,40 @@ Click inside a page to interact with it. Press Escape or `C-g` to return keyboar
 focus to Emacs, then `q` or `M-x portal-hide` to remove the views. The mode line
 and minibuffer remain available. Run `portal-open-url` again to open another URL.
 `M-x portal-show` still opens the green-square demo in `*portal-green*`.
+
+## Local Excalidraw drawings
+
+Run `M-x portal-excalidraw` for a new drawing, then `C-x C-s` to choose its
+filename and save. Open existing `.excalidraw` files normally with `C-x C-f`
+or Dired; they enter `portal-excalidraw-mode` automatically. A prefix argument
+to `portal-excalidraw` prompts for an existing or new file.
+
+- Draw, type, paste text/images, and use the normal Excalidraw editing tools.
+- `C-x C-s`, Command-S, and the editor's **Save** button all save through Emacs.
+  `C-x` works while the webview has focus, including fast follow-up keys.
+- Command-Escape returns keyboard focus to Emacs; `RET` re-enters the editor.
+  Bare Escape remains available for drawing/text editing.
+- Each drawing has one editor. Switching buffers hides it without losing its
+  contents, selection, or undo history. In splits, the editor follows the selected
+  window showing that buffer. Independent drawings can be displayed together.
+- Drawings use standard Excalidraw JSON, including embedded image data. Emacs owns
+  file saving, modified indicators, backup settings, auto-save, and overwrite
+  checks. Untitled modified drawings also participate in save/close prompts.
+- `M-x revert-buffer` reloads the file from disk. `C-c C-r` recreates a failed
+  editor using the buffered drawing, preserving unsaved buffered changes but
+  resetting undo history. Use it after restarting the Bun host if more editor
+  assets need loading. A stopped host does not unload an already open drawing.
+
+Excalidraw 0.18.1, React, CSS, lazy modules and fonts are bundled into
+`portal-host`. The build installs pinned npm dependencies with Bun; runtime use
+needs no npm packages or internet connection. The editor blocks external asset
+requests, CDN font fallbacks and remote embeds. Document persistence uses neither
+localStorage nor IndexedDB. The current integration focuses on local documents;
+cloud collaboration, online library installation, persistent personal libraries,
+and image export are not integrated.
+
+Restart Emacs after rebuilding the native module. See the
+[shared editor bridge](docs/editor-bridge.md) for implementation and tests.
 
 ## Quick project terminal
 
@@ -289,8 +323,9 @@ The asset declarations describe HTML and CSS imports loaded as strings.
 Bun types match the tested 1.3.14 runtime; TypeScript 6 retains `tsserver`
 support for editors using `typescript-language-server`, including Eglot.
 If an existing TypeScript session still shows old diagnostics, run
-`M-x eglot-reconnect`. These packages are development dependencies; CMake
-continues to compile the standalone host directly with Bun.
+`M-x eglot-reconnect`. The type check also generates the browser assets.
+CMake installs the locked dependencies, bundles the editor and fonts, and
+compiles the standalone host. Runtime users need no npm packages.
 
 Build against the Emacs installation that will load the module. Configuration
 locates its header beside the app's resources or in system include directories.
@@ -311,7 +346,7 @@ does not hot-reload that library.
 ## Bun UI host
 
 Loading the Lisp package or native module does not start a server. The first
-`portal-hello` or `portal-preview-markdown` starts one shared child process
+`portal-hello`, `portal-preview-markdown`, or drawing buffer starts one shared child process
 asynchronously, waits for its readiness message, then loads the requested page
 in the native webview. Opening external
 URLs does not require the server.

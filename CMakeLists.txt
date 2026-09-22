@@ -19,6 +19,8 @@ endif()
 # Publish atomically so a running host can survive a rebuild.
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/portal-host"
+    COMMAND "${BUN}" install --cwd "${CMAKE_SOURCE_DIR}/host" --frozen-lockfile
+    COMMAND "${BUN}" run "${CMAKE_SOURCE_DIR}/host/build-editor.ts"
     COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
         --compile --minify --sourcemap
         --no-compile-autoload-dotenv --no-compile-autoload-bunfig
@@ -26,7 +28,8 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.portal-host" "${CMAKE_BINARY_DIR}/portal-host"
     DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
-        host/package.json host/tsconfig.json "${BUN}"
+        host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
+        host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Compiling the standalone Bun UI host"
     VERBATIM)
@@ -55,6 +58,11 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-bindings-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-bindings PROPERTIES TIMEOUT 30)
+    add_test(NAME excalidraw
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-excalidraw-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(excalidraw PROPERTIES TIMEOUT 30)
 endif()
 set(EMACS_INCLUDE "$ENV{EMACS_INCLUDE}" CACHE PATH "Directory containing emacs-module.h")
 if(NOT EMACS_INCLUDE)

@@ -1,0 +1,184 @@
+;;; portal-excalidraw-gui-tests.el --- Real WKWebView drawing checks -*- lexical-binding: t; -*-
+;; SPDX-License-Identifier: GPL-3.0-or-later
+(require 'ert)
+(require 'portal)
+(require 'portal-terminal-tests)
+(declare-function portal-test-web-eval "test-terminal-input" (script))
+(declare-function portal-test-native-target-frame "test-terminal-input" (title))
+
+(defun portal-excalidraw-gui--js (script)
+  "Run SCRIPT in the actual webview, returning its result."
+  (should (portal-test-web-eval script))
+  (portal-terminal-test--wait (lambda () (portal-test-web-eval nil)))
+  (let ((result (json-parse-string (portal-test-web-eval nil) :object-type 'plist)))
+    (should-not (plist-get result :error))
+    (plist-get result :value)))
+
+(defmacro portal-excalidraw-gui--document (&rest body)
+  (declare (indent 0))
+  `(progn
+     (skip-unless (eq window-system 'ns))
+     (save-window-excursion
+       (let ((directory (make-temp-file "portal-drawing-gui-" t)) document)
+         (unwind-protect
+             (progn
+               (delete-other-windows)
+               (select-frame-set-input-focus (selected-frame))
+               (sit-for 0.1)
+               (should (portal-native--call-with-frame (selected-frame)
+                                                      #'portal-test-native-target-frame))
+               (find-file (expand-file-name "drawing.excalidraw" directory))
+               (setq document (current-buffer))
+               (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+               (redisplay t)
+               (portal-excalidraw--sync (selected-frame))
+               ,@body)
+           (when (buffer-live-p document)
+             (with-current-buffer document
+               (portal-excalidraw--close)
+               (set-buffer-modified-p nil)
+               (kill-buffer document)))
+           (portal-test-native-target-frame nil)
+           (delete-directory directory t))))))
+
+(ert-deftest portal-excalidraw-gui-loads-offline-editor-and-saves ()
+  (portal-excalidraw-gui--document
+    (should (equal (portal-excalidraw-gui--js "return !!document.querySelector('.excalidraw canvas')") t))
+    (should (equal (portal-excalidraw-gui--js
+                    "try { await fetch('https://example.com/'); return false; } catch { return true; }") t))
+    (should (equal (portal-excalidraw-gui--js
+                    "await document.fonts.load('20px Excalifont'); return document.fonts.check('20px Excalifont');") t))
+    (portal-excalidraw-save)
+    (should (file-exists-p buffer-file-name))
+    (should-not (buffer-modified-p))
+    (let ((scene (json-parse-string (buffer-string) :object-type 'plist)))
+      (should (equal (plist-get scene :type) "excalidraw"))
+      (should (= (length (plist-get scene :elements)) 0)))))
+
+(ert-deftest portal-excalidraw-gui-edits-survive-hiding-and-reopening ()
+  (portal-excalidraw-gui--document
+    ;; Paste goes through Excalidraw's normal clipboard import and history.
+    (portal-excalidraw-focus)
+    (portal-excalidraw-gui--js
+     "const container = document.querySelector('.excalidraw'); container.focus();
+      const data = new DataTransfer(); data.setData('text/plain', 'Portal local drawing');
+      container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
+    (portal-terminal-test--wait (lambda () (string-match-p "Portal local drawing" (buffer-string))))
+    (should (buffer-modified-p))
+    (let ((id portal-excalidraw--id)
+          (text (buffer-string)))
+      (switch-to-buffer (get-buffer-create " *drawing-hidden*"))
+      (redisplay t)
+      (portal-excalidraw--sync (selected-frame))
+      (switch-to-buffer document)
+      (redisplay t)
+      (portal-excalidraw--sync (selected-frame))
+      (should (= id portal-excalidraw--id))
+      (portal-excalidraw--flush)
+      (should (equal text (buffer-string)))
+      (portal-excalidraw-save)
+      (should-not (buffer-modified-p))
+      (portal-excalidraw-reopen)
+      (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+      (portal-excalidraw--flush)
+      (should (string-match-p "Portal local drawing" (buffer-string)))
+      (should-not (buffer-modified-p)))))
+
+(ert-deftest portal-excalidraw-gui-image-roundtrip-and-document-isolation ()
+  (portal-excalidraw-gui--document
+    (portal-excalidraw-focus)
+    (portal-excalidraw-gui--js
+     "const container = document.querySelector('.excalidraw'); container.focus();
+      const image = {id:'picture', type:'image', x:0, y:0, width:64, height:64,
+        angle:0, strokeColor:'transparent', backgroundColor:'transparent', fillStyle:'solid',
+        strokeWidth:1, strokeStyle:'solid', roughness:0, opacity:100, groupIds:[],
+        seed:1, version:1, versionNonce:1, isDeleted:false, boundElements:null,
+        updated:1, link:null, locked:false, fileId:'pixel', scale:[1,1], status:'saved'};
+      const files = {pixel:{id:'pixel', mimeType:'image/png', created:1,
+        dataURL:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1sAAAAASUVORK5CYII='}};
+      const data = new DataTransfer();
+      data.setData('text/plain', JSON.stringify({type:'excalidraw/clipboard', elements:[image], files}));
+      container.dispatchEvent(new ClipboardEvent('paste', {bubbles:true, clipboardData:data})); return true;")
+    (portal-terminal-test--wait (lambda () (string-match-p "data:image/png;base64" (buffer-string))))
+    (portal-excalidraw-save)
+    (let ((original (buffer-string)) other)
+      (unwind-protect
+          (progn
+            (find-file (expand-file-name "other.excalidraw" directory))
+            (setq other (current-buffer))
+            (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+            (should-not (string-match-p "data:image/png;base64" (buffer-string)))
+            (switch-to-buffer document)
+            (portal-excalidraw--sync (selected-frame))
+            (portal-excalidraw-reopen)
+            (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+            (portal-excalidraw--flush)
+            (should (equal original (buffer-string))))
+        (when (buffer-live-p other)
+          (with-current-buffer other (portal-excalidraw--close) (set-buffer-modified-p nil))
+          (kill-buffer other))))))
+
+(ert-deftest portal-excalidraw-gui-emacs-prefix-keeps-fast-followup-keys ()
+  (portal-excalidraw-gui--document
+    (select-frame-set-input-focus (selected-frame))
+    (portal-excalidraw-focus)
+    (portal-test-native-key 7 (ash 1 18) "\C-x")
+    (portal-test-native-key 1 (ash 1 18) "\C-s")
+    ;; The command loop dispatches the notification before buffered key tails.
+    (let* ((notification (with-timeout (5 (ert-fail "Editor did not notify Emacs"))
+                           (read-key-sequence-vector nil)))
+           (event (aref notification 0)))
+      (should (eq (car-safe event) 'portal-excalidraw-command))
+      (portal-excalidraw--dispatch event))
+    (let ((keys (with-timeout (5 (ert-fail "Editor did not hand C-x C-s to Emacs"))
+                  (read-key-sequence-vector ""))))
+      (should (equal keys [24 19]))
+      (should (eq (key-binding keys) #'portal-excalidraw-save))
+      (call-interactively (key-binding keys)))
+    (should (file-exists-p buffer-file-name))
+    (should-not (buffer-modified-p))))
+
+(ert-deftest portal-excalidraw-gui-save-commits-active-text-editing ()
+  (portal-excalidraw-gui--document
+    (portal-excalidraw-focus)
+    (should (portal-excalidraw-gui--js
+             "const canvas = document.querySelector('canvas.interactive');
+              canvas.dispatchEvent(new MouseEvent('dblclick', {bubbles:true, clientX:250, clientY:200}));
+              await new Promise(resolve => setTimeout(resolve, 30));
+              const input = document.querySelector('textarea.excalidraw-wysiwyg');
+              if (!input) throw new Error('Text editor did not open');
+              input.value = 'Uncommitted text'; input.dispatchEvent(new Event('input', {bubbles:true}));
+              return document.activeElement === input;"))
+    (portal-excalidraw-save)
+    (let ((file buffer-file-name))
+      (should (string-match-p "Uncommitted text"
+                              (with-temp-buffer (insert-file-contents file) (buffer-string)))))
+    (should-not (buffer-modified-p))))
+
+(ert-deftest portal-excalidraw-gui-save-button-prompts-for-untitled-file ()
+  (portal-excalidraw-gui--document
+    (portal-excalidraw--close)
+    (set-buffer-modified-p nil)
+    (kill-buffer document)
+    (portal-excalidraw)
+    (setq document (current-buffer))
+    (portal-excalidraw-focus)
+    (portal-excalidraw-gui--js "document.querySelector('.portal-save button').click(); return true;")
+    (let* ((notification (with-timeout (5 (ert-fail "Save button did not notify Emacs"))
+                           (read-key-sequence-vector nil)))
+           (event (aref notification 0))
+           (file (expand-file-name "from-button.excalidraw" directory)))
+      (should (eq (car-safe event) 'portal-excalidraw-command))
+      (let ((use-dialog-box nil) (use-file-dialog nil))
+        (minibuffer-with-setup-hook
+            (lambda ()
+              (delete-minibuffer-contents)
+              (insert file)
+              (portal-test-native-post-key 36 0 "\r"))
+          (with-timeout (5 (ert-fail "Filename prompt did not receive native input"))
+            (portal-excalidraw--dispatch event))))
+      (should (equal buffer-file-name file))
+      (should (file-exists-p file))
+      (should-not (buffer-modified-p)))))
+
+(provide 'portal-excalidraw-gui-tests)

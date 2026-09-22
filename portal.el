@@ -15,6 +15,12 @@
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
+(require 'portal-excalidraw
+         (expand-file-name "portal-excalidraw"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
 
 (declare-function portal--load-url "portal" (url))
 (declare-function portal--bind "portal" (title))

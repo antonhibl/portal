@@ -68,6 +68,14 @@
                     (should (string-match-p "color-scheme: light dark" page))))
                 (should (string-match-p "HTTP/1.1 404"
                                         (portal-server-test--get "/missing")))
+                (let ((page (portal-server-test--get "/excalidraw/")))
+                  (should (string-match-p "HTTP/1.1 200" page))
+                  (should (string-match-p "[Cc]ontent-[Ss]ecurity-[Pp]olicy:" page))
+                  (should (string-match-p "font-src 'self' data:" page)))
+                (dolist (asset '("/excalidraw/assets/editor-bootstrap.js"
+                                 "/excalidraw/assets/editor-bootstrap.css"
+                                 "/excalidraw/assets/fonts/Excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2"))
+                  (should (string-match-p "HTTP/1.1 200" (portal-server-test--get asset))))
                 (portal-stop-server)
                 (portal-server-test--wait (lambda () (not (process-live-p process))))
                 (should (= (process-exit-status process) 0))))))

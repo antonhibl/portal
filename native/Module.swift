@@ -310,6 +310,67 @@ private let sendPrefix: emacs_function = { env, _, args, _ in
     } convert: { boolean(env, $0) }
 }
 
+private let openEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let title = readString(env, args![0]), let url = readString(env, args![1]) else { return nil }
+    return call(env) { try WebEditors.open(title: title, address: url) }
+        convert: { env.pointee.make_integer(env, $0) }
+}
+
+private let layoutEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let title = readString(env, args![0]) else { return nil }
+    let id = env.pointee.extract_integer(env, args![1])
+    let count = env.pointee.vec_size(env, args![2])
+    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return nil }
+    var edges: [Int] = []
+    for index in 0..<count {
+        edges.append(env.pointee.extract_integer(env, env.pointee.vec_get(env, args![2], index)))
+    }
+    return call(env) { try WebEditors.layout(id, title: title, edges: edges); return true }
+        convert: { boolean(env, $0) }
+}
+
+private let sendEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    guard let json = readString(env, args![1]) else { return nil }
+    return call(env) { try WebEditors.send(id, json: json); return true }
+        convert: { boolean(env, $0) }
+}
+
+private let takeEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    return call(env) { try WebEditors.take(id) } convert: { string(env, $0) }
+}
+
+private let focusEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    return call(env) { try WebEditors.focus(id); return true } convert: { boolean(env, $0) }
+}
+
+private let closeEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    return call(env) { WebEditors.close(id); return false } convert: { boolean(env, $0) }
+}
+
+private let acknowledgeEditor: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    let replay = env.pointee.is_not_nil(env, args![1])
+    return call(env) { WebEditors.acknowledge(id, replay: replay); return true }
+        convert: { boolean(env, $0) }
+}
+
+private let connectEditorChannel: emacs_function = { env, _, args, _ in
+    let env = env!
+    let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
+    return call(env) { WebEditors.channel.connect(fd); return true } convert: { boolean(env, $0) }
+}
+
 @_cdecl("portal_swift_init")
 public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
     let webFunctions: [(String, Int, Int, emacs_function, String)] = [
@@ -338,7 +399,17 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--terminal-ack", 2, 2, acknowledgePrefix, "Acknowledge a prefix for ID, replaying held events if REPLAY."),
         ("portal--terminal-send-prefix", 1, 1, sendPrefix, "Send the captured prefix key to terminal ID using native key events.")
     ]
-    for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions {
+    let editorFunctions: [(String, Int, Int, emacs_function, String)] = [
+        ("portal--editor-open", 2, 2, openEditor, "Create a persistent local editor in frame TITLE at URL; return its ID."),
+        ("portal--editor-layout", 3, 3, layoutEditor, "Place editor ID in frame TITLE at EDGES; [] hides it without unloading."),
+        ("portal--editor-send", 2, 2, sendEditor, "Send JSON to editor ID asynchronously."),
+        ("portal--editor-events", 1, 1, takeEditor, "Drain editor ID's pending messages as a JSON array."),
+        ("portal--editor-focus", 1, 1, focusEditor, "Focus the visible editor ID."),
+        ("portal--editor-close", 1, 1, closeEditor, "Release editor ID and its document session."),
+        ("portal--editor-ack", 2, 2, acknowledgeEditor, "Release editor ID's input capture, replaying held keys if REPLAY."),
+        ("portal--editor-channel", 1, 1, connectEditorChannel, "Connect a pipe PROCESS for editor notifications; nil disconnects.")
+    ]
+    for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions + editorFunctions {
         let function = doc.withCString { env.pointee.make_function(env, minimum, maximum, callback, $0, nil) }
         var args = [symbol(env, name), function]
         _ = env.pointee.funcall(env, symbol(env, "fset"), args.count, &args)
