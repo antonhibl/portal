@@ -7,9 +7,11 @@
 #include <stdlib.h>
 
 int plugin_is_GPL_compatible;
+static __weak NSWindow *explicitWindow;
 
 static NSWindow *activeWindow(void)
 {
+    if (explicitWindow) return explicitWindow;
     static __weak NSWindow *lastWindow;
     NSWindow *window = NSApp.keyWindow;
     // The desktop app may regain activation between tool calls. Keep local
@@ -20,6 +22,24 @@ static NSWindow *activeWindow(void)
     }
     lastWindow = window;
     return window;
+}
+
+static emacs_value targetFrame(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)data;
+    explicitWindow = nil;
+    if (!env->is_not_nil(env, args[0])) return env->intern(env, "t");
+    ptrdiff_t size = 0;
+    if (!env->copy_string_contents(env, args[0], NULL, &size)) return env->intern(env, "nil");
+    char *bytes = malloc((size_t)size);
+    if (!bytes) return env->intern(env, "nil");
+    if (!env->copy_string_contents(env, args[0], bytes, &size)) { free(bytes); return env->intern(env, "nil"); }
+    NSString *title = [NSString stringWithUTF8String:bytes];
+    free(bytes);
+    for (NSWindow *window in NSApp.windows) {
+        if ([window.title isEqualToString:title]) { explicitWindow = window; break; }
+    }
+    return env->intern(env, explicitWindow ? "t" : "nil");
 }
 
 static emacs_value focusWeb(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
@@ -71,6 +91,39 @@ static emacs_value key(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void 
     return env->intern(env, "t");
 }
 
+// Asynchronous JS inspection stays inside this test module. No emacs_env is
+// captured by WebKit completions, and the production editor has no eval API.
+static NSString *webResult;
+static emacs_value webEval(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)data;
+    if (!env->is_not_nil(env, args[0])) {
+        if (!webResult) return env->intern(env, "nil");
+        return env->make_string(env, webResult.UTF8String, (ptrdiff_t)[webResult lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+    }
+    ptrdiff_t size = 0;
+    if (!env->copy_string_contents(env, args[0], NULL, &size)) return env->intern(env, "nil");
+    char *bytes = malloc((size_t)size);
+    if (!bytes) return env->intern(env, "nil");
+    if (!env->copy_string_contents(env, args[0], bytes, &size)) { free(bytes); return env->intern(env, "nil"); }
+    NSString *script = [NSString stringWithUTF8String:bytes];
+    free(bytes);
+    webResult = nil;
+    for (NSView *view in activeWindow().contentView.subviews) {
+        if ([view isKindOfClass:WKWebView.class] && !view.isHiddenOrHasHiddenAncestor) {
+            [(WKWebView *)view callAsyncJavaScript:script arguments:@{} inFrame:nil
+                inContentWorld:WKContentWorld.pageWorld completionHandler:^(id value, NSError *error) {
+                    NSDictionary *result = error ? @{ @"error": error.localizedDescription }
+                        : @{ @"value": value ?: NSNull.null };
+                    NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingFragmentsAllowed error:nil];
+                    webResult = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+                }];
+            return env->intern(env, "t");
+        }
+    }
+    return env->intern(env, "nil");
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -85,6 +138,14 @@ int emacs_module_init(struct emacs_runtime *runtime)
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-native-focus-web");
     args[1] = env->make_function(env, 0, 0, focusWeb, "Focus the visible native webview.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-web-eval");
+    args[1] = env->make_function(env, 1, 1, webEval,
+        "Evaluate SCRIPT in the visible webview; nil retrieves the async JSON result.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-native-target-frame");
+    args[1] = env->make_function(env, 1, 1, targetFrame,
+        "Target a frame with TITLE for local test injection; nil restores active-window targeting.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;
 }

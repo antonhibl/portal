@@ -200,14 +200,17 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
 (defun portal-terminal--receive (_process text)
   "Queue native prefix notifications from TEXT for the Emacs command loop.
 The process filter never runs interactive commands or reads keyboard input."
-  (setq portal-terminal--notification (concat portal-terminal--notification text))
-  (while (string-match "\\`\\(cancel \\|escape \\|literal \\|binding \\)?\\([0-9]+\\)\\(?: \\([0-9]+\\)\\)?\n" portal-terminal--notification)
-    (let ((kind (match-string 1 portal-terminal--notification))
-          (id (string-to-number (match-string 2 portal-terminal--notification)))
-          (key (when (match-string 3 portal-terminal--notification)
-                 (string-to-number (match-string 3 portal-terminal--notification)))))
-      (setq portal-terminal--notification
-            (substring portal-terminal--notification (match-end 0)))
+  (setq portal-terminal--notification
+        (portal-native--consume-lines portal-terminal--notification text
+                                      #'portal-terminal--receive-line)))
+
+(defun portal-terminal--receive-line (line)
+  "Queue one complete native terminal notification LINE."
+  (when (string-match "\\`\\(cancel \\|escape \\|literal \\|binding \\)?\\([0-9]+\\)\\(?: \\([0-9]+\\)\\)?\\'" line)
+    (let ((kind (match-string 1 line))
+          (id (string-to-number (match-string 2 line)))
+          (key (when (match-string 3 line)
+                 (string-to-number (match-string 3 line)))))
       (setq unread-command-events
             (nconc unread-command-events
                    (list (list (cond ((equal kind "cancel ") 'portal-terminal-cancel)

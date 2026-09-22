@@ -2,7 +2,6 @@
 import AppKit
 import GhosttyTerminal
 import GhosttyTheme
-import Darwin
 
 @MainActor
 private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
@@ -218,7 +217,7 @@ enum Terminals {
     private static var sessions: [Int: TerminalSession] = [:]
     private static var nextID = 0
     private static var activeID: Int?
-    private static var channel: Int32 = -1
+    private static let channel = NativeEventChannel()
     private static var prefixCharacter = "b"
     private static var prefixModifiers: NSEvent.ModifierFlags = .control
     private static var regularBindings: [TerminalKey: Int] = [:]
@@ -262,7 +261,7 @@ enum Terminals {
     }
 
     static func notify(_ message: String) -> Bool {
-        message.withCString { Darwin.write(channel, $0, message.utf8.count) } == message.utf8.count
+        channel.notify(message)
     }
 
     private static func session(_ id: Int?) -> TerminalSession? {
@@ -331,12 +330,7 @@ enum Terminals {
     }
 
     static func connectChannel(_ fd: Int32) {
-        if channel >= 0 { Darwin.close(channel) }
-        channel = fd
-        if fd >= 0 {
-            _ = fcntl(fd, F_SETFL, O_NONBLOCK)
-            _ = fcntl(fd, F_SETNOSIGPIPE, 1)
-        }
+        channel.connect(fd)
     }
 
     static func configurePrefix(_ character: String, flags: Int) throws {

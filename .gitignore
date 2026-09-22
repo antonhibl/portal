@@ -6,3 +6,4 @@ node_modules/
 .swiftpm/
 /.build/
 /native/.build/
+/host/.generated/
