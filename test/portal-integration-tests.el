@@ -62,7 +62,7 @@
             (portal-test-native-key 0 0 "a")
             ;; A terminal must not swallow WebKit's key-up events.
             (portal-test--wait-for-page "a:1:1" 1)
-            (portal-test-native-key 53 0 "\e")
+            (portal-test-native-key 53 (ash 1 20) "\e")
             (portal-integration-test--emacs-input)
             (if terminal-first
                 (progn
@@ -78,7 +78,7 @@
               (should (portal-test-native-focus-web))
               (portal-test-native-key 11 0 "b")
               (portal-test--wait-for-page "ab:2:2" 1)
-              (portal-test-native-key 53 0 "\e")
+              (portal-test-native-key 53 (ash 1 20) "\e")
               (portal-integration-test--emacs-input)))
         (portal-hide)
         (portal-terminal-close-all)

@@ -14,8 +14,8 @@ notifications identify a session with queued messages. Lisp's
 
 No asynchronous AppKit or WebKit callback keeps an `emacs_env` or calls Lisp.
 Callbacks notify an Emacs pipe process, and interactive commands are queued as
-normal Emacs input events. Terminal prefix parsing and Ghostty input remain
-terminal-specific.
+normal Emacs input events. `NativeInput.swift` and `portal-input.el` share prefix capture and dispatch
+across terminals, editors, and previews; Ghostty retains terminal input handling.
 
 ## Document sessions
 
@@ -51,11 +51,12 @@ save-all operations; `before-save-hook` is unsuitable because Emacs can catch it
 errors and continue writing. Emacs writes through its normal save machinery and
 sends `saved` only from `after-save-hook`. A failed write retains modified state.
 
-The in-page Save button and Command-S queue an Emacs command for their owning
-buffer. Native Control-X temporarily captures fast follow-up key events while
-Emacs selects the document buffer. Lisp queues Control-X, then acknowledges the
-handoff and native code replays the held events. Command-Escape uses the same
-handoff without a prefix. Bare Escape goes to Excalidraw.
+The in-page Save button and Command-S queue an Emacs save for their owning
+buffer. Keyboard input uses the shared Portal bridge: `C-b C-x C-s` resolves the
+normal Emacs save command, including the editor's remapping, and returns focus
+after the save and any filename prompt finish. `C-b d` and Command-Escape leave
+control with Emacs. Escape, Control-G, and bare Control-X belong to the page.
+Native escape releases pending input capture without waiting for a JS snapshot.
 
 The buffer holds the latest synchronized JSON even if WebKit terminates. Explicit
 reopen rebuilds the editor from that buffer; it does not silently reload a saved
@@ -75,5 +76,5 @@ The graphical tests require a disposable graphical Emacs with the test event
 module from the README loaded. Load `test/portal-excalidraw-gui-tests.el`, then
 run `M-x ert` with selector `^portal-excalidraw-gui-`. They exercise the actual
 WKWebView, offline fonts, paste, image round trips, multiple documents, retained
-sessions, and rapid native Control-X handoff. The test-only JS evaluator is not
+sessions, and rapid shared-prefix handoff. The test-only JS evaluator is not
 part of the production module.

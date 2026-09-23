@@ -122,21 +122,20 @@
   (portal-excalidraw-gui--document
     (select-frame-set-input-focus (selected-frame))
     (portal-excalidraw-focus)
+    (portal-test-native-key 11 (ash 1 18) "\C-b")
     (portal-test-native-key 7 (ash 1 18) "\C-x")
     (portal-test-native-key 1 (ash 1 18) "\C-s")
-    ;; The command loop dispatches the notification before buffered key tails.
-    (let* ((notification (with-timeout (5 (ert-fail "Editor did not notify Emacs"))
-                           (read-key-sequence-vector nil)))
-           (event (aref notification 0)))
-      (should (eq (car-safe event) 'portal-excalidraw-command))
-      (portal-excalidraw--dispatch event))
-    (let ((keys (with-timeout (5 (ert-fail "Editor did not hand C-x C-s to Emacs"))
-                  (read-key-sequence-vector ""))))
-      (should (equal keys [24 19]))
-      (should (eq (key-binding keys) #'portal-excalidraw-save))
-      (call-interactively (key-binding keys)))
+    ;; Exercise the command loop's keymap lookup, not just a direct dispatch.
+    (let ((post-command-hook
+           (cons (lambda ()
+                   (when (eq this-command #'portal-input--dispatch)
+                     (exit-recursive-edit)))
+                 post-command-hook)))
+      (with-timeout (5 (ert-fail "Portal save command stalled"))
+        (recursive-edit)))
     (should (file-exists-p buffer-file-name))
-    (should-not (buffer-modified-p))))
+    (should-not (buffer-modified-p))
+    (should (portal-input--action "focused"))))
 
 (ert-deftest portal-excalidraw-gui-save-commits-active-text-editing ()
   (portal-excalidraw-gui--document

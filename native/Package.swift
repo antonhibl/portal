@@ -26,7 +26,7 @@ let package = Package(
             "CEmacs", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "GhosttyTheme", package: "libghostty-spm")
         ], path: ".", exclude: ["Emacs", "Info.plist"],
-           sources: ["Module.swift", "NativeHost.swift", "NativeEventChannel.swift",
+           sources: ["Module.swift", "NativeHost.swift", "NativeEventChannel.swift", "NativeInput.swift",
                      "WebView.swift", "WebEditor.swift", "Terminal.swift"],
            swiftSettings: [.unsafeFlags(["-warnings-as-errors", "-Xcc", "-I" + emacsInclude])])
     ]

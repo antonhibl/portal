@@ -53,6 +53,11 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-quick-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(quick-terminal PROPERTIES TIMEOUT 30)
+    add_test(NAME input
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-input-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(input PROPERTIES TIMEOUT 30)
     add_test(NAME terminal-bindings
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-bindings-tests.el"

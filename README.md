@@ -54,21 +54,58 @@ To open a local HTML file programmatically:
 (portal-preview-html "/absolute/path/index.html")
 ```
 
-Click inside a page to interact with it. Press Escape or `C-g` to return keyboard
-focus to Emacs, then `q` or `M-x portal-hide` to remove the views. The mode line
-and minibuffer remain available. Run `portal-open-url` again to open another URL.
-`M-x portal-show` still opens the green-square demo in `*portal-green*`.
+## Shared keyboard controls
+
+Terminal, Excalidraw, and HTML/Markdown views use `portal-input-prefix`
+(default `C-b`). The app receives ordinary keys, including Escape and `C-g`.
+The prefix temporarily gives a command to Emacs:
+
+| Keys | Action |
+| --- | --- |
+| `C-b ?` | Show shared and feature bindings |
+| `C-b d` or Command-Escape | Return to Emacs and stay there |
+| `C-b o` | Select the next Emacs pane |
+| `C-b :` or `C-b M-x` | Run an Emacs command |
+| `C-b C-x …`, `C-b C-c …`, `C-b C-h …` | Use your existing Emacs bindings |
+| `C-b m …` | Feature commands; existing terminal shortcuts also work directly |
+| `C-b C-b` | Send a literal Control-B to the app |
+| `C-g` after the prefix | Cancel the prefix |
+| `RET` while Emacs owns a Portal buffer | Enter the app |
+
+The prefix has no timeout. Commands finish their minibuffer interaction before
+returning to the selected native view; explicit unfocus, errors, and selecting
+an ordinary buffer leave Emacs in control. The header shows the input owner and
+provides a clickable **Return to Emacs** control. No global physical keybinding
+is installed in ordinary Emacs buffers.
+
+Use `M-x portal-input-passthrough` to release even the prefix and optional
+native shortcuts to an app. Command-Escape leaves passthrough and returns to
+Emacs; the next entry uses the normal prefix again. This does not bypass
+macOS shortcuts or the embedded app's own input handling.
+
+Set `(setq portal-input-prefix "C-a")` to change the prefix for all views.
+`portal-terminal-prefix` remains an alias, so existing configuration works.
+Customize shared operations in `portal-command-map`; they take precedence over
+feature shortcuts. The native first chord accepts modified ASCII, with Meta =
+Option and Super = Command. The rest of a sequence uses normal Emacs keys.
+
+Click inside a page or press `RET` to interact. After returning to Emacs,
+`q` or `M-x portal-hide` removes preview views. The mode line and minibuffer
+remain available. Run `portal-open-url` again to open another URL.
+
+Restart Emacs after rebuilding the native module to try these controls.
 
 ## Local Excalidraw drawings
 
-Run `M-x portal-excalidraw` for a new drawing, then `C-x C-s` to choose its
+Run `M-x portal-excalidraw` for a new drawing, then `C-b C-x C-s` to choose its
 filename and save. Open existing `.excalidraw` files normally with `C-x C-f`
 or Dired; they enter `portal-excalidraw-mode` automatically. A prefix argument
 to `portal-excalidraw` prompts for an existing or new file.
 
 - Draw, type, paste text/images, and use the normal Excalidraw editing tools.
-- `C-x C-s`, Command-S, and the editor's **Save** button all save through Emacs.
-  `C-x` works while the webview has focus, including fast follow-up keys.
+- `C-b C-x C-s`, Command-S, and the editor's **Save** button save through Emacs.
+  Bare `C-x` belongs to the app while the webview has focus. In Emacs input,
+  the usual `C-x C-s` still works. `C-b m s` also saves; `C-b m r` reopens.
 - Command-Escape returns keyboard focus to Emacs; `RET` re-enters the editor.
   Bare Escape remains available for drawing/text editing.
 - Each drawing has one editor. Switching buffers hides it without losing its
@@ -132,7 +169,7 @@ Reopening never sends `cd` or starts a replacement shell. A command such as
 Switching files or projects does not automatically change an already visible
 panel. Dismiss it, then summon again to select the new project's quick shell.
 
-Quick terminals have a restricted native prefix map (`C-b` by default):
+Quick terminals inherit the shared controls and add these feature shortcuts:
 
 | Key | Action |
 | --- | --- |
@@ -210,7 +247,7 @@ where an Emacs counterpart exists. Every row follows the prefix (`C-b` by defaul
 | `z` | Zoom the pane; repeat to restore the layout |
 | `x` | Confirm, end the shell, and close its pane |
 | `d` | Stay in Emacs; keep the shell running |
-| `:` | Run `M-x` and stay in Emacs afterward |
+| `:` | Run `M-x`, then resume the selected app |
 | `?` | Show the current bindings, including customizations |
 | repeated prefix | Send the actual prefix keystroke to the shell |
 
@@ -223,7 +260,7 @@ selected pane. Different terminal buffers can display and run simultaneously.
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
 ```elisp
-(setq portal-terminal-prefix "C-a") ; default: "C-b"
+(setq portal-input-prefix "C-a") ; default: "C-b"; applies to every Portal view
 (setq portal-terminal-theme "Dracula") ; nil follows system light/dark appearance
 (keymap-set portal-terminal-prefix-map "v" #'portal-terminal-split-right)
 (keymap-set portal-terminal-prefix-map "b" #'switch-to-buffer)
@@ -387,7 +424,7 @@ and returns a complete HTML page with embedded light/dark CSS. Rendering happens
 in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
-anchors are supported. Press Escape or `C-g` to return focus to Emacs, then
+anchors are supported. Press `C-b d` or Command-Escape to return to Emacs, then
 `g` (`portal-refresh`) to reread the file from disk. Refresh also restarts a
 stopped host; the selected Markdown file is retained across host restarts.
 Missing or unreadable files produce an error page.
@@ -413,7 +450,7 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
   webview; showing the buffer again loads the originally requested URL anew.
 - Opening another URL replaces the current Portal content. There is one active
   native buffer and one host frame, as in the original demo.
-- Escape and `C-g` are reserved for returning to Emacs while a page has focus.
+- The shared Portal prefix and Command-Escape work while a page has focus.
   Clicking a webview does not change Emacs's selected pane; use Emacs window
   navigation after returning focus.
 - This is a URL viewer, without browser chrome, history commands, downloads,
@@ -452,7 +489,8 @@ with text beside the remaining view.
 | --- | --- |
 | `portal-native.el` | Shared module loading and native frame identification |
 | `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
-| `portal-terminal.el` | Terminal buffers, configurable prefix commands, geometry, and lifecycle |
+| `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
+| `portal-terminal.el` | Terminal buffers, tmux shortcuts, geometry, and lifecycle |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
 | `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
 | `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
@@ -463,7 +501,8 @@ with text beside the remaining view.
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | WebKit/demo views, navigation, and inspection |
-| `native/Terminal.swift` | Ghostty sessions, terminal input policy, and prefix buffering |
+| `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
+| `native/Terminal.swift` | Ghostty sessions and terminal input |
 | `native/Emacs/` | Required C entry point, Emacs header import, and ABI size checks |
 | `native/Package.swift` | One native library and pinned Ghostty dependency |
 
@@ -471,7 +510,7 @@ These are ordinary source boundaries within one native module. A small
 `NativeSurface` protocol lets each feature expose its view and keyboard handler.
 `NativeHost` knows neither WebKit nor Ghostty: it attaches views to the correct
 frame, remembers the original Emacs responder, and uses one event monitor to
-route keys to the focused surface or a pending terminal prefix. A key released
+route keys to the focused surface or a pending Portal command. A key released
 after focus changes is not delivered to the newly focused feature.
 
 Features own their state and cleanup. Removing a web view does not destroy a
@@ -518,7 +557,8 @@ a separate HTTPS smoke check loaded `https://example.com` successfully.
 The Markdown tests exercise file paths with Unicode and URL punctuation,
 refresh after file deletion/restoration, split panes, host recovery, and
 cancellation during startup.
-All 32 tests in the combined graphical suite pass. They include the web/demo and terminal tests, plus
+The combined graphical suite includes web/demo, terminal, editor, and shared
+input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
@@ -533,15 +573,19 @@ emacs -Q --module-assertions -l "$PWD/portal.el" \
   -l "$PWD/test/portal-tests.el" \
   -l "$PWD/test/portal-terminal-tests.el" \
   -l "$PWD/test/portal-integration-tests.el" \
+  -l "$PWD/test/portal-excalidraw-gui-tests.el" \
+  -l "$PWD/test/portal-input-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
 The Lisp tests use only Emacs's built-in libraries. A standalone AppKit check
-also verifies Escape, `C-g`, and focused-view removal return focus to the editor:
+also verifies guest Escape/`C-g` retain focus, while Command-Escape and
+focused-view removal return focus to the editor:
 
 ```sh
 xcrun swiftc -swift-version 6 -warnings-as-errors \
-  native/NativeHost.swift native/WebView.swift test/native-focus.swift \
+  native/NativeHost.swift native/NativeInput.swift native/NativeEventChannel.swift \
+  native/WebView.swift test/native-focus.swift \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```

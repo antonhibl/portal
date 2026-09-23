@@ -2,7 +2,6 @@
 import Foundation
 import CEmacs
 
-enum NativeError: Error { case message(String) }
 private typealias Environment = UnsafeMutablePointer<emacs_env>
 
 private func symbol(_ env: Environment, _ name: String) -> emacs_value? {
@@ -270,7 +269,7 @@ private let connectChannel: emacs_function = { env, _, args, _ in
     let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
     guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return symbol(env, "nil") }
     return call(env) {
-        Terminals.connectChannel(fd)
+        NativeInput.channel.connect(fd)
         return true
     } convert: { boolean(env, $0) }
 }
@@ -279,7 +278,7 @@ private let configureBindings: emacs_function = { env, _, args, _ in
     let env = env!
     guard let json = readString(env, args![0]) else { return symbol(env, "nil") }
     return call(env) {
-        try Terminals.configureBindings(json)
+        try NativeInput.configureBindings(json)
         return true
     } convert: { boolean(env, $0) }
 }
@@ -289,25 +288,17 @@ private let configurePrefix: emacs_function = { env, _, args, _ in
     guard let character = readString(env, args![0]) else { return symbol(env, "nil") }
     let flags = env.pointee.extract_integer(env, args![1])
     return call(env) {
-        try Terminals.configurePrefix(character, flags: flags)
+        try NativeInput.configurePrefix(character, flags: flags)
         return true
     } convert: { boolean(env, $0) }
 }
 
-private let acknowledgePrefix: emacs_function = { env, _, args, _ in
+private let inputAction: emacs_function = { env, nargs, args, _ in
     let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    let replay = env.pointee.is_not_nil(env, args![1])
-    return call(env) { Terminals.acknowledge(id, replay: replay) } convert: { boolean(env, $0) }
-}
-
-private let sendPrefix: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    return call(env) {
-        try Terminals.sendPrefix(id)
-        return true
-    } convert: { boolean(env, $0) }
+    guard let target = readString(env, args![0]), let action = readString(env, args![1]) else { return nil }
+    let serial = nargs > 2 ? env.pointee.extract_integer(env, args![2]) : 0
+    return call(env) { try NativeInput.perform(target, action: action, serial: serial) }
+        convert: { boolean(env, $0) }
 }
 
 private let openEditor: emacs_function = { env, _, args, _ in
@@ -357,14 +348,6 @@ private let closeEditor: emacs_function = { env, _, args, _ in
     return call(env) { WebEditors.close(id); return false } convert: { boolean(env, $0) }
 }
 
-private let acknowledgeEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    let replay = env.pointee.is_not_nil(env, args![1])
-    return call(env) { WebEditors.acknowledge(id, replay: replay); return true }
-        convert: { boolean(env, $0) }
-}
-
 private let connectEditorChannel: emacs_function = { env, _, args, _ in
     let env = env!
     let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
@@ -393,11 +376,10 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--terminal-input", 2, 3, inputTerminal, "Paste TEXT into the terminal; press Enter if ENTER is non-nil."),
         ("portal--terminal-text", 0, 1, snapshotTerminal, "Select all terminal scrollback and return its text. Leaves the native selection active."),
         ("portal--terminal-state", 0, 1, inspectTerminal, "Inspect the native terminal's actual surface, focus and grid."),
-        ("portal--terminal-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
+        ("portal--input-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
         ("portal--terminal-bindings", 1, 1, configureBindings, "Atomically replace runtime binding profiles from JSON."),
-        ("portal--terminal-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
-        ("portal--terminal-ack", 2, 2, acknowledgePrefix, "Acknowledge a prefix for ID, replaying held events if REPLAY."),
-        ("portal--terminal-send-prefix", 1, 1, sendPrefix, "Send the captured prefix key to terminal ID using native key events.")
+        ("portal--input-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
+        ("portal--input", 2, 3, inputAction, "Perform ACTION on native TARGET, optionally validating its handoff SERIAL.")
     ]
     let editorFunctions: [(String, Int, Int, emacs_function, String)] = [
         ("portal--editor-open", 2, 2, openEditor, "Create a persistent local editor in frame TITLE at URL; return its ID."),
@@ -406,7 +388,6 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--editor-events", 1, 1, takeEditor, "Drain editor ID's pending messages as a JSON array."),
         ("portal--editor-focus", 1, 1, focusEditor, "Focus the visible editor ID."),
         ("portal--editor-close", 1, 1, closeEditor, "Release editor ID and its document session."),
-        ("portal--editor-ack", 2, 2, acknowledgeEditor, "Release editor ID's input capture, replaying held keys if REPLAY."),
         ("portal--editor-channel", 1, 1, connectEditorChannel, "Connect a pipe PROCESS for editor notifications; nil disconnects.")
     ]
     for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions + editorFunctions {

@@ -75,14 +75,3 @@
         (should-not (lookup-key portal-terminal-quick-native-map (kbd "s-j")))
         (should (eq (lookup-key (cdr portal-terminal--native-maps) (kbd "s-`"))
                     #'portal-terminal-toggle))))))
-
-(ert-deftest portal-bindings-pipe-fragments-queue-dispatch-without-running-commands ()
-  (let ((portal-terminal--notification "") (unread-command-events nil))
-    (portal-terminal--receive nil "binding 12 838")
-    (should-not unread-command-events)
-    (portal-terminal--receive nil "8704\ncancel 12\n13\n")
-    (should (equal unread-command-events
-                   '((portal-terminal-binding (12 8388704))
-                     (portal-terminal-cancel (12 nil))
-                     (portal-terminal-prefix (13 nil)))))
-    (should (equal portal-terminal--notification ""))))

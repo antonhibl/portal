@@ -40,10 +40,23 @@ Nil means no layout has been sent yet.")
 
 (define-derived-mode portal-mode special-mode "Portal"
   "Major mode for Portal native views."
-  (setq-local cursor-type nil))
+  (setq-local cursor-type nil)
+  (setq-local portal-input--target-function
+              (lambda (window) (when-let* ((id (cdr (assq window portal--panes))))
+                                 (format "web:%d" id))))
+  (setq-local portal-input--focus-function #'portal-focus)
+  (setq-local portal-input--map-function (lambda () portal-mode-map))
+  (portal-input-mode 1))
 
 (keymap-set portal-mode-map "q" #'portal-hide)
 (keymap-set portal-mode-map "g" #'portal-refresh)
+
+(defun portal-focus ()
+  "Give the selected webview keyboard focus."
+  (interactive)
+  (redisplay t)
+  (portal--sync (selected-frame))
+  (unless (portal-input--action "focus") (user-error "No webview in this pane")))
 
 ;; Host binding and presentation geometry.
 (defun portal--bind-frame (frame)
@@ -104,8 +117,9 @@ All views share the buffer's native content."
 (defun portal-open-url (url)
   "Open URL in a native WKWebView in *portal-web*.
 Each pane gets an independent webview starting at URL.  Click the page to
-interact; Escape or C-g returns keyboard focus to Emacs.  HTTP(S), file,
-data and about URLs are supported.  This replaces the active Portal content."
+interact; the Portal prefix or Command-Escape returns control to Emacs.
+HTTP(S), file, data and about URLs are supported.
+This replaces the active Portal content."
   (interactive (list (read-string "Open URL: " "https://")))
   (unless (and (stringp url)
                (string-match-p "\\`\\(?:https?://[^/[:space:]]+\\|file:///\\|data:\\|about:\\)" url))
@@ -212,7 +226,7 @@ not included."
 
 (defun portal--show (&optional url)
   "Display native content, loading URL when non-nil."
-  (portal-native--load)
+  (portal-input--connect)
   (portal-hide)
   (let (ready)
     (unwind-protect
@@ -234,7 +248,7 @@ not included."
           (add-hook 'delete-frame-functions #'portal--frame-deleted)
           (setq ready t)
           (message (if url
-                       "Webview opened. Escape/C-g returns to Emacs; q hides the view."
+                       "Webview opened. RET enters; Command-Escape returns to Emacs; q hides the view."
                      "Swift native views attached. Press q or M-x portal-hide to remove them.")))
       (unless ready (portal-hide)))))
 
@@ -252,7 +266,6 @@ not included."
         portal--buffer nil
         portal--frame nil
         portal--panes nil
-        portal--next-id 0
         portal--geometry nil)
   (when (fboundp 'portal--destroy)
     (portal--destroy)))

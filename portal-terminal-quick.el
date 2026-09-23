@@ -4,7 +4,6 @@
 (require 'project)
 (require 'portal-terminal)
 
-(declare-function portal--terminal-ack "portal-terminal" (id replay))
 (declare-function portal--terminal-unfocus "portal-terminal" (&optional id))
 
 (defcustom portal-terminal-quick-height 0.5
@@ -111,7 +110,7 @@ No global keybinding is installed; bind this command in your configuration."
       (set-frame-parameter nil 'portal-terminal-quick-height (window-total-height window))
       (setq portal-terminal--resume nil)
       (when-let* ((id (buffer-local-value 'portal-terminal--id buffer)))
-        (portal--terminal-ack id nil)
+        (portal-input--action "unfocus" (format "terminal:%d" id))
         (portal--terminal-unfocus id))
       (delete-window window)
       (when (and (window-live-p return) (eq (window-frame return) (selected-frame)))

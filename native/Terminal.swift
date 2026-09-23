@@ -8,6 +8,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     TerminalSurfaceGridResizeDelegate, TerminalSurfaceLifecycleDelegate,
     TerminalSurfaceCloseDelegate, TerminalSurfaceOpenURLDelegate, NativeSurface {
     var nativeView: NSView { self }
+    var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
     func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
     var terminalTitle = "Terminal"
@@ -50,49 +51,19 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     }
 }
 
-private struct TerminalKey: Hashable {
-    let character: String
-    let flags: UInt
-
-    init(character: String, flags: UInt) {
-        self.character = character.lowercased()
-        var modifiers = flags & Terminals.modifiers.rawValue
-        // AppKit retains Shift for punctuation ("!"), whereas Emacs encodes
-        // the resulting character. Preserve Shift for letters and space.
-        if let ascii = character.utf8.first, character.utf8.count == 1,
-           ascii > 32, !(65...90).contains(ascii), !(97...122).contains(ascii) {
-            modifiers &= ~NSEvent.ModifierFlags.shift.rawValue
-        }
-        self.flags = modifiers
-    }
-
-    @MainActor init(_ event: NSEvent) {
-        self.init(character: event.charactersIgnoringModifiers ?? "", flags: event.modifierFlags.rawValue)
-    }
-}
-
-private struct TerminalBinding: Decodable {
-    let character: String
-    let flags: UInt
-    let event: Int
-}
-
-private struct TerminalBindingProfiles: Decodable {
-    let regular: [TerminalBinding]
-    let quick: [TerminalBinding]
-}
-
 @MainActor
-private final class TerminalSession: NativeInputHandler {
+private final class TerminalSession {
     let id: Int
     let quick: Bool
     let terminal: HostedTerminal
     let host: NativeHost
     var edges: [Int] = []
-    var prefixEvent: NSEvent?
-    private var waitingForLisp = false
-    private var readingPrefix = false
-    private var pendingEvents: [NSEvent] = []
+    lazy var input = NativeInput(target: "terminal:\(id)", view: terminal, host: host,
+                                 profile: quick ? "quick" : "regular") { [weak self] in
+        guard let self, !terminal.isHidden, terminal.acquireProgrammaticFocus() else { return false }
+        Terminals.didFocus(id)
+        return true
+    }
 
     init(id: Int, host: NativeHost, directory: String, theme: TerminalTheme, quick: Bool) throws {
         self.id = id
@@ -125,48 +96,9 @@ private final class TerminalSession: NativeInputHandler {
 
     func returnFocus() { host.returnFocus(from: terminal) }
 
-    // Prefix buffering and key policy belong to the terminal. NativeHost calls
-    // this only for its focused surface or its explicitly captured prefix input.
     func handleKeyEvent(_ event: NSEvent) -> Bool {
-        if waitingForLisp {
-            pendingEvents.append(event)
-            return true
-        }
-        if readingPrefix {
-            guard event.type == .keyDown else { return false }
-            let literal = prefixEvent.map { TerminalKey($0) == TerminalKey(event) } ?? false
-            let cancel = event.modifierFlags.intersection(Terminals.modifiers) == .control &&
-                event.charactersIgnoringModifiers == "g"
-            let escape = event.keyCode == 53 && event.modifierFlags.contains(.command)
-            if literal || cancel || escape {
-                if !event.isARepeat {
-                    let kind = literal ? "literal" : (cancel ? "cancel" : "escape")
-                    _ = Terminals.notify("\(kind) \(id)\n")
-                }
-                return true
-            }
-            return false
-        }
         Terminals.didFocus(id)
-        if event.type == .keyDown {
-            if event.keyCode == 53 && event.modifierFlags.contains(.command) {
-                returnFocus()
-                return true
-            }
-            let binding = Terminals.binding(event, quick: quick)
-            if binding != nil || Terminals.isPrefix(event) {
-                if !event.isARepeat {
-                    prefixEvent = event
-                    returnFocus()
-                    let message = binding.map { "binding \(id) \($0)\n" } ?? "\(id)\n"
-                    if Terminals.notify(message) {
-                        waitingForLisp = true
-                        host.captureInput(self)
-                    }
-                }
-                return true
-            }
-        }
+        if input.handleKeyEvent(event) { return true }
         switch event.type {
         case .keyDown: terminal.keyDown(with: event)
         case .keyUp: terminal.keyUp(with: event)
@@ -176,25 +108,7 @@ private final class TerminalSession: NativeInputHandler {
         return true
     }
 
-    @discardableResult
-    func acknowledge(replay: Bool) -> Bool {
-        if !replay {
-            readingPrefix = false
-            host.releaseInput(self)
-        }
-        guard waitingForLisp else { return false }
-        waitingForLisp = false
-        readingPrefix = replay
-        let events = pendingEvents
-        pendingEvents.removeAll(keepingCapacity: true)
-        if replay {
-            for event in events.reversed() { NSApp.postEvent(event, atStart: true) }
-        }
-        return true
-    }
-
     func close() {
-        acknowledge(replay: false)
         host.remove(terminal)
     }
 }
@@ -217,53 +131,6 @@ enum Terminals {
     private static var sessions: [Int: TerminalSession] = [:]
     private static var nextID = 0
     private static var activeID: Int?
-    private static let channel = NativeEventChannel()
-    private static var prefixCharacter = "b"
-    private static var prefixModifiers: NSEvent.ModifierFlags = .control
-    private static var regularBindings: [TerminalKey: Int] = [:]
-    private static var quickBindings: [TerminalKey: Int] = [:]
-    nonisolated static let modifiers: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
-
-    static func isPrefix(_ event: NSEvent) -> Bool {
-        TerminalKey(event) == TerminalKey(character: prefixCharacter, flags: prefixModifiers.rawValue)
-    }
-
-    static func binding(_ event: NSEvent, quick: Bool) -> Int? {
-        (quick ? quickBindings : regularBindings)[TerminalKey(event)]
-    }
-
-    static func configureBindings(_ json: String) throws {
-        let profiles = try JSONDecoder().decode(TerminalBindingProfiles.self, from: Data(json.utf8))
-        func table(_ bindings: [TerminalBinding]) throws -> [TerminalKey: Int] {
-            var result: [TerminalKey: Int] = [:]
-            for binding in bindings {
-                guard binding.character.utf8.count == 1,
-                      let ascii = binding.character.utf8.first, (32...126).contains(ascii),
-                      binding.flags != 0, binding.flags & ~modifiers.rawValue == 0,
-                      binding.event > 0 else {
-                    throw NativeError.message("Invalid native terminal binding")
-                }
-                let key = TerminalKey(character: binding.character, flags: binding.flags)
-                guard key.flags != 0,
-                      key != TerminalKey(character: prefixCharacter, flags: prefixModifiers.rawValue),
-                      result[key] == nil else {
-                    throw NativeError.message("Conflicting native terminal binding")
-                }
-                result[key] = binding.event
-            }
-            return result
-        }
-        // Validate both profiles before replacing either live table.
-        let regular = try table(profiles.regular)
-        let quick = try table(profiles.quick)
-        regularBindings = regular
-        quickBindings = quick
-    }
-
-    static func notify(_ message: String) -> Bool {
-        channel.notify(message)
-    }
-
     private static func session(_ id: Int?) -> TerminalSession? {
         guard let id = id ?? activeID else { return nil }
         return sessions[id]
@@ -325,24 +192,6 @@ enum Terminals {
         if activeID == session.id { activeID = sessions.keys.max() }
     }
 
-    static func acknowledge(_ id: Int, replay: Bool) -> Bool {
-        session(id)?.acknowledge(replay: replay) ?? false
-    }
-
-    static func connectChannel(_ fd: Int32) {
-        channel.connect(fd)
-    }
-
-    static func configurePrefix(_ character: String, flags: Int) throws {
-        guard flags >= 0 else { throw NativeError.message("Prefix modifiers must be nonnegative") }
-        let key = TerminalKey(character: character, flags: UInt(flags))
-        guard regularBindings[key] == nil, quickBindings[key] == nil else {
-            throw NativeError.message("Terminal prefix conflicts with a native binding")
-        }
-        prefixCharacter = character.lowercased()
-        prefixModifiers = NSEvent.ModifierFlags(rawValue: UInt(flags)).intersection(modifiers)
-    }
-
     static func input(_ text: String, enter: Bool, id: Int?) throws {
         guard let terminal = session(id)?.terminal, terminal.paste(text: text) else {
             throw NativeError.message("No terminal accepting input")
@@ -373,18 +222,4 @@ enum Terminals {
             layer: terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? "")
     }
 
-    static func sendPrefix(_ id: Int) throws {
-        guard let session = session(id), let down = session.prefixEvent,
-              let up = NSEvent.keyEvent(with: .keyUp, location: down.locationInWindow,
-                modifierFlags: down.modifierFlags, timestamp: down.timestamp,
-                windowNumber: down.windowNumber, context: nil, characters: down.characters ?? "",
-                charactersIgnoringModifiers: down.charactersIgnoringModifiers ?? "",
-                isARepeat: false, keyCode: down.keyCode) else {
-            throw NativeError.message("No captured prefix key to send")
-        }
-        // AppKit interpretation must run with the terminal as first responder.
-        try focus(id)
-        session.terminal.keyDown(with: down)
-        session.terminal.keyUp(with: up)
-    }
 }

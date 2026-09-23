@@ -8,8 +8,8 @@
   "Native Ghostty terminals in Emacs panes."
   :group 'terminals)
 
-(require 'portal-native
-         (expand-file-name "portal-native"
+(require 'portal-input
+         (expand-file-name "portal-input"
                            (file-name-directory
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)
@@ -24,16 +24,8 @@
 (declare-function portal--terminal-close "portal-terminal" (&optional id))
 (declare-function portal--terminal-input "portal-terminal" (text enter &optional id))
 (declare-function portal--terminal-state "portal-terminal" (&optional id))
-(declare-function portal--terminal-prefix "portal-terminal" (character flags))
-(declare-function portal--terminal-channel "portal-terminal" (process))
-(declare-function portal--terminal-ack "portal-terminal" (id replay))
-(declare-function portal--terminal-send-prefix "portal-terminal" (id))
 
 (defvar portal-terminal--buffers nil "Terminal buffers in creation order.")
-(defvar portal-terminal--channel nil)
-(defvar portal-terminal--notification "")
-(defvar portal-terminal--resume nil
-  "Dynamically bound by prefix dispatch; commands may clear it to stay in Emacs.")
 (defvar-local portal-terminal--id nil)
 (defvar-local portal-terminal--frame nil)
 (defvar-local portal-terminal--window nil)
@@ -73,39 +65,6 @@ the name is validated when the native module is available."
   (portal-native--load)
   (portal--terminal-themes))
 
-(defun portal-terminal--prefix-description (value)
-  "Validate VALUE and return its native character and modifier mask."
-  (let* ((keys (kbd value))
-         (event (and (= (length keys) 1) (aref keys 0)))
-         (basic (and event (event-basic-type event)))
-         (mods (and event (event-modifiers event))))
-    (unless (and (integerp basic) (<= 32 basic 126) mods
-                 (cl-every (lambda (mod) (memq mod '(control meta super shift))) mods))
-      (error "Terminal prefix must be one modified ASCII key, e.g. C-b, C-a or s-e"))
-    (when (and (memq 'shift mods) (/= basic 32) (not (<= ?a basic ?z)))
-      (error "Use the resulting punctuation, e.g. s-! instead of s-S-1"))
-    (list (downcase (char-to-string basic))
-          (cl-loop for (mod . bit) in '((shift . 17) (control . 18) (meta . 19) (super . 20))
-                   when (memq mod mods) sum (ash 1 bit)))))
-
-(defun portal-terminal--prefix-changed (_symbol value operation _where)
-  "Apply a prefix VALUE to running native terminals on OPERATION."
-  (when (eq operation 'set)
-    (let ((description (portal-terminal--prefix-description value)))
-      (when (fboundp 'portal-terminal--validate-native-prefix)
-        (portal-terminal--validate-native-prefix description))
-      (when (fboundp 'portal--terminal-prefix)
-        (apply #'portal--terminal-prefix description)))))
-
-(defcustom portal-terminal-prefix "C-b"
-  "Native terminal leader, in `kbd' notation.
-Use one modified ASCII key.  C-b follows tmux; C-a is another common choice.
-Meta means the native Option key, Super means Command.  Changes apply live.
-Press the prefix twice to send the actual prefix keystroke to the terminal."
-  :type 'string
-  :group 'portal-terminal)
-(add-variable-watcher 'portal-terminal-prefix #'portal-terminal--prefix-changed)
-
 (defcustom portal-terminal-prefix-map
   (let ((map (make-sparse-keymap)))
     (dolist (binding '(("c" . portal-terminal-new)
@@ -143,19 +102,14 @@ C-g cancels.  The current leader repeated sends a literal leader key."
 RET focuses Ghostty.  The configurable leader dispatches Emacs commands.
 Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
   (setq-local cursor-type nil)
-  ;; Outside the native view, so the escape hatch never depends on its keymap.
-  (setq-local header-line-format
-              (list " " (propertize " Return to Emacs "
-                                    'face 'mode-line-highlight
-                                    'mouse-face 'highlight
-                                    'help-echo "Return keyboard focus to Emacs; keep the shell running"
-                                    'local-map
-                                    (let ((map (make-sparse-keymap)))
-                                      (define-key map [header-line mouse-1]
-                                                  #'portal-terminal-unfocus)
-                                      map))
-                    '(:eval (format "  %s prefix · Command-Escape · RET to enter"
-                                    portal-terminal-prefix)))))
+  (setq-local portal-input--target-function
+              (lambda (window) (when (and portal-terminal--id (eq window portal-terminal--window))
+                                 (format "terminal:%d" portal-terminal--id))))
+  (setq-local portal-input--focus-function #'portal-terminal-focus)
+  (setq-local portal-input--map-function
+              (lambda () (if portal-terminal--quick-root portal-terminal-quick-prefix-map
+                           portal-terminal-prefix-map)))
+  (portal-input-mode 1))
 (keymap-set portal-terminal-mode-map "RET" #'portal-terminal-focus)
 (keymap-set portal-terminal-mode-map "C-c C-k" #'portal-terminal-close)
 
@@ -197,40 +151,9 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
   (dolist (buffer (portal-terminal--frame-buffers frame))
     (with-current-buffer buffer (portal-terminal-close))))
 
-(defun portal-terminal--receive (_process text)
-  "Queue native prefix notifications from TEXT for the Emacs command loop.
-The process filter never runs interactive commands or reads keyboard input."
-  (setq portal-terminal--notification
-        (portal-native--consume-lines portal-terminal--notification text
-                                      #'portal-terminal--receive-line)))
-
-(defun portal-terminal--receive-line (line)
-  "Queue one complete native terminal notification LINE."
-  (when (string-match "\\`\\(cancel \\|escape \\|literal \\|binding \\)?\\([0-9]+\\)\\(?: \\([0-9]+\\)\\)?\\'" line)
-    (let ((kind (match-string 1 line))
-          (id (string-to-number (match-string 2 line)))
-          (key (when (match-string 3 line)
-                 (string-to-number (match-string 3 line)))))
-      (setq unread-command-events
-            (nconc unread-command-events
-                   (list (list (cond ((equal kind "cancel ") 'portal-terminal-cancel)
-                                     ((equal kind "escape ") 'portal-terminal-escape)
-                                     ((equal kind "binding ") 'portal-terminal-binding)
-                                     ((equal kind "literal ") 'portal-terminal-literal)
-                                     (t 'portal-terminal-prefix))
-                               (list id key))))))))
-
 (defun portal-terminal--connect ()
-  "Load the native module and establish its event channel."
-  (portal-native--load)
-  (unless (process-live-p portal-terminal--channel)
-    (setq portal-terminal--notification ""
-          portal-terminal--channel
-          (make-pipe-process :name "portal-terminal-events" :noquery t
-                             :coding 'utf-8-unix :filter #'portal-terminal--receive))
-    (portal--terminal-channel portal-terminal--channel))
-  (apply #'portal--terminal-prefix
-         (portal-terminal--prefix-description portal-terminal-prefix))
+  "Connect shared input and refresh terminal-specific native bindings."
+  (portal-input--connect)
   (portal-terminal-refresh-bindings))
 
 ;;;###autoload
@@ -309,15 +232,7 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
   (portal-terminal--sync portal-terminal--frame)
   (portal--terminal-focus portal-terminal--id))
 
-(defun portal-terminal-unfocus ()
-  "Stay in Emacs, keeping every terminal session alive.  RET re-enters."
-  (interactive)
-  (setq portal-terminal--resume nil)
-  (dolist (buffer (portal-terminal--frame-buffers))
-    (let ((id (buffer-local-value 'portal-terminal--id buffer)))
-      (portal--terminal-ack id nil)
-      (portal--terminal-unfocus id)))
-  (message "Emacs has keyboard focus; RET in a terminal buffer re-enters Ghostty."))
+(defalias 'portal-terminal-unfocus #'portal-input-unfocus)
 
 ;;;###autoload
 (defun portal-terminal-close ()
@@ -340,11 +255,7 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (remove-hook 'window-state-change-functions #'portal-terminal--sync)
     (remove-hook 'window-selection-change-functions #'portal-terminal--sync)
     (remove-hook 'delete-frame-functions #'portal-terminal--frame-deleted)
-    (remove-hook 'kill-emacs-hook #'portal-terminal-close-all)
-    (when (processp portal-terminal--channel)
-      (portal--terminal-channel nil)
-      (delete-process portal-terminal--channel)
-      (setq portal-terminal--channel nil))))
+    (remove-hook 'kill-emacs-hook #'portal-terminal-close-all)))
 
 (defun portal-terminal-close-all ()
   "End all native shells, for Emacs shutdown or explicit cleanup."
@@ -353,78 +264,8 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (when (buffer-live-p buffer)
       (with-current-buffer buffer (portal-terminal-close)))))
 
-(defun portal-terminal--read-prefix (binding trigger id)
-  "Read a sequence in BINDING after native TRIGGER from session ID."
-  (let* ((map (copy-keymap binding))
-         (inhibit-quit nil)
-         (overriding-terminal-local-map map)
-         (overriding-local-map nil))
-    (define-key map [t] #'undefined)
-    (define-key map trigger #'portal-terminal-send-prefix)
-    (define-key map (kbd "C-g") #'keyboard-quit)
-    (define-key map [portal-terminal-cancel] #'keyboard-quit)
-    (define-key map [portal-terminal-literal] #'portal-terminal-send-prefix)
-    (define-key map [portal-terminal-escape] #'portal-terminal-unfocus)
-    (define-key map [header-line mouse-1] #'portal-terminal-unfocus)
-    (when (portal--terminal-ack id t)
-      (let ((keys (read-key-sequence-vector
-                   (format "Ghostty %s (C-g: cancel): " (key-description trigger)))))
-        (cons keys (lookup-key map keys))))))
-
-(defun portal-terminal--dispatch (event)
-  "Execute a native binding or read a prefix requested by EVENT.
-Runs in the Emacs command loop, never inside a native callback or pipe filter."
-  (interactive "e")
-  (let* ((id (caadr event))
-         (key (and (eq (car event) 'portal-terminal-binding) (cadadr event)))
-         (buffer (cl-find id portal-terminal--buffers
-                          :key (lambda (buffer) (buffer-local-value 'portal-terminal--id buffer))))
-         (portal-terminal--resume t))
-    (unwind-protect
-        (when (and (buffer-live-p buffer)
-                   (window-live-p (buffer-local-value 'portal-terminal--window buffer)))
-          (select-window (buffer-local-value 'portal-terminal--window buffer))
-          (portal--terminal-unfocus id)
-          (condition-case err
-              (let* ((trigger (if key (vector key) (vconcat (kbd portal-terminal-prefix))))
-                     (binding (if key
-                                  (lookup-key (if portal-terminal--quick-root
-                                                  (cdr portal-terminal--native-maps)
-                                                (car portal-terminal--native-maps)) trigger)
-                                (if portal-terminal--quick-root
-                                    portal-terminal-quick-prefix-map portal-terminal-prefix-map)))
-                     (resolved (if (keymapp binding)
-                                   (portal-terminal--read-prefix binding trigger id)
-                                 ;; Release buffered typing for commands that read a minibuffer.
-                                 (when (portal--terminal-ack id t)
-                                   (cons trigger binding))))
-                     (keys (car resolved))
-                     (command (cdr resolved)))
-                (portal--terminal-ack id nil)
-                (cond
-                 ((not keys) (setq portal-terminal--resume nil))
-                 ((and (commandp command) (not (eq command #'undefined)))
-                  (let ((last-command-event (aref keys (1- (length keys))))
-                        (this-command command)
-                        (real-this-command command))
-                    (command-execute command 'record)))
-                 (t (message "No terminal command for %s" (key-description keys)))))
-            (quit (message "Terminal prefix cancelled"))
-            (error (setq portal-terminal--resume nil)
-                   (message "Terminal command: %s" (error-message-string err)))))
-      (portal--terminal-ack id nil)
-      ;; Minibuffer commands finish before native focus resumes. Errors and
-      ;; commands selecting ordinary buffers leave the editor in control.
-      (when (and portal-terminal--resume portal-terminal--id
-                 (not (active-minibuffer-window)))
-        (portal-terminal-focus)))))
-(define-key global-map [portal-terminal-prefix] #'portal-terminal--dispatch)
-(define-key global-map [portal-terminal-binding] #'portal-terminal--dispatch)
-
-(defun portal-terminal-send-prefix ()
-  "Send the captured native leader keystroke literally to this shell."
-  (interactive)
-  (portal--terminal-send-prefix portal-terminal--id))
+(defalias 'portal-terminal--dispatch #'portal-input--dispatch)
+(defalias 'portal-terminal-send-prefix #'portal-input-send-prefix)
 
 (defun portal-terminal--switch (buffer)
   "Select terminal BUFFER and remember the previously selected terminal."
@@ -498,20 +339,8 @@ Runs in the Emacs command loop, never inside a native callback or pipe filter."
                (set-window-configuration configuration))
       (set-frame-parameter nil 'portal-terminal-zoom (current-window-configuration))
       (delete-other-windows))))
-(defun portal-terminal-command-prompt ()
-  "Run M-x and stay in Emacs afterward."
-  (interactive)
-  (portal-terminal-unfocus)
-  (call-interactively #'execute-extended-command))
-(defun portal-terminal-help ()
-  "Show the current prefix map, including user customizations."
-  (interactive)
-  (portal-terminal-unfocus)
-  (with-help-window "*Ghostty bindings*"
-    (princ (format "Ghostty prefix: %s\n\n" portal-terminal-prefix))
-    (princ "Repeat the prefix to send it literally. C-g cancels a pending prefix.\n")
-    (princ "Command-Escape or the header button returns to Emacs. RET re-enters.\n\n")
-    (princ (substitute-command-keys "\\{portal-terminal-prefix-map}"))))
+(defalias 'portal-terminal-command-prompt #'execute-extended-command)
+(defalias 'portal-terminal-help #'portal-input-help)
 
 (provide 'portal-terminal)
 (require 'portal-terminal-bindings

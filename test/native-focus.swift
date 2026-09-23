@@ -25,7 +25,8 @@ struct CheckFocus {
         let input = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 40))
         web.addSubview(input)
         for (code, flags, characters) in [(UInt16(53), NSEvent.ModifierFlags(), "\u{1b}"),
-                                          (UInt16(5), .control, "g")] {
+                                          (UInt16(5), .control, "g"),
+                                          (UInt16(53), .command, "\u{1b}")] {
             precondition(window.makeFirstResponder(input))
             let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
                                         modifierFlags: flags, timestamp: 0,
@@ -33,12 +34,16 @@ struct CheckFocus {
                                         characters: characters, charactersIgnoringModifiers: characters,
                                         isARepeat: false, keyCode: code)!
             app.sendEvent(event)
-            precondition(window.firstResponder === editor, "Focus did not return")
+            if flags == .command {
+                precondition(window.firstResponder === editor, "Command-Escape did not return focus")
+            } else {
+                precondition(window.firstResponder === input, "Guest key unexpectedly left the app")
+            }
         }
         precondition(window.makeFirstResponder(input))
         precondition(WebViews.setLayout([]))
         precondition(window.firstResponder === editor, "Removal did not restore focus")
         WebViews.destroy()
-        print("Escape, C-g, and view removal restore focus")
+        print("Guest Escape/C-g retain focus; Command-Escape and removal restore Emacs focus")
     }
 }

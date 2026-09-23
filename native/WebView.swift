@@ -41,15 +41,8 @@ private final class GreenView: NSView, NativeSurface {
 @MainActor
 private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
     var nativeView: NSView { self }
-    weak var host: NativeHost?
-
-    func handleKeyEvent(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown else { return false }
-        let controlG = event.modifierFlags.contains(.control) && event.charactersIgnoringModifiers == "g"
-        guard event.keyCode == 53 || controlG else { return false }
-        host?.returnFocus(from: self)
-        return true
-    }
+    var input: NativeInput?
+    func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) ?? false }
 
     var loadError: String?
 
@@ -156,7 +149,10 @@ enum WebViews {
                 child = existing
             } else if let url = content.url {
                 let web = WebView(frame: .zero, url: url)
-                web.host = host
+                web.input = NativeInput(target: "web:\(pane.id)", view: web, host: host) { [weak web] in
+                    guard let web, !web.isHidden else { return false }
+                    return web.window?.makeFirstResponder(web) ?? false
+                }
                 child = web
                 views[pane.id] = child
             } else {

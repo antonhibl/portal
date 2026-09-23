@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 
+enum NativeError: Error { case message(String) }
+
 /// A temporary input owner (for example, a terminal prefix awaiting Lisp).
 @MainActor
 protocol NativeInputHandler: AnyObject {
@@ -11,7 +13,10 @@ protocol NativeInputHandler: AnyObject {
 @MainActor
 protocol NativeSurface: NativeInputHandler {
     var nativeView: NSView { get }
+    var input: NativeInput? { get }
 }
+
+extension NativeSurface { var input: NativeInput? { nil } }
 
 @MainActor
 private final class WeakSurface {
@@ -29,6 +34,9 @@ final class NativeHost: NSObject {
         let window: Int
         let handler: ObjectIdentifier?
     }
+    // WebKit re-sends unhandled key-downs through NSApplication asynchronously.
+    // Once delivered to a guest, they must not become Emacs commands later.
+    private static let deliveredKeys = NSHashTable<NSEvent>(options: [.weakMemory, .objectPointerPersonality])
     private static var pressedKeys: [UInt16: KeyOwner] = [:]
 
     weak var view: NSView?
@@ -71,6 +79,7 @@ final class NativeHost: NSObject {
 
     func place(_ surface: any NativeSurface, rectangle: CGRect) -> Bool {
         guard let view else { return false }
+        _ = surface.input // Register shared input before the first focus or key event.
         let child = surface.nativeView
         var frame = rectangle
         frame.origin.x += view.bounds.minX
@@ -86,11 +95,13 @@ final class NativeHost: NSObject {
 
     /// Hiding deliberately retains the view. Features decide whether to remove it.
     func hide(_ surface: any NativeSurface) {
+        surface.input?.cancel()
         returnFocus(from: surface.nativeView)
         surface.nativeView.isHidden = true
     }
 
     func remove(_ surface: any NativeSurface) {
+        surface.input?.cancel()
         returnFocus(from: surface.nativeView)
         surfaces[ObjectIdentifier(surface)] = nil
         surface.nativeView.removeFromSuperview()
@@ -110,7 +121,15 @@ final class NativeHost: NSObject {
         }
     }
 
+    static func deliverLiteral(_ down: NSEvent, up: NSEvent, in view: NSView) {
+        guard let responder = view.window?.firstResponder else { return }
+        deliveredKeys.add(down)
+        responder.keyDown(with: down)
+        responder.keyUp(with: up)
+    }
+
     private static func route(_ event: NSEvent) -> Bool {
+        if deliveredKeys.contains(event) { return true }
         guard let window = event.window ?? NSApp.keyWindow else { return false }
         let host = frames.object(forKey: window)
         let handler: (any NativeInputHandler)? = host?.inputCapture ?? host?.focusedSurface
@@ -121,6 +140,8 @@ final class NativeHost: NSObject {
             return true
         }
         if event.type == .keyDown { pressedKeys[event.keyCode] = owner }
-        return handler?.handleKeyEvent(event) ?? false
+        let handled = handler?.handleKeyEvent(event) ?? false
+        if !handled, handler is any NativeSurface, event.type == .keyDown { deliveredKeys.add(event) }
+        return handled
     }
 }

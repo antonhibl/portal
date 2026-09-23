@@ -202,7 +202,7 @@
 
 (ert-deftest portal-terminal-header-control-returns-focus ()
   (portal-terminal-test--session
-    (let* ((button (nth 1 header-line-format))
+    (let* ((button (substring (portal-input--header) 1))
            (map (get-text-property 0 'local-map button))
            (command (lookup-key map [header-line mouse-1])))
       (should (commandp command))
@@ -257,8 +257,8 @@
                  (read-key-sequence-vector nil)))
          (event (aref keys 0)))
     (ert-info ((format "Received keys: %S" keys))
-      (should (eq (car-safe event) 'portal-terminal-prefix)))
-    (should (eq (key-binding keys) #'portal-terminal--dispatch))
+      (should (eq (car-safe event) 'portal-input-prefix)))
+    (should (eq (key-binding keys) #'portal-input--dispatch))
     (with-timeout (3 (ert-fail "Prefix command did not finish"))
       (portal-terminal--dispatch event))))
 
@@ -338,17 +338,17 @@
       (should (equal portal-terminal-test--answer "hi"))
       (should-not (active-minibuffer-window))
       (should (plist-get (portal--terminal-state) :focused))
-      ;; The tmux command prompt counterpart runs real M-x and stays in Emacs.
+      ;; M-x completes before returning input to the selected native app.
       (portal-terminal-test--prefix
        (list 41 (ash 1 17) ":") '(34 0 "i") '(5 0 "g") '(45 0 "n")
        '(31 0 "o") '(15 0 "r") '(14 0 "e") '(36 0 "\r"))
       (should-not (active-minibuffer-window))
-      (should-not (plist-get (portal--terminal-state) :focused))
+      (should (plist-get (portal--terminal-state) :focused))
       (portal-terminal-test--prefix '(50 0 "`"))
       (should (plist-get (portal--terminal-state) :focused))
       (portal-terminal-test--prefix (list 5 (ash 1 18) "\C-g"))
       (should (plist-get (portal--terminal-state) :focused))
-      (portal-terminal-test--prefix (list 53 (ash 1 20) "\e"))
+      (portal-test-native-key 53 (ash 1 20) "\e")
       (should-not (plist-get (portal--terminal-state) :focused))
       (portal-terminal-test--prefix '(2 0 "d"))
       (should-not (plist-get (portal--terminal-state) :focused))
@@ -472,8 +472,8 @@
   (let* ((keys (with-timeout (3 (ert-fail "Native binding did not wake Emacs"))
                  (read-key-sequence-vector nil)))
          (event (aref keys 0)))
-    (should (eq (car-safe event) 'portal-terminal-binding))
-    (should (eq (key-binding keys) #'portal-terminal--dispatch))
+    (should (eq (car-safe event) 'portal-input-binding))
+    (should (eq (key-binding keys) #'portal-input--dispatch))
     (with-timeout (3 (ert-fail "Native binding command did not finish"))
       (portal-terminal--dispatch event))))
 

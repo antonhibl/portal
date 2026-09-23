@@ -6,14 +6,15 @@ import WebKit
 private final class EditorView: WKWebView, NativeSurface {
     weak var session: WebEditorSession?
     var nativeView: NSView { self }
-    func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
+    var input: NativeInput? { session?.input }
+    func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) ?? false }
 }
 
 /// One trusted local editor per document. Hiding a pane preserves its JS heap,
 /// selection and undo history. Arbitrary browser previews never get this bridge.
 @MainActor
 private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
-    WKUIDelegate, NativeInputHandler {
+    WKUIDelegate {
     let id: Int
     let web: EditorView
     var host: NativeHost
@@ -21,8 +22,9 @@ private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNaviga
     private var messages: [[String: Any]] = []
     private var notified = false
     private var retry: Task<Void, Never>?
-    private var waitingForLisp = false
-    private var pendingKeys: [NSEvent] = []
+    lazy var input = NativeInput(target: "editor:\(id)", view: web, host: host) { [weak self] in
+        self?.focus() ?? false
+    }
     private var closed = false
 
     init(id: Int, host: NativeHost, url: URL) {
@@ -90,7 +92,7 @@ private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNaviga
         guard let nextHost = NativeHost.bind(title: title) else {
             throw NativeError.message("Cannot find the editor's Emacs frame")
         }
-        if nextHost !== host { host.remove(web); host = nextHost }
+        if nextHost !== host { host.remove(web); host = nextHost; input.host = nextHost }
         let rectangle = CGRect(x: edges[0], y: edges[1],
                                width: edges[2] - edges[0], height: edges[3] - edges[1])
         guard host.place(web, rectangle: rectangle) else {
@@ -102,36 +104,12 @@ private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNaviga
         !web.isHidden && (web.window?.makeFirstResponder(web) ?? false)
     }
 
-    func handleKeyEvent(_ event: NSEvent) -> Bool {
-        if waitingForLisp { pendingKeys.append(event); return true }
-        guard event.type == .keyDown else { return false }
-        let modifiers = event.modifierFlags.intersection([.control, .command, .option, .shift])
-        let prefix = modifiers == .control && event.charactersIgnoringModifiers == "x"
-        let escape = event.keyCode == 53 && modifiers == .command
-        guard prefix || escape else { return false }
-        if !event.isARepeat {
-            host.returnFocus(from: web)
-            waitingForLisp = true
-            host.captureInput(self)
-            emit(["type": prefix ? "prefix" : "escape"])
-        }
-        return true
-    }
-
-    func acknowledge(replay: Bool) {
-        waitingForLisp = false
-        host.releaseInput(self)
-        let keys = pendingKeys
-        pendingKeys.removeAll()
-        if replay { for key in keys.reversed() { NSApp.postEvent(key, atStart: true) } }
-    }
-
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame,
               message.frameInfo.request.url == url,
               let body = message.body as? [String: Any],
               body["type"] is String, JSONSerialization.isValidJSONObject(body) else { return }
-        // Save can prompt for a filename in Emacs. Unlike the Control-X path,
+        // Save can prompt for a filename in Emacs. Unlike the native prefix path,
         // this request originates in JS, so focus has not yet left WebKit.
         if body["type"] as? String == "save" { host.returnFocus(from: web) }
         emit(body)
@@ -162,7 +140,6 @@ private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNaviga
     func close() {
         closed = true
         retry?.cancel()
-        acknowledge(replay: false)
         web.configuration.userContentController.removeScriptMessageHandler(forName: "portal")
         web.stopLoading()
         host.remove(web)
@@ -198,7 +175,6 @@ enum WebEditors {
     static func focus(_ id: Int) throws {
         guard try session(id).focus() else { throw NativeError.message("No visible editor to focus") }
     }
-    static func acknowledge(_ id: Int, replay: Bool) { sessions[id]?.acknowledge(replay: replay) }
     static func close(_ id: Int) { sessions.removeValue(forKey: id)?.close() }
 
     private static func session(_ id: Int) throws -> WebEditorSession {

@@ -3,7 +3,7 @@
 
 (require 'cl-lib)
 (require 'json)
-(require 'portal-native)
+(require 'portal-input)
 (require 'portal-server)
 
 (declare-function portal--editor-open "portal" (title url))
@@ -12,7 +12,6 @@
 (declare-function portal--editor-events "portal" (id))
 (declare-function portal--editor-focus "portal" (id))
 (declare-function portal--editor-close "portal" (id))
-(declare-function portal--editor-ack "portal" (id replay))
 (declare-function portal--editor-channel "portal" (process))
 
 (defvar portal-excalidraw--buffers nil)
@@ -38,11 +37,18 @@
                  (vectorp (plist-get scene :elements)))
       (user-error "This is not an Excalidraw drawing"))))
 
+(defvar portal-excalidraw-command-map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "s" #'portal-excalidraw-save)
+    (keymap-set map "r" #'portal-excalidraw-reopen)
+    map)
+  "Drawing commands below the shared Portal prefix and m.")
+
 ;;;###autoload
 (define-derived-mode portal-excalidraw-mode fundamental-mode "Excalidraw"
   "Edit a local Excalidraw document in a persistent native webview.
 The buffer contains the drawing's JSON for normal Emacs saving and auto-save.
-C-x C-s saves; C-x works inside the editor.  Command-Escape returns to Emacs,
+The Portal prefix followed by C-x C-s saves.  Command-Escape returns to Emacs,
 and RET returns to the drawing.  One live editor follows this buffer's pane."
   (when (and buffer-file-name (file-remote-p buffer-file-name))
     (user-error "Excalidraw currently supports local files only"))
@@ -57,7 +63,12 @@ and RET returns to the drawing.  One live editor follows this buffer's pane."
   (setq-local require-final-newline t)
   (setq-local buffer-file-coding-system 'utf-8-unix)
   (setq-local buffer-offer-save t)
-  (setq-local header-line-format " Excalidraw · C-x C-s saves · Command-Escape to Emacs · RET to enter")
+  (setq-local portal-input--target-function
+              (lambda (window) (when (and portal-excalidraw--id (eq window portal-excalidraw--window))
+                                 (format "editor:%d" portal-excalidraw--id))))
+  (setq-local portal-input--focus-function #'portal-excalidraw-focus)
+  (setq-local portal-input--map-function (lambda () portal-excalidraw-command-map))
+  (portal-input-mode 1)
   (setq portal-excalidraw--saved (unless (buffer-modified-p) (buffer-string)))
   ;; Emacs deliberately catches before-save-hook errors and may still write.
   ;; This hook must abort the write if a fresh scene cannot be obtained.
@@ -88,7 +99,7 @@ The first save of a new drawing asks for a filename."
 
 (defun portal-excalidraw--start ()
   "Register the current document and start its local editor asynchronously."
-  (portal-native--load)
+  (portal-input--connect)
   (unless (process-live-p portal-excalidraw--channel)
     (setq portal-excalidraw--notification ""
           portal-excalidraw--channel
@@ -202,7 +213,7 @@ The first save of a new drawing asks for a filename."
     ("error"
      (setq portal-excalidraw--error (plist-get message :message))
      (message "Drawing: %s" portal-excalidraw--error))
-    ((or "save" "prefix" "escape")
+    ("save"
      (setq unread-command-events
            (nconc unread-command-events
                   (list (list 'portal-excalidraw-command
@@ -214,16 +225,9 @@ The first save of a new drawing asks for a filename."
   (pcase-let ((`(,buffer ,kind) (cadr event)))
     (when (buffer-live-p buffer)
       (pop-to-buffer buffer)
-      (unwind-protect
-          (pcase kind
-            ("save"
-             (portal-excalidraw-save)
-             (when (eq (current-buffer) buffer) (portal-excalidraw-focus)))
-            ((or "prefix" "escape")
-             (portal-excalidraw--flush)
-             (when (equal kind "prefix")
-               (setq unread-command-events (cons ?\C-x unread-command-events)))))
-        (when portal-excalidraw--id (portal--editor-ack portal-excalidraw--id t))))))
+      (when (equal kind "save")
+        (portal-excalidraw-save)
+        (when (eq (current-buffer) buffer) (portal-excalidraw-focus))))))
 (define-key global-map [portal-excalidraw-command] #'portal-excalidraw--dispatch)
 
 (defun portal-excalidraw--wait (predicate)

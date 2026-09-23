@@ -29,46 +29,39 @@ These maps apply only while the native terminal has focus.
 
 ## Across the boundary
 
-1. **Register.** [Map compilation](../portal-terminal-bindings.el#L32) validates
-   first chords and copies dispatch maps. [Refresh](../portal-terminal-bindings.el#L66)
-   sends JSON with `regular` and `quick` arrays. Each entry contains only
-   `{character, flags, event}`: a native chord and its encoded Emacs event.
-   [The module entry point](../native/Module.swift#L278) passes it to
-   [Swift's registry](../native/Terminal.swift#L236), which validates both profiles
-   before replacing either. Hidden and future sessions use the same live tables.
-   Lisp publishes its snapshots only after native registration succeeds;
-   failed helper edits roll back the editable map too.
+The native input machinery is shared by terminals, editors, and web previews.
+`portal-input-prefix` configures their common prefix; the old
+`portal-terminal-prefix` name is an alias. Terminal-specific native maps retain
+their scope and registration API.
 
-2. **Intercept.** [NativeHost routes AppKit events](../native/NativeHost.swift#L113)
-   to the focused surface. [The terminal handler](../native/Terminal.swift#L131)
-   passes unmatched input to Ghostty. A match returns focus to Emacs, writes
-   `binding SESSION-ID EVENT\n` to the pipe, and captures subsequent events until
-   Lisp acknowledges. Swift never invokes interactive Lisp from this callback.
+1. Registration validates and snapshots the terminal maps as before. Only first
+   chords cross into Swift; command maps remain in Lisp.
+2. `NativeHost` routes input to the focused surface's `NativeInput`. A reserved
+   chord returns focus to Emacs, sends a target and handoff serial through the
+   shared pipe, and buffers fast follow-up input until Lisp acknowledges.
+3. `portal-input--dispatch` selects the originating native view's Emacs window.
+   Lisp reads prefix tails using `read-key-sequence-vector`, applies normal
+   command remapping, and executes the command outside the process filter.
+4. Completion releases capture and normally focuses the selected Portal view.
+   Explicit unfocus, errors, ordinary buffers, or an invalidated handoff keep
+   Emacs in control. Command-Escape can invalidate a handoff before acknowledgement.
 
-3. **Dispatch.** [The pipe filter](../portal-terminal.el#L200) assembles fragmented
-   messages and queues a synthetic `portal-terminal-binding` event in
-   `unread-command-events`. [The command-loop dispatcher](../portal-terminal.el#L371)
-   selects the originating session's buffer and resolves its registered map.
-   A command executes directly; a prefix uses
-   [`read-key-sequence-vector`](../portal-terminal.el#L353) for the remaining keys.
-
-4. **Hand back.** [Acknowledgement](../native/Terminal.swift#L181) replays buffered
-   events in order, allowing rapid prefix tails and minibuffer typing to reach
-   Emacs. Cleanup releases capture. Focus returns to the selected terminal after
-   the command finishes; dismissal, selecting an editor buffer, explicit unfocus,
-   or an error leaves Emacs in control. Prefix repetition sends the captured
-   native keystroke literally; `C-g` cancels.
+Repeating the first chord sends its captured native key-down/key-up pair to the
+app. Once a sequence has begun, that same key remains available inside nested
+Emacs bindings, such as `C-b C-x C-b`. WebKit's asynchronous retries of unhandled
+keys are consumed after their first delivery, preventing input intended for a
+page from later becoming Emacs commands.
 
 ## Boundaries and verification
 
 First chords currently support modified printable ASCII, with `C` = Control,
 `M` = Option, and `s` = Command. Use resulting punctuation (`s-!`, not `s-S-1`);
-prefix tails use normal Emacs keys. The existing `portal-terminal-prefix`
+prefix tails use normal Emacs keys. The shared `portal-input-prefix`
 remains live-configurable and cannot collide with these maps. Command-Escape
 remains the fixed escape hatch. System-wide shortcut interception still happens
 before Portal receives an event.
 
-Verified with [six registration tests](../test/portal-terminal-bindings-tests.el),
+Verified with [registration tests](../test/portal-terminal-bindings-tests.el),
 six quick-terminal behavior tests, and
 [18 graphical terminal tests](../test/portal-terminal-tests.el), including real
 AppKit input, live rebinding/unbinding, quick-only scope, hidden-session updates,
