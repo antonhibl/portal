@@ -348,12 +348,17 @@ from the former CMake compilation database. No project-specific header paths
 belong in your Emacs configuration. Reconfigure after changing Emacs or SDKs.
 
 For TypeScript editing, install the host's development dependencies and run its
-type check:
+checks:
 
 ```sh
 bun install --cwd host --frozen-lockfile
+bun run --cwd host check
 bun run --cwd host typecheck
 ```
+
+Biome checks host formatting, imports, and lint rules using `biome.json`.
+Indentation uses tabs. Run `bun run --cwd host format` to format the host sources.
+Generated assets and dependencies are excluded through Git's ignore rules.
 
 `host/tsconfig.json` supplies strict TypeScript settings and Bun/Node API types.
 The asset declarations describe HTML and CSS imports loaded as strings.
