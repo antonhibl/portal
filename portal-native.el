@@ -9,6 +9,8 @@
                          buffer-file-name)))
   "The single native module used by all Portal features.")
 
+(defvar portal-native-load-hook nil "Hook run after the native module loads.")
+
 (defun portal-native--load ()
   "Load the shared native module once, before opening any native view."
   (unless (and (eq window-system 'ns) (fboundp 'module-load))
@@ -16,7 +18,8 @@
   (unless (featurep 'portal-native-module)
     (when (or (fboundp 'portal--bind) (fboundp 'portal--terminal-open))
       (user-error "Restart Emacs to replace the old Portal native modules"))
-    (module-load portal--module-file)))
+    (module-load portal--module-file)
+    (run-hooks 'portal-native-load-hook)))
 
 (defun portal-native--call-with-frame (frame function &rest arguments)
   "Call FUNCTION with FRAME's temporary native title and ARGUMENTS."

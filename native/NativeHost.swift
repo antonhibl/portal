@@ -14,9 +14,13 @@ protocol NativeInputHandler: AnyObject {
 protocol NativeSurface: NativeInputHandler {
     var nativeView: NSView { get }
     var input: NativeInput? { get }
+    var toolbarModel: ToolbarModel? { get }
 }
 
-extension NativeSurface { var input: NativeInput? { nil } }
+extension NativeSurface {
+    var input: NativeInput? { nil }
+    var toolbarModel: ToolbarModel? { nil }
+}
 
 @MainActor
 private final class WeakSurface {
@@ -42,11 +46,15 @@ final class NativeHost: NSObject {
     weak var view: NSView?
     private weak var editor: NSResponder?
     private weak var inputCapture: (any NativeInputHandler)?
+    private var containers: [ObjectIdentifier: NativeContainer] = [:]
     private var surfaces: [ObjectIdentifier: WeakSurface] = [:]
 
     private init(view: NSView) {
         self.view = view
         editor = view.window?.firstResponder
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated),
+                                              name: NSWindow.didUpdateNotification, object: view.window)
     }
 
     static func bind(title: String) -> NativeHost? {
@@ -62,13 +70,40 @@ final class NativeHost: NSObject {
         surfaces.values.compactMap(\.value).first { ownsFocus($0.nativeView) }
     }
 
+    @objc private func windowUpdated() { refreshOwnership() }
+
+    func refreshOwnership() {
+        for container in containers.values { container.toolbar?.refresh() }
+    }
+
+    static func refreshToolbars(layout: Bool = false) {
+        for host in frames.objectEnumerator()?.allObjects as? [NativeHost] ?? [] {
+            for container in host.containers.values {
+                if layout { container.updateToolbar() } else { container.toolbar?.refresh() }
+            }
+        }
+    }
+
+    static func toolbarAction(target: String, action: String) throws -> String {
+        for host in frames.objectEnumerator()?.allObjects as? [NativeHost] ?? [] {
+            for surface in host.surfaces.values.compactMap(\.value) where surface.input?.target == target {
+                guard let model = surface.toolbarModel else { break }
+                try model.perform(action)
+                return try model.snapshot()
+            }
+        }
+        throw NativeError.message("No toolbar controls for this native view")
+    }
+
     func ownsFocus(_ surface: NSView) -> Bool {
         guard let responder = view?.window?.firstResponder as? NSView else { return false }
-        return responder === surface || responder.isDescendant(of: surface)
+        let root = surface.superview as? NativeContainer ?? surface
+        return responder === root || responder.isDescendant(of: root)
     }
 
     func returnFocus(from surface: NSView) {
         if ownsFocus(surface) { view?.window?.makeFirstResponder(editor) }
+        refreshOwnership()
     }
 
     func captureInput(_ handler: any NativeInputHandler) { inputCapture = handler }
@@ -80,7 +115,14 @@ final class NativeHost: NSObject {
     func place(_ surface: any NativeSurface, rectangle: CGRect) -> Bool {
         guard let view else { return false }
         _ = surface.input // Register shared input before the first focus or key event.
-        let child = surface.nativeView
+        let key = ObjectIdentifier(surface)
+        let child: NSView
+        if let model = surface.toolbarModel {
+            model.input = surface.input
+            let container = containers[key] ?? NativeContainer(content: surface.nativeView, model: model)
+            containers[key] = container
+            child = container
+        } else { child = surface.nativeView }
         var frame = rectangle
         frame.origin.x += view.bounds.minX
         frame.origin.y = view.isFlipped
@@ -89,6 +131,9 @@ final class NativeHost: NSObject {
         surfaces[ObjectIdentifier(surface)] = WeakSurface(surface)
         if child.superview !== view { view.addSubview(child) }
         child.isHidden = false
+        surface.nativeView.isHidden = false
+        child.layoutSubtreeIfNeeded()
+        refreshOwnership()
         Self.startMonitoring()
         return true
     }
@@ -98,6 +143,7 @@ final class NativeHost: NSObject {
         surface.input?.cancel()
         returnFocus(from: surface.nativeView)
         surface.nativeView.isHidden = true
+        containers[ObjectIdentifier(surface)]?.isHidden = true
     }
 
     func remove(_ surface: any NativeSurface) {
@@ -105,6 +151,7 @@ final class NativeHost: NSObject {
         returnFocus(from: surface.nativeView)
         surfaces[ObjectIdentifier(surface)] = nil
         surface.nativeView.removeFromSuperview()
+        containers.removeValue(forKey: ObjectIdentifier(surface))?.removeFromSuperview()
         let hosts = Self.frames.objectEnumerator()?.allObjects as? [NativeHost] ?? []
         if hosts.allSatisfy({ $0.surfaces.values.allSatisfy { $0.value == nil } }) {
             if let monitor = Self.keyMonitor { NSEvent.removeMonitor(monitor) }
@@ -140,7 +187,17 @@ final class NativeHost: NSObject {
             return true
         }
         if event.type == .keyDown { pressedKeys[event.keyCode] = owner }
-        let handled = handler?.handleKeyEvent(event) ?? false
+        // Search fields belong to the surface for ownership, but keep AppKit text editing.
+        let finding = host?.focusedSurface?.toolbarModel?.finding == true
+        let inContent = host?.focusedSurface.map { surface in
+            guard let responder = window.firstResponder as? NSView else { return false }
+            return responder === surface.nativeView || responder.isDescendant(of: surface.nativeView)
+        } ?? false
+        let handled: Bool
+        if finding && !inContent && host?.inputCapture == nil {
+            handled = host?.focusedSurface?.input?.handleKeyEvent(event) ?? false
+        } else { handled = handler?.handleKeyEvent(event) ?? false }
+        host?.refreshOwnership()
         if !handled, handler is any NativeSurface, event.type == .keyDown { deliveredKeys.add(event) }
         return handled
     }

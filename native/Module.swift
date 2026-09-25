@@ -65,11 +65,12 @@ private let bind: emacs_function = { env, _, args, _ in
     } convert: { boolean(env, $0) }
 }
 
-private let loadURL: emacs_function = { env, _, args, _ in
+private let loadURL: emacs_function = { env, nargs, args, _ in
     let env = env!
     guard let url = readString(env, args![0]) else { return symbol(env, "nil") }
+    let preview: Bool? = nargs > 1 ? env.pointee.is_not_nil(env, args![1]) : nil
     return call(env) {
-        guard WebViews.loadURL(url) else {
+        guard WebViews.loadURL(url, preview: preview) else {
             throw NativeError.message("Expected an absolute http, https, file, data or about URL and a bound frame")
         }
         return true
@@ -354,13 +355,39 @@ private let connectEditorChannel: emacs_function = { env, _, args, _ in
     return call(env) { WebEditors.channel.connect(fd); return true } convert: { boolean(env, $0) }
 }
 
+private let releasePane: emacs_function = { env, _, args, _ in
+    let env = env!
+    let id = env.pointee.extract_integer(env, args![0])
+    return call(env) { WebViews.releasePane(id); return true } convert: { boolean(env, $0) }
+}
+
+private let configureToolbar: emacs_function = { env, _, args, _ in
+    let env = env!
+    let enabled = env.pointee.is_not_nil(env, args![0])
+    return call(env) { NativeToolbar.configure(enabled); return enabled } convert: { boolean(env, $0) }
+}
+
+private let toolbarTheme: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let json = readString(env, args![0]) else { return nil }
+    return call(env) { try NativeToolbar.theme(json); return true } convert: { boolean(env, $0) }
+}
+
+private let toolbarAction: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]), let action = readString(env, args![1]) else { return nil }
+    return call(env) { try NativeHost.toolbarAction(target: target, action: action) }
+        convert: { string(env, $0) }
+}
+
 @_cdecl("portal_swift_init")
 public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
     let webFunctions: [(String, Int, Int, emacs_function, String)] = [
         ("portal--bind", 1, 1, bind, "Bind shared native content to the frame identified by TITLE."),
-        ("portal--load-url", 1, 1, loadURL, "Load URL in all web panes; new panes start at this URL."),
+        ("portal--load-url", 1, 2, loadURL, "Load URL in all web panes; optional PREVIEW selects TOC controls."),
         ("portal--set-layout", 1, 1, setLayout,
-         "Apply a vector of ID LEFT TOP RIGHT BOTTOM entries; [] removes all pane views."),
+         "Apply a vector of ID LEFT TOP RIGHT BOTTOM entries; [] hides all pane views, retaining their state."),
+        ("portal--release-pane", 1, 1, releasePane, "Release the retained native view for a deleted Emacs pane ID."),
         ("portal--destroy", 0, 0, destroy, "Release web/demo views and content; terminal sessions are unaffected."),
         ("portal--native-views", 0, 0, inspect,
          "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
@@ -381,6 +408,11 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--input-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
         ("portal--input", 2, 3, inputAction, "Perform ACTION on native TARGET, optionally validating its handoff SERIAL.")
     ]
+    let toolbarFunctions: [(String, Int, Int, emacs_function, String)] = [
+        ("portal--toolbar", 1, 1, configureToolbar, "Show or hide native toolbars live."),
+        ("portal--toolbar-theme", 1, 1, toolbarTheme, "Apply toolbar face colors from JSON RGB arrays."),
+        ("portal--toolbar-action", 2, 2, toolbarAction, "Perform ACTION on TARGET and return its native state as JSON.")
+    ]
     let editorFunctions: [(String, Int, Int, emacs_function, String)] = [
         ("portal--editor-open", 2, 2, openEditor, "Create a persistent local editor in frame TITLE at URL; return its ID."),
         ("portal--editor-layout", 3, 3, layoutEditor, "Place editor ID in frame TITLE at EDGES; [] hides it without unloading."),
@@ -390,7 +422,7 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--editor-close", 1, 1, closeEditor, "Release editor ID and its document session."),
         ("portal--editor-channel", 1, 1, connectEditorChannel, "Connect a pipe PROCESS for editor notifications; nil disconnects.")
     ]
-    for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions + editorFunctions {
+    for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions + editorFunctions + toolbarFunctions {
         let function = doc.withCString { env.pointee.make_function(env, minimum, maximum, callback, $0, nil) }
         var args = [symbol(env, name), function]
         _ = env.pointee.funcall(env, symbol(env, "fset"), args.count, &args)

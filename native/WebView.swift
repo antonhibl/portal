@@ -4,6 +4,7 @@ import WebKit
 
 @MainActor
 private final class NativeContent {
+    var preview = false
     var url: URL?
     let color = NSColor.green
     let size: CGFloat = 32 // AppKit points, independent of the Retina scale.
@@ -42,19 +43,23 @@ private final class GreenView: NSView, NativeSurface {
 private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
     var nativeView: NSView { self }
     var input: NativeInput?
+    private var controls: WebToolbar!
+    var toolbarModel: ToolbarModel? { controls.model }
     func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) ?? false }
 
     var loadError: String?
 
-    init(frame: NSRect, url: URL) {
+    init(frame: NSRect, url: URL, preview: Bool) {
         super.init(frame: frame, configuration: WKWebViewConfiguration())
+        controls = WebToolbar(web: self, preview: preview)
         navigationDelegate = self
         navigate(to: url)
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func navigate(to url: URL) {
+    func navigate(to url: URL, preview: Bool? = nil) {
+        if let preview { controls.model.kind = preview ? .preview : .web }
         loadError = nil
         if url.isFileURL {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -65,6 +70,8 @@ private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
+        controls.model.hasHeadings = false
+        controls.model.changed?()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
@@ -75,6 +82,8 @@ private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         record(error)
     }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls.loaded() }
 
     private func record(_ error: Error) {
         if (error as NSError).code != NSURLErrorCancelled {
@@ -105,15 +114,16 @@ enum WebViews {
     private static var views: [Int: any NativeSurface] = [:]
     private static var host: NativeHost?
 
-    static func loadURL(_ text: String) -> Bool {
+    static func loadURL(_ text: String, preview: Bool? = nil) -> Bool {
         guard let content, let url = URL(string: text),
               let scheme = url.scheme?.lowercased(),
               ["http", "https", "file", "data", "about"].contains(scheme),
               !["http", "https"].contains(scheme) || !(url.host ?? "").isEmpty
         else { return false }
         content.url = url
+        if let preview { content.preview = preview }
         for view in views.values {
-            (view as? WebView)?.navigate(to: url)
+            (view as? WebView)?.navigate(to: url, preview: content.preview)
         }
         return true
     }
@@ -128,16 +138,13 @@ enum WebViews {
     }
 
     /// Apply a complete layout measured from the top-left of Emacs's content area.
-    /// An empty layout releases the views while retaining the buffer's content.
+    /// An empty layout hides views while retaining their browsing state.
     static func setLayout(_ layout: [PaneLayout]) -> Bool {
         guard let host, let content else { return false }
 
         let wanted = Set(layout.map(\.id))
         for id in Set(views.keys).subtracting(wanted) {
-            if let view = views.removeValue(forKey: id) {
-                (view as? WKWebView)?.stopLoading()
-                host.remove(view)
-            }
+            if let view = views[id] { host.hide(view) }
         }
         for pane in layout {
             if let child = views[pane.id], content.url != nil && !(child is WebView) {
@@ -148,7 +155,7 @@ enum WebViews {
             if let existing = views[pane.id] {
                 child = existing
             } else if let url = content.url {
-                let web = WebView(frame: .zero, url: url)
+                let web = WebView(frame: .zero, url: url, preview: content.preview)
                 web.input = NativeInput(target: "web:\(pane.id)", view: web, host: host) { [weak web] in
                     guard let web, !web.isHidden else { return false }
                     return web.window?.makeFirstResponder(web) ?? false
@@ -165,6 +172,12 @@ enum WebViews {
         return true
     }
 
+    static func releasePane(_ id: Int) {
+        guard let view = views.removeValue(forKey: id) else { return }
+        (view as? WKWebView)?.stopLoading()
+        host?.remove(view)
+    }
+
     static func destroy() {
         for view in views.values {
             (view as? WKWebView)?.stopLoading()
@@ -179,9 +192,10 @@ enum WebViews {
     static func snapshots() -> [ViewSnapshot] {
         (NSApp?.windows ?? []).flatMap { window -> [ViewSnapshot] in
             guard let host = window.contentView else { return [] }
-            return host.subviews.compactMap { child in
+            return host.subviews.compactMap { root in
+                let child = (root as? NativeContainer)?.content ?? root
                 guard child is GreenView || child is WebView else { return nil }
-                let rect = child.convert(child.bounds, to: host)
+                let rect = root.convert(root.bounds, to: host)
                 let left = rect.minX - host.bounds.minX
                 let top = host.isFlipped
                     ? rect.minY - host.bounds.minY

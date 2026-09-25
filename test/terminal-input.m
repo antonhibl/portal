@@ -42,11 +42,21 @@ static emacs_value targetFrame(emacs_env *env, ptrdiff_t nargs, emacs_value *arg
     return env->intern(env, explicitWindow ? "t" : "nil");
 }
 
+static NSArray<NSView *> *descendants(NSView *root)
+{
+    NSMutableArray<NSView *> *result = [NSMutableArray array];
+    for (NSView *child in root.subviews) {
+        [result addObject:child];
+        [result addObjectsFromArray:descendants(child)];
+    }
+    return result;
+}
+
 static emacs_value focusWeb(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
 {
     (void)nargs; (void)args; (void)data;
     NSWindow *window = activeWindow();
-    for (NSView *view in window.contentView.subviews) {
+    for (NSView *view in descendants(window.contentView)) {
         if ([view isKindOfClass:WKWebView.class] && !view.isHiddenOrHasHiddenAncestor) {
             return env->intern(env, [window makeFirstResponder:view] ? "t" : "nil");
         }
@@ -109,7 +119,7 @@ static emacs_value webEval(emacs_env *env, ptrdiff_t nargs, emacs_value *args, v
     NSString *script = [NSString stringWithUTF8String:bytes];
     free(bytes);
     webResult = nil;
-    for (NSView *view in activeWindow().contentView.subviews) {
+    for (NSView *view in descendants(activeWindow().contentView)) {
         if ([view isKindOfClass:WKWebView.class] && !view.isHiddenOrHasHiddenAncestor) {
             [(WKWebView *)view callAsyncJavaScript:script arguments:@{} inFrame:nil
                 inContentWorld:WKContentWorld.pageWorld completionHandler:^(id value, NSError *error) {

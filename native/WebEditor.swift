@@ -4,6 +4,7 @@ import WebKit
 
 @MainActor
 private final class EditorView: WKWebView, NativeSurface {
+    let toolbarModel: ToolbarModel? = ToolbarModel(.editor)
     weak var session: WebEditorSession?
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }

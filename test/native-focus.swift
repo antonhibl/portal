@@ -19,7 +19,7 @@ struct CheckFocus {
         precondition(WebViews.bind(title: window.title))
         precondition(WebViews.loadURL("data:text/html,<input autofocus><title>Focus</title>"))
         precondition(WebViews.setLayout([PaneLayout(id: 1, rectangle: editor.bounds)]))
-        let web = window.contentView!.subviews.first { $0 is WKWebView }!
+        let web = window.contentView!.subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first!
         // A responder nested below the webview exercises the same ancestry test
         // as WebKit's internal text input views.
         let input = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 40))

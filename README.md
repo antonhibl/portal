@@ -74,9 +74,25 @@ The prefix temporarily gives a command to Emacs:
 
 The prefix has no timeout. Commands finish their minibuffer interaction before
 returning to the selected native view; explicit unfocus, errors, and selecting
-an ordinary buffer leave Emacs in control. The header shows the input owner and
-provides a clickable **Return to Emacs** control. No global physical keybinding
-is installed in ordinary Emacs buffers.
+an ordinary buffer leave Emacs in control. The native toolbar's ownership dot
+is hollow when Emacs owns the keyboard, green when the view owns it, blue while
+an Emacs prefix is pending, and amber in passthrough. Click the dot to enter or
+return to Emacs. No global physical keybinding is installed in ordinary buffers.
+
+The 28 pixel toolbar reserves space above the content. Web pages have navigation,
+find, zoom, and reload; Markdown and HTML previews have a table of contents in
+place of navigation. Terminals have text size controls. Excalidraw has only the
+ownership dot; quick terminals and the square demo have no toolbar.
+`(setq portal-toolbar nil)` hides toolbars live, and `t` restores them. Colors
+follow Emacs faces and update after theme changes.
+
+`portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`, and
+`portal-find` use the same native state as the buttons. Terminal equivalents are
+`portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
+`portal-terminal-text-size-reset`. Find opens a field inside the strip; Return
+and Shift-Return navigate matches, and Escape closes it. State survives hiding
+and redisplaying a pane; reload preserves zoom and the TOC. Closing the preview
+with `portal-hide` releases it.
 
 Use `M-x portal-input-passthrough` to release even the prefix and optional
 native shortcuts to an app. Command-Escape leaves passthrough and returns to
@@ -508,6 +524,9 @@ with text beside the remaining view.
 | `native/WebView.swift` | WebKit/demo views, navigation, and inspection |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
 | `native/Terminal.swift` | Ghostty sessions and terminal input |
+| `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
+| `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
+| `native/WebToolbar.swift` | Web zoom, find, navigation, and isolated page TOC support |
 | `native/Emacs/` | Required C entry point, Emacs header import, and ABI size checks |
 | `native/Package.swift` | One native library and pinned Ghostty dependency |
 
@@ -526,7 +545,7 @@ continue running. The Emacs bridge converts arguments and registers both APIs.
 For web/demo views, the Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
 during redisplay. Each pane receives a stable numeric ID. Lisp sends the complete
 layout when geometry or pane membership changes; Swift validates the layout, then
-creates, updates, or removes views on the main thread. An empty layout removes all
+creates, updates, or removes views on the main thread. An empty layout hides all
 views without releasing the shared content. There is no polling timer, and Swift
 never retains an Emacs value or environment pointer after a module call returns.
 
@@ -580,6 +599,7 @@ emacs -Q --module-assertions -l "$PWD/portal.el" \
   -l "$PWD/test/portal-integration-tests.el" \
   -l "$PWD/test/portal-excalidraw-gui-tests.el" \
   -l "$PWD/test/portal-input-gui-tests.el" \
+  -l "$PWD/test/portal-toolbar-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
@@ -590,10 +610,14 @@ focused-view removal return focus to the editor:
 ```sh
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/NativeHost.swift native/NativeInput.swift native/NativeEventChannel.swift \
-  native/WebView.swift test/native-focus.swift \
+  native/Toolbar.swift native/WebToolbar.swift native/WebView.swift test/native-focus.swift \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
+
+Replace `test/native-focus.swift` and `build/check-focus` with
+`test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
+focus-preserving buttons, zoom limits, TOC, find, and retained state.
 
 The compiled-host integration tests run without a graphical display:
 

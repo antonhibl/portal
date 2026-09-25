@@ -109,7 +109,31 @@ final class NativeInput: NativeInputHandler {
         Self.channel.notify("\(kind) \(target) \(serial) \(key)\n")
     }
 
+    enum Ownership { case emacs, view, pending, passthrough }
+    var ownership: Ownership {
+        if active { return .pending }
+        guard let view, host.ownsFocus(view) else { return .emacs }
+        return passthrough ? .passthrough : .view
+    }
+
+    func toggleOwnership() {
+        switch ownership {
+        case .pending: break
+        case .emacs: _ = focusView()
+        case .view, .passthrough: escape()
+        }
+        host.refreshOwnership()
+    }
+
+    private func escape() {
+        let wasActive = active
+        cancel()
+        if let view { host.returnFocus(from: view) }
+        if wasActive { _ = notify("escape") }
+    }
+
     func cancel() {
+        defer { host.refreshOwnership() }
         serial += 1 // Invalidate queued notifications and late command completion.
         active = false
         waiting = false
@@ -123,10 +147,7 @@ final class NativeInput: NativeInputHandler {
         // Recovery must work even before Lisp acknowledges, without a JS flush.
         if event.type == .keyDown, event.keyCode == 53,
            event.modifierFlags.intersection(Self.modifiers) == .command {
-            let wasActive = active
-            cancel()
-            if let view { host.returnFocus(from: view) }
-            if wasActive { _ = notify("escape") }
+            escape()
             return true
         }
         if waiting { pending.append(event); return true }
@@ -166,6 +187,7 @@ final class NativeInput: NativeInputHandler {
     }
 
     private func perform(_ action: String) throws -> Bool {
+        defer { host.refreshOwnership() }
         switch action {
         case "pending": return active
         case "focused": return view.map { host.ownsFocus($0) } ?? false

@@ -27,7 +27,7 @@
 (defun portal-test--views ()
   "Run real redisplay, then inspect the actual AppKit view hierarchy."
   (redisplay t)
-  (portal--native-views))
+  (seq-filter (lambda (view) (plist-get view :visible)) (portal--native-views)))
 
 (defun portal-test--expect-windows (&rest windows)
   "Expect one native view within each of WINDOWS, and no extra views."
@@ -398,3 +398,5 @@
             (portal-test--wait-for-page "Keep this page" 1))
         (portal-stop-server)
         (delete-file file)))))
+
+(provide 'portal-tests)

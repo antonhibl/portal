@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'cl-lib)
 (require 'portal-native)
+(require 'portal-toolbar)
 
 (defgroup portal-input nil "Input for Portal native views." :group 'applications)
 (declare-function portal--input "portal" (target action &optional serial))
@@ -79,9 +80,7 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
 
 (define-minor-mode portal-input-mode
   "Use Portal's shared prefix and focus controls in this wrapper buffer."
-  :lighter nil :keymap portal-input-mode-map
-  (when portal-input-mode
-    (setq-local header-line-format '(:eval (portal-input--header)))))
+  :lighter nil :keymap portal-input-mode-map)
 
 (defun portal-input--target (&optional window)
   "Return the native target for WINDOW, defaulting to the selected window."
@@ -121,18 +120,6 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
   (interactive)
   (unless portal-input--serial (user-error "Enter the app with RET before sending a literal prefix"))
   (portal-input--action "literal" portal-input--origin portal-input--serial))
-
-(defun portal-input--header ()
-  "Show the current owner and the same escape hatch on every surface."
-  (let ((target (portal-input--target (or (get-buffer-window (current-buffer) t) (selected-window)))))
-    (concat " " (propertize " Return to Emacs " 'face 'mode-line-highlight 'mouse-face 'highlight
-                            'local-map (let ((map (make-sparse-keymap)))
-                                         (define-key map [header-line mouse-1] #'portal-input-unfocus) map))
-            (format "  Portal: %s · %s prefix · Command-Escape · RET to enter"
-                    (cond ((portal-input--action "passthrough-p" target) "Passthrough")
-                          ((portal-input--action "pending" target) "Command")
-                          ((portal-input--action "focused" target) "App") (t "Emacs"))
-                    portal-input-prefix))))
 
 (defun portal-input--map ()
   "Compose the shared map, current Emacs gateways, and feature shortcuts."
@@ -200,7 +187,6 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
     (define-key map [portal-input-cancel] #'keyboard-quit)
     (define-key map [portal-input-literal] #'portal-input-send-prefix)
     (define-key map [portal-input-escape] #'portal-input-unfocus)
-    (define-key map [header-line mouse-1] #'portal-input-unfocus)
     (when (or (null serial) (portal-input--action "ack" target serial))
       (let ((keys (read-key-sequence-vector (format "Portal %s (? help, C-g cancel): "
                                                    (key-description trigger)))))

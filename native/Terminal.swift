@@ -10,7 +10,9 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
+    var toolbarModel: ToolbarModel? { session?.quick == false ? session?.controls : nil }
     func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
+    static let defaultFontSize = 14.0
     var terminalTitle = "Terminal"
     var grid: TerminalGridMetrics?
     var terminalSurface: TerminalSurface?
@@ -25,6 +27,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
+            builder.withFontSize(Float(Self.defaultFontSize))
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
             builder.withCustom("keybind", "super+t=unbind")
@@ -57,6 +60,7 @@ private final class TerminalSession {
     let quick: Bool
     let terminal: HostedTerminal
     let host: NativeHost
+    let controls = ToolbarModel(.terminal)
     var edges: [Int] = []
     lazy var input = NativeInput(target: "terminal:\(id)", view: terminal, host: host,
                                  profile: quick ? "quick" : "regular") { [weak self] in
@@ -72,6 +76,11 @@ private final class TerminalSession {
         terminal = HostedTerminal(directory: directory, theme: theme)
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         terminal.session = self
+        controls.value = HostedTerminal.defaultFontSize
+        controls.defaultValue = HostedTerminal.defaultFontSize
+        controls.minimum = 1
+        controls.maximum = 255
+        controls.action = { [weak self] in try self?.textSize($0) }
     }
 
     func layout(_ rectangle: [Int]) throws {
@@ -94,11 +103,36 @@ private final class TerminalSession {
         }
     }
 
+    func textSize(_ action: String) throws {
+        let binding: String
+        let next: Double
+        switch action {
+        case "increase": next = min(controls.maximum, controls.value + 1); binding = "increase_font_size:1"
+        case "decrease": next = max(controls.minimum, controls.value - 1); binding = "decrease_font_size:1"
+        case "reset": next = controls.defaultValue; binding = "reset_font_size"
+        default: throw NativeError.message("Unknown terminal toolbar action: \(action)")
+        }
+        guard next != controls.value else { return }
+        guard terminal.terminalSurface?.performBindingAction(binding) == true else {
+            throw NativeError.message("No terminal accepting text size changes")
+        }
+        controls.value = next
+        controls.changed?()
+    }
+
     func returnFocus() { host.returnFocus(from: terminal) }
 
     func handleKeyEvent(_ event: NSEvent) -> Bool {
         Terminals.didFocus(id)
         if input.handleKeyEvent(event) { return true }
+        if event.type == .keyDown,
+           event.modifierFlags.intersection([.command, .control, .option]) == .command {
+            let key = event.charactersIgnoringModifiers ?? ""
+            if let action = ["+": "increase", "=": "increase", "-": "decrease", "0": "reset"][key] {
+                try? textSize(action)
+                return true
+            }
+        }
         switch event.type {
         case .keyDown: terminal.keyDown(with: event)
         case .keyUp: terminal.keyUp(with: event)

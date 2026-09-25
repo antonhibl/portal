@@ -22,9 +22,10 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
-(declare-function portal--load-url "portal" (url))
+(declare-function portal--load-url "portal" (url &optional preview))
 (declare-function portal--bind "portal" (title))
 (declare-function portal--set-layout "portal" (layout))
+(declare-function portal--release-pane "portal" (id))
 (declare-function portal--destroy "portal" ())
 (declare-function portal--native-views "portal" ())
 
@@ -65,6 +66,8 @@ Nil means no layout has been sent yet.")
 
 (defun portal--update-layout ()
   "Reconcile all panes showing the buffer with their native presentations."
+  (dolist (pane portal--panes)
+    (unless (window-live-p (car pane)) (portal--release-pane (cdr pane))))
   (let* ((panes
           (mapcar (lambda (window)
                     (or (assq window portal--panes)
@@ -85,7 +88,12 @@ Nil means no layout has been sent yet.")
       ;; Send the complete layout, including an empty one when hidden.
       (portal--set-layout layout)
       (setq portal--geometry geometry))
-    (setq portal--panes panes)))
+    ;; Keep pane identities while another buffer is displayed in the window.
+    (setq portal--panes
+          (append panes (seq-filter
+                         (lambda (pane) (and (window-live-p (car pane))
+                                             (not (assq (car pane) panes))))
+                         portal--panes)))))
 
 (defun portal--sync (frame)
   "Update native presentations after FRAME's window layout changes."
@@ -144,13 +152,13 @@ file's containing directory.  URLs supported by `portal-open-url' are accepted."
   (unless (and (stringp file-or-url) (not (string-empty-p file-or-url)))
     (user-error "Enter a local HTML path or URL"))
   (if (string-match-p "\\`[[:alpha:]][[:alnum:]+.-]*:" file-or-url)
-      (portal-open-url file-or-url)
+      (portal--show file-or-url t)
     (let ((path (expand-file-name file-or-url)))
       (when (file-remote-p path)
         (user-error "Choose a local HTML file or an HTTP(S) URL"))
       (unless (and (file-regular-p path) (file-readable-p path))
         (user-error "Choose a readable regular file: %s" path))
-      (portal-open-url (browse-url-file-url path)))))
+      (portal--show (browse-url-file-url path) t))))
 
 ;;;###autoload
 (defun portal-hello ()
@@ -192,7 +200,7 @@ not included."
 
 (defun portal--open-hosted (path)
   "Display hosted PATH, starting the shared server if necessary."
-  (portal--show "about:blank")
+  (portal--show "about:blank" (string-prefix-p "/markdown?" path))
   (setq portal--hosted-path path)
   (portal--ensure-host))
 
@@ -224,8 +232,10 @@ not included."
 (add-hook 'portal-server-ready-hook #'portal--host-ready)
 (add-hook 'portal-server-stopped-hook #'portal--host-stopped)
 
-(defun portal--show (&optional url)
-  "Display native content, loading URL when non-nil."
+(defun portal--show (&optional url preview)
+  "Display native content, loading URL with PREVIEW controls when requested."
+  (when (and url (not (string-match-p "\\`\\(?:https?://[^/[:space:]]+\\|file:///\\|data:\\|about:\\)" url)))
+    (user-error "Enter an absolute http, https, file, data or about URL"))
   (portal-input--connect)
   (portal-hide)
   (let (ready)
@@ -238,7 +248,7 @@ not included."
           (setq portal--buffer (current-buffer)
                 portal--frame (selected-frame))
           (portal--bind-frame portal--frame)
-          (when url (portal--load-url url))
+          (when url (portal--load-url url preview))
           ;; Attach before registering redisplay callbacks, so errors reach
           ;; the caller instead of being swallowed by redisplay's safe_call.
           (portal--sync portal--frame)
