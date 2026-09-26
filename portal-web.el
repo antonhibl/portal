@@ -39,9 +39,11 @@ and killing the buffer closes it."
   "Open a web view for the current buffer, load URL in it and return its target.
 URL is an absolute http, https, file, data or about URL.  TOOLBAR is
 \"navigation\" for back, forward, find, zoom and reload, \"contents\" for a
-table of contents in place of back and forward, or \"none\"."
+table of contents in place of back and forward, or \"none\".
+This turns on `portal-input-mode', keeping the buffer's major mode."
   (portal-web--check-url url)
   (portal-input--connect)
+  (portal-input-mode 1)
   (setq portal-web--target (portal-view-open 'web (list :toolbar toolbar))
         portal-web--url url)
   (portal--web-load portal-web--target url)

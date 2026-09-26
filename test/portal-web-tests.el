@@ -152,6 +152,10 @@
     (should-not portal-fake-native-log)
     (let ((target (portal-web-open "about:blank" "none")))
       (should (equal (portal-view-target) target))
+      (should (eq major-mode 'fundamental-mode))
+      ;; The shared prefix and RET reach the view.
+      (should (equal (portal-input--target) target))
+      (should (eq (key-binding (kbd "RET")) #'portal-input-focus))
       (should (equal (portal-web-test--toolbar) "none"))
       (should (equal (plist-get (portal-web-test--state) :url) "about:blank"))
       (should (equal (portal-view-buffers 'web) (list (current-buffer)))))
