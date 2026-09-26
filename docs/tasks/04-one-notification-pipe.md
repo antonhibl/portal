@@ -1,6 +1,6 @@
 # 04: One notification pipe owned by portal-view.el
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -26,13 +26,13 @@ Every notification from the native module to Emacs travels on one pipe, which `p
 
 ## Acceptance criteria
 
-- [ ] Prefix handoff works in terminal views, web views and Excalidraw (the GUI input suites pass)
-- [ ] A batch test shows that:
-  - [ ] a record split across two reads is dispatched exactly once;
-  - [ ] records batched into one read are each dispatched once, to the right handler, with the right buffer current;
-  - [ ] a record for an unknown target is dropped
-- [ ] The `portal--input-channel` export and `portal-input`'s pipe code are deleted
-- [ ] `docs/terminal-input-bridge.md` is updated
+- [x] Prefix handoff works in terminal views, web views and Excalidraw (the GUI input suites pass)
+- [x] A batch test shows that:
+  - [x] a record split across two reads is dispatched exactly once;
+  - [x] records batched into one read are each dispatched once, to the right handler, with the right buffer current;
+  - [x] a record for an unknown target is dropped
+- [x] The `portal--input-channel` export and `portal-input`'s pipe code are deleted
+- [x] `docs/terminal-input-bridge.md` is updated
 
 ## Blocked by
 

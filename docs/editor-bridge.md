@@ -5,12 +5,12 @@ handoff, and event routing for both WebKit and Ghostty. It remains independent
 of feature state and persistence. An editor does not need another host or a
 second keyboard monitor.
 
-`NativeEventChannel.swift` extracts the terminal's nonblocking pipe transport.
-Terminal sessions and web editors each have a channel instance, using the same
-descriptor lifetime, atomic short writes, and SIGPIPE protection. Their protocols
-stay separate: terminal messages describe prefix/binding events, while editor
-notifications identify a session with queued messages. Lisp's
-`portal-native--consume-lines` handles partial and batched reads for both.
+`NativeEventChannel.swift` is the nonblocking pipe transport. Portal views
+share one channel instance, the notification pipe owned by `portal-view.el`
+([terminal input bridge](terminal-input-bridge.md)). Web editors still have their
+own instance, with the same descriptor lifetime, atomic short writes, and SIGPIPE
+protection. Editor notifications identify a session with queued messages. Lisp's
+`portal-view--consume-lines` handles partial and batched reads for both pipes.
 
 No asynchronous AppKit or WebKit callback keeps an `emacs_env` or calls Lisp.
 Callbacks notify an Emacs pipe process, and interactive commands are queued as

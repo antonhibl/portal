@@ -57,7 +57,7 @@ private final class WebEditorSession: NSObject, WKScriptMessageHandler, WKNaviga
 
     private func signal() {
         guard !notified, !closed else { return }
-        if WebEditors.channel.notify("\(id)\n") {
+        if WebEditors.channel.write("\(id)\n") {
             notified = true
             retry?.cancel()
             retry = nil

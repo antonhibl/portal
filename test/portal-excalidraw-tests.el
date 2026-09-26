@@ -16,13 +16,6 @@
        (setq portal-excalidraw--id nil portal-excalidraw--ready nil)
        (set-buffer-modified-p nil))))
 
-(ert-deftest portal-native-lines-handle-split-and-batched-records ()
-  (let (lines)
-    (let ((tail (portal-native--consume-lines "" "binding 12 83" (lambda (line) (push line lines)))))
-      (should-not lines)
-      (should (equal (portal-native--consume-lines tail "87\n13\npar" (lambda (line) (push line lines))) "par"))
-      (should (equal (nreverse lines) '("binding 12 8387" "13"))))))
-
 (ert-deftest portal-excalidraw-rejects-invalid-data-before-replacing-buffer ()
   (portal-excalidraw-test--buffer
     (let ((before (buffer-string)))

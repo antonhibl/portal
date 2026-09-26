@@ -293,5 +293,84 @@ Return the view's target."
       (should (buffer-live-p buffer))
       (should-error (portal-terminal-focus) :type 'user-error))))
 
+;;; Records
+
+(defvar portal-view-test--handled nil
+  "Records the test handlers saw, oldest first, as (TYPE BUFFER ARGUMENTS).")
+
+(defun portal-view-test--handler (type)
+  "Return a record handler that logs TYPE, the current buffer and its arguments."
+  (lambda (&rest arguments)
+    (setq portal-view-test--handled
+          (append portal-view-test--handled (list (list type (current-buffer) arguments))))))
+
+(defmacro portal-view-test--handling (types &rest body)
+  "Run BODY with only logging handlers, one for each of TYPES."
+  (declare (indent 1))
+  `(let ((portal-view-test--handled nil)
+         (portal-view-record-handlers
+          (mapcar (lambda (type) (cons type (portal-view-test--handler type))) ,types)))
+     ,@body))
+
+(ert-deftest portal-view-record-split-across-reads-is-dispatched-once ()
+  (portal-view-test--environment
+    (let* ((target (portal-view-test--open "view"))
+           (record (format "ping %s 3 838\n" target)))
+      (portal-view-test--handling '("ping")
+        (portal-fake-native-send (substring record 0 9))
+        (should-not portal-view-test--handled)
+        (portal-fake-native-send (substring record 9 -1) "\n" "")
+        (should (equal portal-view-test--handled
+                       `(("ping" ,(current-buffer) (,target "3" "838")))))))))
+
+(ert-deftest portal-view-records-in-one-read-each-reach-their-handler-and-buffer ()
+  (portal-view-test--environment
+    (let ((first (portal-view-test--open "first"))
+          (second (portal-view-test--open "second")))
+      (switch-to-buffer "*scratch*")
+      (portal-view-test--handling '("ping" "pong")
+        (push (cons "fail" (lambda (&rest _) (error "Expected failure")))
+              portal-view-record-handlers)
+        ;; A failing handler is reported; the records after it still arrive.
+        (portal-fake-native-send (format "ping %s 1\nfail %s\npong %s\nping %s 2 x\n"
+                                         second first first second))
+        (portal-fake-native-send "")
+        (should (equal portal-view-test--handled
+                       `(("ping" ,(get-buffer "second") (,second "1"))
+                         ("pong" ,(get-buffer "first") (,first))
+                         ("ping" ,(get-buffer "second") (,second "2" "x")))))
+        (should (eq (current-buffer) (get-buffer "*scratch*")))))))
+
+(ert-deftest portal-view-record-for-an-unknown-target-is-dropped ()
+  (portal-view-test--environment
+    (let ((target (portal-view-test--open "view"))
+          (closed (portal-view-test--open "closed")))
+      (kill-buffer "closed")
+      (portal-view-test--handling '("ping")
+        (portal-fake-native-send
+         (format "ping %s 1\nping terminal:999999 2\nping\n\npong %s 3\nping %s 4\n"
+                 closed target target))
+        (should (equal portal-view-test--handled
+                       `(("ping" ,(get-buffer "view") (,target "4")))))))))
+
+(ert-deftest portal-view-input-records-queue-commands-for-every-view ()
+  (portal-view-test--environment
+    (let ((target (portal-view-test--open "view"))
+          (unread-command-events nil))
+      ;; Web views are not registered yet; their buffer finds their target.
+      (with-current-buffer (get-buffer-create "web")
+        (portal-input-mode 1)
+        (setq-local portal-input--target-function
+                    (lambda (window) (and (eq window (get-buffer-window)) "web:7"))))
+      (set-window-buffer (split-window-right) "web")
+      (portal-fake-native-send
+       (format "prefix %s 3 0\nbinding %s 4 8388704\nliteral web:7 5 0\ncancel web:8 6 0\nescape web:7 7 0\n"
+               target target))
+      (should (equal unread-command-events
+                     `((portal-input-prefix (,target 3 0))
+                       (portal-input-binding (,target 4 8388704))
+                       (portal-input-literal ("web:7" 5 0))
+                       (portal-input-escape ("web:7" 7 0))))))))
+
 (provide 'portal-view-tests)
 ;;; portal-view-tests.el ends here
