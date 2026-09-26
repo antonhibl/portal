@@ -277,7 +277,7 @@ V1 has one list, a completion filter, and task details. Web editing, web status
 buttons, automatic refresh, comments, executable mock-up previews, cross-project
 aggregation, cross-branch reconciliation, and migration of existing documents
 are outside this implementation. The repository tasks were subsequently migrated
-to the default `tasks/` root with status front matter; see [the task index](../tasks/README.md).
+to the default `tasks/` root with status front matter; browse them with `M-x portal-tasks`.
 
 ## Research basis
 

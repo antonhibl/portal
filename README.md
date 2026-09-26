@@ -537,8 +537,8 @@ if needed. Click a task to read it in the same view; the **Tasks** link returns
 to the list. Emacs stays the editor: the task browser reads files and never
 writes, moves or deletes them.
 
-This repository keeps its tasks in [tasks/](tasks/README.md), using the default
-root. Agent authoring conventions are in [AGENTS.md](AGENTS.md#authoring-tasks).
+This repository keeps its tasks in `tasks/`, using the default root; browse them
+in the dashboard. Agents use the [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
 
 ### Choosing the task root
 
