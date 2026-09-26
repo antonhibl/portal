@@ -61,8 +61,11 @@ passes it to `portal--channel`. In Swift, the view registry owns the writing end
 (`Views.channel`).
 
 Each record is one ASCII line, `TYPE TARGET FIELD...`, separated by spaces and at
-most `PIPE_BUF` bytes long, so every write is atomic. Input sends these records,
-each with the handoff serial and a key field:
+most `PIPE_BUF` bytes long, so every write is atomic. Records reach Emacs in the
+order they are sent. While the pipe is full, a record waits in Swift, with those
+sent after it, and is retried, so a busy Emacs delays records but never loses
+or reorders them. Input sends these records, each with the handoff serial and a
+key field:
 
 | Record | Sent when |
 | --- | --- |
@@ -70,7 +73,10 @@ each with the handoff serial and a key field:
 | `binding TARGET SERIAL EVENT` | The view captures the first chord of a native terminal binding |
 | `literal TARGET SERIAL 0` | The first chord is repeated while Emacs reads the rest of the sequence |
 | `cancel TARGET SERIAL 0` | `C-g` is pressed in the view while Emacs reads the rest of the sequence |
-| `escape TARGET SERIAL 0` | Command-Escape cancels a handoff |
+| `escape TARGET SERIAL 0` | Command-Escape cancels a handoff, as does a click that hands off to Emacs or selects the view's pane |
+
+A click that enters a view sends `select TARGET`, and Emacs selects the pane
+showing the view.
 
 Reads do not follow record boundaries: one record can arrive split across two
 reads, and one read can carry several records. `portal-view.el` joins the reads

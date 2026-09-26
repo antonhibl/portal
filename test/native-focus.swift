@@ -48,6 +48,36 @@ struct CheckFocus {
         try checkHosted(window: window)
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)
+        checkChannel()
+    }
+
+    /// A full pipe delays records, without losing or reordering them.
+    @MainActor
+    static func checkChannel() {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        defer { Views.channel.connect(-1); close(fds[0]) }
+        precondition(!Views.channel.notify("two words", target: "web:1"), "A malformed record was accepted")
+        // Fill the pipe, as an Emacs busy with a long command leaves it.
+        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
+        var filled = 0
+        while case let count = write(fds[1], filler, filler.count), count > 0 { filled += count }
+        precondition(Views.channel.notify("escape", target: "web:1", fields: ["2", "0"])
+                     && Views.channel.notify("bridge", target: "web:1"), "A full pipe refused records")
+        let expected = "escape web:1 2 0\nbridge web:1\n"
+        var received: [UInt8] = []
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while received.count < filled + expected.utf8.count && Date() < deadline {
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            let count = read(fds[0], &buffer, buffer.count)
+            if count > 0 { received += buffer[..<count] }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.03))
+        }
+        let records = String(decoding: received.dropFirst(filled), as: UTF8.self)
+        precondition(records == expected, "Records were lost or reordered: \(records)")
+        print("A full pipe delays records in order, and loses none")
     }
 
     /// A pipe standing in for Emacs's end of `Views.channel`.

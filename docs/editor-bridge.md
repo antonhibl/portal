@@ -22,8 +22,9 @@ A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
 - **Notification.** The first waiting message sends one `bridge TARGET` record
   on the shared notification pipe that `portal-view.el` owns
   ([terminal input bridge](terminal-input-bridge.md#the-notification-pipe)).
-  No other record goes out until Emacs has received the messages. If the pipe
-  is full, the bridge retries the record, and keeps the messages.
+  No other record goes out until Emacs has received the messages. The pipe
+  delivers the record in order with every other record, waiting while the
+  pipe is full.
 - **Receiving.** `portal-web.el` handles `bridge` records. It calls
   `portal--web-receive TARGET`, which returns every waiting message as a JSON
   array and lets the next message send a new record. It then calls the

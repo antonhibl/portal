@@ -95,13 +95,15 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
 
     /// Emacs visits a local file that a hosted app's page links to, in another
     /// pane. The URL goes over the bridge: a long path would not fit in a record.
+    /// Escaping first ends any prefix Emacs is reading; records keep their order,
+    /// so Emacs gets the escape before the bridge record.
     func follow(_ url: URL) {
         input?.escape()
         bridge?.emit(["type": "follow", "url": url.absoluteString])
     }
 
-    /// Emacs opens the Markdown file on screen, from the toolbar. The bridge
-    /// retries while the pipe is full, so the request is never lost.
+    /// Emacs opens the Markdown file on screen, from the toolbar, as `follow`
+    /// visits a link.
     func edit() {
         input?.escape()
         bridge?.emit(["type": "edit"])
@@ -172,7 +174,6 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
     private weak var page: WebPage?
     private var messages: [[String: Any]] = []
     private var notified = false
-    private var retry: Task<Void, Never>?
     private var closed = false
 
     init(target: String, page: WebPage) {
@@ -206,21 +207,11 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
         signal()
     }
 
-    /// Send the record, retrying while the pipe is full.
+    /// Announce the waiting messages with one record. The channel delivers it
+    /// in order with other records, waiting while the pipe is full.
     private func signal() {
         guard !notified, !closed, !messages.isEmpty else { return }
-        if Views.channel.notify("bridge", target: target) {
-            notified = true
-            retry?.cancel()
-            retry = nil
-        } else if retry == nil {
-            retry = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(20))
-                guard !Task.isCancelled, let self else { return }
-                self.retry = nil
-                self.signal()
-            }
-        }
+        notified = Views.channel.notify("bridge", target: target)
     }
 
     /// Return every queued message as a JSON array, and allow the next record.
@@ -245,7 +236,6 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
 
     func close() {
         closed = true
-        retry?.cancel()
         page?.configuration.userContentController.removeScriptMessageHandler(forName: "portal")
     }
 }
