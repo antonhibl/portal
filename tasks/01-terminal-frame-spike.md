@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 01: Spike: a terminal view survives moving between frames and being parked
 
-Type: AFK (escalate on failure) · Status: done
+Type: AFK (escalate on failure)
 
 ## What to build
 

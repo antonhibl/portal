@@ -537,6 +537,9 @@ if needed. Click a task to read it in the same view; the **Tasks** link returns
 to the list. Emacs stays the editor: the task browser reads files and never
 writes, moves or deletes them.
 
+This repository keeps its tasks in `tasks/`, using the default root; browse them
+in the dashboard. Agents use the [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
+
 ### Choosing the task root
 
 `portal-tasks-directory` names the task root. It defaults to `tasks/`, which is
@@ -544,7 +547,7 @@ relative to the `project.el` root; an absolute directory is used as it is. Set
 it for one project in that project's `.dir-locals.el`:
 
 ```elisp
-((nil . ((portal-tasks-directory . "docs/tasks/"))))
+((nil . ((portal-tasks-directory . "backlog/"))))
 ```
 
 The project is the one being edited. From a terminal, a web view or another

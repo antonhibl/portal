@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 06: Hosted apps open immediately and load when the app host is ready
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 

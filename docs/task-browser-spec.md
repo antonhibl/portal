@@ -207,7 +207,7 @@ it is that task's folder. No attachment list or naming convention is required.
   the same view, preserving the root, filter, and heading fragment. This lookup
   may cross task folders within the configured root, including for done tasks.
 - Other local file links open the saved file in Emacs through the local-file
-  handoff described in the [Markdown navigation specification](tasks/08-markdown-preview-links.md).
+  handoff described in the [Markdown navigation specification](../tasks/08-markdown-preview-links.md).
   Supporting Markdown is an ordinary file, not another discovered task. Opening
   an attachment preserves the task page and its navigation history. Mock-up HTML
   and code open as source; they are not executed by the task browser.
@@ -276,8 +276,8 @@ required. Bun 1.3.14 was checked to provide `Bun.YAML.parse`.
 V1 has one list, a completion filter, and task details. Web editing, web status
 buttons, automatic refresh, comments, executable mock-up previews, cross-project
 aggregation, cross-branch reconciliation, and migration of existing documents
-are outside this implementation. Existing files in `docs/tasks/` only become
-tasks if that root is selected and the documents satisfy the discovery rules.
+are outside this implementation. The repository tasks were subsequently migrated
+to the default `tasks/` root with status front matter; browse them with `M-x portal-tasks`.
 
 ## Research basis
 

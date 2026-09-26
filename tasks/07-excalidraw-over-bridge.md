@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 07: Excalidraw talks to its buffer over the bridge
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 
