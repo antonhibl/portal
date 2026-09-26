@@ -122,7 +122,9 @@ final class NativeInput: NativeInputHandler {
         host.refreshOwnership()
     }
 
-    private func escape() {
+    /// Return to Emacs, ending any prefix Emacs is reading, as Command-Escape
+    /// does. Emacs would otherwise read the next event as the prefix's tail.
+    func escape() {
         let wasActive = active
         cancel()
         if let view { host.returnFocus(from: view) }
@@ -177,12 +179,6 @@ final class NativeInput: NativeInputHandler {
         return true
     }
 
-    /// Give Emacs the keyboard.
-    func unfocus() {
-        cancel()
-        if let view { host.returnFocus(from: view) }
-    }
-
     static func perform(_ target: String, action: String, serial: Int = 0) throws -> Bool {
         guard let input = Views.input(target) else { return false }
         if serial != 0 && (serial != input.serial || !input.active) { return false }
@@ -198,7 +194,9 @@ final class NativeInput: NativeInputHandler {
         case "focus":
             passthrough = false
             return focusView()
-        case "unfocus": unfocus()
+        case "unfocus":
+            cancel()
+            if let view { host.returnFocus(from: view) }
         case "ack":
             guard waiting else { return false }
             waiting = false

@@ -96,14 +96,14 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     /// Emacs visits a local file that a hosted app's page links to, in another
     /// pane. The URL goes over the bridge: a long path would not fit in a record.
     func follow(_ url: URL) {
-        input?.unfocus()
+        input?.escape()
         bridge?.emit(["type": "follow", "url": url.absoluteString])
     }
 
     /// Emacs opens the Markdown file on screen, from the toolbar. The bridge
     /// retries while the pipe is full, so the request is never lost.
     func edit() {
-        input?.unfocus()
+        input?.escape()
         bridge?.emit(["type": "edit"])
     }
 

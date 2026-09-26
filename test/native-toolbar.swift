@@ -123,6 +123,9 @@ struct CheckToolbar {
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
         Views.channel.connect(fds[1])
         defer { Views.channel.connect(-1); close(fds[0]) }
+        func container(_ target: String) -> NativeContainer {
+            window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
+        }
         func edit(hosted: Bool) throws -> (String, NSButton) {
             let target = try Views.open(kind: "web", options: ViewOptions(values: [
                 "toolbar": .string("markdown"), "hosted": .flag(hosted)]))
@@ -140,11 +143,19 @@ struct CheckToolbar {
         precondition(!button.isHidden)
         let focused = try NativeInput.perform(target, action: "focus")
         precondition(focused && window.firstResponder !== editor)
+        // Clicking while Emacs reads a prefix ends that read first, so Emacs
+        // runs the edit instead of taking it for the prefix's next key.
+        NSApp.sendEvent(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
+                                         windowNumber: window.windowNumber, context: nil, characters: "\u{2}",
+                                         charactersIgnoringModifiers: "b", isARepeat: false, keyCode: 11)!)
+        precondition(container(target).model.input?.ownership == .pending, "The prefix is not pending")
         button.performClick(nil)
         var buffer = [UInt8](repeating: 0, count: 512)
         let count = read(fds[0], &buffer, buffer.count)
-        precondition(count > 0 && String(decoding: buffer[..<count], as: UTF8.self) == "bridge \(target)\n",
-                     "Open in Emacs did not notify Emacs")
+        let records = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        let kinds = records.split(separator: "\n").map { $0.split(separator: " ").prefix(2).joined(separator: " ") }
+        precondition(kinds == ["prefix \(target)", "escape \(target)", "bridge \(target)"],
+                     "Open in Emacs did not end the prefix and notify Emacs: \(records)")
         let messages = try Views.view(target, as: WebSession.self).receive()
         precondition(messages == #"[{"type":"edit"}]"#, "Open in Emacs did not ask Emacs to edit")
         precondition(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")

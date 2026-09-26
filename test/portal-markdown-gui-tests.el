@@ -73,12 +73,16 @@ The folder is `portal-markdown-gui--directory'."
   (portal-excalidraw-gui--js
    (format "[...document.links].find(a => a.textContent === %S).click(); return true;" text)))
 
+(defun portal-markdown-gui--link-point (text)
+  "Scroll the preview's link with TEXT into view and return where to click it."
+  (portal-excalidraw-gui--js
+   (format "const a = [...document.links].find(a => a.textContent === %S);
+            a.scrollIntoView({block: 'center'}); const r = a.getBoundingClientRect();
+            return [Math.round(r.left + 3), Math.round(r.top + r.height / 2)];" text)))
+
 (defun portal-markdown-gui--click-link (text)
   "Click the preview's link with TEXT with the real mouse."
-  (let ((point (portal-excalidraw-gui--js
-                (format "const a = [...document.links].find(a => a.textContent === %S);
-                         a.scrollIntoView({block: 'center'}); const r = a.getBoundingClientRect();
-                         return [Math.round(r.left + 3), Math.round(r.top + r.height / 2)];" text))))
+  (let ((point (portal-markdown-gui--link-point text)))
     (should (portal-test-native-click (aref point 0) (aref point 1)))))
 
 (defun portal-markdown-gui--scroll ()
@@ -227,6 +231,26 @@ The folder is `portal-markdown-gui--directory'."
         (portal-markdown-gui--event 'portal-web-follow)
         (should (eq major-mode 'dired-mode))
         (should (equal (portal-excalidraw-gui--js "return window.marker;") "kept"))))))
+
+(ert-deftest portal-markdown-gui-link-click-ends-a-pending-prefix ()
+  (portal-markdown-gui--documents
+    (let ((target (portal-view-target))
+          (point (portal-markdown-gui--link-point "Source")))
+      (portal-input-focus)
+      (portal-test-native-key 11 (ash 1 18) "\C-b")
+      (let ((event (aref (with-timeout (5 (ert-fail "No prefix event"))
+                           (read-key-sequence-vector nil))
+                         0)))
+        (should (eq (car-safe event) 'portal-input-prefix))
+        ;; The click comes while Emacs reads the rest of the prefix.
+        (run-at-time 0.2 nil (lambda () (portal-test-native-click (aref point 0) (aref point 1))))
+        (with-timeout (5 (ert-fail "The click did not end the prefix"))
+          (portal-input--dispatch event)))
+      (should-not (portal-input--action "pending" target))
+      (portal-markdown-gui--event 'portal-input-select)
+      (portal-markdown-gui--event 'portal-web-follow)
+      (should (equal buffer-file-name (portal-markdown-gui--file "src/main file.ts")))
+      (should-not (portal-input--action "focused" target)))))
 
 (ert-deftest portal-markdown-gui-open-in-emacs-edits-the-file-on-screen ()
   (portal-markdown-gui--documents

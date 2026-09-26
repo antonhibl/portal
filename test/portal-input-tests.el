@@ -50,6 +50,21 @@
                                (_ #'ignore))))
         (should-not resumed)))))
 
+(ert-deftest portal-input-escape-ends-a-prefix-without-taking-the-next-event ()
+  ;; A native handoff, such as Open in Emacs, escapes a pending prefix before
+  ;; its own event arrives; the event must survive for the command loop.
+  (with-temp-buffer
+    (portal-web-mode)
+    (let* ((edit '(portal-web-edit ("web:1")))
+           (unread-command-events (list '(portal-input-escape ("web:1" 1 0)) edit))
+           resumed)
+      (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
+                ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                ((symbol-function 'portal--input) (lambda (&rest _) t)))
+        (portal-input--run "web:1" 1 (kbd "C-b") (portal-input--map)))
+      (should-not resumed)
+      (should (equal unread-command-events (list edit))))))
+
 (ert-deftest portal-input-old-prefix-setting-updates-shared-wrapper-map ()
   (let ((original portal-input-prefix))
     (unwind-protect
