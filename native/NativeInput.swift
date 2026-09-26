@@ -40,7 +40,6 @@ final class NativeInput: NativeInputHandler {
     private static var prefix = NativeKey(character: "b", flags: NSEvent.ModifierFlags.control.rawValue)
     private static var regularBindings: [NativeKey: Int] = [:]
     private static var quickBindings: [NativeKey: Int] = [:]
-    private static let inputs = NSMapTable<NSString, NativeInput>(keyOptions: .strongMemory, valueOptions: .weakMemory)
 
     let target: String
     weak var view: NSView?
@@ -63,7 +62,6 @@ final class NativeInput: NativeInputHandler {
         self.host = host
         self.profile = profile
         focusView = focus
-        Self.inputs.setObject(self, forKey: target as NSString)
     }
 
     static func configurePrefix(_ character: String, flags: Int) throws {
@@ -180,7 +178,7 @@ final class NativeInput: NativeInputHandler {
     }
 
     static func perform(_ target: String, action: String, serial: Int = 0) throws -> Bool {
-        guard let input = inputs.object(forKey: target as NSString) else { return false }
+        guard let input = Views.input(target) else { return false }
         if serial != 0 && (serial != input.serial || !input.active) { return false }
         return try input.perform(action)
     }

@@ -5,8 +5,10 @@
 ;; `portal-view.el' describes.  Pages and previews each get their own buffer.
 ;; Hosted apps open at once, at about:blank, and load once the app host is
 ;; ready.  After that they keep their page while the app host stops or restarts.
+;; A hosted app and its buffer exchange JSON messages over the bridge.
 
 (require 'browse-url)
+(require 'json)
 (require 'seq)
 (require 'url-parse)
 (require 'url-util)
@@ -15,6 +17,8 @@
 (require 'portal-server)
 
 (declare-function portal--web-load "portal-web" (target url))
+(declare-function portal--web-send "portal-web" (target json))
+(declare-function portal--web-receive "portal-web" (target))
 
 (defvar-local portal-web--target nil "This buffer's web view target, or nil.")
 (defvar-local portal-web--url nil
@@ -22,6 +26,11 @@
 It is nil while a hosted app waits for the app host.")
 (defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-preview-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
+(defvar-local portal-web-bridge-function nil
+  "Function called with each message this buffer's hosted app sends, in order.
+Each message is a JSON object parsed into a plist.  The function runs with
+the buffer current, inside a process filter, so it must never prompt; it
+queues commands through `unread-command-events'.")
 
 (define-derived-mode portal-web-mode special-mode "Portal Web"
   "Major mode for a buffer presenting a web view.
@@ -199,6 +208,20 @@ buffer to reread the file from disk.  Unsaved edits are not included."
                               (file-name-nondirectory path) "contents")))
 
 ;; Hosted apps.
+(defun portal-web-send (plist)
+  "Send PLIST to the current buffer's hosted app, as a JSON object over the bridge.
+The app receives it through `window.portalBridge.receive'."
+  (portal--web-send portal-web--target (json-serialize plist)))
+
+(defun portal-web--bridge (target)
+  "Pass each message waiting on TARGET's bridge to `portal-web-bridge-function'.
+Receiving the messages lets the next ones send a new record."
+  (let ((messages (json-parse-string (portal--web-receive target) :object-type 'plist)))
+    (when portal-web-bridge-function
+      (mapc portal-web-bridge-function messages))))
+
+(setf (alist-get "bridge" portal-view-record-handlers nil nil #'equal) #'portal-web--bridge)
+
 (defun portal-web--visit-hosted (path name toolbar)
   "Show the buffer for hosted app PATH, opening one called *portal: NAME*.
 A new buffer's view has TOOLBAR."

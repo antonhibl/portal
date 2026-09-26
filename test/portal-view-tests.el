@@ -356,21 +356,16 @@ Return the view's target."
 (ert-deftest portal-view-input-records-queue-commands-for-every-view ()
   (portal-view-test--environment
     (let ((target (portal-view-test--open "view"))
+          (other (portal-view-test--open "other"))
           (unread-command-events nil))
-      ;; Web views are not registered yet; their buffer finds their target.
-      (with-current-buffer (get-buffer-create "web")
-        (portal-input-mode 1)
-        (setq-local portal-input--target-function
-                    (lambda (window) (and (eq window (get-buffer-window)) "web:7"))))
-      (set-window-buffer (split-window-right) "web")
       (portal-fake-native-send
-       (format "prefix %s 3 0\nbinding %s 4 8388704\nliteral web:7 5 0\ncancel web:8 6 0\nescape web:7 7 0\n"
-               target target))
+       (format "prefix %s 3 0\nbinding %s 4 8388704\nliteral %s 5 0\ncancel web:999999 6 0\nescape %s 7 0\n"
+               target target other other))
       (should (equal unread-command-events
                      `((portal-input-prefix (,target 3 0))
                        (portal-input-binding (,target 4 8388704))
-                       (portal-input-literal ("web:7" 5 0))
-                       (portal-input-escape ("web:7" 7 0))))))))
+                       (portal-input-literal (,other 5 0))
+                       (portal-input-escape (,other 7 0))))))))
 
 (provide 'portal-view-tests)
 ;;; portal-view-tests.el ends here

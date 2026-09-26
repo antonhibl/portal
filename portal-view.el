@@ -37,7 +37,6 @@ Records for unknown targets, or of types with no handler, are dropped.")
 
 (defvar portal-view--channel nil "The pipe process that receives native records.")
 (defvar portal-view--pending "" "The start of a record whose end is still to come.")
-(defvar portal-input--target-function)
 
 (defvar portal-view--buffers nil "Buffers with a Portal view, in creation order.")
 (defvar-local portal-view--target nil "This buffer's native target.")
@@ -93,15 +92,8 @@ Errors are only reported: the records after this one must still arrive."
 
 (defun portal-view--target-buffer (target)
   "Return the live buffer whose view is TARGET, or nil."
-  (or (cl-find target (portal-view-buffers) :test #'equal
-               :key (lambda (buffer) (buffer-local-value 'portal-view--target buffer)))
-      ;; Excalidraw editors do not use `portal-view-open' yet,
-      ;; so find the window that shows them through `portal-input'.
-      (cl-loop for window in (window-list-1 nil 'nomini t)
-               when (with-current-buffer (window-buffer window)
-                      (and (bound-and-true-p portal-input--target-function)
-                           (equal target (funcall portal-input--target-function window))))
-               return (window-buffer window))))
+  (cl-find target (portal-view-buffers) :test #'equal
+           :key (lambda (buffer) (buffer-local-value 'portal-view--target buffer))))
 
 (defun portal-view--with-frame-title (frame function)
   "Call FUNCTION with a unique title that FRAME carries during the call.

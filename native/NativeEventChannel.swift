@@ -4,8 +4,7 @@ import Darwin
 /// A nonblocking notification pipe into Emacs's command loop. Feature payloads
 /// stay in their sessions; only short, newline-framed notifications use the pipe.
 /// No asynchronous native callback may retain or call an emacs_env.
-/// `Views.channel` is the one pipe for view records; Excalidraw editors keep
-/// their own until they join the registry.
+/// `Views.channel` is the one pipe, and carries every view's records.
 @MainActor
 final class NativeEventChannel {
     private var descriptor: Int32 = -1
@@ -28,11 +27,7 @@ final class NativeEventChannel {
         guard words.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && !$0.isWhitespace } }) else {
             return false
         }
-        return write(words.joined(separator: " ") + "\n")
-    }
-
-    /// Write one raw line. Only Excalidraw editors' own pipe still uses it.
-    func write(_ line: String) -> Bool {
+        let line = words.joined(separator: " ") + "\n"
         guard descriptor >= 0, line.utf8.count <= Int(PIPE_BUF) else { return false }
         return line.withCString { Darwin.write(descriptor, $0, line.utf8.count) } == line.utf8.count
     }

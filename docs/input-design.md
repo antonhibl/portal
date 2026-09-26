@@ -38,8 +38,7 @@ Current behavior illustrates the differences:
 
 Evidence: [terminal dispatch](../portal-terminal.el#L356),
 [terminal native routing](../native/Terminal.swift#L130),
-[editor routing](../native/WebEditor.swift#L105),
-[editor dispatch](../portal-excalidraw.el#L211),
+[editor dispatch](../portal-excalidraw.el),
 [webview routing](../native/WebView.swift#L46), and
 [preview mode map](../portal.el#L41). The Excalidraw page also handles
 Control-S/Command-S as an application save action in `host/excalidraw.tsx`.

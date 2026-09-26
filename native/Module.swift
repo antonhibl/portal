@@ -145,6 +145,19 @@ private let loadWeb: emacs_function = { env, _, args, _ in
         convert: { boolean(env, $0) }
 }
 
+private let sendWeb: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]), let json = readString(env, args![1]) else { return nil }
+    return call(env) { try Views.view(target, as: WebSession.self).send(json); return true }
+        convert: { boolean(env, $0) }
+}
+
+private let receiveWeb: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]) else { return nil }
+    return call(env) { try Views.view(target, as: WebSession.self).receive() } convert: { string(env, $0) }
+}
+
 private let setTerminalTheme: emacs_function = { env, _, args, _ in
     let env = env!
     var theme: String?
@@ -218,59 +231,6 @@ private let inputAction: emacs_function = { env, nargs, args, _ in
         convert: { boolean(env, $0) }
 }
 
-private let openEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    guard let title = readString(env, args![0]), let url = readString(env, args![1]) else { return nil }
-    return call(env) { try WebEditors.open(title: title, address: url) }
-        convert: { env.pointee.make_integer(env, $0) }
-}
-
-private let layoutEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    guard let title = readString(env, args![0]) else { return nil }
-    let id = env.pointee.extract_integer(env, args![1])
-    let count = env.pointee.vec_size(env, args![2])
-    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return nil }
-    var edges: [Int] = []
-    for index in 0..<count {
-        edges.append(env.pointee.extract_integer(env, env.pointee.vec_get(env, args![2], index)))
-    }
-    return call(env) { try WebEditors.layout(id, title: title, edges: edges); return true }
-        convert: { boolean(env, $0) }
-}
-
-private let sendEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    guard let json = readString(env, args![1]) else { return nil }
-    return call(env) { try WebEditors.send(id, json: json); return true }
-        convert: { boolean(env, $0) }
-}
-
-private let takeEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    return call(env) { try WebEditors.take(id) } convert: { string(env, $0) }
-}
-
-private let focusEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    return call(env) { try WebEditors.focus(id); return true } convert: { boolean(env, $0) }
-}
-
-private let closeEditor: emacs_function = { env, _, args, _ in
-    let env = env!
-    let id = env.pointee.extract_integer(env, args![0])
-    return call(env) { WebEditors.close(id); return false } convert: { boolean(env, $0) }
-}
-
-private let connectEditorChannel: emacs_function = { env, _, args, _ in
-    let env = env!
-    let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
-    return call(env) { WebEditors.channel.connect(fd); return true } convert: { boolean(env, $0) }
-}
-
 private let configureToolbar: emacs_function = { env, _, args, _ in
     let env = env!
     let enabled = env.pointee.is_not_nil(env, args![0])
@@ -286,7 +246,7 @@ private let toolbarTheme: emacs_function = { env, _, args, _ in
 private let toolbarAction: emacs_function = { env, _, args, _ in
     let env = env!
     guard let target = readString(env, args![0]), let action = readString(env, args![1]) else { return nil }
-    return call(env) { try NativeHost.toolbarAction(target: target, action: action) }
+    return call(env) { try NativeToolbar.perform(action, target: target) }
         convert: { string(env, $0) }
 }
 
@@ -303,7 +263,10 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
          "Send every view's records, lines of \"TYPE TARGET FIELD...\", to pipe PROCESS; nil disconnects.")
     ]
     let webFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("portal--web-load", 2, 2, loadWeb, "Load URL, an absolute http, https, file, data or about URL, in web view TARGET.")
+        ("portal--web-load", 2, 2, loadWeb, "Load URL, an absolute http, https, file, data or about URL, in web view TARGET."),
+        ("portal--web-send", 2, 2, sendWeb, "Send the JSON object JSON to hosted web view TARGET's app over its bridge."),
+        ("portal--web-receive", 1, 1, receiveWeb,
+         "Return the messages hosted web view TARGET's app sent over its bridge, as a JSON array.")
     ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
         ("portal--terminal-theme", 1, 1, setTerminalTheme, "Apply named THEME to all terminals; nil restores system appearance defaults."),
@@ -319,16 +282,7 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--toolbar-theme", 1, 1, toolbarTheme, "Apply toolbar face colors from JSON RGB arrays."),
         ("portal--toolbar-action", 2, 2, toolbarAction, "Perform ACTION on TARGET and return its native state as JSON.")
     ]
-    let editorFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("portal--editor-open", 2, 2, openEditor, "Create a persistent local editor in frame TITLE at URL; return its ID."),
-        ("portal--editor-layout", 3, 3, layoutEditor, "Place editor ID in frame TITLE at EDGES; [] hides it without unloading."),
-        ("portal--editor-send", 2, 2, sendEditor, "Send JSON to editor ID asynchronously."),
-        ("portal--editor-events", 1, 1, takeEditor, "Drain editor ID's pending messages as a JSON array."),
-        ("portal--editor-focus", 1, 1, focusEditor, "Focus the visible editor ID."),
-        ("portal--editor-close", 1, 1, closeEditor, "Release editor ID and its document session."),
-        ("portal--editor-channel", 1, 1, connectEditorChannel, "Connect a pipe PROCESS for editor notifications; nil disconnects.")
-    ]
-    for (name, minimum, maximum, callback, doc) in viewFunctions + webFunctions + terminalFunctions + editorFunctions
+    for (name, minimum, maximum, callback, doc) in viewFunctions + webFunctions + terminalFunctions
         + toolbarFunctions {
         let function = doc.withCString { env.pointee.make_function(env, minimum, maximum, callback, $0, nil) }
         var args = [symbol(env, name), function]

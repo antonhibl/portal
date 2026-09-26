@@ -2,6 +2,12 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'ert)
 (require 'cl-lib)
+(require 'portal-fake-native
+         (expand-file-name "portal-fake-native"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
 (require 'portal-excalidraw)
 
 (defconst portal-excalidraw-test--scene
@@ -13,7 +19,7 @@
      (cl-letf (((symbol-function 'portal-excalidraw--start) #'ignore))
        (portal-excalidraw-mode))
      (unwind-protect (progn ,@body)
-       (setq portal-excalidraw--id nil portal-excalidraw--ready nil)
+       (setq portal-excalidraw--ready nil)
        (set-buffer-modified-p nil))))
 
 (ert-deftest portal-excalidraw-rejects-invalid-data-before-replacing-buffer ()
@@ -42,7 +48,7 @@
         (portal-excalidraw-test--buffer
           (setq buffer-file-name file portal-excalidraw--ready t)
           (set-visited-file-modtime)
-          (cl-letf (((symbol-function 'portal-excalidraw--send)
+          (cl-letf (((symbol-function 'portal-web-send)
                      (lambda (message)
                        (push message sent)
                        (when (equal (plist-get message :type) "snapshot")
@@ -58,9 +64,9 @@
 
 (ert-deftest portal-excalidraw-failed-save-keeps-drawing-modified ()
   (portal-excalidraw-test--buffer
-    (setq portal-excalidraw--ready t portal-excalidraw--id 42)
+    (setq portal-excalidraw--ready t)
     (let (sent)
-      (cl-letf (((symbol-function 'portal-excalidraw--send)
+      (cl-letf (((symbol-function 'portal-web-send)
                  (lambda (message)
                    (push message sent)
                    (when (equal (plist-get message :type) "snapshot")
@@ -111,5 +117,48 @@
     (should-not portal-excalidraw--error)
     (should (buffer-modified-p))
     (should (string-match-p "base64,AAAA" (buffer-string)))))
+
+(ert-deftest portal-excalidraw-revert-replaces-the-buffer-with-the-saved-drawing ()
+  (let ((file (make-temp-file "portal-drawing-" nil ".excalidraw" portal-excalidraw--empty))
+        (starts 0))
+    (unwind-protect
+        (portal-excalidraw-test--buffer
+          (setq buffer-file-name file)
+          (set-visited-file-modtime)
+          (portal-excalidraw--scene portal-excalidraw-test--scene)
+          (should (buffer-modified-p))
+          (cl-letf (((symbol-function 'portal-excalidraw--start) (lambda () (cl-incf starts))))
+            (revert-buffer nil t))
+          (should (equal (buffer-string) portal-excalidraw--empty))
+          (should-not (buffer-modified-p))
+          (should (= starts 1)))
+      (delete-file file))))
+
+(ert-deftest portal-excalidraw-loads-the-drawing-into-its-hosted-app-over-the-bridge ()
+  (portal-fake-native-reset)
+  (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+            ((symbol-function 'portal-server-url) (lambda () "http://127.0.0.1:1/token")))
+    (save-window-excursion
+      (portal-excalidraw)
+      (let ((buffer (current-buffer))
+            (target (portal-view-target)))
+        (unwind-protect
+            (let ((state (portal--inspect target)))
+              (should (equal (plist-get state :options) '(:toolbar "none" :hosted t)))
+              (should (equal (plist-get state :url) "http://127.0.0.1:1/token/excalidraw/"))
+              (portal-fake-native-post target "{\"type\":\"ready\"}")
+              (portal-fake-native-send (format "bridge %s\n" target))
+              (should (equal (json-parse-string (cadr (car (portal-fake-native-calls 'portal--web-send)))
+                                                :object-type 'plist)
+                             (list :type "load" :json portal-excalidraw--empty :name "untitled")))
+              (portal-fake-native-post target (json-serialize (list :type "loaded" :json portal-excalidraw-test--scene)))
+              (portal-fake-native-send (format "bridge %s\n" target))
+              (should portal-excalidraw--ready)
+              (should (string-match-p "base64,AAAA" (buffer-string))))
+          (with-current-buffer buffer
+            (setq portal-excalidraw--ready nil)
+            (set-buffer-modified-p nil))
+          (kill-buffer buffer))
+        (should-not (portal-fake-native-targets))))))
 
 (provide 'portal-excalidraw-tests)

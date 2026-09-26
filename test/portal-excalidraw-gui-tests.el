@@ -25,13 +25,13 @@
                (delete-other-windows)
                (select-frame-set-input-focus (selected-frame))
                (sit-for 0.1)
-               (should (portal-native--call-with-frame (selected-frame)
+               (should (portal-view--with-frame-title (selected-frame)
                                                       #'portal-test-native-target-frame))
                (find-file (expand-file-name "drawing.excalidraw" directory))
                (setq document (current-buffer))
                (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
                (redisplay t)
-               (portal-excalidraw--sync (selected-frame))
+               (portal-view-sync)
                ,@body)
            (when (buffer-live-p document)
              (with-current-buffer document
@@ -58,22 +58,23 @@
 (ert-deftest portal-excalidraw-gui-edits-survive-hiding-and-reopening ()
   (portal-excalidraw-gui--document
     ;; Paste goes through Excalidraw's normal clipboard import and history.
-    (portal-excalidraw-focus)
+    (portal-view-focus)
     (portal-excalidraw-gui--js
      "const container = document.querySelector('.excalidraw'); container.focus();
       const data = new DataTransfer(); data.setData('text/plain', 'Portal local drawing');
       container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
     (portal-terminal-test--wait (lambda () (string-match-p "Portal local drawing" (buffer-string))))
     (should (buffer-modified-p))
-    (let ((id portal-excalidraw--id)
+    (let ((target (portal-view-target))
           (text (buffer-string)))
       (switch-to-buffer (get-buffer-create " *drawing-hidden*"))
       (redisplay t)
-      (portal-excalidraw--sync (selected-frame))
+      (portal-view-sync)
+      (should-not (plist-get (portal--inspect target) :visible))
       (switch-to-buffer document)
       (redisplay t)
-      (portal-excalidraw--sync (selected-frame))
-      (should (= id portal-excalidraw--id))
+      (portal-view-sync)
+      (should (equal target (portal-view-target)))
       (portal-excalidraw--flush)
       (should (equal text (buffer-string)))
       (portal-excalidraw-save)
@@ -84,9 +85,25 @@
       (should (string-match-p "Portal local drawing" (buffer-string)))
       (should-not (buffer-modified-p)))))
 
+(ert-deftest portal-excalidraw-gui-revert-reloads-the-saved-drawing ()
+  (portal-excalidraw-gui--document
+    (portal-excalidraw-save)
+    (portal-view-focus)
+    (portal-excalidraw-gui--js
+     "const container = document.querySelector('.excalidraw'); container.focus();
+      const data = new DataTransfer(); data.setData('text/plain', 'Unsaved text');
+      container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
+    (portal-terminal-test--wait (lambda () (string-match-p "Unsaved text" (buffer-string))))
+    (should (buffer-modified-p))
+    (revert-buffer nil t)
+    (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+    (portal-excalidraw--flush)
+    (should-not (string-match-p "Unsaved text" (buffer-string)))
+    (should-not (buffer-modified-p))))
+
 (ert-deftest portal-excalidraw-gui-image-roundtrip-and-document-isolation ()
   (portal-excalidraw-gui--document
-    (portal-excalidraw-focus)
+    (portal-view-focus)
     (portal-excalidraw-gui--js
      "const container = document.querySelector('.excalidraw'); container.focus();
       const image = {id:'picture', type:'image', x:0, y:0, width:64, height:64,
@@ -109,7 +126,8 @@
             (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
             (should-not (string-match-p "data:image/png;base64" (buffer-string)))
             (switch-to-buffer document)
-            (portal-excalidraw--sync (selected-frame))
+            (redisplay t)
+            (portal-view-sync)
             (portal-excalidraw-reopen)
             (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
             (portal-excalidraw--flush)
@@ -121,7 +139,7 @@
 (ert-deftest portal-excalidraw-gui-emacs-prefix-keeps-fast-followup-keys ()
   (portal-excalidraw-gui--document
     (select-frame-set-input-focus (selected-frame))
-    (portal-excalidraw-focus)
+    (portal-view-focus)
     (portal-test-native-key 11 (ash 1 18) "\C-b")
     (portal-test-native-key 7 (ash 1 18) "\C-x")
     (portal-test-native-key 1 (ash 1 18) "\C-s")
@@ -139,7 +157,7 @@
 
 (ert-deftest portal-excalidraw-gui-save-commits-active-text-editing ()
   (portal-excalidraw-gui--document
-    (portal-excalidraw-focus)
+    (portal-view-focus)
     (should (portal-excalidraw-gui--js
              "const canvas = document.querySelector('canvas.interactive');
               canvas.dispatchEvent(new MouseEvent('dblclick', {bubbles:true, clientX:250, clientY:200}));
@@ -161,7 +179,8 @@
     (kill-buffer document)
     (portal-excalidraw)
     (setq document (current-buffer))
-    (portal-excalidraw-focus)
+    (portal-excalidraw--wait (lambda () portal-excalidraw--ready))
+    (portal-view-focus)
     (portal-excalidraw-gui--js "document.querySelector('.portal-save button').click(); return true;")
     (let* ((notification (with-timeout (5 (ert-fail "Save button did not notify Emacs"))
                            (read-key-sequence-vector nil)))
