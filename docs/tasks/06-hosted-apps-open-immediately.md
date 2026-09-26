@@ -1,6 +1,6 @@
 # 06: Hosted apps open immediately and load when the app host is ready
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -20,12 +20,12 @@ Every hosted app (CONTEXT.md) opens the same way. `portal-web-open-hosted PATH T
 
 ## Acceptance criteria
 
-- [ ] A Markdown preview opened while the app host is not running shows its view immediately and loads once the host is ready. Test this in batch with the real app host and the fake native adapter.
-- [ ] Stopping or restarting the app host leaves a loaded preview unchanged, and `g` reloads it
-- [ ] An external `https://` link in a Markdown preview opens in the default browser, and the preview stays
-- [ ] Previewing the same Markdown file again reuses its buffer
-- [ ] Hosted views don't keep cookies or storage across Emacs sessions
-- [ ] The README's sections on Hello and the Markdown preview are updated
+- [x] A Markdown preview opened while the app host is not running shows its view immediately and loads once the host is ready. Test this in batch with the real app host and the fake native adapter.
+- [x] Stopping or restarting the app host leaves a loaded preview unchanged, and `g` reloads it
+- [x] An external `https://` link in a Markdown preview opens in the default browser, and the preview stays
+- [x] Previewing the same Markdown file again reuses its buffer
+- [x] Hosted views don't keep cookies or storage across Emacs sessions
+- [x] The README's sections on Hello and the Markdown preview are updated
 
 ## Blocked by
 

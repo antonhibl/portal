@@ -18,8 +18,6 @@
 
 (defvar portal-server-ready-hook nil
   "Hook run when the shared UI host is ready, including after a restart.")
-(defvar portal-server-stopped-hook nil
-  "Hook run when the shared UI host stops or fails to start.")
 (defvar portal--server-process nil "The shared UI host process, if started.")
 
 (defun portal-server-url ()
@@ -84,8 +82,7 @@
       (setq portal--server-process nil)
       (portal--server-report
        (format "Portal UI server stopped: %s"
-               (or (process-get process 'failure) (string-trim event))))
-      (run-hooks 'portal-server-stopped-hook))))
+               (or (process-get process 'failure) (string-trim event)))))))
 
 ;;;###autoload
 (defun portal-start-server ()
@@ -127,12 +124,12 @@ The ready hook runs after the server has bound its HTTP listener."
                                 (lambda ()
                                   (when (process-live-p process)
                                     (delete-process process)))))
-      (process-send-eof process))
-    (run-hooks 'portal-server-stopped-hook)))
+      (process-send-eof process))))
 
 ;;;###autoload
 (defun portal-restart-server ()
-  "Restart the shared UI host and notify hosted views when it is ready."
+  "Restart the shared UI host.
+Hosted apps that have already loaded keep their page; press g to reload one."
   (interactive)
   (portal-stop-server)
   (portal-start-server))

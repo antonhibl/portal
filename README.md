@@ -429,9 +429,9 @@ does not hot-reload that library.
 
 Loading the Lisp package or native module does not start a server. The first
 `portal-hello`, `portal-preview-markdown`, or drawing buffer starts one shared child process
-asynchronously. Hello and the Markdown preview open their web view at once, at
-`about:blank`, and load their page when the host sends its readiness message.
-Opening external URLs does not require the server.
+asynchronously. Hello and the Markdown preview are hosted apps: each opens its
+web view at once, at `about:blank`, and loads its page as soon as the host sends
+its readiness message. Opening external URLs does not require the server.
 
 - The host binds to `127.0.0.1` on an OS-assigned port. Each Emacs process owns
   its own host; all its web views reuse that host.
@@ -441,11 +441,13 @@ Opening external URLs does not require the server.
   validates the token and Host header; responses suppress outgoing referrers.
 - Closing or hiding a view keeps the server running. `M-x portal-start-server`
   can prewarm it explicitly; `M-x portal-stop-server` stops it, and
-  `M-x portal-restart-server` starts a replacement and reloads every Hello and
-  Markdown preview buffer. While the host is stopped, they show a page saying so.
+  `M-x portal-restart-server` starts a replacement. Hosted apps that have
+  already loaded keep their page while the host stops or restarts; press `g` in
+  one's buffer to reload it from the host, starting the host first if needed.
 - Startup is bounded by `portal-server-start-timeout` (five seconds by default).
-  Failures leave diagnostics in `*portal-server*`; press `g` in a hosted page's
-  buffer, or run `portal-hello`, to retry.
+  Failures leave diagnostics in `*portal-server*`, and a hosted app that was
+  waiting stays at `about:blank`; press `g` in its buffer, or run
+  `portal-hello`, to retry.
   There is no automatic restart loop.
 - Emacs supervises the child through a pipe. stdout carries a versioned JSON
   readiness line; stderr carries diagnostics. Closing stdin requests shutdown,
@@ -473,9 +475,10 @@ in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
 anchors are supported. Press `C-b d` or Command-Escape to return to Emacs, then
-`g` (`portal-web-reload`) to reread the file from disk. `g` also restarts a
-stopped host; the selected Markdown file is retained across host restarts.
-Missing or unreadable files produce an error page.
+`g` (`portal-web-reload`) to reread the file from disk. `g` also starts a
+stopped host. A loaded preview stays as it is while the host stops or restarts.
+Missing or unreadable files produce an error page. Links to other sites, such
+as `https://` links, open in the default browser, and the preview stays.
 
 This version previews saved contents only, with no automatic refresh. It does
 not serve relative images or linked local files, or add syntax highlighting,
@@ -499,7 +502,11 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
   moves there. Deleting a frame only hides its web views.
 - Hiding the view, with `q` or by showing another buffer, keeps the page loaded,
   including its navigation, DOM, scroll position, and form state. Cookies use
-  WebKit's default data store.
+  WebKit's default data store, except in hosted apps, which keep no cookies or
+  storage between Emacs sessions.
+- A hosted app's page never leaves the app host. When it would navigate
+  anywhere else, the navigation is cancelled and the URL opens in the default
+  browser.
 - The shared Portal prefix and Command-Escape work while a page has focus.
   Clicking a web view does not change Emacs's selected pane; use Emacs window
   navigation after returning focus.
@@ -511,6 +518,9 @@ Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
 for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
 find, zoom and reload), `"contents"` (a table of contents in place of back and
 forward) or `"none"`.
+`(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
+opens at once, at `about:blank`, and loads PATH, such as `"/hello"`, from the
+app host as soon as the host is ready, starting the host if needed.
 
 ## Implementation
 
@@ -587,7 +597,10 @@ Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
 pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
 killing the buffer, the toolbar each command chooses, and Hello and the Markdown
-preview loading once a simulated app host is ready.
+preview opening at once and loading once a simulated app host is ready. One test
+opens a Markdown preview with the real app host, which `ctest` passes through
+`PORTAL_TEST_HOST`. It checks that the preview loads once the host is ready,
+stays as it is while the host stops and restarts, and that `g` reloads it.
 
 The graphical web tests wait for real WebKit page loads. They verify JavaScript
 execution, relative local assets, a page staying loaded while hidden, repeated
@@ -627,7 +640,9 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
 build/check-focus
 ```
 
-The checks open web views through the same `Views` registry as Emacs.
+The checks open web views through the same `Views` registry as Emacs. They also
+check that a hosted web view keeps no data between sessions, and that a page
+outside the app host goes to the default browser while the app stays.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
 without Ghostty.
 

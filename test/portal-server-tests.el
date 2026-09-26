@@ -18,8 +18,7 @@
 
 (defmacro portal-server-test--with-host (&rest body)
   (declare (indent 0))
-  `(let ((portal-server-ready-hook nil)
-         (portal-server-stopped-hook nil))
+  `(let ((portal-server-ready-hook nil))
      (unwind-protect (progn ,@body)
        (let ((process portal--server-process))
          (portal-stop-server)

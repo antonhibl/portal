@@ -3,7 +3,8 @@
 
 ;; A web buffer presents one web view, which follows the buffer as
 ;; `portal-view.el' describes.  Pages and previews each get their own buffer.
-;; Hosted apps open at about:blank and load once the app host is ready.
+;; Hosted apps open at once, at about:blank, and load once the app host is
+;; ready.  After that they keep their page while the app host stops or restarts.
 
 (require 'browse-url)
 (require 'seq)
@@ -16,7 +17,9 @@
 (declare-function portal--web-load "portal-web" (target url))
 
 (defvar-local portal-web--target nil "This buffer's web view target, or nil.")
-(defvar-local portal-web--url nil "The URL this buffer's web view shows, unless it is a hosted app.")
+(defvar-local portal-web--url nil
+  "The URL this buffer's web view loaded last.
+It is nil while a hosted app waits for the app host.")
 (defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-preview-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
 
@@ -44,8 +47,24 @@ table of contents in place of back and forward, or \"none\".
 Once URL starts loading, this turns on `portal-input-mode', keeping the
 buffer's major mode.  If the view cannot open or load URL, it is closed."
   (portal-web--check-url url)
+  (portal-web--open url (list :toolbar toolbar)))
+
+(defun portal-web-open-hosted (path toolbar)
+  "Open a hosted web view for the current buffer and return its target.
+The view opens at once, at about:blank, and loads PATH from the app host,
+such as \"/hello\", as soon as the host is ready.  This starts the host if
+needed; if it cannot start, the view stays at about:blank and
+`portal-web-reload' tries again.  TOOLBAR is as for `portal-web-open'.
+The view keeps no cookies or storage between Emacs sessions, and a page
+outside the app host opens in the default browser instead."
+  (prog1 (portal-web--open "about:blank" (list :toolbar toolbar :hosted t))
+    (setq portal-web--hosted-path path)
+    (portal-web--load-hosted)))
+
+(defun portal-web--open (url options)
+  "Open a web view with OPTIONS for the current buffer, and load URL in it."
   (portal-input--connect)
-  (let ((target (portal-view-open 'web (list :toolbar toolbar)))
+  (let ((target (portal-view-open 'web options))
         ready)
     (unwind-protect
         (progn
@@ -63,7 +82,7 @@ A hosted app loads from the app host, which starts first if needed."
   (interactive)
   (unless portal-web--target (user-error "No web view in this buffer"))
   (if portal-web--hosted-path
-      (portal-web--ensure-host)
+      (portal-web--load-hosted)
     (portal--web-load portal-web--target portal-web--url)))
 
 (defun portal-web--find (variable value)
@@ -84,16 +103,13 @@ A hosted app loads from the app host, which starts first if needed."
       ("data" "data")
       (_ url))))
 
-(defun portal-web--visit (buffer name url toolbar &optional hosted-path)
+(defun portal-web--visit (buffer name open)
   "Select web BUFFER and reload it, or, when BUFFER is nil, open a new one.
-The new buffer is called *portal: NAME*, and its view has TOOLBAR and loads
-URL.  HOSTED-PATH makes it a hosted app, which loads from the app host once
-the host is ready.  If the view cannot open, the new buffer is killed; if the
-app host cannot start, the buffer stays, showing that the host stopped."
+The new buffer is called *portal: NAME*, and OPEN opens its view.  If the
+view cannot open, the new buffer is killed."
   (if buffer
       (progn (switch-to-buffer buffer) (portal-web-reload))
-    (let ((buffer (generate-new-buffer (format "*portal: %s*" name)))
-          ready)
+    (let ((buffer (generate-new-buffer (format "*portal: %s*" name))))
       (unwind-protect
           (progn
             (switch-to-buffer buffer)
@@ -104,14 +120,10 @@ app host cannot start, the buffer stays, showing that the host stopped."
                       "g loads the page again. q hides it; killing the buffer closes it.\n"
                       "This buffer has one live view, which follows its selected pane.\n"))
             (redisplay t)
-            (portal-web-open url toolbar)
-            (when hosted-path
-              (setq portal-web--url nil
-                    portal-web--hosted-path hosted-path))
-            (setq ready t)
+            (funcall open)
             (message "Web view opened. RET enters; Command-Escape returns to Emacs; q hides the view."))
-        (unless ready (kill-buffer buffer)))
-      (when hosted-path (portal-web--ensure-host)))))
+        (unless (and (buffer-live-p buffer) (buffer-local-value 'portal-web--target buffer))
+          (kill-buffer buffer))))))
 
 ;;;###autoload
 (defun portal-open-url (url)
@@ -121,7 +133,8 @@ Command-Escape returns control to Emacs.  HTTP(S), file, data and about
 URLs are supported."
   (interactive (list (read-string "Open URL: " "https://")))
   (portal-web--check-url url)
-  (portal-web--visit nil (portal-web--page-name url) url "navigation"))
+  (portal-web--visit nil (portal-web--page-name url)
+                     (lambda () (portal-web-open url "navigation"))))
 
 ;;;###autoload
 (defun portal-preview-html (file-or-url)
@@ -151,14 +164,15 @@ Previewing the same file or URL again reuses its buffer and reloads it."
                  (browse-url-file-url path)))))
     (portal-web--check-url url)
     (portal-web--visit (portal-web--find 'portal-web--preview url)
-                       (portal-web--page-name url) url "contents")
+                       (portal-web--page-name url)
+                       (lambda () (portal-web-open url "contents")))
     (setq portal-web--preview url)))
 
 ;;;###autoload
 (defun portal-hello ()
   "Open Hello World, starting the bundled app host on first use."
   (interactive)
-  (portal-web--open-hosted "/hello" "hello" "navigation"))
+  (portal-web--visit-hosted "/hello" "hello" "navigation"))
 
 ;;;###autoload
 (defun portal-preview-markdown (file)
@@ -181,55 +195,33 @@ buffer to reread the file from disk.  Unsaved edits are not included."
       (user-error "Choose a local Markdown file"))
     (unless (and (file-regular-p path) (file-readable-p path))
       (user-error "Choose a readable regular file: %s" path))
-    (portal-web--open-hosted (concat "/markdown?path=" (url-hexify-string path))
-                             (file-name-nondirectory path) "contents")))
+    (portal-web--visit-hosted (concat "/markdown?path=" (url-hexify-string path))
+                              (file-name-nondirectory path) "contents")))
 
-;; Hosted apps.  Task 06 replaces this with `portal-web-open-hosted'.
-(defun portal-web--open-hosted (path name toolbar)
+;; Hosted apps.
+(defun portal-web--visit-hosted (path name toolbar)
   "Show the buffer for hosted app PATH, opening one called *portal: NAME*.
-A new buffer's view has TOOLBAR, and loads PATH once the app host is ready."
-  (portal-web--visit (portal-web--find 'portal-web--hosted-path path)
-                     name "about:blank" toolbar path))
-
-(defun portal-web--ensure-host ()
-  "Start the app host if needed, and load this buffer's hosted app once ready."
-  (condition-case err
-      (progn
-        (portal-start-server)
-        (when (portal-server-url) (portal-web--load-hosted)))
-    (error
-     (portal-web--show-stopped)
-     (signal (car err) (cdr err)))))
+A new buffer's view has TOOLBAR."
+  (portal-web--visit (portal-web--find 'portal-web--hosted-path path) name
+                     (lambda () (portal-web-open-hosted path toolbar))))
 
 (defun portal-web--load-hosted ()
-  "Load this buffer's hosted app from the running app host."
-  (portal--web-load portal-web--target (concat (portal-server-url) portal-web--hosted-path)))
-
-(defun portal-web--show-stopped ()
-  "Show this buffer's hosted app a page saying that the app host stopped."
-  (portal--web-load
-   portal-web--target
-   (concat "data:text/html;charset=utf-8,"
-           "<title>Portal server stopped</title><h1>UI server stopped</h1>"
-           "<p>Press g to retry. See *portal-server* for details.</p>")))
-
-(defun portal-web--hosted-buffers ()
-  "Return the web buffers showing a hosted app."
-  (seq-filter (lambda (buffer) (buffer-local-value 'portal-web--hosted-path buffer))
-              (portal-view-buffers 'web)))
+  "Load this buffer's hosted app from the app host, starting the host if needed.
+The view keeps its page until the host is ready."
+  (setq portal-web--url nil)
+  (portal-start-server)
+  (when (portal-server-url) (portal-web--host-ready)))
 
 (defun portal-web--host-ready ()
-  "Load every hosted app from the app host, which is now ready."
-  (dolist (buffer (portal-web--hosted-buffers))
-    (with-current-buffer buffer (portal-web--load-hosted))))
-
-(defun portal-web--host-stopped ()
-  "Show every hosted app that the app host stopped."
-  (dolist (buffer (portal-web--hosted-buffers))
-    (with-current-buffer buffer (portal-web--show-stopped))))
+  "Load each hosted app that waits for the app host, which is now ready.
+Hosted apps that have already loaded keep their page."
+  (dolist (buffer (portal-view-buffers 'web))
+    (with-current-buffer buffer
+      (when (and portal-web--hosted-path (not portal-web--url))
+        (setq portal-web--url (concat (portal-server-url) portal-web--hosted-path))
+        (portal--web-load portal-web--target portal-web--url)))))
 
 (add-hook 'portal-server-ready-hook #'portal-web--host-ready)
-(add-hook 'portal-server-stopped-hook #'portal-web--host-stopped)
 
 (provide 'portal-web)
 ;;; portal-web.el ends here
