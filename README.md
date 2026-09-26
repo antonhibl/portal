@@ -172,9 +172,12 @@ That example runs the command after your terminal prefix followed by `t`.
 See [the input bridge](docs/terminal-input-bridge.md) for runtime binding APIs
 and how native events reach Elisp.
 
-Each project has one quick shell per Emacs frame. A new shell starts at the
-`project.el` root of the current file or Dired buffer. Help and other auxiliary
-buffers use the most recently selected file/Dired directory in that frame.
+Each project has one quick shell, which you can summon from any Emacs frame.
+The panel and its remembered height belong to each frame, but summoning the
+shell in another frame brings the same shell into that frame's panel. A new
+shell starts at the `project.el` root of the current file or Dired buffer. Help
+and other auxiliary buffers use the most recently selected file/Dired directory
+in that frame.
 Outside a project, the file's directory is used; with no editing context,
 `portal-terminal-quick-directory` defaults to home. Remote contexts are rejected.
 
@@ -206,9 +209,9 @@ editor leaves the panel visible. Its initial height is controlled by
 Quick terminals are excluded from ordinary Portal terminal selection, numbering,
 and cycling. They have no naming or multiple-instance workflow. A busy quick
 shell remains busy until its command finishes or you interrupt/reset it.
-Deleting its owning frame or quitting Emacs ends the session; this does not
-provide persistence across Emacs restarts. A shell that exits is not silently
-restarted: use reset when you want a new one.
+Deleting a frame only hides its panel's shell. Quitting Emacs ends the session;
+this does not provide persistence across Emacs restarts. A shell that exits is
+not silently restarted: use reset when you want a new one.
 
 Run the buffer/window/project tests with `ctest --test-dir build -R quick-terminal`.
 The graphical terminal suite also tests a user-configured native prefix binding and a real
@@ -246,8 +249,8 @@ convert output to Emacs text or use WebKit or the Bun server.
   been manually verified.
 - Hidden buffers keep their shells running: `quit-window` or switching buffers
   hides the terminal, and showing the buffer again brings the same shell back.
-  Killing a terminal buffer, running `portal-terminal-close` in it, or deleting
-  its frame ends that shell.
+  Deleting the frame showing a terminal also only hides it. Killing a terminal
+  buffer or running `portal-terminal-close` in it ends that shell.
   `portal-terminal-close-all` ends all embedded shells.
 
 Defaults follow [tmux's key bindings](https://man.openbsd.org/tmux#DEFAULT_KEY_BINDINGS)
@@ -274,8 +277,10 @@ windows stand in for panes. There are no tmux session servers, saved per-termina
 pane layouts, or tmux copy mode. Each terminal buffer has one Portal view,
 which appears in the selected pane showing the buffer; other panes showing the
 same buffer display only its text ([ADR 0001](docs/adr/0001-one-portal-view-per-buffer.md)).
-For now, each terminal belongs to the frame that created it. Different terminal
-buffers can display and run simultaneously.
+Terminals belong to no frame: show a terminal buffer in another frame and its
+view moves there, with the same shell and scrollback. Selection, numbering and
+cycling cover every terminal. Different terminal buffers can display and run
+simultaneously.
 
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
@@ -336,7 +341,10 @@ customization, runtime binding registration/unbinding, quick-only shortcuts,
 shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
 Batch binding tests run with `ctest --test-dir build -R terminal-bindings`, and
 batch tests of the view lifecycle (opening, splits, selection, `quit-window`,
-showing the buffer elsewhere and killing it) run with `ctest --test-dir build -R view`.
+showing the buffer elsewhere, moving between frames, deleting a frame and
+killing the buffer) run with `ctest --test-dir build -R view`. Batch Emacs has
+one frame, so these tests open a second, suspended terminal frame on a
+pseudo-terminal.
 Build the test-only AppKit event injector (no Accessibility permission required):
 
 ```sh
@@ -557,12 +565,17 @@ every native lifecycle call: `portal--open KIND OPTIONS` returns a target such a
 `terminal:3`, and `portal--place`, `portal--hide`, `portal--close` and
 `portal--inspect` take that target. In Swift, `Views` keeps one registry keyed by
 target; each view kind implements the small `PortalView` protocol, and IDs are
-never reused. On each window change, `portal-view.el` picks one window per view:
-the selected window if it shows the buffer, then the view's current window, then
-any other window showing the buffer. With none, the view is hidden. A geometry
-cache means nothing crosses the seam when nothing moved. Each placement renames
-the frame briefly so Swift can find its native window; nothing about frames is
-cached. Killing the buffer or changing its major mode closes the view. Batch
+never reused. On each window change, `portal-view.el` picks one window per view,
+in any frame: the selected window if it shows the buffer, then the view's current
+window, then any other window showing the buffer. With none, the view is hidden.
+A geometry cache means nothing crosses the seam when nothing moved. Each placement
+renames the frame briefly so Swift can find its native window; nothing about
+frames is cached. Placing a view in another frame moves it there within the one
+call. Swift keeps hidden views in an offscreen parking window that is never
+shown. New views start there, so a view is always in some window and its session
+keeps running. Deleting a frame hides its views, and the next sync places each
+one wherever its buffer is still shown. Killing the buffer or changing its major
+mode closes the view. Batch
 tests replace the native module with `test/portal-fake-native.el`.
 
 For web/demo views, the Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
@@ -658,9 +671,8 @@ access-token and Host validation, and non-executable raw HTML.
 ## Scope
 
 The web/demo feature supports one active buffer and any number of pane views
-within one host frame. Terminals support multiple independent buffers and frames,
-with each terminal bound to its creating frame. Automatic migration of a terminal
-to another frame is not implemented.
+within one host frame. Terminals support multiple independent buffers, and each
+one follows its buffer into any frame.
 To choose a different host frame, invoke `portal-open-url` (or `portal-show`
 for the green demo) from that frame again.
 

@@ -184,6 +184,85 @@ Return the view's target."
     ;; The buffer can still open a view afterwards.
     (should (portal-view-test--shown (portal-view-open 'terminal nil)))))
 
+(ert-deftest portal-view-follows-its-buffer-into-another-frame ()
+  (portal-view-test--environment
+    (portal-fake-native-with-frame other
+      (let* ((target (portal-view-test--open "view"))
+             (buffer (current-buffer))
+             (origin (selected-window))
+             (remote (frame-selected-window other)))
+        ;; Another frame shows the buffer, but the view's own pane is selected.
+        (set-window-buffer remote buffer)
+        (portal-view-sync)
+        (should (portal-view-test--shown target origin))
+        ;; Selecting that frame moves the view there in one placement.
+        (let ((portal-fake-native-log nil))
+          (select-frame other)
+          (portal-view-sync)
+          (should (portal-view-test--shown target remote))
+          (should (equal (mapcar #'car portal-fake-native-log) '(portal--place))))
+        (should (equal (frame-parameter other 'title)
+                       (frame-parameter (selected-frame) 'title)))
+        ;; Back in the first frame, the selected pane wins again.
+        (select-frame (window-frame origin))
+        (portal-view-sync)
+        (should (portal-view-test--shown target origin))
+        ;; With only the other frame showing it, the view goes there, unselected.
+        (switch-to-buffer "*scratch*")
+        (portal-view-sync)
+        (should (eq (plist-get (portal--inspect target) :frame) other))
+        (should (equal (portal-view-target remote) target))
+        (should-not (portal-fake-native-calls 'portal--close))
+        (should (= (length (portal-fake-native-calls 'portal--open)) 1))))))
+
+(ert-deftest portal-view-frame-deletion-hides-views-without-ending-them ()
+  (portal-view-test--environment
+    (let ((origin (selected-window))
+          target buffer kept)
+      (portal-fake-native-with-frame other
+        (select-frame other)
+        (setq target (portal-view-test--open "view")
+              buffer (current-buffer))
+        (should (portal-view-test--shown target))
+        (select-frame (window-frame origin))
+        (setq kept (portal-view-test--open "kept"))
+        (should-not (portal-fake-native-calls 'portal--hide))
+        (delete-frame other)
+        (should (equal (portal-fake-native-calls 'portal--hide) (list (list target))))
+        (should-not (plist-get (portal--inspect target) :visible))
+        (should (portal-view-test--shown kept))
+        (should (equal (portal-view-buffers) (list buffer (get-buffer "kept")))))
+      (portal-view-sync)
+      (should-not (plist-get (portal--inspect target) :visible))
+      ;; Showing the buffer again brings back the same view.
+      (let ((window (split-window-right)))
+        (set-window-buffer window buffer)
+        (portal-view-sync)
+        (should (equal (portal-view-target window) target))
+        (should (equal (plist-get (portal--inspect target) :edges)
+                       (window-inside-pixel-edges window)))
+        (should (equal (portal-view-target origin) kept)))
+      (should-not (portal-fake-native-calls 'portal--close))
+      (should (= (length (portal-fake-native-calls 'portal--open)) 2)))))
+
+(ert-deftest portal-view-terminal-commands-cover-every-frame ()
+  (portal-view-test--environment
+    (portal-terminal)
+    (let ((first (current-buffer))
+          (second (progn (portal-terminal-new) (current-buffer))))
+      (portal-fake-native-with-frame other
+        (select-frame other)
+        ;; The first terminal comes to this frame, keeping its shell.
+        (portal-terminal)
+        (should (eq (current-buffer) first))
+        (should (eq (plist-get (portal--inspect (portal-view-target)) :frame) other))
+        (portal-terminal-next)
+        (should (eq (current-buffer) second))
+        (let ((last-command-event ?0)) (portal-terminal-select-index))
+        (should (eq (current-buffer) first))
+        (portal-terminal-focus)
+        (should (= (length (portal-fake-native-calls 'portal--open)) 2))))))
+
 (ert-deftest portal-view-terminal-buffers-follow-the-view-lifecycle ()
   (portal-view-test--environment
     (portal-terminal)

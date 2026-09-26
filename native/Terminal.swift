@@ -54,70 +54,85 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     }
 }
 
-/// The terminal view kind: one Ghostty session. Its shell starts when the view
-/// first enters a frame, and keeps running while the view is hidden.
+/// The terminal view kind: one Ghostty session. Its shell starts in the parking
+/// window when the view opens, and keeps running while the view is hidden.
 @MainActor
 final class TerminalSession: PortalView {
     let target: String
     let quick: Bool
     fileprivate let terminal: HostedTerminal
-    private var host: NativeHost?
-    private(set) var input: NativeInput?
+    private var host: NativeHost
+    let input: NativeInput
     let controls = ToolbarModel(.terminal)
+    private var rectangle: CGRect
     private var edges: [Int] = []
 
-    init(target: String, options: ViewOptions) throws {
+    init(target: String, options: ViewOptions, parking: NativeHost) throws {
         guard let directory = try options.string("directory") else {
             throw NativeError.message("A terminal view needs a :directory")
         }
         self.target = target
         quick = options.flag("quick")
-        terminal = HostedTerminal(directory: directory, theme: try Terminals.resolveTheme(options.string("theme")))
+        let terminal = HostedTerminal(directory: directory, theme: try Terminals.resolveTheme(options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
+        self.terminal = terminal
+        host = parking
+        rectangle = parking.view?.bounds ?? .zero
+        input = NativeInput(target: target, view: terminal, host: parking,
+                            profile: quick ? "quick" : "regular") { [weak terminal] in
+            guard let terminal, !terminal.isHidden else { return false }
+            return terminal.acquireProgrammaticFocus()
+        }
         terminal.session = self
         controls.value = HostedTerminal.defaultFontSize
         controls.defaultValue = HostedTerminal.defaultFontSize
         controls.minimum = 1
         controls.maximum = 255
         controls.action = { [weak self] in try self?.textSize($0) }
+        try move(to: parking)
+        terminal.fitToSize()
+        guard terminal.terminalSurface != nil else {
+            close()
+            throw NativeError.message("Ghostty could not create a Metal terminal surface")
+        }
+        hide(in: parking)
+    }
+
+    /// Ghostty drains its PTY only while the view is in a window, so the
+    /// removal from the old window and the addition to the new one happen here.
+    private func move(to next: NativeHost) throws {
+        if next !== host {
+            host.remove(terminal)
+            host = next
+            input.host = next
+        }
+        guard next.place(terminal, rectangle: rectangle) else {
+            throw NativeError.message("The terminal's frame was deleted")
+        }
     }
 
     func place(in host: NativeHost, rectangle: CGRect) throws {
-        if let current = self.host, current !== host {
-            throw NativeError.message("A terminal view cannot move to another frame")
-        }
-        self.host = host
-        if input == nil {
-            input = NativeInput(target: target, view: terminal, host: host,
-                                profile: quick ? "quick" : "regular") { [weak self] in
-                guard let terminal = self?.terminal, !terminal.isHidden else { return false }
-                return terminal.acquireProgrammaticFocus()
-            }
-        }
-        guard host.place(terminal, rectangle: rectangle) else {
-            throw NativeError.message("The terminal's frame was deleted")
-        }
+        self.rectangle = rectangle
+        try move(to: host)
         edges = [Int(rectangle.minX), Int(rectangle.minY), Int(rectangle.maxX), Int(rectangle.maxY)]
         terminal.setSurfaceVisible(true)
         terminal.fitToSize()
-        guard terminal.terminalSurface != nil else {
-            throw NativeError.message("Ghostty could not create a Metal terminal surface")
-        }
     }
 
-    func hide() {
+    func hide(in parking: NativeHost) {
         edges = []
         terminal.setSurfaceVisible(false)
-        // Ghostty must stay attached so hidden shells keep draining their PTYs.
-        host?.hide(terminal)
+        // Keep the last size, so hiding never resizes the shell's grid.
+        try? move(to: parking)
+        parking.hide(terminal)
     }
 
-    func close() { host?.remove(terminal) }
+    func close() { host.remove(terminal) }
 
     func inspect() -> [(String, ViewValue)] {
         [("ready", .flag(terminal.terminalSurface != nil)),
          ("visible", .flag(terminal.window != nil && !terminal.isHiddenOrHasHiddenAncestor)),
-         ("focused", .flag(host?.ownsFocus(terminal) ?? false)),
+         ("focused", .flag(host.ownsFocus(terminal))),
          ("title", .string(terminal.terminalTitle)),
          ("closed", .flag(terminal.closed)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
@@ -143,10 +158,10 @@ final class TerminalSession: PortalView {
         controls.changed?()
     }
 
-    func returnFocus() { host?.returnFocus(from: terminal) }
+    func returnFocus() { host.returnFocus(from: terminal) }
 
     func handleKeyEvent(_ event: NSEvent) -> Bool {
-        if input?.handleKeyEvent(event) == true { return true }
+        if input.handleKeyEvent(event) { return true }
         if event.type == .keyDown,
            event.modifierFlags.intersection([.command, .control, .option]) == .command {
             let key = event.charactersIgnoringModifiers ?? ""

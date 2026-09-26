@@ -99,7 +99,7 @@
         (make-directory (expand-file-name ".git" default-directory))
         (portal-terminal-toggle)
         (should-not (eq (current-buffer) first))
-        (should (= (length (portal-terminal--frame-buffers)) 2))
+        (should (= (length (portal-view-buffers 'terminal)) 2))
         (should-not (portal-quick-test--closed))))))
 
 (ert-deftest portal-quick-reset-forget-and-cancel ()
@@ -117,7 +117,7 @@
         (should (equal (portal-quick-test--closed) (list target)))
         (portal-terminal-quick-dismiss)
         (portal-terminal-quick-forget)
-        (should-not (portal-terminal--frame-buffers))
+        (should-not (portal-view-buffers 'terminal))
         (should-not (portal-terminal-quick--window))
         (portal-terminal-toggle)
         (should (= (portal-quick-test--opened) 3))))))
@@ -147,7 +147,7 @@
           (should-error (portal-terminal-toggle)))
         (should-not (portal-terminal-quick--window))
         (should (eq (selected-window) origin))
-        (should-not (portal-terminal--frame-buffers))
+        (should-not (portal-view-buffers 'terminal))
         (should-not (portal-view-buffers))
         (should-not (portal-fake-native-targets))))))
 
@@ -163,3 +163,28 @@
       (let ((second (current-buffer)))
         (kill-buffer first)
         (should (eq (window-buffer (portal-terminal-quick--window)) second))))))
+
+(ert-deftest portal-quick-one-terminal-per-project-in-every-frame ()
+  (portal-quick-test--environment
+    (let ((source (current-buffer)) (frame (selected-frame)))
+      (portal-terminal-toggle)
+      (let ((quick (current-buffer)) (target (portal-view-target)))
+        (portal-fake-native-with-frame other
+          (select-frame other)
+          (switch-to-buffer source)
+          ;; The other frame's panel shows the same shell while this one stays open.
+          (portal-terminal-toggle)
+          (should (eq (current-buffer) quick))
+          (should (window-parameter nil 'portal-terminal-quick))
+          (should (equal (portal-view-target) target))
+          (should (eq (plist-get (portal--inspect target) :frame) other))
+          (should (= (portal-quick-test--opened) 1))
+          ;; Dismissing there hides only that frame's panel.
+          (portal-terminal-quick-dismiss)
+          (should-not (portal-terminal-quick--window))
+          (select-frame frame)
+          (should (portal-terminal-quick--window))
+          (portal-view-sync)
+          (should (equal (portal-view-target (portal-terminal-quick--window)) target))
+          (should (eq (plist-get (portal--inspect target) :frame) frame)))
+        (should-not (portal-quick-test--closed))))))

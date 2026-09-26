@@ -152,6 +152,52 @@
               (portal-terminal-test--wait (lambda () (not (process-attributes pid))))))
         (delete-directory directory t)))))
 
+(ert-deftest portal-terminal-follows-its-buffer-into-another-frame ()
+  (skip-unless (fboundp 'portal-test-native-key))
+  (portal-terminal-test--session
+    (let* ((buffer (current-buffer))
+           (directory (make-temp-file "portal-terminal-frames-" t))
+           (before (expand-file-name "before" directory))
+           (moved (expand-file-name "moved" directory))
+           (returned (expand-file-name "returned" directory))
+           (frame (make-frame))
+           (pid (lambda (file) (with-temp-buffer (insert-file-contents file) (buffer-string)))))
+      (unwind-protect
+          (progn
+            (portal-terminal-test--paste
+             (format "seq -f 'PORTAL_LINE_%%g' 1 3000; printf '%%s' \"$$\" > %s"
+                     (shell-quote-argument before)) t)
+            (portal-terminal-test--wait (lambda () (file-exists-p before)))
+            ;; Showing the buffer in the other frame's selected pane moves the view.
+            (select-frame-set-input-focus frame)
+            (switch-to-buffer buffer)
+            (portal-terminal-focus)
+            (should (plist-get (portal-terminal-test--state) :focused))
+            (should (equal (plist-get (portal-terminal-test--state) :edges)
+                           (window-inside-pixel-edges (frame-selected-window frame))))
+            ;; Keys typed into the new frame reach the same shell.
+            (portal-terminal-test--paste
+             (format "printf '%%s' \"$$\" > %s" (shell-quote-argument moved)) nil)
+            (should (portal-test-native-key 36 0 "\r"))
+            (portal-terminal-test--wait (lambda () (file-exists-p moved)))
+            (should (equal (funcall pid moved) (funcall pid before)))
+            (let ((text (portal-terminal-test--text)))
+              (should (string-match-p "^PORTAL_LINE_1$" text))
+              (should (string-match-p "^PORTAL_LINE_3000$" text)))
+            ;; Deleting that frame hides the view; the original frame still
+            ;; shows the buffer, so the view returns there with its shell.
+            (delete-frame frame)
+            (select-frame-set-input-focus (window-frame (get-buffer-window buffer t)))
+            (portal-terminal-focus)
+            (should (plist-get (portal-terminal-test--state) :focused))
+            (portal-terminal-test--paste
+             (format "printf '%%s' \"$$\" > %s" (shell-quote-argument returned)) t)
+            (portal-terminal-test--wait (lambda () (file-exists-p returned)))
+            (should (equal (funcall pid returned) (funcall pid before)))
+            (should (string-match-p "^PORTAL_LINE_3000$" (portal-terminal-test--text))))
+        (when (frame-live-p frame) (delete-frame frame))
+        (delete-directory directory t)))))
+
 (ert-deftest portal-terminal-alternate-screen-and-buffer-cleanup ()
   (portal-terminal-test--session
     ;; A real interactive shell writes alternate-screen control sequences.
@@ -282,7 +328,7 @@
       (portal-terminal-test--prefix '(8 0 "c"))
       (let ((second (current-buffer)))
         (should-not (eq second first))
-        (should (= (length (portal-terminal--frame-buffers)) 2))
+        (should (= (length (portal-view-buffers 'terminal)) 2))
         (should (plist-get (portal-terminal-test--state (portal-view-target)) :focused))
         (should-not (plist-get (portal-terminal-test--state first-id) :visible))
         (portal-terminal-test--prefix '(35 0 "p"))
@@ -293,7 +339,7 @@
         (should (eq (current-buffer) first))
         (portal-terminal-test--prefix (list 23 (ash 1 17) "%"))
         (should (= (length (window-list)) 2))
-        (should (= (length (portal-terminal--frame-buffers)) 3))
+        (should (= (length (portal-view-buffers 'terminal)) 3))
         (should (plist-get (portal-terminal-test--state first-id) :visible))
         (let ((right (current-buffer)))
           (portal-terminal-test--prefix '(31 0 "o"))
@@ -307,7 +353,7 @@
           (portal-terminal-test--prefix '(7 0 "x") '(16 0 "y"))
           (should-not (buffer-live-p right))
           (should (= (length (window-list)) 1))
-          (should (= (length (portal-terminal--frame-buffers)) 2)))))))
+          (should (= (length (portal-view-buffers 'terminal)) 2)))))))
 
 (ert-deftest portal-terminal-prefix-literal-and-live-customization ()
   (portal-terminal-test--session

@@ -1,6 +1,6 @@
 # 03: Portal views follow their buffer into any frame
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -22,11 +22,11 @@ A Portal view appears wherever its buffer is shown, in any frame (CONTEXT.md, *P
 
 ## Acceptance criteria
 
-- [ ] Showing a terminal buffer in another frame moves its view there; the shell keeps running and scrollback survives (GUI test)
-- [ ] Deleting a frame hides its views, they reappear when their buffer is shown elsewhere, and no shell ends
-- [ ] One quick terminal per project, which can be summoned from any frame
-- [ ] Batch tests using a second pseudo-terminal frame cover moving between frames and frame deletion
-- [ ] The README is updated wherever it describes frame ownership and quick terminals (around lines 175, 209, 248, 272 and 637-642)
+- [x] Showing a terminal buffer in another frame moves its view there; the shell keeps running and scrollback survives (GUI test)
+- [x] Deleting a frame hides its views, they reappear when their buffer is shown elsewhere, and no shell ends
+- [x] One quick terminal per project, which can be summoned from any frame
+- [x] Batch tests using a second pseudo-terminal frame cover moving between frames and frame deletion
+- [x] The README is updated wherever it describes frame ownership and quick terminals (around lines 175, 209, 248, 272 and 637-642)
 
 ## Blocked by
 

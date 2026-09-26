@@ -50,8 +50,8 @@ Ordinary terminal naming, creation and cycling belong to regular terminals.")
        (file-truename (if project (project-root project) default-directory))))))
 
 (defun portal-terminal-quick--buffer (root)
-  "Return this frame's existing quick terminal for ROOT."
-  (cl-find root (portal-terminal--frame-buffers)
+  "Return the existing quick terminal for ROOT."
+  (cl-find root (portal-view-buffers 'terminal)
            :key (lambda (buffer) (buffer-local-value 'portal-terminal--quick-root buffer))
            :test #'equal))
 
@@ -76,7 +76,7 @@ Ordinary terminal naming, creation and cycling belong to regular terminals.")
 
 ;;;###autoload
 (defun portal-terminal-toggle ()
-  "Show or dismiss this frame's project scratch terminal.
+  "Show or dismiss the project's scratch terminal in this frame's quick panel.
 A visible quick panel is always dismissed, even from another editing window.
 Otherwise reuse the project's shell or start one at its root.  Reopening never
 changes the shell's directory or sends it input.  Hidden processes keep running.
@@ -110,7 +110,7 @@ No global keybinding is installed; bind this command in your configuration."
       (when (and (window-live-p return) (eq (window-frame return) (selected-frame)))
         (select-window return))
       ;; Hiding the view also returns keyboard focus to Emacs.
-      (portal-view-sync (selected-frame)))))
+      (portal-view-sync))))
 
 (defun portal-terminal-quick--target ()
   "Return the visible quick shell's root, or the current editing project root."
