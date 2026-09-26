@@ -5,7 +5,8 @@
 ;; that shows the buffer, in any frame, and is hidden, not ended, while no pane
 ;; shows it (docs/adr/0001).  This file makes every native lifecycle call,
 ;; addressing each view by its native target, such as "terminal:1"
-;; (docs/adr/0002).
+;; (docs/adr/0002).  It also owns the one pipe that carries every native
+;; notification to Emacs, as records of the form "TYPE TARGET FIELD...".
 
 (require 'cl-lib)
 
@@ -13,6 +14,7 @@
 (declare-function portal--place "portal-view" (target edges title))
 (declare-function portal--hide "portal-view" (target))
 (declare-function portal--close "portal-view" (target))
+(declare-function portal--channel "portal-view" (process))
 (declare-function portal--input "portal-input" (target action &optional serial))
 
 (defconst portal-view--module-file
@@ -25,6 +27,18 @@
 
 (defvar portal-view-load-hook nil "Hook run after the native module loads.")
 
+(defvar portal-view-record-handlers nil
+  "How to handle each type of native record, as (\"TYPE\" . FUNCTION).
+The native module sends each record as a line \"TYPE TARGET FIELD...\".
+FUNCTION is called with TARGET and each FIELD string as arguments, with
+TARGET's buffer current.  It runs inside a process filter, so it must
+never prompt; it queues commands through `unread-command-events'.
+Records for unknown targets, or of types with no handler, are dropped.")
+
+(defvar portal-view--channel nil "The pipe process that receives native records.")
+(defvar portal-view--pending "" "The start of a record whose end is still to come.")
+(defvar portal-input--target-function)
+
 (defvar portal-view--buffers nil "Buffers with a Portal view, in creation order.")
 (defvar-local portal-view--target nil "This buffer's native target.")
 (defvar-local portal-view--window nil "The window showing this buffer's view, or nil.")
@@ -33,7 +47,7 @@
 The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
 
 (defun portal-view--load ()
-  "Load the native module once, before opening any native view."
+  "Load the native module and connect its record pipe, before any native view."
   (unless (featurep 'portal-native-module)
     (unless (and (eq window-system 'ns) (fboundp 'module-load))
       (user-error "Portal needs graphical macOS Emacs with module support"))
@@ -41,8 +55,53 @@ The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
       (user-error "Restart Emacs to replace the old Portal native modules"))
     (module-load portal-view--module-file)
     (run-hooks 'portal-view-load-hook))
-  (unless (fboundp 'portal--open)
-    (user-error "Restart Emacs to load the rebuilt Portal native module")))
+  (unless (fboundp 'portal--channel)
+    (user-error "Restart Emacs to load the rebuilt Portal native module"))
+  (unless (process-live-p portal-view--channel)
+    (setq portal-view--pending ""
+          portal-view--channel (make-pipe-process :name "portal-view-records" :noquery t
+                                                  :coding 'utf-8-unix
+                                                  :filter #'portal-view--receive))
+    (portal--channel portal-view--channel)))
+
+(defun portal-view--consume-lines (pending text receiver)
+  "Deliver complete lines from PENDING and TEXT to RECEIVER; return the tail.
+Pipes carry short records, independently of OS read boundaries.
+RECEIVER must queue interactive work for the command loop, not run it here."
+  (let ((input (concat pending text)) (start 0))
+    (while (string-match "\n" input start)
+      (let ((end (match-beginning 0)))
+        (funcall receiver (substring input start end))
+        (setq start (1+ end))))
+    (substring input start)))
+
+(defun portal-view--receive (_process text)
+  "Dispatch each native record completed by TEXT."
+  (setq portal-view--pending
+        (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch)))
+
+(defun portal-view--dispatch (record)
+  "Call RECORD's handler with its target's buffer current.
+Errors are only reported: the records after this one must still arrive."
+  (with-demoted-errors "Portal record: %S"
+    (pcase-let* ((`(,type ,target . ,fields) (split-string record " "))
+                 (handler (cdr (assoc type portal-view-record-handlers)))
+                 (buffer (and handler target (portal-view--target-buffer target))))
+      (when buffer
+        (with-current-buffer buffer
+          (apply handler target fields))))))
+
+(defun portal-view--target-buffer (target)
+  "Return the live buffer whose view is TARGET, or nil."
+  (or (cl-find target (portal-view-buffers) :test #'equal
+               :key (lambda (buffer) (buffer-local-value 'portal-view--target buffer)))
+      ;; Web views and Excalidraw editors do not use `portal-view-open' yet,
+      ;; so find the window that shows them through `portal-input'.
+      (cl-loop for window in (window-list-1 nil 'nomini t)
+               when (with-current-buffer (window-buffer window)
+                      (and (bound-and-true-p portal-input--target-function)
+                           (equal target (funcall portal-input--target-function window))))
+               return (window-buffer window))))
 
 (defun portal-view--with-frame-title (frame function)
   "Call FUNCTION with a unique title that FRAME carries during the call.

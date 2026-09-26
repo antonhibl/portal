@@ -36,7 +36,6 @@ private struct TerminalBindingProfiles: Decodable {
 /// One input policy for Ghostty and WebKit. Only first chords cross into Lisp.
 @MainActor
 final class NativeInput: NativeInputHandler {
-    static let channel = NativeEventChannel()
     nonisolated static let modifiers: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
     private static var prefix = NativeKey(character: "b", flags: NSEvent.ModifierFlags.control.rawValue)
     private static var regularBindings: [NativeKey: Int] = [:]
@@ -106,7 +105,7 @@ final class NativeInput: NativeInputHandler {
     }
 
     private func notify(_ kind: String, key: Int = 0) -> Bool {
-        Self.channel.notify("\(kind) \(target) \(serial) \(key)\n")
+        Views.channel.notify(kind, target: target, fields: [String(serial), String(key)])
     }
 
     enum Ownership { case emacs, view, pending, passthrough }

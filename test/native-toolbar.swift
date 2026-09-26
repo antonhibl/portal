@@ -3,6 +3,9 @@
 import AppKit
 import WebKit
 
+/// The view registry is not compiled into this check; its pipe stays unconnected.
+@MainActor enum Views { static let channel = NativeEventChannel() }
+
 @main
 struct CheckToolbar {
     @MainActor

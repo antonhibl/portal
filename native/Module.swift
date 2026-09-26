@@ -271,7 +271,7 @@ private let connectChannel: emacs_function = { env, _, args, _ in
     let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
     guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return symbol(env, "nil") }
     return call(env) {
-        NativeInput.channel.connect(fd)
+        Views.channel.connect(fd)
         return true
     } convert: { boolean(env, $0) }
 }
@@ -399,14 +399,15 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--place", 3, 3, placeView, "Show TARGET at EDGES [LEFT TOP RIGHT BOTTOM] in the frame titled TITLE."),
         ("portal--hide", 1, 1, hideView, "Hide TARGET, keeping its session alive."),
         ("portal--close", 1, 1, closeView, "End TARGET and release its view."),
-        ("portal--inspect", 1, 1, inspectView, "Return TARGET's native state as a plist, or nil for an unknown target.")
+        ("portal--inspect", 1, 1, inspectView, "Return TARGET's native state as a plist, or nil for an unknown target."),
+        ("portal--channel", 1, 1, connectChannel,
+         "Send every view's records, lines of \"TYPE TARGET FIELD...\", to pipe PROCESS; nil disconnects.")
     ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
         ("portal--terminal-theme", 1, 1, setTerminalTheme, "Apply named THEME to all terminals; nil restores system appearance defaults."),
         ("portal--terminal-themes", 0, 0, terminalThemes, "Return the available terminal theme names."),
         ("portal--terminal-paste", 2, 3, pasteTerminal, "Paste TEXT into terminal TARGET; press Enter if ENTER is non-nil."),
         ("portal--terminal-text", 1, 1, terminalText, "Select all of TARGET's scrollback and return its text. Leaves the native selection active."),
-        ("portal--input-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
         ("portal--terminal-bindings", 1, 1, configureBindings, "Atomically replace runtime binding profiles from JSON."),
         ("portal--input-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
         ("portal--input", 2, 3, inputAction, "Perform ACTION on native TARGET, optionally validating its handoff SERIAL.")

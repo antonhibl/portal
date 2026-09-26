@@ -1,18 +1,14 @@
 ;;; portal-input.el --- Shared input ownership for native views -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'cl-lib)
-(require 'portal-native)
 (require 'portal-view)
 (require 'portal-toolbar)
 
 (defgroup portal-input nil "Input for Portal native views." :group 'applications)
 (declare-function portal--input "portal" (target action &optional serial))
-(declare-function portal--input-channel "portal" (process))
 (declare-function portal--input-prefix "portal" (character flags))
 (declare-function portal-terminal--validate-native-prefix "portal-terminal-bindings" (description))
 (declare-function evil-make-overriding-map "evil-core" (keymap &optional state copy))
-(defvar portal-input--channel nil)
-(defvar portal-input--notification "")
 (defvar portal-terminal--native-maps)
 (defvar portal-input--help-map)
 (defvaralias 'portal-terminal--resume 'portal-input--resume)
@@ -156,31 +152,24 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
         (let ((portal-input--help-map local))
           (princ (substitute-command-keys "\\{portal-input--help-map}")))))))
 
-(defun portal-input--receive (_process text)
-  "Queue native notifications for the Emacs command loop."
-  (setq portal-input--notification
-        (portal-native--consume-lines
-         portal-input--notification text
-         (lambda (line)
-           (when (string-match "\\`\\(prefix\\|binding\\|literal\\|cancel\\|escape\\) \\([a-z]+:[0-9]+\\) \\([0-9]+\\) \\([0-9]+\\)\\'" line)
-             (setq unread-command-events
-                   (nconc unread-command-events
-                          (list (list (intern (concat "portal-input-" (match-string 1 line)))
-                                      (list (match-string 2 line)
-                                            (string-to-number (match-string 3 line))
-                                            (string-to-number (match-string 4 line))))))))))))
+(defun portal-input--queue (event)
+  "Return a record handler that queues EVENT for the Emacs command loop.
+The queued event is (EVENT (TARGET SERIAL KEY))."
+  (lambda (target serial key)
+    (setq unread-command-events
+          (nconc unread-command-events
+                 (list (list event (list target (string-to-number serial)
+                                         (string-to-number key))))))))
+
+(dolist (type '("prefix" "binding" "literal" "cancel" "escape"))
+  (setf (alist-get type portal-view-record-handlers nil nil #'equal)
+        (portal-input--queue (intern (concat "portal-input-" type)))))
 
 (defun portal-input--connect ()
-  "Load the module and establish the shared input notification channel."
+  "Load the module and give it the current prefix."
   (portal-view--load)
   (unless (fboundp 'portal--input)
     (user-error "Restart Emacs to load the rebuilt Portal input bridge"))
-  (unless (process-live-p portal-input--channel)
-    (setq portal-input--notification ""
-          portal-input--channel
-          (make-pipe-process :name "portal-input-events" :noquery t
-                             :coding 'utf-8-unix :filter #'portal-input--receive))
-    (portal--input-channel portal-input--channel))
   (apply #'portal--input-prefix (portal-input--prefix-description portal-input-prefix)))
 
 (defun portal-input--read (binding trigger target serial)

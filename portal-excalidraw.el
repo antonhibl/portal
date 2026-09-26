@@ -4,6 +4,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'portal-input)
+(require 'portal-native)
 (require 'portal-server)
 
 (declare-function portal--editor-open "portal" (title url))
@@ -164,8 +165,8 @@ The first save of a new drawing asks for a filename."
 (defun portal-excalidraw--receive (_process text)
   "Drain native editor notifications, deferring commands to Emacs's input loop."
   (setq portal-excalidraw--notification
-        (portal-native--consume-lines portal-excalidraw--notification text
-                                      #'portal-excalidraw--receive-line)))
+        (portal-view--consume-lines portal-excalidraw--notification text
+                                    #'portal-excalidraw--receive-line)))
 
 (defun portal-excalidraw--receive-line (line)
   "Process the pending messages for the session identified by LINE."

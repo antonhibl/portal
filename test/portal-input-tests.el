@@ -3,17 +3,6 @@
 (require 'ert)
 (require 'portal)
 
-(ert-deftest portal-input-fragmented-notifications-only-queue-commands ()
-  (let ((portal-input--notification "") (unread-command-events nil))
-    (portal-input--receive nil "binding terminal:12 3 838")
-    (should-not unread-command-events)
-    (portal-input--receive nil "8704\ncancel terminal:12 3 0\nprefix web:13 1 0\n")
-    (should (equal unread-command-events
-                   '((portal-input-binding ("terminal:12" 3 8388704))
-                     (portal-input-cancel ("terminal:12" 3 0))
-                     (portal-input-prefix ("web:13" 1 0)))))
-    (should (equal portal-input--notification ""))))
-
 (ert-deftest portal-input-shared-map-keeps-legacy-terminal-commands ()
   (with-temp-buffer
     (portal-terminal-mode)

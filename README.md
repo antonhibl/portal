@@ -313,8 +313,9 @@ or call `portal-terminal-refresh-bindings` after direct keymap edits. These maps
 start empty and do not install global shortcuts. First chords use the same
 modified ASCII syntax as the leader; prefix tails use normal Emacs keys.
 
-Native code catches registered first chords and notifies Emacs through an event
-pipe. It holds fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
+Native code catches registered first chords and notifies Emacs through the
+notification pipe that every Portal view shares
+([details](docs/terminal-input-bridge.md#the-notification-pipe)). It holds fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
 command. Ordinary terminal input and output stay native; there is no polling timer
 or terminal redraw through Lisp.
 
@@ -523,8 +524,8 @@ with text beside the remaining view.
 
 | File | Responsibility |
 | --- | --- |
-| `portal-view.el` | Module loading and the shared Portal view lifecycle: open, placement, hiding and closing |
-| `portal-native.el` | Frame identification and event pipe framing for web views and editors |
+| `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
+| `portal-native.el` | Frame identification for web views and editors |
 | `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
 | `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
 | `portal-terminal.el` | Terminal buffers and tmux shortcuts |

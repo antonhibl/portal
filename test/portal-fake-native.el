@@ -12,6 +12,8 @@
   "Open views: target to a plist of :options, :frame, :edges and :visible.")
 (defvar portal-fake-native--next-id 0 "Last view ID.  IDs are never reused.")
 (defvar portal-fake-native-log nil "Lifecycle calls, newest first, as (NAME ARGS...).")
+(defvar portal-fake-native-channel nil
+  "The pipe process that `portal--channel' connected; feed it records.")
 (defvar portal-fake-native-failures nil
   "Exports that signal an error, such as `portal--open' or `portal--place'.")
 
@@ -99,11 +101,20 @@ The selected frame is kept."
 (defun portal--inspect (target)
   (copy-sequence (gethash target portal-fake-native--views)))
 
+(defun portal--channel (process)
+  (setq portal-fake-native-channel process)
+  t)
+
+(defun portal-fake-native-send (&rest reads)
+  "Send each of READS to the connected pipe as one read, as the OS may split it."
+  (unless (process-live-p portal-fake-native-channel) (error "No pipe is connected"))
+  (dolist (text reads)
+    (funcall (process-filter portal-fake-native-channel) portal-fake-native-channel text)))
+
 ;; Input exports, so terminal commands run unchanged.  Focus needs a shown view.
 (defun portal--input (target action &optional _serial)
   (and (equal action "focus")
        (plist-get (gethash target portal-fake-native--views) :visible)))
-(defun portal--input-channel (_process) t)
 (defun portal--input-prefix (_character _flags) t)
 (defun portal--terminal-bindings (_json) t)
 (defun portal--terminal-theme (_theme) t)

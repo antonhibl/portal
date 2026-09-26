@@ -37,8 +37,9 @@ their scope and registration API.
 1. Registration validates and snapshots the terminal maps as before. Only first
    chords cross into Swift; command maps remain in Lisp.
 2. `NativeHost` routes input to the focused surface's `NativeInput`. A reserved
-   chord returns focus to Emacs, sends a target and handoff serial through the
-   shared pipe, and buffers fast follow-up input until Lisp acknowledges.
+   chord returns focus to Emacs, sends a record with the view's target and a
+   handoff serial through the notification pipe, and buffers fast follow-up
+   input until Lisp acknowledges.
 3. `portal-input--dispatch` selects the originating native view's Emacs window.
    Lisp reads prefix tails using `read-key-sequence-vector`, applies normal
    command remapping, and executes the command outside the process filter.
@@ -52,6 +53,37 @@ Emacs bindings, such as `C-b C-x C-b`. WebKit's asynchronous retries of unhandle
 keys are consumed after their first delivery, preventing input intended for a
 page from later becoming Emacs commands.
 
+## The notification pipe
+
+Every notification from the native module reaches Emacs on one pipe.
+`portal-view.el` owns it: it creates the pipe process with the first view and
+passes it to `portal--channel`. In Swift, the view registry owns the writing end
+(`Views.channel`).
+
+Each record is one ASCII line, `TYPE TARGET FIELD...`, separated by spaces and at
+most `PIPE_BUF` bytes long, so every write is atomic. Input sends these records,
+each with the handoff serial and a key field:
+
+| Record | Sent when |
+| --- | --- |
+| `prefix TARGET SERIAL 0` | The view captures the prefix |
+| `binding TARGET SERIAL EVENT` | The view captures the first chord of a native terminal binding |
+| `literal TARGET SERIAL 0` | The first chord is repeated while Emacs reads the rest of the sequence |
+| `cancel TARGET SERIAL 0` | `C-g` is pressed in the view while Emacs reads the rest of the sequence |
+| `escape TARGET SERIAL 0` | Command-Escape cancels a handoff |
+
+Reads do not follow record boundaries: one record can arrive split across two
+reads, and one read can carry several records. `portal-view.el` joins the reads
+into lines. It dispatches each record through `portal-view-record-handlers`,
+calling the handler for its type with the target's buffer current. Records for
+targets that have no buffer, or of types with no handler, are dropped. Handlers
+run inside the process filter, so they never prompt. `portal-input` registers
+the five input types, and queues each record as an event such as
+`(portal-input-prefix (TARGET SERIAL KEY))`, which the command loop then runs.
+
+Excalidraw editors still send their own notifications on a separate pipe
+([editor bridge](editor-bridge.md)).
+
 ## Boundaries and verification
 
 First chords currently support modified printable ASCII, with `C` = Control,
@@ -62,6 +94,8 @@ remains the fixed escape hatch. System-wide shortcut interception still happens
 before Portal receives an event.
 
 Verified with [registration tests](../test/portal-terminal-bindings-tests.el),
+batch [record dispatch tests](../test/portal-view-tests.el) (split, batched and
+unknown-target records),
 six quick-terminal behavior tests, and
 [18 graphical terminal tests](../test/portal-terminal-tests.el), including real
 AppKit input, live rebinding/unbinding, quick-only scope, hidden-session updates,
