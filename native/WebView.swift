@@ -100,6 +100,13 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
         bridge?.emit(["type": "follow", "url": url.absoluteString])
     }
 
+    /// Emacs opens the Markdown file on screen, from the toolbar. The bridge
+    /// retries while the pipe is full, so the request is never lost.
+    func edit() {
+        input?.unfocus()
+        bridge?.emit(["type": "edit"])
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         bridge?.emit(["type": "error", "message": "The page's web process stopped."])
     }
@@ -177,7 +184,7 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
     }
 
     /// Message types only the view itself sends; an app cannot post them.
-    static let reserved: Set<String> = ["page", "follow"]
+    static let reserved: Set<String> = ["page", "follow", "edit"]
 
     /// Only the main frame, at the app-host URL Emacs loaded, may post.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -263,8 +270,8 @@ final class WebSession: PortalView {
     private var edges: [Int] = []
 
     /// `:toolbar` is "navigation", "contents", "markdown" or "none"; "markdown"
-    /// is "contents" with Open in Emacs. With `:hosted`, the page keeps no data
-    /// between sessions, never leaves the app host, and has a bridge.
+    /// is "contents" with Open in Emacs when `:hosted`. With `:hosted`, the page
+    /// keeps no data between sessions, never leaves the app host, and has a bridge.
     init(target: String, options: ViewOptions, parking: NativeHost) throws {
         guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
             throw NativeError.message(
@@ -274,9 +281,9 @@ final class WebSession: PortalView {
         toolbarName = name
         let hosted = options.flag("hosted")
         let page = WebPage(toolbar: kind, hosted: hosted)
-        page.toolbarModel?.canEdit = name == "markdown"
         self.page = page
         bridge = hosted ? WebBridge(target: target, page: page) : nil
+        if hosted && name == "markdown" { page.toolbarModel?.edit = { [weak page] in page?.edit() } }
         host = parking
         rectangle = parking.view?.bounds ?? .zero
         input = NativeInput(target: target, view: page, host: parking) { [weak page] in

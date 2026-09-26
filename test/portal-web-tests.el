@@ -410,17 +410,19 @@ The folder holds README.md, \"docs é/arch notes.md\", a source file with
 
 (defun portal-web-test--record (type target &optional file fragment)
   "Send what TARGET's view does for TYPE, with a URL for FILE when non-nil.
-\"page\" and \"follow\" are bridge messages, and others records.  A
+\"page\", \"follow\" and \"edit\" are bridge messages, and others records.  A
 Markdown FILE gets its preview URL, and any other a file: URL."
   (let ((url (cond ((null file) nil)
                    ((string-suffix-p ".md" file)
                     (concat portal-web-test--host "/markdown?path=" (url-hexify-string file)))
                    (t (concat "file://" (url-hexify-string file (cons ?/ url-unreserved-chars)))))))
     (with-current-buffer "*scratch*"
-      (if (member type '("page" "follow"))
+      (if (member type '("page" "follow" "edit"))
           (progn
             (portal-fake-native-post
-             target (json-serialize (list :type type :url (concat url (and fragment (concat "#" fragment))))))
+             target (json-serialize
+                     (if url (list :type type :url (concat url (and fragment (concat "#" fragment))))
+                       (list :type type))))
             (portal-fake-native-send (format "bridge %s\n" target)))
         (portal-fake-native-send (concat type " " target "\n"))))))
 

@@ -667,7 +667,8 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
 Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
 for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
 find, zoom and reload), `"contents"` (those and a table of contents),
-`"markdown"` (those, a table of contents and Open in Emacs) or `"none"`.
+`"markdown"` (those, a table of contents and, for a hosted app, Open in Emacs)
+or `"none"`.
 Loading the page a view shows again, ignoring its fragment, reloads it without
 a new history entry.
 `(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
@@ -754,8 +755,8 @@ Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
 killing the buffer, the toolbar each command chooses, and Hello and the Markdown
 preview opening at once and loading once a simulated app host is ready. Markdown
-tests feed the fake native adapter `page` and `follow` bridge messages and
-`edit` and `select` records. They check document identity, handoff placement with and without
+tests feed the fake native adapter `page`, `follow` and `edit` bridge messages
+and `select` records. They check document identity, handoff placement with and without
 `display-buffer-alist` rules, line fragments, images and folders, failed
 handoffs, paths longer than a record, Open in Emacs, and return tracking across
 buffers, previews and frames. One test

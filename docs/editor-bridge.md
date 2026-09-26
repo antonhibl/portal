@@ -37,7 +37,8 @@ A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
 A hosted page also reports to its bridge when a load fails or its web process
 stops, as `error` messages. It sends `page` with the URL of each page it
 commits, including after Back and Forward, and `follow` with the URL of each
-local `file:` link the user clicks, after giving Emacs the keyboard.
+local `file:` link the user clicks, after giving Emacs the keyboard. A
+Markdown preview's **Open in Emacs** sends `edit` the same way.
 `portal-web.el` handles these for every hosted app, tracking the page on
 screen and visiting linked files, and never passes them to the buffer's
 bridge function; an app cannot post them itself. URLs travel this way, not in

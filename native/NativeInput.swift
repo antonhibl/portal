@@ -177,13 +177,6 @@ final class NativeInput: NativeInputHandler {
         return true
     }
 
-    /// Give Emacs the keyboard, then send the record `TYPE TARGET` for a
-    /// command Emacs runs in this view's pane.
-    func handOff(_ type: String) {
-        unfocus()
-        Views.channel.notify(type, target: target)
-    }
-
     /// Give Emacs the keyboard.
     func unfocus() {
         cancel()

@@ -59,7 +59,7 @@ while the page keeps running, and killing the buffer closes it."
 URL is an absolute http, https, file, data or about URL.  TOOLBAR is
 \"navigation\" for back, forward, find, zoom and reload, \"contents\" for
 those and a table of contents, \"markdown\" for those, a table of contents
-and Open in Emacs, or \"none\".
+and, in a hosted app, Open in Emacs, or \"none\".
 Once URL starts loading, this turns on `portal-input-mode', keeping the
 buffer's major mode.  If the view cannot open or load URL, it is closed."
   (portal-web--check-url url)
@@ -322,8 +322,6 @@ A fragment such as #L42 or #L42-L50 moves to line 42."
   (interactive "e")
   (portal-web--from-view (car (cadr event)) #'portal-preview-open-in-emacs))
 
-(setf (alist-get "edit" portal-view-record-handlers nil nil #'equal)
-      (lambda (target) (portal-web--queue 'portal-web-edit target)))
 (define-key global-map [portal-web-follow] #'portal-web--follow)
 (define-key global-map [portal-web-edit] #'portal-web--edit)
 
@@ -360,12 +358,14 @@ The app receives it through `window.portalBridge.receive'."
 (defun portal-web--bridge (target)
   "Pass each message waiting on TARGET's bridge to `portal-web-bridge-function'.
 The view's own messages are handled here instead: \"page\" reports each
-page it commits, and \"follow\" each click on a link to a local file.
+page it commits, \"follow\" each click on a link to a local file, and
+\"edit\" Open in Emacs in a Markdown preview's toolbar.
 Receiving the messages lets the next ones send a new record."
   (mapc (lambda (message)
           (pcase (plist-get message :type)
             ("page" (portal-web--page (plist-get message :url)))
             ("follow" (portal-web--queue 'portal-web-follow target (plist-get message :url)))
+            ("edit" (portal-web--queue 'portal-web-edit target))
             (_ (when portal-web-bridge-function (funcall portal-web-bridge-function message)))))
         (json-parse-string (portal--web-receive target) :object-type 'plist)))
 
