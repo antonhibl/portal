@@ -3,9 +3,6 @@
 import AppKit
 import WebKit
 
-/// The view registry is not compiled into this check; its pipe stays unconnected.
-@MainActor enum Views { static let channel = NativeEventChannel() }
-
 @main
 struct CheckToolbar {
     @MainActor
@@ -28,11 +25,10 @@ struct CheckToolbar {
         window.contentView!.addSubview(editor)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editor)
-        precondition(WebViews.bind(title: window.title))
-        precondition(WebViews.loadURL("data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>", preview: true))
-        let layout = [PaneLayout(id: 1, rectangle: editor.bounds)]
-        precondition(WebViews.setLayout(layout))
-        let container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
+        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("contents")]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        try Views.view(target, as: WebSession.self).load("data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>")
+        var container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
         let web = container.content as! WKWebView
         let model = container.model
         wait("page did not load") { web.title == "Toolbar test" && !web.isLoading && model.hasHeadings }
@@ -82,11 +78,11 @@ struct CheckToolbar {
         precondition(!model.finding && model.input?.ownership == .view)
         try model.perform("find")
         wait("find query was not retained") { model.matchCount == 3 }
-        _ = try NativeInput.perform("web:1", action: "unfocus")
+        _ = try NativeInput.perform(target, action: "unfocus")
         try model.perform("find")
         precondition(model.input?.ownership == .view, "Repeated find must focus its field")
         try model.perform("close-find")
-        _ = try NativeInput.perform("web:1", action: "passthrough")
+        _ = try NativeInput.perform(target, action: "passthrough")
         precondition(model.input?.ownership == .passthrough)
         model.input?.toggleOwnership()
         precondition(model.input?.ownership == .emacs)
@@ -94,16 +90,17 @@ struct CheckToolbar {
         precondition(container.toolbar == nil && web.frame.height == 480)
         NativeToolbar.configure(true)
         precondition(container.toolbar != nil && web.frame.height == 452 && web.pageZoom == 1.1)
-        precondition(WebViews.setLayout([]))
-        precondition(container.isHidden && window.firstResponder === editor)
-        precondition(WebViews.setLayout(layout))
+        try Views.hide(target)
+        precondition(web.window !== window && web.isHiddenOrHasHiddenAncestor && window.firstResponder === editor)
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
         precondition(container.content === web && !container.isHidden && model.tocOpen && web.pageZoom == 1.1)
         try model.perform("reload")
         wait("reload") { !web.isLoading }
         precondition(web.pageZoom == 1.1 && model.tocOpen)
         try NativeToolbar.theme(#"{"background":[0.1,0.2,0.3],"success":[0,1,0]}"#)
         precondition(NativeToolbar.color("success") == NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
-        WebViews.destroy()
+        try Views.close(target)
         precondition(window.contentView!.subviews.count == 1)
         print("Toolbar layout, focus, zoom limits, TOC, find, theme and retained state passed")
     }

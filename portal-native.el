@@ -1,4 +1,4 @@
-;;; portal-native.el --- Frame identification for web views and editors -*- lexical-binding: t; -*-
+;;; portal-native.el --- Frame identification for Excalidraw editors -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (defun portal-native--call-with-frame (frame function &rest arguments)

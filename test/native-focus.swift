@@ -3,13 +3,10 @@
 import AppKit
 import WebKit
 
-/// The view registry is not compiled into this check; its pipe stays unconnected.
-@MainActor enum Views { static let channel = NativeEventChannel() }
-
 @main
 struct CheckFocus {
     @MainActor
-    static func main() {
+    static func main() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
@@ -19,9 +16,9 @@ struct CheckFocus {
         window.contentView!.addSubview(editor)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editor)
-        precondition(WebViews.bind(title: window.title))
-        precondition(WebViews.loadURL("data:text/html,<input autofocus><title>Focus</title>"))
-        precondition(WebViews.setLayout([PaneLayout(id: 1, rectangle: editor.bounds)]))
+        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("navigation")]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        try Views.view(target, as: WebSession.self).load("data:text/html,<input autofocus><title>Focus</title>")
         let web = window.contentView!.subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first!
         // A responder nested below the webview exercises the same ancestry test
         // as WebKit's internal text input views.
@@ -44,9 +41,9 @@ struct CheckFocus {
             }
         }
         precondition(window.makeFirstResponder(input))
-        precondition(WebViews.setLayout([]))
-        precondition(window.firstResponder === editor, "Removal did not restore focus")
-        WebViews.destroy()
-        print("Guest Escape/C-g retain focus; Command-Escape and removal restore Emacs focus")
+        try Views.hide(target)
+        precondition(window.firstResponder === editor, "Hiding did not restore focus")
+        try Views.close(target)
+        print("Guest Escape/C-g retain focus; Command-Escape and hiding restore Emacs focus")
     }
 }

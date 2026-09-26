@@ -3,63 +3,24 @@ import AppKit
 import WebKit
 
 @MainActor
-private final class NativeContent {
-    var preview = false
-    var url: URL?
-    let color = NSColor.green
-    let size: CGFloat = 32 // AppKit points, independent of the Retina scale.
-}
-
-@MainActor
-private final class GreenView: NSView, NativeSurface {
+private final class WebPage: WKWebView, WKNavigationDelegate, NativeSurface {
     var nativeView: NSView { self }
-    func handleKeyEvent(_ event: NSEvent) -> Bool { false }
-    let content: NativeContent
-
-    init(content: NativeContent, frame: NSRect) {
-        self.content = content
-        super.init(frame: frame)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let square = NSRect(x: bounds.midX - content.size / 2,
-                            y: bounds.midY - content.size / 2,
-                            width: content.size, height: content.size)
-        content.color.setFill()
-        // AppKit can invalidate an area larger than this view's bounds.
-        square.intersection(bounds).intersection(dirtyRect).fill()
-    }
-
-    // Leave mouse and keyboard handling with Emacs.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-/// A separate browsing session per pane; the buffer shares only its requested URL.
-@MainActor
-private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
-    var nativeView: NSView { self }
-    var input: NativeInput?
-    private var controls: WebToolbar!
-    var toolbarModel: ToolbarModel? { controls.model }
+    weak var input: NativeInput?
+    private var controls: WebToolbar?
+    var toolbarModel: ToolbarModel? { controls?.model }
     func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) ?? false }
 
     var loadError: String?
 
-    init(frame: NSRect, url: URL, preview: Bool) {
-        super.init(frame: frame, configuration: WKWebViewConfiguration())
-        controls = WebToolbar(web: self, preview: preview)
+    init(toolbar: ToolbarModel.Kind?) {
+        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+        if let toolbar { controls = WebToolbar(web: self, kind: toolbar) }
         navigationDelegate = self
-        navigate(to: url)
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func navigate(to url: URL, preview: Bool? = nil) {
-        if let preview { controls.model.kind = preview ? .preview : .web }
+    func navigate(to url: URL) {
         loadError = nil
         if url.isFileURL {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -70,8 +31,8 @@ private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
-        controls.model.hasHeadings = false
-        controls.model.changed?()
+        controls?.model.hasHeadings = false
+        controls?.model.changed?()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
@@ -83,7 +44,7 @@ private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
         record(error)
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls.loaded() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls?.loaded() }
 
     private func record(_ error: Error) {
         if (error as NSError).code != NSURLErrorCancelled {
@@ -92,123 +53,87 @@ private final class WebView: WKWebView, WKNavigationDelegate, NativeSurface {
     }
 }
 
-struct PaneLayout: Sendable {
-    let id: Int
-    let rectangle: CGRect
-}
-
-struct ViewSnapshot: Sendable {
-    let visible: Bool
-    let edges: [Int]
-    let windowNumber: Int
-    let url: String?
-    let title: String?
-    let loading: Bool
-    let error: String?
-}
-
-/// Owns shared content and one view per pane, without retaining Emacs values.
+/// The web view kind: one WebKit page with its own browsing state. The page
+/// stays loaded while the view is hidden, and its toolbar is fixed when it opens.
 @MainActor
-enum WebViews {
-    private static var content: NativeContent?
-    private static var views: [Int: any NativeSurface] = [:]
-    private static var host: NativeHost?
+final class WebSession: PortalView {
+    private static let toolbars: [String: ToolbarModel.Kind?] = [
+        "navigation": .web, "contents": .preview, "none": nil]
+    private let toolbar: String
+    private let page: WebPage
+    private var host: NativeHost
+    private let input: NativeInput
+    private var rectangle: CGRect
+    private var edges: [Int] = []
 
-    static func loadURL(_ text: String, preview: Bool? = nil) -> Bool {
-        guard let content, let url = URL(string: text),
-              let scheme = url.scheme?.lowercased(),
+    /// `:toolbar` is "navigation", "contents" or "none". `:hosted` is accepted,
+    /// but has no effect yet.
+    init(target: String, options: ViewOptions, parking: NativeHost) throws {
+        guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
+            throw NativeError.message("A web view's :toolbar must be \"navigation\", \"contents\" or \"none\"")
+        }
+        toolbar = name
+        let page = WebPage(toolbar: kind)
+        self.page = page
+        host = parking
+        rectangle = parking.view?.bounds ?? .zero
+        input = NativeInput(target: target, view: page, host: parking) { [weak page] in
+            guard let page, !page.isHidden else { return false }
+            return page.window?.makeFirstResponder(page) ?? false
+        }
+        page.input = input
+        try move(to: parking)
+        hide(in: parking)
+    }
+
+    /// Remove the page from its current window and add it to NEXT's, in one step.
+    private func move(to next: NativeHost) throws {
+        if next !== host {
+            host.remove(page)
+            host = next
+            input.host = next
+        }
+        guard next.place(page, rectangle: rectangle) else {
+            throw NativeError.message("The web view's frame was deleted")
+        }
+    }
+
+    func place(in host: NativeHost, rectangle: CGRect) throws {
+        self.rectangle = rectangle
+        try move(to: host)
+        edges = [Int(rectangle.minX), Int(rectangle.minY), Int(rectangle.maxX), Int(rectangle.maxY)]
+    }
+
+    func hide(in parking: NativeHost) {
+        edges = []
+        try? move(to: parking)
+        parking.hide(page)
+    }
+
+    func close() {
+        page.stopLoading()
+        host.remove(page)
+    }
+
+    func load(_ address: String) throws {
+        guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
               ["http", "https", "file", "data", "about"].contains(scheme),
-              !["http", "https"].contains(scheme) || !(url.host ?? "").isEmpty
-        else { return false }
-        content.url = url
-        if let preview { content.preview = preview }
-        for view in views.values {
-            (view as? WebView)?.navigate(to: url, preview: content.preview)
+              !["http", "https"].contains(scheme) || !(url.host ?? "").isEmpty else {
+            throw NativeError.message("Expected an absolute http, https, file, data or about URL")
         }
-        return true
+        page.navigate(to: url)
     }
 
-    /// Lisp briefly gives the requested frame a unique title, then restores it.
-    static func bind(title: String) -> Bool {
-        guard let host = NativeHost.bind(title: title) else { return false }
-        destroy()
-        self.host = host
-        content = NativeContent()
-        return true
-    }
-
-    /// Apply a complete layout measured from the top-left of Emacs's content area.
-    /// An empty layout hides views while retaining their browsing state.
-    static func setLayout(_ layout: [PaneLayout]) -> Bool {
-        guard let host, let content else { return false }
-
-        let wanted = Set(layout.map(\.id))
-        for id in Set(views.keys).subtracting(wanted) {
-            if let view = views[id] { host.hide(view) }
-        }
-        for pane in layout {
-            if let child = views[pane.id], content.url != nil && !(child is WebView) {
-                host.remove(child)
-                views.removeValue(forKey: pane.id)
-            }
-            let child: any NativeSurface
-            if let existing = views[pane.id] {
-                child = existing
-            } else if let url = content.url {
-                let web = WebView(frame: .zero, url: url, preview: content.preview)
-                web.input = NativeInput(target: "web:\(pane.id)", view: web, host: host) { [weak web] in
-                    guard let web, !web.isHidden else { return false }
-                    return web.window?.makeFirstResponder(web) ?? false
-                }
-                child = web
-                views[pane.id] = child
-            } else {
-                child = GreenView(content: content, frame: .zero)
-                views[pane.id] = child
-            }
-            guard host.place(child, rectangle: pane.rectangle) else { return false }
-            child.nativeView.needsDisplay = true
-        }
-        return true
-    }
-
-    static func releasePane(_ id: Int) {
-        guard let view = views.removeValue(forKey: id) else { return }
-        (view as? WKWebView)?.stopLoading()
-        host?.remove(view)
-    }
-
-    static func destroy() {
-        for view in views.values {
-            (view as? WKWebView)?.stopLoading()
-            host?.remove(view)
-        }
-        views.removeAll()
-        content = nil
-        host = nil
-    }
-
-    /// Inspect the actual hierarchy, including any accidentally orphaned views.
-    static func snapshots() -> [ViewSnapshot] {
-        (NSApp?.windows ?? []).flatMap { window -> [ViewSnapshot] in
-            guard let host = window.contentView else { return [] }
-            return host.subviews.compactMap { root in
-                let child = (root as? NativeContainer)?.content ?? root
-                guard child is GreenView || child is WebView else { return nil }
-                let rect = root.convert(root.bounds, to: host)
-                let left = rect.minX - host.bounds.minX
-                let top = host.isFlipped
-                    ? rect.minY - host.bounds.minY
-                    : host.bounds.maxY - rect.maxY
-                return ViewSnapshot(
-                    visible: !child.isHiddenOrHasHiddenAncestor,
-                    edges: [left, top, left + rect.width, top + rect.height].map { Int($0) },
-                    windowNumber: window.windowNumber,
-                    url: (child as? WebView)?.url?.absoluteString,
-                    title: (child as? WebView)?.title,
-                    loading: (child as? WebView)?.isLoading ?? false,
-                    error: (child as? WebView)?.loadError)
-            }
-        }
+    func inspect() -> [(String, ViewValue)] {
+        var state: [(String, ViewValue)] = [
+            ("visible", .flag(page.window != nil && !page.isHiddenOrHasHiddenAncestor)),
+            ("focused", .flag(host.ownsFocus(page))),
+            ("edges", .integers(edges)),
+            ("toolbar", .string(toolbar)),
+            ("loading", .flag(page.isLoading))]
+        if let url = page.url { state.append(("url", .string(url.absoluteString))) }
+        if let title = page.title { state.append(("title", .string(title))) }
+        if let error = page.loadError { state.append(("error", .string(error))) }
+        return state
     }
 }

@@ -6,7 +6,7 @@
 
 (ert-deftest portal-toolbar-commands-read-native-state ()
   (let ((native-value 100) calls)
-    (cl-letf (((symbol-function 'portal-input--target) (lambda (&rest _) "web:3"))
+    (cl-letf (((symbol-function 'portal-view-target) (lambda (&rest _) "web:3"))
               ((symbol-function 'portal--toolbar-action)
                (lambda (target action)
                  (push (list target action) calls)
@@ -30,7 +30,7 @@
 
 (ert-deftest portal-toolbar-find-keeps-field-focus-after-prefix ()
   (let ((portal-input--resume t))
-    (cl-letf (((symbol-function 'portal-input--target) (lambda (&rest _) "web:7"))
+    (cl-letf (((symbol-function 'portal-view-target) (lambda (&rest _) "web:7"))
               ((symbol-function 'portal--toolbar-action) (lambda (&rest _) "{\"find\":true}")))
       (portal-find)
       (should-not portal-input--resume))))

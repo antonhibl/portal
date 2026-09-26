@@ -2,8 +2,9 @@
 
 Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
 one Swift dynamic module. A bundled Bun server hosts Hello World and local
-Markdown previews and an offline Excalidraw editor. Native views follow splits, resizing, and buffer visibility;
-hidden terminal sessions keep running. An AppKit green-square demo is also included.
+Markdown previews and an offline Excalidraw editor. Each buffer has one native view,
+which follows its buffer across splits, resizing and frames; hidden pages and
+terminal sessions keep running.
 
 ## Build and run
 
@@ -41,18 +42,24 @@ and shell integration resources. Restart Emacs when upgrading from the former
 separate web and terminal modules, or after rebuilding a loaded native module.
 
 Run `M-x portal-preview-html` in a `.html` or `.htm` file buffer to open its
-saved contents in the embedded webview, including relative scripts, styles,
+saved contents in a web view, including relative scripts, styles,
 and images from its directory. From other buffers, it prompts for a local
 path or URL. Relative paths use the current buffer's `default-directory`;
 `C-u M-x portal-preview-html` always prompts. Unsaved edits are not included.
+Previewing the same file again reuses its buffer, such as `*portal: index.html*`,
+and reloads it.
 
-`M-x portal-open-url` still opens an arbitrary absolute URL in `*portal-web*`.
+`M-x portal-open-url` opens an arbitrary absolute URL in a new buffer each time,
+named after the page, such as `*portal: example.com*`.
 Both commands accept HTTP, HTTPS, `file:`, `data:`, and `about:` URLs.
 To open a local HTML file programmatically:
 
 ```elisp
 (portal-preview-html "/absolute/path/index.html")
 ```
+
+In a web buffer, `g` loads the page again and `q` (`quit-window`) hides the
+view while the page keeps running. Killing the buffer closes the page.
 
 ## Shared keyboard controls
 
@@ -82,7 +89,8 @@ return to Emacs. No global physical keybinding is installed in ordinary buffers.
 The 28 pixel toolbar reserves space above the content. Web pages have navigation,
 find, zoom, and reload; Markdown and HTML previews have a table of contents in
 place of navigation. Terminals have text size controls. Excalidraw has only the
-ownership dot; quick terminals and the square demo have no toolbar.
+ownership dot; quick terminals have no toolbar. The command that opens a web
+view chooses its toolbar.
 `(setq portal-toolbar nil)` hides toolbars live, and `t` restores them. Colors
 follow Emacs faces and update after theme changes.
 
@@ -91,8 +99,8 @@ follow Emacs faces and update after theme changes.
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
 `portal-terminal-text-size-reset`. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
-and redisplaying a pane; reload preserves zoom and the TOC. Closing the preview
-with `portal-hide` releases it.
+and redisplaying a pane; reload preserves zoom and the TOC. Killing the buffer
+releases it.
 
 Use `M-x portal-input-passthrough` to release even the prefix and optional
 native shortcuts to an app. Command-Escape leaves passthrough and returns to
@@ -106,8 +114,8 @@ feature shortcuts. The native first chord accepts modified ASCII, with Meta =
 Option and Super = Command. The rest of a sequence uses normal Emacs keys.
 
 Click inside a page or press `RET` to interact. After returning to Emacs,
-`q` or `M-x portal-hide` removes preview views. The mode line and minibuffer
-remain available. Run `portal-open-url` again to open another URL.
+`q` hides the web view and `g` loads its page again. The mode line and
+minibuffer remain available.
 
 Restart Emacs after rebuilding the native module to try these controls.
 
@@ -421,21 +429,23 @@ does not hot-reload that library.
 
 Loading the Lisp package or native module does not start a server. The first
 `portal-hello`, `portal-preview-markdown`, or drawing buffer starts one shared child process
-asynchronously, waits for its readiness message, then loads the requested page
-in the native webview. Opening external
-URLs does not require the server.
+asynchronously. Hello and the Markdown preview open their web view at once, at
+`about:blank`, and load their page when the host sends its readiness message.
+Opening external URLs does not require the server.
 
 - The host binds to `127.0.0.1` on an OS-assigned port. Each Emacs process owns
-  its own host; all its panes reuse that host.
+  its own host; all its web views reuse that host.
 - Each host generates a fresh access token and sends it through the readiness
   pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello` or
   `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
   validates the token and Host header; responses suppress outgoing referrers.
 - Closing or hiding a view keeps the server running. `M-x portal-start-server`
   can prewarm it explicitly; `M-x portal-stop-server` stops it, and
-  `M-x portal-restart-server` starts a replacement and reloads active hosted views.
+  `M-x portal-restart-server` starts a replacement and reloads every Hello and
+  Markdown preview buffer. While the host is stopped, they show a page saying so.
 - Startup is bounded by `portal-server-start-timeout` (five seconds by default).
-  Failures leave diagnostics in `*portal-server*`; run `portal-hello` to retry.
+  Failures leave diagnostics in `*portal-server*`; press `g` in a hosted page's
+  buffer, or run `portal-hello`, to retry.
   There is no automatic restart loop.
 - Emacs supervises the child through a pipe. stdout carries a versioned JSON
   readiness line; stderr carries diagnostics. Closing stdin requests shutdown,
@@ -454,7 +464,8 @@ running host keeps its old code until `portal-restart-server` is called.
 Run `M-x portal-preview-markdown` in a Markdown file buffer to preview it
 directly. Markdown modes and common file extensions are recognised. From other
 buffers, the command prompts for a saved local file. Use `C-u M-x
-portal-preview-markdown` to choose another file explicitly.
+portal-preview-markdown` to choose another file explicitly. Each file has one
+preview buffer, such as `*portal: notes.md*`; previewing it again reuses it.
 The Bun server reads the file, renders
 it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
 and returns a complete HTML page with embedded light/dark CSS. Rendering happens
@@ -462,7 +473,7 @@ in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
 anchors are supported. Press `C-b d` or Command-Escape to return to Emacs, then
-`g` (`portal-refresh`) to reread the file from disk. Refresh also restarts a
+`g` (`portal-web-reload`) to reread the file from disk. `g` also restarts a
 stopped host; the selected Markdown file is retained across host restarts.
 Missing or unreadable files produce an error page.
 
@@ -473,60 +484,42 @@ Raw HTML is displayed as text, and a page-specific Content Security Policy
 blocks scripts. Bun currently marks its Markdown API unstable; it is tested
 here with the Bun version listed above.
 
-## Webview behaviour
+## Web view behaviour
 
-The existing native host accepts `WKWebView` directly. Remote pages use
+A web view is a Portal view of the web kind. Remote pages use
 [WebKit's URL request loading](https://developer.apple.com/documentation/webkit/wkwebview);
 local pages use `loadFileURL` with read access to the containing directory so
 relative scripts, styles, and images can load. JavaScript is enabled by default.
 
-- Each pane displaying `*portal-web*` gets an independent webview starting at the
-  requested URL. Cookies use WebKit's default data store, but navigation, DOM,
-  scroll position, and form state are independent between panes.
-- Resizing a pane preserves its webview. Hiding or closing a pane releases its
-  webview; showing the buffer again loads the originally requested URL anew.
-- Opening another URL replaces the current Portal content. There is one active
-  native buffer and one host frame, as in the original demo.
+- Each web buffer has one web view, which appears in the selected pane showing
+  the buffer ([ADR 0001](docs/adr/0001-one-portal-view-per-buffer.md)). Other
+  panes showing the same buffer display only its text. To see two pages side by
+  side, open two buffers.
+- Web views belong to no frame: show the buffer in another frame and its page
+  moves there. Deleting a frame only hides its web views.
+- Hiding the view, with `q` or by showing another buffer, keeps the page loaded,
+  including its navigation, DOM, scroll position, and form state. Cookies use
+  WebKit's default data store.
 - The shared Portal prefix and Command-Escape work while a page has focus.
-  Clicking a webview does not change Emacs's selected pane; use Emacs window
+  Clicking a web view does not change Emacs's selected pane; use Emacs window
   navigation after returning focus.
-- This is a URL viewer, without browser chrome, history commands, downloads,
-  popup windows, or JavaScript dialog UI. Failed loads can be inspected through
-  `:error` in `(portal--native-views)`.
+- This is a URL viewer, without an address bar, downloads, popup windows, or
+  JavaScript dialog UI. Failed loads can be inspected through `:error` in
+  `(portal--inspect (portal-view-target))`.
 
-A shared, persistent browser session mirrored across splits would require a
-separate design; this first version shares the requested URL only.
-
-## Green demo behaviour
-
-Buffers hold content; Emacs windows are the panes displaying that content and
-have coordinates. Portal creates one native view per pane showing the green
-buffer within the frame where `portal-show` was invoked.
-
-- Splitting shows a green square in both panes. Each square stays 32×32 points
-  and centered in its pane's text area as the panes or macOS window resize.
-- Changing focus leaves all views in place. Switching one pane to another buffer,
-  or closing it, removes only that pane's native view.
-- Switching the buffer out of every pane releases all views while retaining the
-  shared content. Showing the buffer again creates the required views automatically.
-- `q`, `portal-hide`, killing the buffer, changing its major mode, or deleting the
-  host frame releases all views and shared content, and stops tracking.
-- Failed attachment or layout updates remove all views. Run `portal-show` to retry.
-
-Moving the whole macOS window needs no extra positioning code because the native
-views are already its children.
-
-Splitting normally shows the same buffer in both panes, including with Evil's
-`C-w v`. Both panes now render green. Switch either pane to another buffer to work
-with text beside the remaining view.
+Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
+for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
+find, zoom and reload), `"contents"` (a table of contents in place of back and
+forward) or `"none"`.
 
 ## Implementation
 
 | File | Responsibility |
 | --- | --- |
+| `portal.el` | The package root: loads every feature |
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
-| `portal-native.el` | Frame identification for web views and editors |
-| `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
+| `portal-web.el` | Web buffers, URL and HTML previews, and Hello and Markdown previews on the app host |
+| `portal-native.el` | Frame identification for Excalidraw editors |
 | `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
 | `portal-terminal.el` | Terminal buffers and tmux shortcuts |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
@@ -538,7 +531,7 @@ with text beside the remaining view.
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
-| `native/WebView.swift` | WebKit/demo views, navigation, and inspection |
+| `native/WebView.swift` | The web view kind: WebKit pages, navigation, and inspection |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
 | `native/Views.swift` | The view registry, keyed by native target, and the view kind protocol |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
@@ -555,15 +548,14 @@ frame, remembers the original Emacs responder, and uses one event monitor to
 route keys to the focused surface or a pending Portal command. A key released
 after focus changes is not delivered to the newly focused feature.
 
-Features own their state and cleanup. Removing a web view does not destroy a
-terminal, and closing a terminal does not remove web views. Hidden web views are
-released and recreated when shown; hidden terminals stay attached so their PTYs
-continue running. The Emacs bridge converts arguments and registers both APIs.
+Features own their state and cleanup. Closing a web view does not destroy a
+terminal, and closing a terminal does not remove web views. The Emacs bridge
+converts arguments and registers every API.
 
-Terminal views run on the shared Portal view lifecycle
+Terminal and web views run on the shared Portal view lifecycle
 ([ADR 0002](docs/adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
 every native lifecycle call: `portal--open KIND OPTIONS` returns a target such as
-`terminal:3`, and `portal--place`, `portal--hide`, `portal--close` and
+`terminal:3` or `web:4`, and `portal--place`, `portal--hide`, `portal--close` and
 `portal--inspect` take that target. In Swift, `Views` keeps one registry keyed by
 target; each view kind implements the small `PortalView` protocol, and IDs are
 never reused. On each window change, `portal-view.el` picks one window per view,
@@ -574,51 +566,33 @@ renames the frame briefly so Swift can find its native window; nothing about
 frames is cached. Placing a view in another frame moves it there within the one
 call. Swift keeps hidden views in an offscreen parking window that is never
 shown. New views start there, so a view is always in some window and its session
-keeps running. Deleting a frame hides its views, and the next sync places each
+or page keeps running. Deleting a frame hides its views, and the next sync places each
 one wherever its buffer is still shown. Killing the buffer or changing its major
-mode closes the view. Batch
+mode closes the view. Operations that belong to one kind have their own exports,
+such as `portal--web-load TARGET URL`. Batch
 tests replace the native module with `test/portal-fake-native.el`.
 
-For web/demo views, the Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
-during redisplay. Each pane receives a stable numeric ID. Lisp sends the complete
-layout when geometry or pane membership changes; Swift validates the layout, then
-creates, updates, or removes views on the main thread. An empty layout hides all
-views without releasing the shared content. There is no polling timer, and Swift
-never retains an Emacs value or environment pointer after a module call returns.
-
-Each `GreenView` references the same `NativeContent` object, whose colour is fixed
-to green for this demo. Views draw independently at their own dimensions; content
-is shared rather than copied, and no screenshots or pixel mirroring are involved.
-
-Initial attachment briefly assigns the requested frame a unique title so Swift
-can find its native window, then immediately restores the title. The native host
-stays bound until cleanup. This avoids relying on asynchronous window focus.
-
-For diagnostics, `(portal--native-views)` reports the actual AppKit views as
-plists containing `:visible`, `:edges`, the native `:window` number, and WebKit's
-`:url`, `:title`, `:loading`, and `:error` state. Native navigation callbacks only
-update Swift state; they never call back into Lisp.
+The frame-title trick and the geometry cache mean there is no polling timer, and
+Swift never retains an Emacs value or environment pointer after a module call
+returns. Native navigation callbacks only update Swift state; they never call
+back into Lisp.
 
 ## Verification
 
 Tested with macOS 27.0, Swift 6.4, and Emacs 31.1 with `--module-assertions`.
 C and Swift compile with warnings treated as errors; Lisp byte compilation also
-passes without warnings. The green demo and both split directions were previously visually checked.
+passes without warnings.
 
-The graphical ERT tests inspect actual native bounds, visibility, and attachment
-counts. They cover simultaneous views in splits, independent pane resizing, focus
-navigation, removing only the views whose panes disappear, hidden buffers returning,
-repeated show/stop/restart, buffer and frame cleanup, invalid layouts, and failure
-recovery after multiple views have been attached.
-The webview tests also wait for real WebKit page loads, verify JavaScript execution
-and relative local assets, and exercise splits, resizing, hidden-buffer reloads,
-repeated navigation, input validation, and cleanup. The hosted-page tests also
-exercise process reuse, restart, and cancellation while the server starts;
-a separate HTTPS smoke check loaded `https://example.com` successfully.
-The Markdown tests exercise file paths with Unicode and URL punctuation,
-refresh after file deletion/restoration, split panes, host recovery, and
-cancellation during startup.
-The combined graphical suite includes web/demo, terminal, editor, and shared
+Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
+`portal-open-url` opening a new buffer each time, the view following the selected
+pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
+killing the buffer, the toolbar each command chooses, and Hello and the Markdown
+preview loading once a simulated app host is ready.
+
+The graphical web tests wait for real WebKit page loads. They verify JavaScript
+execution, relative local assets, a page staying loaded while hidden, repeated
+loading and native URL validation.
+The combined graphical suite includes web, terminal, editor, and shared
 input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
@@ -647,10 +621,15 @@ focused-view removal return focus to the editor:
 ```sh
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/NativeHost.swift native/NativeInput.swift native/NativeEventChannel.swift \
-  native/Toolbar.swift native/WebToolbar.swift native/WebView.swift test/native-focus.swift \
+  native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
+  test/native-terminal-stub.swift test/native-focus.swift \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
+
+The checks open web views through the same `Views` registry as Emacs.
+`test/native-terminal-stub.swift` stands in for the terminal kind, so they build
+without Ghostty.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
@@ -671,11 +650,8 @@ access-token and Host validation, and non-executable raw HTML.
 
 ## Scope
 
-The web/demo feature supports one active buffer and any number of pane views
-within one host frame. Terminals support multiple independent buffers, and each
-one follows its buffer into any frame.
-To choose a different host frame, invoke `portal-open-url` (or `portal-show`
-for the green demo) from that frame again.
+Web and terminal views support any number of buffers, each with one view that
+follows its buffer into any frame.
 
 The buffer remains an ordinary Emacs buffer. This does not add native widgets to
 Emacs's text rendering system. The module runs inside Emacs, so use a separate

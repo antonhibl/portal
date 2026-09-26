@@ -9,7 +9,8 @@
 (require 'subr-x)
 
 (defvar portal-fake-native--views (make-hash-table :test #'equal)
-  "Open views: target to a plist of :options, :frame, :edges and :visible.")
+  "Open views: target to a plist of :options, :frame, :edges and :visible.
+A web view also has the :url it loaded last.")
 (defvar portal-fake-native--next-id 0 "Last view ID.  IDs are never reused.")
 (defvar portal-fake-native-log nil "Lifecycle calls, newest first, as (NAME ARGS...).")
 (defvar portal-fake-native-channel nil
@@ -96,6 +97,13 @@ The selected frame is kept."
   (portal-fake-native--call 'portal--close target)
   (portal-fake-native--view target)
   (remhash target portal-fake-native--views)
+  t)
+
+(defun portal--web-load (target url)
+  (portal-fake-native--call 'portal--web-load target url)
+  (unless (string-prefix-p "web:" target) (error "No Portal view %s" target))
+  (puthash target (plist-put (portal-fake-native--view target) :url url)
+           portal-fake-native--views)
   t)
 
 (defun portal--inspect (target)

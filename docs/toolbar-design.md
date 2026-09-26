@@ -195,8 +195,8 @@ dark or light defaults that follow the system appearance.
 (setq portal-toolbar t)
 
 ;; The toolbar's functions are also reachable from Emacs.
-(keymap-set portal-mode-map "+" #'portal-zoom-in)
-(keymap-set portal-mode-map "t" #'portal-toggle-toc)
+(keymap-set portal-web-mode-map "+" #'portal-zoom-in)
+(keymap-set portal-web-mode-map "t" #'portal-toggle-toc)
 ```
 
 `portal-toolbar` is a defcustom with a variable watcher, like

@@ -7,12 +7,12 @@
 (declare-function portal--toolbar "portal" (enabled))
 (declare-function portal--toolbar-theme "portal" (json))
 (declare-function portal--toolbar-action "portal" (target action))
-(declare-function portal-input--target "portal-input" (&optional window))
 (defvar portal-input--resume)
 
 (defcustom portal-toolbar t
   "Whether native Portal views reserve a 28 pixel toolbar at the top.
-Changes apply immediately.  Quick terminals and the square demo have no strip."
+Changes apply immediately.  Quick terminals, and web views opened without a
+toolbar, have no strip."
   :type 'boolean :group 'portal-toolbar)
 
 (defun portal-toolbar--changed (_symbol value operation _where)
@@ -54,9 +54,10 @@ Changes apply immediately.  Quick terminals and the square demo have no strip."
 (portal-toolbar--initialize)
 
 (defun portal-toolbar--action (action &optional terminal)
-  "Perform ACTION in the selected native view and return its authoritative state.
-When TERMINAL is non-nil, require a terminal target."
-  (let ((target (portal-input--target)))
+  "Perform ACTION in the selected pane's Portal view and return its state.
+The state is authoritative.  The view must be a web view, or a terminal
+when TERMINAL is non-nil."
+  (let ((target (portal-view-target)))
     (unless (and target (fboundp 'portal--toolbar-action))
       (user-error "No native Portal view in this pane"))
     (when (if terminal (not (string-prefix-p "terminal:" target))

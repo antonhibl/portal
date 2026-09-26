@@ -5,18 +5,15 @@
 
 (defmacro portal-input-gui--page (&rest body)
   (declare (indent 0))
-  `(save-window-excursion
+  `(portal-test--with-web
      (unwind-protect
          (progn
-           (delete-other-windows)
            (select-frame-set-input-focus (selected-frame))
            (portal-open-url "data:text/html,<title>Input ready</title><input autofocus><script>window.keys=[];window.ups=0;document.addEventListener('keydown',e=>keys.push([e.key,e.ctrlKey,e.isTrusted]));document.addEventListener('keyup',e=>window.ups=(window.ups||0)+1)</script>")
-           (portal-test--wait-for-page "Input ready" 1)
+           (portal-test--wait-for-page "Input ready")
            (portal-input-focus)
            ,@body)
-       (setq unread-command-events nil)
-       (portal-hide)
-       (when (get-buffer "*portal-web*") (kill-buffer "*portal-web*")))))
+       (setq unread-command-events nil))))
 
 (defun portal-input-gui--prefix (&rest strokes)
   "Send a real native prefix followed immediately by STROKES."
@@ -101,7 +98,7 @@
 
 (ert-deftest portal-input-gui-prefix-key-inside-emacs-gateway-is-not-literal ()
   (portal-input-gui--page
-    (use-local-map (copy-keymap portal-mode-map))
+    (use-local-map (copy-keymap portal-web-mode-map))
     (define-key (current-local-map) [remap list-buffers] #'portal-input-gui--mark)
     (let ((portal-input-gui--ran nil))
       (portal-input-gui--prefix (list 7 (ash 1 18) "\C-x") (list 11 (ash 1 18) "\C-b"))

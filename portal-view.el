@@ -55,7 +55,7 @@ The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
       (user-error "Restart Emacs to replace the old Portal native modules"))
     (module-load portal-view--module-file)
     (run-hooks 'portal-view-load-hook))
-  (unless (fboundp 'portal--channel)
+  (unless (fboundp 'portal--web-load)
     (user-error "Restart Emacs to load the rebuilt Portal native module"))
   (unless (process-live-p portal-view--channel)
     (setq portal-view--pending ""
@@ -95,7 +95,7 @@ Errors are only reported: the records after this one must still arrive."
   "Return the live buffer whose view is TARGET, or nil."
   (or (cl-find target (portal-view-buffers) :test #'equal
                :key (lambda (buffer) (buffer-local-value 'portal-view--target buffer)))
-      ;; Web views and Excalidraw editors do not use `portal-view-open' yet,
+      ;; Excalidraw editors do not use `portal-view-open' yet,
       ;; so find the window that shows them through `portal-input'.
       (cl-loop for window in (window-list-1 nil 'nomini t)
                when (with-current-buffer (window-buffer window)
@@ -126,7 +126,7 @@ The native module finds FRAME's window by this title."
 
 (defun portal-view-open (kind options)
   "Open a Portal view of KIND for the current buffer and return its target.
-KIND is a symbol, such as `terminal'.  OPTIONS is a plist for that kind.
+KIND is a symbol, `terminal' or `web'.  OPTIONS is a plist for that kind.
 The view follows the selected pane showing the buffer, in any frame, is
 hidden while no pane shows it, and ends when the buffer is killed or
 changes major mode."
