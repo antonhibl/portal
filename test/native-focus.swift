@@ -48,6 +48,50 @@ struct CheckFocus {
         try checkHosted(window: window)
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)
+        checkChannel()
+    }
+
+    /// A full pipe delays records, without losing or reordering them.
+    @MainActor
+    static func checkChannel() {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        defer { Views.channel.connect(-1); close(fds[0]) }
+        precondition(!Views.channel.notify("two words", target: "web:1"), "A malformed record was accepted")
+        // Fill the pipe, as an Emacs busy with a long command leaves it.
+        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
+        var filled = 0
+        while case let count = write(fds[1], filler, filler.count), count > 0 { filled += count }
+        precondition(Views.channel.notify("escape", target: "web:1", fields: ["2", "0"])
+                     && Views.channel.notify("bridge", target: "web:1"), "A full pipe refused records")
+        let expected = "escape web:1 2 0\nbridge web:1\n"
+        var received: [UInt8] = []
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while received.count < filled + expected.utf8.count && Date() < deadline {
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            let count = read(fds[0], &buffer, buffer.count)
+            if count > 0 { received += buffer[..<count] }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.03))
+        }
+        let records = String(decoding: received.dropFirst(filled), as: UTF8.self)
+        precondition(records == expected, "Records were lost or reordered: \(records)")
+
+        // Records waiting when Emacs replaces its pipe go to the new one, in order.
+        while write(fds[1], filler, filler.count) > 0 {}
+        while write(fds[1], filler, 1) > 0 {}
+        precondition(Views.channel.notify("escape", target: "web:1", fields: ["3", "0"])
+                     && Views.channel.notify("bridge", target: "web:1"), "A full pipe refused records")
+        close(fds[0])
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let count = read(fds[0], &buffer, buffer.count)
+        let moved = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        precondition(moved == "escape web:1 3 0\nbridge web:1\n", "Replacing the pipe lost records: \(moved)")
+        print("A full pipe delays records in order, and loses none, even when Emacs replaces it")
     }
 
     /// A pipe standing in for Emacs's end of `Views.channel`.
@@ -64,37 +108,44 @@ struct CheckFocus {
         }, { Views.channel.connect(-1); close(fds[0]) })
     }
 
-    /// A hosted app reports each page it commits. Clicking it asks Emacs to
-    /// select its pane, and its links to local files go to Emacs, with the keyboard.
+    /// A hosted app reports each page it commits over its bridge. Clicking it
+    /// asks Emacs to select its pane, and its links to local files go to Emacs,
+    /// with the keyboard, over the bridge too, however long their paths.
     @MainActor
     static func checkLinks(window: NSWindow, editor: NSView) throws {
         let (records, disconnect) = connectRecords()
         defer { disconnect() }
-        func wait(for text: String) -> String {
-            var received = ""
-            let deadline = Date(timeIntervalSinceNow: 10)
-            while !received.contains(text) && Date() < deadline {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-                received += records()
-            }
-            precondition(received.contains(text), "Expected \(text), got \(received)")
-            return received
-        }
         let target = try Views.open(kind: "web", options: ViewOptions(values: [
             "toolbar": .string("none"), "hosted": .flag(true)]))
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        let page = "<title>Links</title><a style='display:block;height:80px' href='file:///tmp/r%C3%A9sum%C3%A9%20notes.ts#L4'>code</a>"
+        let session = try Views.view(target, as: WebSession.self)
+        var received = ""
+        /// Wait for RECORD, then return the bridge's messages as [type, url] pairs.
+        func wait(for record: String) -> [[String]] {
+            let deadline = Date(timeIntervalSinceNow: 10)
+            while !received.contains(record) && Date() < deadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+                received += records()
+            }
+            precondition(received.contains(record), "Expected \(record), got \(received)")
+            received = ""
+            let messages = try! JSONSerialization.jsonObject(with: Data(session.receive().utf8)) as! [[String: Any]]
+            return messages.map { [$0["type"] as! String, $0["url"] as? String ?? ""] }
+        }
+        let file = "file:///tmp/" + String(repeating: "r%C3%A9sum%C3%A9%20", count: 40) + "notes.ts#L4"
+        let page = "<title>Links</title><a style='display:block;height:80px' href='\(file)'>code</a>"
         let app = "data:text/html;base64," + Data(page.utf8).base64EncodedString()
+        let first = "data:text/html,%3Ctitle%3EFirst%3C/title%3E"
         let web = window.contentView!.subviews.compactMap { $0 as? WKWebView }.first!
         // Every committed page is reported, including after going back.
-        try Views.view(target, as: WebSession.self).load("data:text/html,<title>First</title>")
-        _ = wait(for: "page \(target) data:text/html,%3Ctitle%3EFirst%3C/title%3E\n")
-        try Views.view(target, as: WebSession.self).load(app)
-        _ = wait(for: "page \(target) \(app)\n")
+        try session.load(first)
+        precondition(wait(for: "bridge \(target)\n") == [["page", first]])
+        try session.load(app)
+        precondition(wait(for: "bridge \(target)\n") == [["page", app]])
         web.goBack()
-        _ = wait(for: "page \(target) data:text/html,%3Ctitle%3EFirst%3C/title%3E\n")
+        precondition(wait(for: "bridge \(target)\n") == [["page", first]])
         web.goForward()
-        _ = wait(for: "page \(target) \(app)\n")
+        precondition(wait(for: "bridge \(target)\n") == [["page", app]])
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
         precondition(window.makeFirstResponder(editor))
         func mouse(_ type: NSEvent.EventType) -> NSEvent {
@@ -109,9 +160,9 @@ struct CheckFocus {
         NSApp.sendEvent(down)
         web.mouseDown(with: down)
         web.mouseUp(with: mouse(.leftMouseUp))
-        let received = wait(for: "follow")
-        precondition(received == "select \(target)\nfollow \(target) file:///tmp/r%C3%A9sum%C3%A9%20notes.ts#L4\n",
-                     "Unexpected records: \(received)")
+        precondition(file.utf8.count > Int(PIPE_BUF))
+        precondition(wait(for: "select \(target)\nbridge \(target)\n") == [["follow", file]],
+                     "The link did not reach Emacs")
         precondition(window.firstResponder === editor, "Following a link left the keyboard in the view")
         precondition(web.url?.scheme == "data" && !web.isLoading, "Following a local link left the page")
         try Views.close(target)
@@ -122,6 +173,8 @@ struct CheckFocus {
     /// app host for opens in the browser while the app stays.
     @MainActor
     static func checkHosted(window: NSWindow) throws {
+        let (_, disconnect) = connectRecords()
+        defer { disconnect() }
         var opened: [URL] = []
         WebSession.openInBrowser = { opened.append($0) }
         let target = try Views.open(kind: "web", options: ViewOptions(values: [
@@ -169,6 +222,7 @@ struct CheckFocus {
               onload="webkit.messageHandlers.portal.postMessage({type:'second'})"></iframe>
             <script>
             window.portalBridge = {receive: async (m) => webkit.messageHandlers.portal.postMessage({type: 'echo-' + m.type})};
+            webkit.messageHandlers.portal.postMessage({type: 'follow', url: 'file:///etc/passwd'});
             webkit.messageHandlers.portal.postMessage({type: 'first'});
             </script>
             """
@@ -184,7 +238,7 @@ struct CheckFocus {
         // Let the frame load and post too.
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
         precondition(records().isEmpty, "A second record went out before Emacs received the first")
-        precondition(types(web) == ["first", "second"], "The bridge lost, reordered or accepted a frame's message")
+        precondition(types(web) == ["page", "first", "second"], "The bridge lost, reordered or accepted a frame's or reserved message")
         precondition(types(web).isEmpty, "Receiving did not drain the bridge")
         try web.send(#"{"type":"ping"}"#)
         received = ""

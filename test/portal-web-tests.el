@@ -409,15 +409,22 @@ The folder holds README.md, \"docs é/arch notes.md\", a source file with
   (expand-file-name name portal-web-test--directory))
 
 (defun portal-web-test--record (type target &optional file fragment)
-  "Send native record TYPE for TARGET, with a URL for FILE when non-nil.
-A Markdown FILE gets its preview URL, and any other a file: URL."
+  "Send what TARGET's view does for TYPE, with a URL for FILE when non-nil.
+\"page\", \"follow\" and \"edit\" are bridge messages, and others records.  A
+Markdown FILE gets its preview URL, and any other a file: URL."
   (let ((url (cond ((null file) nil)
                    ((string-suffix-p ".md" file)
                     (concat portal-web-test--host "/markdown?path=" (url-hexify-string file)))
                    (t (concat "file://" (url-hexify-string file (cons ?/ url-unreserved-chars)))))))
     (with-current-buffer "*scratch*"
-      (portal-fake-native-send
-       (concat type " " target (and url (concat " " url (and fragment (concat "#" fragment)))) "\n")))))
+      (if (member type '("page" "follow" "edit"))
+          (progn
+            (portal-fake-native-post
+             target (json-serialize
+                     (if url (list :type type :url (concat url (and fragment (concat "#" fragment))))
+                       (list :type type))))
+            (portal-fake-native-send (format "bridge %s\n" target)))
+        (portal-fake-native-send (concat type " " target "\n"))))))
 
 (defun portal-web-test--run-events ()
   "Run the commands that native records queued, as the command loop would."
@@ -463,10 +470,10 @@ A Markdown FILE gets its preview URL, and any other a file: URL."
         (switch-to-buffer "*scratch*")
         (should (eq (portal-web-test--preview readme) preview)))
       ;; Other pages, and pages of other hosted apps, change nothing.
-      (portal-web-test--record "page" target nil)
       (with-current-buffer "*scratch*"
-        (portal-fake-native-send (format "page %s about:blank\n" target)
-                                 (format "page %s %s/hello\n" target portal-web-test--host)))
+        (portal-fake-native-post target "{\"type\":\"page\",\"url\":\"about:blank\"}"
+                                 (format "{\"type\":\"page\",\"url\":\"%s/hello\"}" portal-web-test--host))
+        (portal-fake-native-send (format "bridge %s\n" target)))
       (should (equal (buffer-name preview) "*portal: README.md*"))
       (portal-hello)
       (portal-web-test--record "page" (portal-view-target) arch)
@@ -513,7 +520,18 @@ A Markdown FILE gets its preview URL, and any other a file: URL."
         (portal-web-test--run-events)
         (should (buffer-modified-p))
         (should (= (line-number-at-pos) 10))
-        (set-buffer-modified-p nil))
+        (set-buffer-modified-p nil)
+        ;; A path far longer than a notification record still arrives.
+        (let ((deep (portal-web-test--file
+                     (concat (mapconcat #'identity (make-list 20 "très long dossier") "/")
+                             "/fichier é.ts"))))
+          (make-directory (file-name-directory deep) t)
+          (with-temp-file deep (insert "one\ntwo\nthree\n"))
+          (should (> (length (url-hexify-string deep)) 600))
+          (portal-web-test--record "follow" target deep "L3")
+          (portal-web-test--run-events)
+          (should (equal buffer-file-name deep))
+          (should (= (line-number-at-pos) 3))))
       (should (= (count-windows) 2))
       (should (eq (window-buffer origin) preview))
       (should (= (length (portal-fake-native-calls 'portal--web-load)) 2)))))

@@ -18,7 +18,7 @@ the view itself. Emacs keeps everything that is Emacs behavior.
 - Clicking a toolbar button never sends a message to Elisp. Buttons call Swift,
   which calls WebKit, Ghostty, or the page. The one exception is a Markdown
   preview's **Open in Emacs**, which gives Emacs the keyboard and sends an
-  `edit` record, as a link to a source file does.
+  `edit` message over the preview's bridge, as a link to a source file does.
 - Swift is the only place view state lives. Elisp commands that do the same thing,
   such as zoom or TOC, call the same native functions and read the value back.
 - A single option, `portal-toolbar`, shows or hides the strip.
@@ -132,7 +132,7 @@ Zoom and text size show their current value between the − and + buttons.
 
 | View | Controls | Native mechanism |
 | --- | --- | --- |
-| Markdown / HTML preview | Back, forward (left); find, TOC, zoom − / value / +, reload (right). Markdown adds Open in Emacs beside the TOC | As for web pages, plus page JavaScript for the TOC; Open in Emacs sends an `edit` record |
+| Markdown / HTML preview | Back, forward (left); find, TOC, zoom − / value / +, reload (right). Markdown adds Open in Emacs beside the TOC | As for web pages, plus page JavaScript for the TOC; Open in Emacs sends an `edit` bridge message |
 | Web page (`portal-open-url`) | Back, forward (left); find, zoom, reload (right) | `goBack()` / `goForward()` with `canGoBack` / `canGoForward` observed |
 | Terminal | Text size − / value / + | `performBindingAction("increase_font_size:1")`, `decrease_font_size:1`, `reset_font_size` |
 | Excalidraw | None; the dot only | The editor has its own tools. Its in-page Save button stays as it is |

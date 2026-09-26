@@ -651,11 +651,12 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
 - A hosted app's page never leaves the app host. When it would navigate
   anywhere else, the navigation is cancelled and the URL opens in the default
   browser. Clicking a link to a local `file:` URL gives Emacs the keyboard and
-  sends a `follow TARGET URL` record instead: WebKit never lets an app host
-  page load a local file, so a script in its own content world, out of the
-  page's reach, catches such clicks. Each page a hosted app commits, including
-  after Back and Forward, sends a `page TARGET URL` record. Records carry URLs
-  percent-encoded, so they have no spaces.
+  sends a `follow` message with the URL over the [bridge](docs/editor-bridge.md)
+  instead: WebKit never lets an app host page load a local file, so a script
+  in its own content world, out of the page's reach, catches such clicks. Each
+  page a hosted app commits, including after Back and Forward, sends a `page`
+  message. URLs go over the bridge because a long path would not fit in a
+  notification record.
 - The shared Portal prefix and Command-Escape work while a page has focus.
   Clicking a view to enter it sends a `select TARGET` record, and Emacs selects
   the pane showing it.
@@ -666,7 +667,8 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
 Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
 for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
 find, zoom and reload), `"contents"` (those and a table of contents),
-`"markdown"` (those, a table of contents and Open in Emacs) or `"none"`.
+`"markdown"` (those, a table of contents and, for a hosted app, Open in Emacs)
+or `"none"`.
 Loading the page a view shows again, ignoring its fragment, reloads it without
 a new history entry.
 `(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
@@ -753,10 +755,11 @@ Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
 killing the buffer, the toolbar each command chooses, and Hello and the Markdown
 preview opening at once and loading once a simulated app host is ready. Markdown
-tests feed the fake native adapter `page`, `follow`, `edit` and `select` records.
-They check document identity, handoff placement with and without
+tests feed the fake native adapter `page`, `follow` and `edit` bridge messages
+and `select` records. They check document identity, handoff placement with and without
 `display-buffer-alist` rules, line fragments, images and folders, failed
-handoffs, Open in Emacs, and return tracking across buffers, previews and frames. One test
+handoffs, paths longer than a record, Open in Emacs, and return tracking across
+buffers, previews and frames. One test
 opens a Markdown preview with the real app host, which `ctest` passes through
 `PORTAL_TEST_HOST`. It checks that the preview loads once the host is ready,
 stays as it is while the host stops and restarts, and that `g` reloads it.
@@ -820,8 +823,11 @@ The checks open web views through the same `Views` registry as Emacs. They also
 check that a hosted web view keeps no data between sessions, that a page
 outside the app host goes to the default browser while the app stays, that
 only a hosted app's main frame can use the bridge, and that a hosted app
-reports each committed page. A click on it sends `select`, and a click on a
-local link sends `follow` and returns the keyboard to Emacs.
+reports each committed page over it. A click on it sends `select`, and a click
+on a local link, even one longer than a record, returns the keyboard to Emacs
+and sends `follow` over the bridge. A full notification pipe delays records without losing or
+reordering them, and records still waiting when Emacs replaces the pipe go to
+the new one.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
 without Ghostty.
 

@@ -114,7 +114,8 @@ struct CheckToolbar {
         print("Toolbar layout, focus, zoom limits, TOC, find, back, forward, theme and retained state passed")
     }
 
-    /// A Markdown preview's Open in Emacs hands the keyboard and the command to Emacs.
+    /// A hosted Markdown preview's Open in Emacs gives Emacs the keyboard and
+    /// asks it, over the bridge, to open the file.
     @MainActor
     static func checkMarkdown(window: NSWindow, editor: NSView) throws {
         var fds: [Int32] = [0, 0]
@@ -122,18 +123,41 @@ struct CheckToolbar {
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
         Views.channel.connect(fds[1])
         defer { Views.channel.connect(-1); close(fds[0]) }
-        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("markdown")]))
-        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        let container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
-        let edit = container.toolbar!.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == "Open in Emacs" }!
-        precondition(!edit.isHidden && container.model.kind == .preview)
+        func container(_ target: String) -> NativeContainer {
+            window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
+        }
+        func edit(hosted: Bool) throws -> (String, NSButton) {
+            let target = try Views.open(kind: "web", options: ViewOptions(values: [
+                "toolbar": .string("markdown"), "hosted": .flag(hosted)]))
+            try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+            let container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
+            precondition(container.model.kind == .preview)
+            return (target, container.toolbar!.subviews.compactMap { $0 as? NSButton }
+                .first { $0.toolTip == "Open in Emacs" }!)
+        }
+        // Without a bridge there is no way to ask Emacs, so no button.
+        let (plain, hidden) = try edit(hosted: false)
+        precondition(hidden.isHidden, "A preview without a bridge offers Open in Emacs")
+        try Views.close(plain)
+        let (target, button) = try edit(hosted: true)
+        precondition(!button.isHidden)
         let focused = try NativeInput.perform(target, action: "focus")
         precondition(focused && window.firstResponder !== editor)
-        edit.performClick(nil)
+        // Clicking while Emacs reads a prefix ends that read first, so Emacs
+        // runs the edit instead of taking it for the prefix's next key.
+        NSApp.sendEvent(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
+                                         windowNumber: window.windowNumber, context: nil, characters: "\u{2}",
+                                         charactersIgnoringModifiers: "b", isARepeat: false, keyCode: 11)!)
+        precondition(container(target).model.input?.ownership == .pending, "The prefix is not pending")
+        button.performClick(nil)
         var buffer = [UInt8](repeating: 0, count: 512)
         let count = read(fds[0], &buffer, buffer.count)
-        precondition(count > 0 && String(decoding: buffer[..<count], as: UTF8.self) == "edit \(target)\n",
-                     "Open in Emacs did not notify Emacs")
+        let records = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        let kinds = records.split(separator: "\n").map { $0.split(separator: " ").prefix(2).joined(separator: " ") }
+        precondition(kinds == ["prefix \(target)", "escape \(target)", "bridge \(target)"],
+                     "Open in Emacs did not end the prefix and notify Emacs: \(records)")
+        let messages = try Views.view(target, as: WebSession.self).receive()
+        precondition(messages == #"[{"type":"edit"}]"#, "Open in Emacs did not ask Emacs to edit")
         precondition(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")
         try Views.close(target)
         print("Markdown previews open their file in Emacs from the toolbar")

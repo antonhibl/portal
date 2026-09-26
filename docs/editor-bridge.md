@@ -22,8 +22,9 @@ A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
 - **Notification.** The first waiting message sends one `bridge TARGET` record
   on the shared notification pipe that `portal-view.el` owns
   ([terminal input bridge](terminal-input-bridge.md#the-notification-pipe)).
-  No other record goes out until Emacs has received the messages. If the pipe
-  is full, the bridge retries the record, and keeps the messages.
+  No other record goes out until Emacs has received the messages. The pipe
+  delivers the record in order with every other record, waiting while the
+  pipe is full.
 - **Receiving.** `portal-web.el` handles `bridge` records. It calls
   `portal--web-receive TARGET`, which returns every waiting message as a JSON
   array and lets the next message send a new record. It then calls the
@@ -35,7 +36,14 @@ A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
   If that call fails, the bridge queues an `error` message for Emacs.
 
 A hosted page also reports to its bridge when a load fails or its web process
-stops, as `error` messages. No asynchronous AppKit or WebKit callback
+stops, as `error` messages. It sends `page` with the URL of each page it
+commits, including after Back and Forward, and `follow` with the URL of each
+local `file:` link the user clicks, after giving Emacs the keyboard. A
+Markdown preview's **Open in Emacs** sends `edit` the same way.
+`portal-web.el` handles these for every hosted app, tracking the page on
+screen and visiting linked files, and never passes them to the buffer's
+bridge function; an app cannot post them itself. URLs travel this way, not in
+records, because a long path would not fit in one. No asynchronous AppKit or WebKit callback
 keeps an `emacs_env` or calls Lisp.
 
 Hosted pages keep no cookies or storage between sessions, and never leave the

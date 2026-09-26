@@ -17,8 +17,8 @@ final class ToolbarModel {
     var canGoBack = false
     var canGoForward = false
     var hasHeadings = false
-    /// Whether the toolbar offers Open in Emacs, as a Markdown preview's does.
-    var canEdit = false
+    /// Open in Emacs, which a hosted Markdown preview's toolbar offers.
+    var edit: (() -> Void)?
     var tocOpen = false
     var finding = false
     var query = ""
@@ -258,7 +258,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
     private func activate(_ id: String) {
         switch id {
         case "owner": model.input?.toggleOwnership()
-        case "edit": model.input?.handOff("edit")
+        case "edit": model.edit?()
         case "previous": model.find(backwards: true)
         case "next": model.find()
         default: try? model.perform(id)
@@ -348,7 +348,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             if model.kind != .terminal {
                 separator()
                 if model.kind == .preview { trailing("toc") }
-                if model.canEdit { trailing("edit") }
+                if model.edit != nil { trailing("edit") }
                 trailing("find")
                 if right >= 93 { separators.append(33); place("back", 39); place("forward", 65) }
             }
