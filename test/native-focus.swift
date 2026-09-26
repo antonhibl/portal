@@ -49,33 +49,6 @@ struct CheckFocus {
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)
         checkChannel()
-        try checkReconnect(window: window)
-    }
-
-    /// Replacing the pipe ends a prefix whose record it dropped, so the view
-    /// does not keep the keyboard waiting for an answer that cannot come.
-    @MainActor
-    static func checkReconnect(window: NSWindow) throws {
-        var fds: [Int32] = [0, 0]
-        precondition(pipe(&fds) == 0)
-        Views.connect(fds[1])
-        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
-        while write(fds[1], filler, filler.count) > 0 {}
-        while write(fds[1], filler, 1) > 0 {}
-        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
-        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        let input = Views.input(target)!
-        let prefix = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
-                                      windowNumber: window.windowNumber, context: nil, characters: "\u{2}",
-                                      charactersIgnoringModifiers: "b", isARepeat: false, keyCode: 11)!
-        precondition(input.handleKeyEvent(prefix) && input.ownership == .pending, "The prefix was not captured")
-        close(fds[0])
-        precondition(pipe(&fds) == 0)
-        Views.connect(fds[1])
-        defer { Views.connect(-1); close(fds[0]) }
-        precondition(input.ownership != .pending, "Reconnecting left a dropped prefix pending")
-        try Views.close(target)
-        print("Replacing the pipe ends a prefix whose record it dropped")
     }
 
     /// A full pipe delays records, without losing or reordering them.
@@ -104,7 +77,21 @@ struct CheckFocus {
         }
         let records = String(decoding: received.dropFirst(filled), as: UTF8.self)
         precondition(records == expected, "Records were lost or reordered: \(records)")
-        print("A full pipe delays records in order, and loses none")
+
+        // Records waiting when Emacs replaces its pipe go to the new one, in order.
+        while write(fds[1], filler, filler.count) > 0 {}
+        while write(fds[1], filler, 1) > 0 {}
+        precondition(Views.channel.notify("escape", target: "web:1", fields: ["3", "0"])
+                     && Views.channel.notify("bridge", target: "web:1"), "A full pipe refused records")
+        close(fds[0])
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let count = read(fds[0], &buffer, buffer.count)
+        let moved = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        precondition(moved == "escape web:1 3 0\nbridge web:1\n", "Replacing the pipe lost records: \(moved)")
+        print("A full pipe delays records in order, and loses none, even when Emacs replaces it")
     }
 
     /// A pipe standing in for Emacs's end of `Views.channel`.
@@ -186,6 +173,8 @@ struct CheckFocus {
     /// app host for opens in the browser while the app stays.
     @MainActor
     static func checkHosted(window: NSWindow) throws {
+        let (_, disconnect) = connectRecords()
+        defer { disconnect() }
         var opened: [URL] = []
         WebSession.openInBrowser = { opened.append($0) }
         let target = try Views.open(kind: "web", options: ViewOptions(values: [
@@ -256,21 +245,6 @@ struct CheckFocus {
         wait { received += records(); return received.contains("\n") }
         precondition(received == "bridge \(hosted)\n", "Receiving did not re-arm the bridge record")
         precondition(types(web) == ["echo-ping"], "The app did not receive Emacs's message")
-        // A record still waiting when Emacs replaces its pipe is dropped, so the
-        // bridge announces its messages again on the new one.
-        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
-        while write(fds[1], filler, filler.count) > 0 {}
-        while write(fds[1], filler, 1) > 0 {}
-        try web.send(#"{"type":"pong"}"#)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
-        close(fds[0])
-        precondition(pipe(&fds) == 0)
-        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
-        Views.connect(fds[1])
-        received = ""
-        wait { received += records(); return received.contains("\n") }
-        precondition(received == "bridge \(hosted)\n", "Reconnecting the channel stalled the bridge")
-        precondition(types(web) == ["echo-pong"], "The bridge lost a message across reconnecting")
         try Views.close(hosted)
 
         let plain = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))

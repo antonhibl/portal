@@ -214,12 +214,6 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
         notified = Views.channel.notify("bridge", target: target)
     }
 
-    /// Announce the waiting messages again, when the channel dropped the record.
-    func reannounce() {
-        notified = false
-        signal()
-    }
-
     /// Return every queued message as a JSON array, and allow the next record.
     func receive() throws -> String {
         let data = try JSONSerialization.data(withJSONObject: messages)
@@ -333,8 +327,6 @@ final class WebSession: PortalView {
     func send(_ json: String) throws { try hostedBridge().send(json) }
 
     func receive() throws -> String { try hostedBridge().receive() }
-
-    func reannounce() { bridge?.reannounce() }
 
     private func hostedBridge() throws -> WebBridge {
         guard let bridge else { throw NativeError.message("Web view \(target) is not a hosted app, so it has no bridge") }

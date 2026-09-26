@@ -4,8 +4,7 @@ import Darwin
 /// A nonblocking notification pipe into Emacs's command loop. Feature payloads
 /// stay in their sessions; only short, newline-framed notifications use the pipe.
 /// No asynchronous native callback may retain or call an emacs_env.
-/// `Views.channel` is the one pipe, and carries every view's records; connect
-/// it through `Views.connect`.
+/// `Views.channel` is the one pipe, and carries every view's records.
 @MainActor
 final class NativeEventChannel {
     private var descriptor: Int32 = -1
@@ -13,16 +12,18 @@ final class NativeEventChannel {
     private var waiting: [String] = []
     private var retry: Task<Void, Never>?
 
-    /// Records still waiting for the old pipe are dropped.
+    /// Records still waiting for the old pipe go to the new one, in order.
+    /// Native state that waits on a record, such as a pending prefix or a
+    /// bridge's announcement, thus stays true across Emacs replacing its pipe.
     func connect(_ fd: Int32) {
         if descriptor >= 0 { Darwin.close(descriptor) }
         descriptor = fd
-        waiting.removeAll()
         retry?.cancel()
         retry = nil
         if fd >= 0 {
             _ = fcntl(fd, F_SETFL, O_NONBLOCK)
             _ = fcntl(fd, F_SETNOSIGPIPE, 1)
+            flush()
         }
     }
 
@@ -30,8 +31,8 @@ final class NativeEventChannel {
     /// Emacs in the order they are sent: while the pipe is full, a record waits
     /// with those after it and is retried, so none is lost. Records fit in
     /// PIPE_BUF, so each write is atomic: failure never leaves a partial record.
-    /// Returns false only for a record that can never be sent: malformed, too
-    /// long, or with no pipe connected.
+    /// Returns false only for a record that can never be sent: malformed or too
+    /// long. With no pipe connected, records wait for one.
     @discardableResult
     func notify(_ type: String, target: String, fields: [String] = []) -> Bool {
         let words = [type, target] + fields
@@ -39,7 +40,7 @@ final class NativeEventChannel {
             return false
         }
         let line = words.joined(separator: " ") + "\n"
-        guard descriptor >= 0, line.utf8.count <= Int(PIPE_BUF) else { return false }
+        guard line.utf8.count <= Int(PIPE_BUF) else { return false }
         waiting.append(line)
         flush()
         return true
@@ -64,8 +65,7 @@ final class NativeEventChannel {
                 }
                 return
             } else {
-                // Emacs closed its end; nothing will read these records.
-                waiting.removeAll()
+                // No pipe, or Emacs closed its end: wait for Emacs to connect one.
                 return
             }
         }
