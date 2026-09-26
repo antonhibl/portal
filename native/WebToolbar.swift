@@ -15,9 +15,9 @@ final class WebToolbar: NSObject, WKScriptMessageHandler {
     private var searchQueue: [(String, Bool)] = []
     private var searching = false
 
-    init(web: WKWebView, preview: Bool) {
+    init(web: WKWebView, kind: ToolbarModel.Kind) {
         self.web = web
-        model = ToolbarModel(preview ? .preview : .web)
+        model = ToolbarModel(kind)
         super.init()
         model.action = { [weak self] in try self?.perform($0) }
         model.search = { [weak self] in self?.find($0, backwards: $1) }

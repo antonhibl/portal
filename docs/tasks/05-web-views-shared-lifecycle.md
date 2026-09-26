@@ -1,6 +1,6 @@
 # 05: Web views run on the shared Portal view lifecycle
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -31,15 +31,15 @@ One Swift web kind replaces the per-pane `WebViews`, and web content opens in we
 
 ## Acceptance criteria
 
-- [ ] Running `portal-open-url` twice gives two buffers, each with its own web view
-- [ ] After a split, the view appears only in the selected pane
-- [ ] `portal-preview-html` on the same file reuses its buffer, and `g` reloads it
-- [ ] URL views have the navigation toolbar with zoom and find; the HTML preview has the table-of-contents toolbar
-- [ ] `q` hides the view and keeps it alive; killing the buffer releases it
-- [ ] The old web exports, `GreenView`, `portal-show` and `portal-hide` are deleted
-- [ ] `portal.el` contains no view code
-- [ ] Hello and the Markdown preview still work
-- [ ] The README's web sections are updated
+- [x] Running `portal-open-url` twice gives two buffers, each with its own web view
+- [x] After a split, the view appears only in the selected pane
+- [x] `portal-preview-html` on the same file reuses its buffer, and `g` reloads it
+- [x] URL views have the navigation toolbar with zoom and find; the HTML preview has the table-of-contents toolbar
+- [x] `q` hides the view and keeps it alive; killing the buffer releases it
+- [x] The old web exports, `GreenView`, `portal-show` and `portal-hide` are deleted
+- [x] `portal.el` contains no view code
+- [x] Hello and the Markdown preview still work
+- [x] The README's web sections are updated
 
 ## Blocked by
 

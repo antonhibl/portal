@@ -56,7 +56,8 @@ protocol PortalView: AnyObject {
 /// across kinds and never reused, so a stale target can never reach a new view.
 @MainActor
 enum Views {
-    private static let kinds: [String: any PortalView.Type] = ["terminal": TerminalSession.self]
+    private static let kinds: [String: any PortalView.Type] = [
+        "terminal": TerminalSession.self, "web": WebSession.self]
     private static var views: [String: any PortalView] = [:]
     private static var nextID = 0
     /// The pipe carrying every view's records to Emacs; see `portal--channel`.

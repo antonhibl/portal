@@ -22,7 +22,7 @@
 
 (ert-deftest portal-input-gateway-respects-command-remapping-and-resumes ()
   (with-temp-buffer
-    (portal-mode)
+    (portal-web-mode)
     (use-local-map (make-sparse-keymap))
     (define-key (current-local-map) [remap save-buffer] #'portal-input-test--save)
     (let ((portal-input-test--called nil) resumed
@@ -36,7 +36,7 @@
 (ert-deftest portal-input-escape-error-and-stale-handoff-do-not-resume ()
   (dolist (kind '(escape error stale))
     (with-temp-buffer
-      (portal-mode)
+      (portal-web-mode)
       (let (resumed
             (unread-command-events (when (eq kind 'escape) (list ?d))))
         (setq-local portal-input--focus-function (lambda () (setq resumed t)))
@@ -61,7 +61,7 @@
 (ert-deftest portal-input-wrapper-controls-work-with-evil ()
   (skip-unless (locate-library "evil"))
   (require 'evil)
-  (dolist (mode '(portal-mode portal-terminal-mode portal-excalidraw-mode))
+  (dolist (mode '(portal-web-mode portal-terminal-mode portal-excalidraw-mode))
     (with-temp-buffer
       (cl-letf (((symbol-function 'portal-excalidraw--start) #'ignore))
         (funcall mode))
@@ -80,7 +80,7 @@
 (ert-deftest portal-input-cancel-and-unknown-prefix-never-reach-guest ()
   (dolist (key '(?\C-g ?~))
     (with-temp-buffer
-      (portal-mode)
+      (portal-web-mode)
       (let ((unread-command-events (list key)) actions resumed)
         (setq-local portal-input--focus-function (lambda () (setq resumed t)))
         (cl-letf (((symbol-function 'portal--input)
