@@ -8,6 +8,34 @@ pages in a hosted app. A task can be a single file or a folder containing its
 document and attachments. Both forms have the same metadata and UI behavior.
 Emacs remains the editor: v1 reads files and never writes task content or status.
 
+## Entry point and launch flow
+
+The user-facing entry point is a new interactive Elisp function, `portal-tasks`,
+in `portal-tasks.el`, loaded by `portal.el`. After loading Portal, users can run
+`M-x portal-tasks` or call `(portal-tasks)` from Lisp. It follows the same hosted-app
+launch pattern as [`portal-excalidraw`](../portal-excalidraw.el): an Emacs command
+opens an embedded Portal web view served by the bundled Bun app host.
+
+```text
+M-x portal-tasks / (portal-tasks)
+  resolve the current Emacs project and its configured task root
+  open or reuse that root's task buffer and Portal web view
+  start the shared app host if needed; load /tasks when it is ready
+  app host reads the task root and serves the list
+  click a task to read its detail in the same web view
+```
+
+On first opening a root, use `portal-web-open-hosted` with the task-list route
+and the `navigation` toolbar. Its existing startup lifecycle opens the view
+immediately, starts the shared app host when needed, and loads the page once the
+host announces readiness. Users need only invoke the Elisp command. Reopening
+an existing task buffer retains its current page as specified below.
+
+Elisp determines which project the user is working in and passes its resolved
+task-root path to the app host. Bun performs discovery and rendering within that
+root using the file and folder conventions below. With the default configuration,
+invoking the command in a project reads that project's `tasks/` directory.
+
 ## Storage and discovery
 
 ```text
@@ -214,6 +242,11 @@ required. Bun 1.3.14 was checked to provide `Bun.YAML.parse`.
 
 ## Acceptance criteria
 
+- [ ] Loading `portal.el` makes `portal-tasks` available both through M-x and as
+  a callable Elisp function.
+- [ ] Invoking it in a project with the app host stopped opens a Portal web view,
+  starts the shared app host automatically, and loads that project's task list
+  when the host is ready, using the configured task root and navigation toolbar.
 - [ ] A mixed root discovers valid standalone and folder tasks, ignores ordinary
   documents without status, and never recursively discovers supporting Markdown.
 - [ ] Both statuses and all three title sources work; invalid front matter,
