@@ -41,12 +41,13 @@ and killing the buffer closes it."
 URL is an absolute http, https, file, data or about URL.  TOOLBAR is
 \"navigation\" for back, forward, find, zoom and reload, \"contents\" for a
 table of contents in place of back and forward, or \"none\".
-This turns on `portal-input-mode', keeping the buffer's major mode."
+Once the view is open, this turns on `portal-input-mode', keeping the
+buffer's major mode."
   (portal-web--check-url url)
   (portal-input--connect)
-  (portal-input-mode 1)
   (setq portal-web--target (portal-view-open 'web (list :toolbar toolbar))
         portal-web--url url)
+  (portal-input-mode 1)
   (portal--web-load portal-web--target url)
   portal-web--target)
 
@@ -81,7 +82,8 @@ A hosted app loads from the app host, which starts first if needed."
   "Select web BUFFER and reload it, or, when BUFFER is nil, open a new one.
 The new buffer is called *portal: NAME*, and its view has TOOLBAR and loads
 URL.  HOSTED-PATH makes it a hosted app, which loads from the app host once
-the host is ready.  If the view cannot open, the new buffer is killed."
+the host is ready.  If the view cannot open, the new buffer is killed; if the
+app host cannot start, the buffer stays, showing that the host stopped."
   (if buffer
       (progn (switch-to-buffer buffer) (portal-web-reload))
     (let ((buffer (generate-new-buffer (format "*portal: %s*" name)))
@@ -99,11 +101,11 @@ the host is ready.  If the view cannot open, the new buffer is killed."
             (portal-web-open url toolbar)
             (when hosted-path
               (setq portal-web--url nil
-                    portal-web--hosted-path hosted-path)
-              (portal-web--ensure-host))
+                    portal-web--hosted-path hosted-path))
             (setq ready t)
             (message "Web view opened. RET enters; Command-Escape returns to Emacs; q hides the view."))
-        (unless ready (kill-buffer buffer))))))
+        (unless ready (kill-buffer buffer)))
+      (when hosted-path (portal-web--ensure-host)))))
 
 ;;;###autoload
 (defun portal-open-url (url)

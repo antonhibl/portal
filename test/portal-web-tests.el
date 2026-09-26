@@ -181,7 +181,13 @@
       (should (equal (plist-get (portal-web-test--state) :url) "about:blank"))
       (should (equal (portal-view-buffers 'web) (list (current-buffer)))))
     (switch-to-buffer (generate-new-buffer "plain"))
-    (should-error (portal-web-reload) :type 'user-error)))
+    (should-error (portal-web-reload) :type 'user-error)
+    ;; A view that fails to open leaves the buffer as it was.
+    (dolist (failure '(portal--open portal--place))
+      (let ((portal-fake-native-failures (list failure)))
+        (should-error (portal-web-open "about:blank" "navigation")))
+      (should-not portal-input-mode)
+      (should-not (memq (current-buffer) (portal-view-buffers))))))
 
 (ert-deftest portal-web-hosted-apps-load-once-the-app-host-is-ready ()
   (portal-web-test--environment
@@ -234,6 +240,24 @@
                                (replace-regexp-in-string "1/token" "2/other" markdown-url)))
                 (should (= (length (portal-fake-native-targets)) 2)))))
         (delete-file file)))))
+
+(ert-deftest portal-web-hosted-app-stays-when-the-app-host-cannot-start ()
+  (portal-web-test--environment
+    (let ((host nil))
+      (cl-letf (((symbol-function 'portal-start-server)
+                 (lambda () (unless host (user-error "Build the Portal UI host"))))
+                ((symbol-function 'portal-server-url) (lambda () host)))
+        (should-error (portal-hello) :type 'user-error)
+        (let ((target (portal-view-target)))
+          (should (equal (buffer-name) "*portal: hello*"))
+          (should (string-prefix-p "data:text/html"
+                                   (plist-get (portal-web-test--state target) :url)))
+          ;; Once the host can start, g loads the app in the same view.
+          (setq host "http://127.0.0.1:1/token")
+          (call-interactively (key-binding "g"))
+          (should (equal (plist-get (portal-web-test--state target) :url)
+                         "http://127.0.0.1:1/token/hello"))
+          (should (= (length (portal-fake-native-calls 'portal--open)) 1)))))))
 
 (ert-deftest portal-web-toolbar-commands-use-the-selected-pane-view ()
   (portal-web-test--environment
