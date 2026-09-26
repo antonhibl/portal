@@ -133,6 +133,13 @@ function inlineText(markdown: string): string {
 		.trim();
 }
 
+/** Whether ID can name a task and its detail URL. */
+function validId(id: string): boolean {
+	return (
+		!!id && id !== "." && id !== ".." && !id.includes("/") && !id.includes("\0")
+	);
+}
+
 /** What the saved TEXT of candidate ID at SOURCE is. */
 export function classify(id: string, source: string, text: string): Reading {
 	const problem = (message: string): Reading => ({
@@ -161,7 +168,11 @@ export function classify(id: string, source: string, text: string): Reading {
 		}
 		title = data.title.trim();
 	}
-	if (!id) return problem("The task ID, its file or folder name, is empty.");
+	if (!validId(id)) {
+		return problem(
+			`The task ID ${JSON.stringify(id)}, its file or folder name, is empty or reserved.`,
+		);
+	}
 	const heading = title === null ? firstHeading(body) : null;
 	return {
 		kind: "task",
@@ -459,13 +470,7 @@ async function resolve(
 	id: string,
 	all: boolean,
 ): Promise<Task | Response> {
-	if (
-		!id ||
-		id === "." ||
-		id === ".." ||
-		id.includes("/") ||
-		id.includes("\0")
-	) {
+	if (!validId(id)) {
 		return detailFailure(root, all, "<p>This is not a valid task ID.</p>", 400);
 	}
 	const found = await discover(root, id);
