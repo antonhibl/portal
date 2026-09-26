@@ -30,9 +30,24 @@ bounded Claude/Codex compatibility spike. Support unintegrated terminals as
 explicitly unknown or inferred, rather than inventing idle from silence.
 Provider APIs remain optional stronger status/metadata sources.
 
-This replaces the earlier API-first proposal. No runtime feature, agent
-configuration, extension, naming command, or model call is implemented by this
-research change. The spec stays in the user's requested `docs/tasks/` location.
+No runtime feature, agent configuration, extension, naming command, or model
+call is implemented by this research change.
+
+## Implementation readiness
+
+The collector, polling facade, table, and opt-in Pi integration are specified
+well enough to begin implementation. Defaults below resolve extension setup,
+freshness on registration, and cross-language timestamp handling; no launcher
+or new daemon is required for those slices.
+
+Full three-harness support still has an explicit validation gate: capture
+Claude/Codex lifecycle transitions in an ordinary Portal terminal before
+enabling their mappings. The synthetic engine probe does not establish that
+compatibility. If a mapping fails, report unknown or labelled inference and
+record the unsupported case; do not declare that harness fully supported.
+The optional provider-API approach additionally needs exact session binding
+and, for Codex, a verified owning-server observer connection. These gaps do
+not block the generic dashboard or Pi slice.
 
 ## What the terminal can tell us
 
@@ -304,8 +319,11 @@ They are not guaranteed for arbitrary applications emitting those sequences.
 
 For Pi, a small opt-in extension can implement this without a model call:
 
-1. Activate only in the root TUI (`ctx.mode === "tui"`) with a Portal launch
-   marker. On `session_start`, publish a baseline from `ctx.isIdle()`.
+1. Activate only in an interactive TUI (`ctx.mode === "tui"`) with
+   `INSIDE_EMACS=portal-ghostty`, which `HostedTerminal` already supplies to its
+   shell. On `session_start`, publish a baseline from `ctx.isIdle()`. The marker
+   identifies the terminal environment, not the foreground process; nested
+   interactive agents sharing that PTY are outside this single-writer contract.
 2. Publish working at `agent_start`. Publish idle at `agent_settled` only when
    `ctx.isIdle()` confirms it. Do not use `agent_end` as completion.
 3. Every second, recompute and publish the state, including idle. This recovers
@@ -315,12 +333,25 @@ For Pi, a small opt-in extension can implement this without a model call:
    flag. At end, recompute idle instead of blindly restoring working. These
    events cover blocking extension UI, not all possible native dialogs.
 5. Dispose timers on `session_shutdown`; replace safely on reload. Reinitialize
-   on conversation changes. Disable Pi's native progress writer for this
-   integration to avoid its earlier `agent_end` clear racing with the producer.
+   on conversation changes. Require Pi's `terminal.showTerminalProgress` to be
+   false for this integration, avoiding its earlier `agent_end` clear racing
+   with the producer. Make this prerequisite explicit in setup; do not rewrite
+   user settings automatically. If another progress writer remains active,
+   offer observed-progress mode rather than claiming an integrated lifecycle.
 
 [Pi idle query](https://github.com/earendil-works/pi/blob/2b0a123de98318c2ff8069661721ce0c3794c34e/packages/coding-agent/src/core/agent-session.ts#L1231),
 [UI event types](https://github.com/earendil-works/pi/blob/2b0a123de98318c2ff8069661721ce0c3794c34e/packages/coding-agent/src/core/extensions/types.ts#L837),
 [UI event emission](https://github.com/earendil-works/pi/blob/2b0a123de98318c2ff8069661721ce0c3794c34e/packages/coding-agent/src/core/extensions/runner.ts#L527)
+
+Package the future extension as `integrations/pi/portal-agent-status.ts` in
+the Portal checkout. Document loading it for one invocation using
+`pi --extension /absolute/path/to/portal/integrations/pi/portal-agent-status.ts`,
+then selecting the Pi lifecycle source with `portal-agent-track` in that
+terminal. The installed Pi 0.87.0 help confirms `--extension` support. This
+requires no global extension installation or deferred Portal launcher.
+Tracking an already running Pi process does not inject an extension or change
+its environment; until the producer is loaded and a fresh report arrives,
+the integrated source remains unknown with setup guidance.
 
 This is a cooperative, best-effort terminal contract. It assumes one status
 writer and cannot distinguish reset-generated clears or rogue child-tool
@@ -354,12 +385,25 @@ an optional provider API needs one. Enumerate every tracked live terminal,
 including idle and hidden terminals. Registration is necessary because a
 progress bar from curl or a build does not identify a coding agent.
 
-A later Portal launcher can set a terminal marker and register automatically.
+A later Portal launcher can register the terminal automatically; the initial
+Pi setup uses the existing `INSIDE_EMACS` marker and explicit extension loading.
 Auto-detecting every agent launched manually requires foreground-process
 discovery not currently exposed by the pinned wrapper. For v1, stopping the
 CLI inside a still-running shell requires untracking/retracking; heartbeats
 can mark a departed producer stale but cannot prove what replaced it.
 Registration alone must not imply a healthy connected agent.
+
+On tracking, retracking, or changing the selected authority, record the current
+terminal-event sequence as a cutoff and clear derived activity/attention.
+Only later evidence relevant to the selected authority may establish activity
+(a progress event for the Pi producer, a title event for a title mapping).
+An old clear or spinner from a previous occupant cannot initialize it. The Pi
+heartbeat supplies a fresh baseline within one second. Sources without a
+heartbeat remain unknown until new evidence arrives; optional API sources
+require a new successful snapshot. Snapshot notification/bell counters as the
+acknowledgement baseline so old alerts are not replayed. Do not infer producer
+identity merely because a new event appears: source selection and the
+single-writer prerequisite remain explicit.
 
 Remove bindings when the view closes, is replaced, or its buffer is killed.
 Renaming/moving a buffer preserves its identity. A terminal incarnation change
@@ -393,9 +437,10 @@ Proposed public functions, not existing APIs:
 (portal-agents-snapshot)         ; return copies of normalized cached rows
 ```
 
-Native snapshot fields: terminal generation, monotonic event sequence,
-raw progress/percent and receive time, title, cwd, last bounded notification
-title/body/time plus a counter, bell counter/time, and closed state. These are
+Native snapshot fields: terminal generation, monotonic event sequence and
+last-event sequence per signal, raw progress/percent and age, title, cwd,
+last bounded notification title/body/age plus a counter, bell counter/age,
+and closed state. These are
 local counters, not producer identity or a promise of lossless notifications.
 Raw callback collection continues when terminals/dashboard are hidden.
 Sanitize/truncate text for display and avoid unbounded event history.
@@ -403,6 +448,14 @@ Sanitize/truncate text for display and avoid unbounded event history.
 Elisp adds buffer, harness, selected authority, activity, attention, health,
 source/confidence, project root, path source, and observation time. Read-only
 raw telemetry must be inspectable when diagnosing a wrong status.
+
+Compute event ages in Swift using a continuous monotonic clock that includes
+sleep; expose integer milliseconds (for example `:progress-age-ms`, with `-1`
+for no observation). This fits the existing `ViewValue.integer` bridge. Elisp
+must not subtract Swift clock values from wall-clock or Emacs timestamps.
+Lease validity depends on the progress report's age and sequence, not the last
+time Lisp polled or an unrelated title/notification arrived. Heartbeats update
+freshness without forcing a table redraw when the displayed state is unchanged.
 
 Use one normal timer, default 1 second, while the dashboard is visible in any
 frame. Refresh immediately on opening or `g`; stop the UI timer when hidden
@@ -532,6 +585,12 @@ Delivery slices:
 - [ ] Pi full-run idle uses settled plus `isIdle()`; native `agent_end` cannot
   falsely complete an integrated run. Idle extension dialogs do not resume
   working when dismissed. Version-gate newer UI events.
+- [ ] The documented per-invocation extension setup works in an existing Portal
+  shell without a Portal launcher or automatic user-settings edits. Selecting
+  the integrated source without a producer leaves status unknown with guidance.
+- [ ] Registration and authority changes ignore older status/attention events.
+  Fresh reports initialize state; title updates and polling do not renew a
+  progress lease. Native event ages include sleep and use integer milliseconds.
 - [ ] Notification suppression/throttling does not alter activity. A missing
   signal, long silence, terminal reset, or another tool's progress does not
   become proof of successful completion. Expose OSC ambiguity and verify
