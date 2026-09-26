@@ -183,11 +183,15 @@
     (switch-to-buffer (generate-new-buffer "plain"))
     (should-error (portal-web-reload) :type 'user-error)
     ;; A view that fails to open leaves the buffer as it was.
-    (dolist (failure '(portal--open portal--place))
-      (let ((portal-fake-native-failures (list failure)))
-        (should-error (portal-web-open "about:blank" "navigation")))
-      (should-not portal-input-mode)
-      (should-not (memq (current-buffer) (portal-view-buffers))))))
+    (let ((targets (portal-fake-native-targets)))
+      (dolist (failure '(portal--open portal--place portal--web-load))
+        (let ((portal-fake-native-failures (list failure)))
+          (should-error (portal-web-open "about:blank" "navigation")))
+        (should-not portal-input-mode)
+        (should-not (memq (current-buffer) (portal-view-buffers)))
+        (should (equal (portal-fake-native-targets) targets))))
+    ;; The buffer can still open a view afterwards.
+    (should (equal (portal-web-open "about:blank" "navigation") (portal-view-target)))))
 
 (ert-deftest portal-web-hosted-apps-load-once-the-app-host-is-ready ()
   (portal-web-test--environment

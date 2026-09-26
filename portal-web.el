@@ -41,15 +41,21 @@ and killing the buffer closes it."
 URL is an absolute http, https, file, data or about URL.  TOOLBAR is
 \"navigation\" for back, forward, find, zoom and reload, \"contents\" for a
 table of contents in place of back and forward, or \"none\".
-Once the view is open, this turns on `portal-input-mode', keeping the
-buffer's major mode."
+Once URL starts loading, this turns on `portal-input-mode', keeping the
+buffer's major mode.  If the view cannot open or load URL, it is closed."
   (portal-web--check-url url)
   (portal-input--connect)
-  (setq portal-web--target (portal-view-open 'web (list :toolbar toolbar))
-        portal-web--url url)
-  (portal-input-mode 1)
-  (portal--web-load portal-web--target url)
-  portal-web--target)
+  (let ((target (portal-view-open 'web (list :toolbar toolbar)))
+        ready)
+    (unwind-protect
+        (progn
+          (portal--web-load target url)
+          (setq ready t))
+      (unless ready (portal-view-close)))
+    (setq portal-web--target target
+          portal-web--url url)
+    (portal-input-mode 1)
+    target))
 
 (defun portal-web-reload ()
   "Load this buffer's page again.
