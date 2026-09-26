@@ -827,7 +827,8 @@ reports each committed page over it. A click on it sends `select`, and a click
 on a local link, even one longer than a record, returns the keyboard to Emacs
 and sends `follow` over the bridge. A full notification pipe delays records without losing or
 reordering them, and a bridge whose record was waiting when the pipe is
-replaced announces its messages again on the new one.
+replaced announces its messages again on the new one, and a pending prefix
+whose record was dropped ends, releasing the keyboard.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
 without Ghostty.
 

@@ -49,6 +49,33 @@ struct CheckFocus {
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)
         checkChannel()
+        try checkReconnect(window: window)
+    }
+
+    /// Replacing the pipe ends a prefix whose record it dropped, so the view
+    /// does not keep the keyboard waiting for an answer that cannot come.
+    @MainActor
+    static func checkReconnect(window: NSWindow) throws {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        Views.connect(fds[1])
+        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
+        while write(fds[1], filler, filler.count) > 0 {}
+        while write(fds[1], filler, 1) > 0 {}
+        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        let input = Views.input(target)!
+        let prefix = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
+                                      windowNumber: window.windowNumber, context: nil, characters: "\u{2}",
+                                      charactersIgnoringModifiers: "b", isARepeat: false, keyCode: 11)!
+        precondition(input.handleKeyEvent(prefix) && input.ownership == .pending, "The prefix was not captured")
+        close(fds[0])
+        precondition(pipe(&fds) == 0)
+        Views.connect(fds[1])
+        defer { Views.connect(-1); close(fds[0]) }
+        precondition(input.ownership != .pending, "Reconnecting left a dropped prefix pending")
+        try Views.close(target)
+        print("Replacing the pipe ends a prefix whose record it dropped")
     }
 
     /// A full pipe delays records, without losing or reordering them.
