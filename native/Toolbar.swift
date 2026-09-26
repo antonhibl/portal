@@ -17,6 +17,8 @@ final class ToolbarModel {
     var canGoBack = false
     var canGoForward = false
     var hasHeadings = false
+    /// Whether the toolbar offers Open in Emacs, as a Markdown preview's does.
+    var canEdit = false
     var tocOpen = false
     var finding = false
     var query = ""
@@ -238,7 +240,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         let specs: [(String, String, String?)] = [
             ("owner", "Click to enter", nil), ("back", "Back", "chevron.left"),
             ("forward", "Forward", "chevron.right"), ("find", "Find in page", "magnifyingglass"),
-            ("toc", "Table of contents", "list.bullet"), ("decrease", "Zoom out", "minus"),
+            ("toc", "Table of contents", "list.bullet"), ("edit", "Open in Emacs", "square.and.pencil"),
+            ("decrease", "Zoom out", "minus"),
             ("reset", "Reset to 100%", nil), ("increase", "Zoom in", "plus"),
             ("reload", "Reload", "arrow.clockwise"), ("previous", "Previous match", "chevron.up"),
             ("next", "Next match", "chevron.down"), ("close-find", "Close find", "xmark")]
@@ -255,6 +258,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
     private func activate(_ id: String) {
         switch id {
         case "owner": model.input?.toggleOwnership()
+        case "edit": model.input?.handOff("edit")
         case "previous": model.find(backwards: true)
         case "next": model.find()
         default: try? model.perform(id)
@@ -344,8 +348,9 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             if model.kind != .terminal {
                 separator()
                 if model.kind == .preview { trailing("toc") }
+                if model.canEdit { trailing("edit") }
                 trailing("find")
-                if model.kind == .web && right >= 93 { separators.append(33); place("back", 39); place("forward", 65) }
+                if right >= 93 { separators.append(33); place("back", 39); place("forward", 65) }
             }
         }
     }

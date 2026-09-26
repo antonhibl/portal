@@ -177,6 +177,19 @@ final class NativeInput: NativeInputHandler {
         return true
     }
 
+    /// Give Emacs the keyboard, then send the record `TYPE TARGET FIELD...` for
+    /// a command Emacs runs in this view's pane.
+    @discardableResult
+    func handOff(_ type: String, fields: [String] = []) -> Bool {
+        unfocus()
+        return Views.channel.notify(type, target: target, fields: fields)
+    }
+
+    private func unfocus() {
+        cancel()
+        if let view { host.returnFocus(from: view) }
+    }
+
     static func perform(_ target: String, action: String, serial: Int = 0) throws -> Bool {
         guard let input = Views.input(target) else { return false }
         if serial != 0 && (serial != input.serial || !input.active) { return false }
@@ -192,9 +205,7 @@ final class NativeInput: NativeInputHandler {
         case "focus":
             passthrough = false
             return focusView()
-        case "unfocus":
-            cancel()
-            if let view { host.returnFocus(from: view) }
+        case "unfocus": unfocus()
         case "ack":
             guard waiting else { return false }
             waiting = false

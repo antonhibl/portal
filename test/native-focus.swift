@@ -47,6 +47,75 @@ struct CheckFocus {
         print("Guest Escape/C-g retain focus; Command-Escape and hiding restore Emacs focus")
         try checkHosted(window: window)
         try checkBridge(window: window)
+        try checkLinks(window: window, editor: editor)
+    }
+
+    /// A pipe standing in for Emacs's end of `Views.channel`.
+    @MainActor
+    static func connectRecords() -> (read: () -> String, close: () -> Void) {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        return ({
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            let count = read(fds[0], &buffer, buffer.count)
+            return count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        }, { Views.channel.connect(-1); close(fds[0]) })
+    }
+
+    /// A hosted app reports each page it commits. Clicking it asks Emacs to
+    /// select its pane, and its links to local files go to Emacs, with the keyboard.
+    @MainActor
+    static func checkLinks(window: NSWindow, editor: NSView) throws {
+        let (records, disconnect) = connectRecords()
+        defer { disconnect() }
+        func wait(for text: String) -> String {
+            var received = ""
+            let deadline = Date(timeIntervalSinceNow: 10)
+            while !received.contains(text) && Date() < deadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+                received += records()
+            }
+            precondition(received.contains(text), "Expected \(text), got \(received)")
+            return received
+        }
+        let target = try Views.open(kind: "web", options: ViewOptions(values: [
+            "toolbar": .string("none"), "hosted": .flag(true)]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        let page = "<title>Links</title><a style='display:block;height:80px' href='file:///tmp/r%C3%A9sum%C3%A9%20notes.ts#L4'>code</a>"
+        let app = "data:text/html;base64," + Data(page.utf8).base64EncodedString()
+        let web = window.contentView!.subviews.compactMap { $0 as? WKWebView }.first!
+        // Every committed page is reported, including after going back.
+        try Views.view(target, as: WebSession.self).load("data:text/html,<title>First</title>")
+        _ = wait(for: "page \(target) data:text/html,%3Ctitle%3EFirst%3C/title%3E\n")
+        try Views.view(target, as: WebSession.self).load(app)
+        _ = wait(for: "page \(target) \(app)\n")
+        web.goBack()
+        _ = wait(for: "page \(target) data:text/html,%3Ctitle%3EFirst%3C/title%3E\n")
+        web.goForward()
+        _ = wait(for: "page \(target) \(app)\n")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+        precondition(window.makeFirstResponder(editor))
+        func mouse(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: NSPoint(x: 20, y: 440), modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: window.windowNumber, context: nil,
+                               eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        // This process cannot activate, so AppKit swallows a click in its window
+        // after the monitor sees it; the page gets the same events directly.
+        let down = mouse(.leftMouseDown)
+        NSApp.sendEvent(down)
+        web.mouseDown(with: down)
+        web.mouseUp(with: mouse(.leftMouseUp))
+        let received = wait(for: "follow")
+        precondition(received == "select \(target)\nfollow \(target) file:///tmp/r%C3%A9sum%C3%A9%20notes.ts#L4\n",
+                     "Unexpected records: \(received)")
+        precondition(window.firstResponder === editor, "Following a link left the keyboard in the view")
+        precondition(web.url?.scheme == "data" && !web.isLoading, "Following a local link left the page")
+        try Views.close(target)
+        print("Hosted apps report their pages, clicks select their pane, and local links go to Emacs")
     }
 
     /// A hosted app keeps no data between sessions, and a page it leaves the

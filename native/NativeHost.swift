@@ -155,10 +155,26 @@ final class NativeHost: NSObject {
 
     private static func startMonitoring() {
         guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
-            let handled = MainActor.assumeIsolated { route(event) }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown]) { event in
+            let handled = MainActor.assumeIsolated { event.type == .leftMouseDown ? clicked(event) : route(event) }
             return handled ? nil : event
         }
+    }
+
+    /// A click that gives a view the keyboard asks Emacs to select the view's
+    /// pane, so the two agree. The click itself still reaches the view.
+    private static func clicked(_ event: NSEvent) -> Bool {
+        guard let window = event.window, let host = frames.object(forKey: window) else { return false }
+        for surface in host.surfaces.values.compactMap(\.value) {
+            let view = surface.nativeView
+            guard view.window === window, !view.isHiddenOrHasHiddenAncestor,
+                  view.bounds.contains(view.convert(event.locationInWindow, from: nil)) else { continue }
+            if !host.ownsFocus(view), let input = surface.input {
+                Views.channel.notify("select", target: input.target)
+            }
+            break
+        }
+        return false
     }
 
     static func deliverLiteral(_ down: NSEvent, up: NSEvent, in view: NSView) {

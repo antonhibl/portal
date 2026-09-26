@@ -64,6 +64,26 @@ static emacs_value focusWeb(emacs_env *env, ptrdiff_t nargs, emacs_value *args, 
     return env->intern(env, "nil");
 }
 
+static emacs_value click(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)data;
+    NSPoint offset = NSMakePoint(env->extract_integer(env, args[0]), env->extract_integer(env, args[1]));
+    NSWindow *window = activeWindow();
+    for (NSView *view in descendants(window.contentView)) {
+        if ([view isKindOfClass:WKWebView.class] && !view.isHiddenOrHasHiddenAncestor) {
+            // WKWebView is flipped, so OFFSET is from its top-left corner.
+            NSPoint point = [view convertPoint:offset toView:nil];
+            for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
+                [NSApp sendEvent:[NSEvent mouseEventWithType:type.unsignedIntegerValue location:point
+                    modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+                    windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1]];
+            }
+            return env->intern(env, "t");
+        }
+    }
+    return env->intern(env, "nil");
+}
+
 static emacs_value key(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
 {
     emacs_value nilValue = env->intern(env, "nil");
@@ -148,6 +168,10 @@ int emacs_module_init(struct emacs_runtime *runtime)
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-native-focus-web");
     args[1] = env->make_function(env, 0, 0, focusWeb, "Focus the visible native webview.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-native-click");
+    args[1] = env->make_function(env, 2, 2, click,
+        "Click the visible native webview X Y points from its top-left corner.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-web-eval");
     args[1] = env->make_function(env, 1, 1, webEval,

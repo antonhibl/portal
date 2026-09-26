@@ -9,9 +9,9 @@
 (require 'subr-x)
 
 (defvar portal-fake-native--views (make-hash-table :test #'equal)
-  "Open views: target to a plist of :options, :frame, :edges and :visible.
-A web view also has the :url it loaded last, and a hosted one the JSON
-:messages its app posted that Emacs has not received yet.")
+  "Open views: target to a plist of :options, :frame, :edges, :visible
+and :focused.  A web view also has the :url it loaded last, and a hosted
+one the JSON :messages its app posted that Emacs has not received yet.")
 (defvar portal-fake-native--next-id 0 "Last view ID.  IDs are never reused.")
 (defvar portal-fake-native-log nil "Lifecycle calls, newest first, as (NAME ARGS...).")
 (defvar portal-fake-native-channel nil
@@ -90,7 +90,7 @@ The selected frame is kept."
 (defun portal--hide (target)
   (portal-fake-native--call 'portal--hide target)
   (let ((view (portal-fake-native--view target)))
-    (puthash target (plist-put (plist-put view :edges nil) :visible nil)
+    (puthash target (plist-put (plist-put (plist-put view :edges nil) :visible nil) :focused nil)
              portal-fake-native--views)
     t))
 
@@ -146,10 +146,21 @@ Send the `bridge' record with `portal-fake-native-send'."
   (dolist (text reads)
     (funcall (process-filter portal-fake-native-channel) portal-fake-native-channel text)))
 
-;; Input exports, so terminal commands run unchanged.  Focus needs a shown view.
+;; Input exports, so terminal commands run unchanged.  Focus needs a shown
+;; view, and only one view has it at a time.
 (defun portal--input (target action &optional _serial)
-  (and (equal action "focus")
-       (plist-get (gethash target portal-fake-native--views) :visible)))
+  (let ((view (gethash target portal-fake-native--views)))
+    (pcase action
+      ("focus"
+       (when (plist-get view :visible)
+         (dolist (other (portal-fake-native-targets))
+           (puthash other (plist-put (gethash other portal-fake-native--views) :focused nil)
+                    portal-fake-native--views))
+         (puthash target (plist-put view :focused t) portal-fake-native--views)
+         t))
+      ("unfocus"
+       (when view (puthash target (plist-put view :focused nil) portal-fake-native--views))
+       t))))
 (defun portal--input-prefix (_character _flags) t)
 (defun portal--terminal-bindings (_json) t)
 (defun portal--terminal-theme (_theme) t)

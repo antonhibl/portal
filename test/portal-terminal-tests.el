@@ -464,7 +464,7 @@
          (finished (expand-file-name "finished" directory))
          (resumed (expand-file-name "resumed" directory))
          (source (generate-new-buffer "quick-native-source"))
-         (context (frame-parameter nil 'portal-terminal-quick-context)))
+         (context (frame-parameter nil 'portal-project-context)))
     (save-window-excursion
       (unwind-protect
           (progn
@@ -509,7 +509,7 @@
               (should-not (portal-terminal-test--state id))))
         (portal-terminal-close-all)
         (kill-buffer source)
-        (set-frame-parameter nil 'portal-terminal-quick-context context)
+        (set-frame-parameter nil 'portal-project-context context)
         (delete-directory directory t)))))
 
 (defmacro portal-terminal-test--native-maps (&rest body)
