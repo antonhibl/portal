@@ -10,7 +10,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
-    var toolbarModel: ToolbarModel? { session?.quick == false ? session?.controls : nil }
+    var toolbarModel: ToolbarModel? { session?.toolbar }
     func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
     static let defaultFontSize = 14.0
     var terminalTitle = "Terminal"
@@ -64,6 +64,7 @@ final class TerminalSession: PortalView {
     private var host: NativeHost
     let input: NativeInput
     let controls = ToolbarModel(.terminal)
+    var toolbar: ToolbarModel? { quick ? nil : controls }
     private var rectangle: CGRect
     private var edges: [Int] = []
 

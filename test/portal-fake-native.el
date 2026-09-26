@@ -10,7 +10,8 @@
 
 (defvar portal-fake-native--views (make-hash-table :test #'equal)
   "Open views: target to a plist of :options, :frame, :edges and :visible.
-A web view also has the :url it loaded last.")
+A web view also has the :url it loaded last, and a hosted one the JSON
+:messages its app posted that Emacs has not received yet.")
 (defvar portal-fake-native--next-id 0 "Last view ID.  IDs are never reused.")
 (defvar portal-fake-native-log nil "Lifecycle calls, newest first, as (NAME ARGS...).")
 (defvar portal-fake-native-channel nil
@@ -105,6 +106,32 @@ The selected frame is kept."
   (puthash target (plist-put (portal-fake-native--view target) :url url)
            portal-fake-native--views)
   t)
+
+(defun portal-fake-native--hosted (target)
+  "Return hosted web view TARGET's state, or signal as the native module does."
+  (let ((view (portal-fake-native--view target)))
+    (unless (plist-get (plist-get view :options) :hosted)
+      (error "Web view %s is not a hosted app, so it has no bridge" target))
+    view))
+
+(defun portal--web-send (target json)
+  (portal-fake-native--call 'portal--web-send target json)
+  (portal-fake-native--hosted target)
+  t)
+
+(defun portal--web-receive (target)
+  (portal-fake-native--call 'portal--web-receive target)
+  (let* ((view (portal-fake-native--hosted target))
+         (messages (plist-get view :messages)))
+    (puthash target (plist-put view :messages nil) portal-fake-native--views)
+    (format "[%s]" (string-join messages ","))))
+
+(defun portal-fake-native-post (target &rest messages)
+  "Queue MESSAGES, JSON object strings, as hosted web view TARGET's app posts them.
+Send the `bridge' record with `portal-fake-native-send'."
+  (let ((view (portal-fake-native--hosted target)))
+    (puthash target (plist-put view :messages (append (plist-get view :messages) messages))
+             portal-fake-native--views)))
 
 (defun portal--inspect (target)
   (copy-sequence (gethash target portal-fake-native--views)))

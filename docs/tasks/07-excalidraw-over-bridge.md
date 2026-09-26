@@ -1,6 +1,6 @@
 # 07: Excalidraw talks to its buffer over the bridge
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -36,11 +36,11 @@ Excalidraw becomes a hosted-app client that talks to its buffer over the bridge 
 
 ## Acceptance criteria
 
-- [ ] Opening, editing, saving (`C-b C-x C-s`), reverting, and killing a buffer with unsaved changes all behave as today. Both the GUI Excalidraw suite and the batch persistence tests pass.
-- [ ] A web view that isn't hosted can't use the bridge: `portal--web-send` signals an error, and messages from its page are ignored
-- [ ] A batch test with the fake adapter shows a `bridge` record reaching the handler, and the bridge function receiving the messages in order
-- [ ] The native module exports exactly the 19 functions listed in ADR 0002, and nothing refers to the editor exports any more
-- [ ] `docs/editor-bridge.md` and the README are updated
+- [x] Opening, editing, saving (`C-b C-x C-s`), reverting, and killing a buffer with unsaved changes all behave as today. Both the GUI Excalidraw suite and the batch persistence tests pass.
+- [x] A web view that isn't hosted can't use the bridge: `portal--web-send` signals an error, and messages from its page are ignored
+- [x] A batch test with the fake adapter shows a `bridge` record reaching the handler, and the bridge function receiving the messages in order
+- [x] The native module exports exactly the 19 functions listed in ADR 0002, and nothing refers to the editor exports any more
+- [x] `docs/editor-bridge.md` and the README are updated
 
 ## Blocked by
 

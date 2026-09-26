@@ -3,7 +3,7 @@ import AppKit
 
 @MainActor
 final class ToolbarModel {
-    enum Kind { case web, preview, terminal, editor }
+    enum Kind { case web, preview, terminal }
     var kind: Kind { didSet { changed?() } }
     weak var input: NativeInput?
     var changed: (() -> Void)?
@@ -64,6 +64,15 @@ enum NativeToolbar {
     static var enabled = true
     static var revision = 0
     static var colors: [String: NSColor] = [:]
+
+    /// Perform ACTION on TARGET's toolbar and return the toolbar's state as JSON.
+    static func perform(_ action: String, target: String) throws -> String {
+        guard let model = Views.toolbar(target) else {
+            throw NativeError.message("No toolbar controls for this native view")
+        }
+        try model.perform(action)
+        return try model.snapshot()
+    }
 
     static func configure(_ enabled: Bool) {
         self.enabled = enabled
@@ -329,7 +338,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             if !count.isHidden { right -= 68 }
             count.frame = NSRect(x: right, y: 7, width: 66, height: 16)
             field.frame = NSRect(x: 33, y: 3, width: max(20, right - 38), height: 22)
-        } else if model.kind != .editor {
+        } else {
             if model.kind != .terminal { trailing("reload"); separator() }
             trailing("increase"); trailing("reset", width: 46); trailing("decrease")
             if model.kind != .terminal {

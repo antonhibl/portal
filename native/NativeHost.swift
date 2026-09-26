@@ -88,17 +88,6 @@ final class NativeHost: NSObject {
         }
     }
 
-    static func toolbarAction(target: String, action: String) throws -> String {
-        for host in frames.objectEnumerator()?.allObjects as? [NativeHost] ?? [] {
-            for surface in host.surfaces.values.compactMap(\.value) where surface.input?.target == target {
-                guard let model = surface.toolbarModel else { break }
-                try model.perform(action)
-                return try model.snapshot()
-            }
-        }
-        throw NativeError.message("No toolbar controls for this native view")
-    }
-
     func ownsFocus(_ surface: NSView) -> Bool {
         guard let responder = view?.window?.firstResponder as? NSView else { return false }
         let root = surface.superview as? NativeContainer ?? surface

@@ -44,6 +44,9 @@ enum ViewValue: Sendable {
 protocol PortalView: AnyObject {
     /// Open the view in PARKING, hidden.
     init(target: String, options: ViewOptions, parking: NativeHost) throws
+    var input: NativeInput { get }
+    /// The view's toolbar controls, or nil when it has no toolbar.
+    var toolbar: ToolbarModel? { get }
     /// Show the view in HOST, moving it there from its current window.
     func place(in host: NativeHost, rectangle: CGRect) throws
     /// Hide the view by moving it into PARKING, keeping its session and size.
@@ -100,6 +103,10 @@ enum Views {
     }
 
     static func inspect(_ target: String) -> [(String, ViewValue)]? { views[target]?.inspect() }
+
+    static func input(_ target: String) -> NativeInput? { views[target]?.input }
+
+    static func toolbar(_ target: String) -> ToolbarModel? { views[target]?.toolbar }
 
     static func view<Kind: PortalView>(_ target: String, as kind: Kind.Type) throws -> Kind {
         guard let view = views[target] as? Kind else { throw unknown(target) }

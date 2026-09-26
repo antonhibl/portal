@@ -29,7 +29,7 @@ declare global {
 		webkit?: {
 			messageHandlers: { portal: { postMessage(message: object): void } };
 		};
-		portalEditor: { receive(message: Message): Promise<void> };
+		portalBridge: { receive(message: Message): Promise<void> };
 	}
 }
 
@@ -175,7 +175,7 @@ function Editor({
 	);
 }
 
-window.portalEditor = {
+window.portalBridge = {
 	async receive(message) {
 		try {
 			if (message.type === "load") {

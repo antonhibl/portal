@@ -1,80 +1,112 @@
-# Persistent web editors and the shared event bridge
+# The bridge, and Excalidraw drawings over it
 
-`NativeHost.swift` already owns frame lookup, native view placement, focus
-handoff, and event routing for both WebKit and Ghostty. It remains independent
-of feature state and persistence. An editor does not need another host or a
-second keyboard monitor.
+The bridge is the message channel between a hosted app and the buffer that
+presents it (see [CONTEXT.md](../CONTEXT.md)). Only hosted web views get one.
+Excalidraw is its first client: `portal-excalidraw.el` keeps a drawing buffer
+and its Excalidraw page in sync over the bridge.
 
-`NativeEventChannel.swift` is the nonblocking pipe transport. Portal views
-share one channel instance, the notification pipe owned by `portal-view.el`
-([terminal input bridge](terminal-input-bridge.md)). Web editors still have their
-own instance, with the same descriptor lifetime, atomic short writes, and SIGPIPE
-protection. Editor notifications identify a session with queued messages. Lisp's
-`portal-view--consume-lines` handles partial and batched reads for both pipes.
+## Transport
 
-No asynchronous AppKit or WebKit callback keeps an `emacs_env` or calls Lisp.
-Callbacks notify an Emacs pipe process, and interactive commands are queued as
-normal Emacs input events. `NativeInput.swift` and `portal-input.el` share prefix capture and dispatch
-across terminals, editors, and previews; Ghostty retains terminal input handling.
+A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
+`native/WebView.swift`). Other web views have none: `portal--web-send` and
+`portal--web-receive` signal an error for them, and their pages have no
+`window.webkit.messageHandlers.portal` to post to.
 
-## Document sessions
+- **App to Emacs.** The page posts JSON objects to
+  `window.webkit.messageHandlers.portal`. The bridge accepts a message only
+  from the page's main frame, at the app-host URL that Emacs loaded last, and
+  drops messages from frames and from other pages. Accepted messages wait in
+  the bridge, outside the notification pipe, so large payloads such as images
+  never cross it. A newer `change` message replaces one Emacs has not received
+  yet; all other messages keep their order.
+- **Notification.** The first waiting message sends one `bridge TARGET` record
+  on the shared notification pipe that `portal-view.el` owns
+  ([terminal input bridge](terminal-input-bridge.md#the-notification-pipe)).
+  No other record goes out until Emacs has received the messages. If the pipe
+  is full, the bridge retries the record, and keeps the messages.
+- **Receiving.** `portal-web.el` handles `bridge` records. It calls
+  `portal--web-receive TARGET`, which returns every waiting message as a JSON
+  array and lets the next message send a new record. It then calls the
+  buffer's `portal-web-bridge-function` with each message, as a plist, in
+  order. The function runs inside the process filter, so it never prompts; it
+  queues commands as Emacs input events.
+- **Emacs to app.** `(portal-web-send PLIST)` calls `portal--web-send TARGET
+  JSON`, which passes the object to `window.portalBridge.receive` in the page.
+  If that call fails, the bridge queues an `error` message for Emacs.
 
-`WebEditor.swift` owns one persistent WKWebView per document. It reuses
-`NativeHost.place`, `hide`, and `remove`. The view can move between panes and
-frames; hiding does not destroy its JS state or undo stack. Existing disposable
-HTML/Markdown previews retain their original lifecycle.
+A hosted page also reports to its bridge when a load fails or its web process
+stops, as `error` messages. No asynchronous AppKit or WebKit callback
+keeps an `emacs_env` or calls Lisp.
 
-Only a hosted editor receives the script bridge, with a nonpersistent WebKit data
-store. Messages are accepted only from its main frame at the expected local URL.
-Navigation away from that URL is blocked. The editor page's CSP allows its local
-scripts/fonts and embedded images, while blocking external network dependencies.
+Hosted pages keep no cookies or storage between sessions, and never leave the
+app host. The Excalidraw page's CSP allows its local scripts, fonts and
+embedded images, and blocks external network requests. File inputs, such as
+inserting an image, use the native file picker; opening and saving the drawing
+stays in Emacs.
 
-Emacs sends JSON messages through `portal--editor-send`; WebKit delivers messages
-through `window.webkit.messageHandlers.portal`. Native code holds the message
-payloads, including image data, outside the notification pipe. Lisp drains them
-with `portal--editor-events`. Undelivered scene changes are coalesced. A full pipe
-causes the editor to retry its notification, without dropping the scene.
+## Drawing sessions
 
-The JS document reports `ready`, then Emacs supplies `load` with the buffer's
-JSON. `loaded` establishes the normalized baseline. Subsequent `dirty` and
-`change` messages update the buffer and its modified flag. Selection, viewport,
-and other nonexported app state do not modify the document. Image data is included
-using Excalidraw's `serializeAsJSON(..., "local")`.
+`portal-excalidraw-mode` opens the drawing's view with
+`(portal-web-open-hosted "/excalidraw/" "none")`, so the view appears at once
+and loads the page once the app host is ready. The view follows the buffer's
+selected pane like any Portal view; hiding it keeps the page's state and undo
+history. Killing the buffer or changing its major mode closes the view.
+
+The page reports `ready`, then Emacs sends `load` with the buffer's JSON.
+`loaded` sets the normalized baseline. Later `dirty` and `change` messages
+update the buffer and its modified flag. Selection, viewport and other state
+outside the document do not modify it. Image data is included using
+Excalidraw's `serializeAsJSON(..., "local")`.
 
 ## Saving and input
 
-Emacs requests a `snapshot` with a monotonically increasing request ID before
-saving. The page commits an active text editor and replies with the latest scene.
-Only a matching reply completes the save barrier. Errors or timeouts abort the
-write. A `write-contents-functions` guard also covers normal `save-buffer` and
-save-all operations; `before-save-hook` is unsuitable because Emacs can catch its
-errors and continue writing. Emacs writes through its normal save machinery and
-sends `saved` only from `after-save-hook`. A failed write retains modified state.
+Before saving, Emacs sends `snapshot` with a request ID that only increases.
+The page commits an active text editor and replies with the latest scene.
+Only a reply with the matching ID completes the save barrier; errors or
+timeouts abort the write. A `write-contents-functions` guard also covers
+normal `save-buffer` and save-all operations; `before-save-hook` is unsuitable
+because Emacs can catch its errors and carry on writing. Emacs writes through
+its normal save machinery, and sends `saved` only from `after-save-hook`. A
+failed write keeps the buffer modified.
 
-The in-page Save button and Command-S queue an Emacs save for their owning
-buffer. Keyboard input uses the shared Portal bridge: `C-b C-x C-s` resolves the
-normal Emacs save command, including the editor's remapping, and returns focus
-after the save and any filename prompt finish. `C-b d` and Command-Escape leave
-control with Emacs. Escape, Control-G, and bare Control-X belong to the page.
-Native escape releases pending input capture without waiting for a JS snapshot.
+The page's Save button and Command-S send `save`, which queues an Emacs save
+for the drawing's buffer. The page still has the keyboard at that point, so the
+save first returns focus to Emacs, which can then ask for a file name, and
+focuses the page again afterwards. Keyboard input uses the shared Portal
+prefix: `C-b C-x C-s` runs the normal Emacs save command, including the mode's
+remapping, and returns focus after the save and any file name prompt finish.
+`C-b d` and Command-Escape leave control with Emacs. Escape, Control-G and bare
+Control-X belong to the page.
 
-The buffer holds the latest synchronized JSON even if WebKit terminates. Explicit
-reopen rebuilds the editor from that buffer; it does not silently reload a saved
-file over unsaved work. Auto-save and backups follow Emacs configuration. The
-debounced synchronization window is 150 ms, so a process crash can lose edits
-that have not yet reached Emacs. Host restarts do not forcibly navigate editors;
-reopen when their old asset URLs are no longer available.
+The buffer holds the latest synchronized JSON even if WebKit stops.
+`portal-excalidraw-reopen` rebuilds the view from that buffer; it never
+silently reloads a saved file over unsaved work. `revert-buffer` reads the
+file, then reopens the view with it. Auto-save and backups follow Emacs
+configuration. Changes are synchronized after 150 ms, so a web process crash
+can lose edits that have not yet reached Emacs. App host restarts do not
+reload drawings; reopen them if their old asset URLs are gone.
 
 ## Verification
 
-`./build.sh` compiles the browser assets and fonts into the relocatable host and
-builds the native module. `bun run --cwd host typecheck` builds editor assets and
-checks TypeScript. `ctest --test-dir build --output-on-failure` includes scene
-persistence, save failures, stale replies, event framing, and terminal regressions.
+`./build.sh` compiles the browser assets and fonts into the relocatable host
+and builds the native module. `bun run --cwd host typecheck` builds the
+Excalidraw assets and checks TypeScript.
 
-The graphical tests require a disposable graphical Emacs with the test event
+`ctest --test-dir build --output-on-failure` runs the batch tests. With the
+fake native module, `test/portal-web-tests.el` checks that a `bridge` record
+reaches its buffer's bridge function with the messages in order, and
+`test/portal-excalidraw-tests.el` checks that a drawing opens the Excalidraw
+hosted app and loads over the bridge. The same file covers scene persistence,
+save failures, stale replies and revert.
+
+The standalone AppKit check in `test/native-focus.swift` (see the README)
+checks the bridge in a real WebKit page: only the main frame's messages
+arrive, in order, under one record until received, and a web view that is not
+a hosted app has no bridge.
+
+The graphical tests need a disposable graphical Emacs with the test event
 module from the README loaded. Load `test/portal-excalidraw-gui-tests.el`, then
-run `M-x ert` with selector `^portal-excalidraw-gui-`. They exercise the actual
-WKWebView, offline fonts, paste, image round trips, multiple documents, retained
-sessions, and rapid shared-prefix handoff. The test-only JS evaluator is not
-part of the production module.
+run `M-x ert` with selector `^portal-excalidraw-gui-`. They exercise the real
+WKWebView, offline fonts, paste, image round trips, several drawings, revert,
+hidden views keeping their state, and rapid shared-prefix handoff. The
+test-only JavaScript evaluator is not part of the production module.

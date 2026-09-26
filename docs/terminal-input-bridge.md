@@ -29,7 +29,7 @@ These maps apply only while the native terminal has focus.
 
 ## Across the boundary
 
-The native input machinery is shared by terminals, editors, and web previews.
+The native input machinery is shared by terminal and web views.
 `portal-input-prefix` configures their common prefix; the old
 `portal-terminal-prefix` name is an alias. Terminal-specific native maps retain
 their scope and registration API.
@@ -80,9 +80,8 @@ targets that have no buffer, or of types with no handler, are dropped. Handlers
 run inside the process filter, so they never prompt. `portal-input` registers
 the five input types, and queues each record as an event such as
 `(portal-input-prefix (TARGET SERIAL KEY))`, which the command loop then runs.
-
-Excalidraw editors still send their own notifications on a separate pipe
-([editor bridge](editor-bridge.md)).
+`portal-web` registers the `bridge` type, which announces a hosted app's
+messages ([the bridge](editor-bridge.md)).
 
 ## Boundaries and verification
 

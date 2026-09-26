@@ -88,9 +88,8 @@ return to Emacs. No global physical keybinding is installed in ordinary buffers.
 
 The 28 pixel toolbar reserves space above the content. Web pages have navigation,
 find, zoom, and reload; Markdown and HTML previews have a table of contents in
-place of navigation. Terminals have text size controls. Excalidraw has only the
-ownership dot; quick terminals have no toolbar. The command that opens a web
-view chooses its toolbar.
+place of navigation. Terminals have text size controls. Excalidraw and quick
+terminals have no toolbar. The command that opens a web view chooses its toolbar.
 `(setq portal-toolbar nil)` hides toolbars live, and `t` restores them. Colors
 follow Emacs faces and update after theme changes.
 
@@ -127,32 +126,35 @@ or Dired; they enter `portal-excalidraw-mode` automatically. A prefix argument
 to `portal-excalidraw` prompts for an existing or new file.
 
 - Draw, type, paste text/images, and use the normal Excalidraw editing tools.
-- `C-b C-x C-s`, Command-S, and the editor's **Save** button save through Emacs.
+- `C-b C-x C-s`, Command-S, and the drawing's **Save** button save through Emacs.
   Bare `C-x` belongs to the app while the webview has focus. In Emacs input,
   the usual `C-x C-s` still works. `C-b m s` also saves; `C-b m r` reopens.
-- Command-Escape returns keyboard focus to Emacs; `RET` re-enters the editor.
+- Command-Escape returns keyboard focus to Emacs; `RET` re-enters the drawing.
   Bare Escape remains available for drawing/text editing.
-- Each drawing has one editor. Switching buffers hides it without losing its
-  contents, selection, or undo history. In splits, the editor follows the selected
-  window showing that buffer. Independent drawings can be displayed together.
+- Each drawing buffer has one web view running the Excalidraw hosted app. It
+  opens at once and loads the drawing when the app host is ready. Switching
+  buffers hides it without losing its contents, selection, or undo history. In
+  splits, the view follows the selected window showing that buffer. Independent
+  drawings can be displayed together.
 - Drawings use standard Excalidraw JSON, including embedded image data. Emacs owns
   file saving, modified indicators, backup settings, auto-save, and overwrite
   checks. Untitled modified drawings also participate in save/close prompts.
-- `M-x revert-buffer` reloads the file from disk. `C-c C-r` recreates a failed
-  editor using the buffered drawing, preserving unsaved buffered changes but
-  resetting undo history. Use it after restarting the Bun host if more editor
-  assets need loading. A stopped host does not unload an already open drawing.
+- `M-x revert-buffer` reloads the file from disk. `C-c C-r` reopens a failed
+  view using the buffered drawing, preserving unsaved buffered changes but
+  resetting undo history. Use it after restarting the app host if more
+  Excalidraw assets need loading. A stopped host does not unload an already
+  open drawing.
 
 Excalidraw 0.18.1, React, CSS, lazy modules and fonts are bundled into
 `portal-host`. The build installs pinned npm dependencies with Bun; runtime use
-needs no npm packages or internet connection. The editor blocks external asset
+needs no npm packages or internet connection. The page blocks external asset
 requests, CDN font fallbacks and remote embeds. Document persistence uses neither
 localStorage nor IndexedDB. The current integration focuses on local documents;
 cloud collaboration, online library installation, persistent personal libraries,
 and image export are not integrated.
 
-Restart Emacs after rebuilding the native module. See the
-[shared editor bridge](docs/editor-bridge.md) for implementation and tests.
+Restart Emacs after rebuilding the native module. See
+[the bridge](docs/editor-bridge.md) for implementation and tests.
 
 ## Quick project terminal
 
@@ -521,6 +523,10 @@ forward) or `"none"`.
 `(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
 opens at once, at `about:blank`, and loads PATH, such as `"/hello"`, from the
 app host as soon as the host is ready, starting the host if needed.
+A hosted app and its buffer exchange JSON objects over the
+[bridge](docs/editor-bridge.md): `(portal-web-send PLIST)` sends one to the
+app, and the buffer-local `portal-web-bridge-function` is called with each one
+the app sends, in order. Other web views have no bridge.
 
 ## Implementation
 
@@ -528,8 +534,8 @@ app host as soon as the host is ready, starting the host if needed.
 | --- | --- |
 | `portal.el` | The package root: loads every feature |
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
-| `portal-web.el` | Web buffers, URL and HTML previews, and Hello and Markdown previews on the app host |
-| `portal-native.el` | Frame identification for Excalidraw editors |
+| `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
+| `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
 | `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
 | `portal-terminal.el` | Terminal buffers and tmux shortcuts |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
@@ -541,7 +547,7 @@ app host as soon as the host is ready, starting the host if needed.
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Module.swift` | Emacs function registration, argument conversion, and errors |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
-| `native/WebView.swift` | The web view kind: WebKit pages, navigation, and inspection |
+| `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
 | `native/Views.swift` | The view registry, keyed by native target, and the view kind protocol |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
@@ -605,7 +611,7 @@ stays as it is while the host stops and restarts, and that `g` reloads it.
 The graphical web tests wait for real WebKit page loads. They verify JavaScript
 execution, relative local assets, a page staying loaded while hidden, repeated
 loading and native URL validation.
-The combined graphical suite includes web, terminal, editor, and shared
+The combined graphical suite includes web, terminal, Excalidraw, and shared
 input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
@@ -641,8 +647,9 @@ build/check-focus
 ```
 
 The checks open web views through the same `Views` registry as Emacs. They also
-check that a hosted web view keeps no data between sessions, and that a page
-outside the app host goes to the default browser while the app stays.
+check that a hosted web view keeps no data between sessions, that a page
+outside the app host goes to the default browser while the app stays, and that
+only a hosted app's main frame can use the bridge.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
 without Ghostty.
 

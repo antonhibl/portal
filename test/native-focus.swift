@@ -46,6 +46,7 @@ struct CheckFocus {
         try Views.close(target)
         print("Guest Escape/C-g retain focus; Command-Escape and hiding restore Emacs focus")
         try checkHosted(window: window)
+        try checkBridge(window: window)
     }
 
     /// A hosted app keeps no data between sessions, and a page it leaves the
@@ -69,5 +70,70 @@ struct CheckFocus {
         precondition(web.url?.scheme == "data" && web.title == "App", "The hosted app left its page")
         try Views.close(target)
         print("Hosted apps keep no data, and open other sites in the browser")
+    }
+
+    /// Only a hosted app has a bridge, and only its main frame may post. One
+    /// record announces queued messages until Emacs receives them, in order.
+    @MainActor
+    static func checkBridge(window: NSWindow) throws {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        defer { Views.channel.connect(-1); close(fds[0]) }
+        func records() -> String {
+            var buffer = [UInt8](repeating: 0, count: 512)
+            let count = read(fds[0], &buffer, buffer.count)
+            return count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
+        }
+        func wait(until done: () -> Bool) {
+            let deadline = Date(timeIntervalSinceNow: 10)
+            while !done() && Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        }
+        func types(_ web: WebSession) -> [String] {
+            let messages = try! JSONSerialization.jsonObject(with: Data(web.receive().utf8)) as! [[String: Any]]
+            return messages.map { $0["type"] as! String }
+        }
+
+        let page = """
+            <iframe srcdoc="<script>webkit.messageHandlers.portal.postMessage({type:'frame'})</script>"
+              onload="webkit.messageHandlers.portal.postMessage({type:'second'})"></iframe>
+            <script>
+            window.portalBridge = {receive: async (m) => webkit.messageHandlers.portal.postMessage({type: 'echo-' + m.type})};
+            webkit.messageHandlers.portal.postMessage({type: 'first'});
+            </script>
+            """
+        let app = "data:text/html;base64," + Data(page.utf8).base64EncodedString()
+        let hosted = try Views.open(kind: "web", options: ViewOptions(values: [
+            "toolbar": .string("none"), "hosted": .flag(true)]))
+        try Views.place(hosted, edges: [0, 0, 640, 480], title: window.title)
+        let web = try Views.view(hosted, as: WebSession.self)
+        try web.load(app)
+        var received = ""
+        wait { received += records(); return received.contains("\n") }
+        precondition(received == "bridge \(hosted)\n", "Expected one bridge record, got \(received)")
+        // Let the frame load and post too.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
+        precondition(records().isEmpty, "A second record went out before Emacs received the first")
+        precondition(types(web) == ["first", "second"], "The bridge lost, reordered or accepted a frame's message")
+        precondition(types(web).isEmpty, "Receiving did not drain the bridge")
+        try web.send(#"{"type":"ping"}"#)
+        received = ""
+        wait { received += records(); return received.contains("\n") }
+        precondition(received == "bridge \(hosted)\n", "Receiving did not re-arm the bridge record")
+        precondition(types(web) == ["echo-ping"], "The app did not receive Emacs's message")
+        try Views.close(hosted)
+
+        let plain = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
+        try Views.place(plain, edges: [0, 0, 640, 480], title: window.title)
+        try Views.view(plain, as: WebSession.self).load(app)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+        precondition(records().isEmpty, "A page that is not a hosted app reached the bridge")
+        for use in [{ try Views.view(plain, as: WebSession.self).send("{}") },
+                    { _ = try Views.view(plain, as: WebSession.self).receive() }] {
+            do { try use(); preconditionFailure("A page that is not a hosted app has a bridge") } catch {}
+        }
+        try Views.close(plain)
+        print("Only a hosted app's main frame uses the bridge, which announces its messages once until received")
     }
 }

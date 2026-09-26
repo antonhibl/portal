@@ -278,6 +278,25 @@
         (should (equal (portal-fake-native-calls 'portal--web-load)
                        `((,target "about:blank") (,target "http://127.0.0.1:1/token/hello"))))))))
 
+(ert-deftest portal-web-bridge-passes-an-apps-messages-to-its-buffer-in-order ()
+  (portal-web-test--environment
+    (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+              ((symbol-function 'portal-server-url) (lambda () "http://127.0.0.1:1/token")))
+      (switch-to-buffer (generate-new-buffer "client"))
+      (let ((target (portal-web-open-hosted "/app" "none"))
+            received)
+        (setq portal-web-bridge-function
+              (lambda (message) (push (cons (buffer-name) message) received)))
+        (portal-fake-native-post target "{\"type\":\"first\",\"n\":1}" "{\"type\":\"second\"}")
+        (with-current-buffer "*scratch*"
+          (portal-fake-native-send (format "bridge %s\n" target)))
+        (should (equal (reverse received)
+                       '(("client" :type "first" :n 1) ("client" :type "second"))))
+        (should (equal (portal--web-receive target) "[]"))
+        (portal-web-send '(:type "reply" :n 2))
+        (should (equal (portal-fake-native-calls 'portal--web-send)
+                       `((,target "{\"type\":\"reply\",\"n\":2}"))))))))
+
 (defun portal-web-test--wait (predicate)
   "Allow asynchronous process work until PREDICATE succeeds."
   (let ((deadline (+ (float-time) 5)))
