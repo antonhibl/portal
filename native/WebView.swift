@@ -11,9 +11,16 @@ private final class WebPage: WKWebView, WKNavigationDelegate, NativeSurface {
     func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) ?? false }
 
     var loadError: String?
+    /// Whether this page shows a hosted app, which never leaves the app host.
+    private let hosted: Bool
+    /// A hosted app's app host: the origin of the URL Emacs loaded last.
+    private var appHost: String?
 
-    init(toolbar: ToolbarModel.Kind?) {
-        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+    init(toolbar: ToolbarModel.Kind?, hosted: Bool) {
+        self.hosted = hosted
+        let configuration = WKWebViewConfiguration()
+        if hosted { configuration.websiteDataStore = .nonPersistent() }
+        super.init(frame: .zero, configuration: configuration)
         if let toolbar { controls = WebToolbar(web: self, kind: toolbar) }
         navigationDelegate = self
     }
@@ -22,11 +29,28 @@ private final class WebPage: WKWebView, WKNavigationDelegate, NativeSurface {
 
     func navigate(to url: URL) {
         loadError = nil
+        appHost = Self.origin(url)
         if url.isFileURL {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    private static func origin(_ url: URL) -> String {
+        "\(url.scheme?.lowercased() ?? "")://\(url.host?.lowercased() ?? ""):\(url.port ?? -1)"
+    }
+
+    /// A hosted app's main frame stays on the app host: any other page opens in
+    /// the default browser instead.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        guard hosted, action.targetFrame?.isMainFrame ?? true, let url = action.request.url,
+              url.scheme?.lowercased() != "about", Self.origin(url) != appHost else {
+            return decisionHandler(.allow)
+        }
+        decisionHandler(.cancel)
+        WebSession.openInBrowser(url)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -57,6 +81,8 @@ private final class WebPage: WKWebView, WKNavigationDelegate, NativeSurface {
 /// stays loaded while the view is hidden, and its toolbar is fixed when it opens.
 @MainActor
 final class WebSession: PortalView {
+    /// Where a hosted app's links to other sites go. Checks replace it.
+    static var openInBrowser: (URL) -> Void = { NSWorkspace.shared.open($0) }
     private static let toolbars: [String: ToolbarModel.Kind?] = [
         "navigation": .web, "contents": .preview, "none": nil]
     private let toolbar: String
@@ -66,14 +92,14 @@ final class WebSession: PortalView {
     private var rectangle: CGRect
     private var edges: [Int] = []
 
-    /// `:toolbar` is "navigation", "contents" or "none". `:hosted` is accepted,
-    /// but has no effect yet.
+    /// `:toolbar` is "navigation", "contents" or "none". With `:hosted`, the page
+    /// keeps no data between sessions, and never leaves the app host.
     init(target: String, options: ViewOptions, parking: NativeHost) throws {
         guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
             throw NativeError.message("A web view's :toolbar must be \"navigation\", \"contents\" or \"none\"")
         }
         toolbar = name
-        let page = WebPage(toolbar: kind)
+        let page = WebPage(toolbar: kind, hosted: options.flag("hosted"))
         self.page = page
         host = parking
         rectangle = parking.view?.bounds ?? .zero

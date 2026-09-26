@@ -2,8 +2,9 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Real buffers and windows drive `portal-web.el'; only the native module is
-;; replaced, and the app host is simulated.  Batch Emacs never runs window
-;; change hooks, so tests sync.
+;; replaced.  Most tests simulate the app host; one runs the real one, from
+;; PORTAL_TEST_HOST when set.  Batch Emacs never runs window change hooks, so
+;; tests sync.
 (require 'ert)
 (require 'cl-lib)
 (require 'portal-fake-native
@@ -13,6 +14,9 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 (require 'portal)
+
+(when-let* ((program (getenv "PORTAL_TEST_HOST")))
+  (setq portal-server-program program))
 
 (defmacro portal-web-test--environment (&rest body)
   "Run BODY in one fresh window, then kill its buffers and check cleanup."
@@ -193,7 +197,7 @@
     ;; The buffer can still open a view afterwards.
     (should (equal (portal-web-open "about:blank" "navigation") (portal-view-target)))))
 
-(ert-deftest portal-web-hosted-apps-load-once-the-app-host-is-ready ()
+(ert-deftest portal-web-hosted-apps-open-at-once-and-load-when-the-app-host-is-ready ()
   (portal-web-test--environment
     (let ((file (make-temp-file "portal-web-" nil ".md" "# Notes\n"))
           (host nil)
@@ -216,6 +220,7 @@
                 ;; Both views open at once, before the app host is ready.
                 (should (= starts 2))
                 (dolist (target (list hello-target markdown-target))
+                  (should (plist-get (plist-get (portal-web-test--state target) :options) :hosted))
                   (should (equal (plist-get (portal-web-test--state target) :url) "about:blank")))
                 (setq host "http://127.0.0.1:1/token")
                 (run-hooks 'portal-server-ready-hook)
@@ -230,18 +235,17 @@
                 (should (eq (current-buffer) markdown))
                 (should (equal portal-fake-native-log
                                `((portal--web-load ,markdown-target ,markdown-url))))
-                ;; A stopped host is reported; g starts it again and reloads.
-                (setq host nil)
-                (run-hooks 'portal-server-stopped-hook)
-                (dolist (target (list hello-target markdown-target))
-                  (should (string-prefix-p "data:text/html"
-                                           (plist-get (portal-web-test--state target) :url))))
+                ;; A restarted host leaves loaded apps alone; g loads from it.
+                (setq host "http://127.0.0.1:2/other"
+                      portal-fake-native-log nil)
+                (run-hooks 'portal-server-ready-hook)
+                (should-not portal-fake-native-log)
                 (call-interactively (key-binding "g"))
                 (should (= starts 4))
-                (setq host "http://127.0.0.1:2/other")
-                (run-hooks 'portal-server-ready-hook)
                 (should (equal (plist-get (portal-web-test--state markdown-target) :url)
                                (replace-regexp-in-string "1/token" "2/other" markdown-url)))
+                (should (equal (plist-get (portal-web-test--state hello-target) :url)
+                               "http://127.0.0.1:1/token/hello"))
                 (should (= (length (portal-fake-native-targets)) 2)))))
         (delete-file file)))))
 
@@ -254,14 +258,74 @@
         (should-error (portal-hello) :type 'user-error)
         (let ((target (portal-view-target)))
           (should (equal (buffer-name) "*portal: hello*"))
-          (should (string-prefix-p "data:text/html"
-                                   (plist-get (portal-web-test--state target) :url)))
+          (should (equal (plist-get (portal-web-test--state target) :url) "about:blank"))
           ;; Once the host can start, g loads the app in the same view.
           (setq host "http://127.0.0.1:1/token")
           (call-interactively (key-binding "g"))
           (should (equal (plist-get (portal-web-test--state target) :url)
                          "http://127.0.0.1:1/token/hello"))
           (should (= (length (portal-fake-native-calls 'portal--open)) 1)))))))
+
+(ert-deftest portal-web-open-hosted-gives-any-buffer-a-hosted-app ()
+  (portal-web-test--environment
+    (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+              ((symbol-function 'portal-server-url) (lambda () "http://127.0.0.1:1/token")))
+      (switch-to-buffer (generate-new-buffer "client"))
+      (let ((target (portal-web-open-hosted "/hello" "none")))
+        (should (equal (portal-view-target) target))
+        (should (eq major-mode 'fundamental-mode))
+        (should (equal (portal-web-test--toolbar) "none"))
+        (should (equal (portal-fake-native-calls 'portal--web-load)
+                       `((,target "about:blank") (,target "http://127.0.0.1:1/token/hello"))))))))
+
+(defun portal-web-test--wait (predicate)
+  "Allow asynchronous process work until PREDICATE succeeds."
+  (let ((deadline (+ (float-time) 5)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.02))
+    (should (funcall predicate))))
+
+(defun portal-web-test--stop-host ()
+  "Stop the app host, and wait until its process has exited."
+  (let ((process portal--server-process))
+    (portal-stop-server)
+    (when process
+      (portal-web-test--wait (lambda () (not (process-live-p process)))))))
+
+(ert-deftest portal-web-markdown-preview-with-the-real-app-host ()
+  (skip-unless (file-executable-p portal-server-program))
+  (portal-web-test--environment
+    (let ((file (make-temp-file "portal-web-" nil ".md" "# Real notes\n"))
+          (url-proxy-services nil))
+      (unwind-protect
+          (progn
+            (should-not (portal-server-url))
+            ;; The preview opens before the app host is ready.
+            (portal-preview-markdown file)
+            (let ((target (portal-view-target))
+                  (path (concat "/markdown?path=" (url-hexify-string file))))
+              (should (equal (plist-get (portal-web-test--state) :url) "about:blank"))
+              (portal-web-test--wait #'portal-server-url)
+              (let ((url (concat (portal-server-url) path)))
+                (should (equal (plist-get (portal-web-test--state target) :url) url))
+                (let ((response (url-retrieve-synchronously url t t 3)))
+                  (unwind-protect
+                      (should (string-match-p "Real notes</h1>"
+                                              (with-current-buffer response (buffer-string))))
+                    (kill-buffer response)))
+                ;; Stopping and restarting the host leave the loaded preview alone.
+                (portal-web-test--stop-host)
+                (should (equal (plist-get (portal-web-test--state target) :url) url))
+                (portal-restart-server)
+                (portal-web-test--wait #'portal-server-url)
+                (should-not (string-prefix-p (portal-server-url) url))
+                (should (equal (plist-get (portal-web-test--state target) :url) url))
+                ;; g reloads it from the running host.
+                (call-interactively (key-binding "g"))
+                (should (equal (plist-get (portal-web-test--state target) :url)
+                               (concat (portal-server-url) path))))))
+        (portal-web-test--stop-host)
+        (delete-file file)))))
 
 (ert-deftest portal-web-toolbar-commands-use-the-selected-pane-view ()
   (portal-web-test--environment
