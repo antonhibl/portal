@@ -15,12 +15,11 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     private let hosted: Bool
     /// The URL Emacs loaded last. A hosted app's app host is its origin.
     private(set) var address: URL?
-    /// A hosted app's bridge, which hears about failures the app cannot report.
+    /// A hosted app's bridge, which hears about failures the app cannot report,
+    /// the pages it commits, and the local links the user follows.
     weak var bridge: WebBridge?
-    private let target: String
 
-    init(target: String, toolbar: ToolbarModel.Kind?, hosted: Bool) {
-        self.target = target
+    init(toolbar: ToolbarModel.Kind?, hosted: Bool) {
         self.hosted = hosted
         let configuration = WKWebViewConfiguration()
         if hosted { configuration.websiteDataStore = .nonPersistent() }
@@ -89,20 +88,16 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
 
     /// Emacs tracks which page a hosted app shows, including after back and forward.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if hosted, let url { Views.channel.notify("page", target: target, fields: [Self.field(url)]) }
+        if let url { bridge?.emit(["type": "page", "url": url.absoluteString]) }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls?.loaded() }
 
-    /// Emacs visits a local file that a hosted app's page links to, in another pane.
+    /// Emacs visits a local file that a hosted app's page links to, in another
+    /// pane. The URL goes over the bridge: a long path would not fit in a record.
     func follow(_ url: URL) {
-        input?.handOff("follow", fields: [Self.field(url)])
-    }
-
-    /// Records are split on spaces, so a URL goes in one percent-encoded field.
-    private static func field(_ url: URL) -> String {
-        url.absoluteString.addingPercentEncoding(
-            withAllowedCharacters: CharacterSet.urlFragmentAllowed.union(["#", "%"])) ?? ""
+        input?.unfocus()
+        bridge?.emit(["type": "follow", "url": url.absoluteString])
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -181,11 +176,15 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
         page.bridge = self
     }
 
+    /// Message types only the view itself sends; an app cannot post them.
+    static let reserved: Set<String> = ["page", "follow"]
+
     /// Only the main frame, at the app-host URL Emacs loaded, may post.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let address = page?.address,
               message.frameInfo.request.url == address,
-              let body = message.body as? [String: Any], JSONSerialization.isValidJSONObject(body) else { return }
+              let body = message.body as? [String: Any], JSONSerialization.isValidJSONObject(body),
+              !Self.reserved.contains(body["type"] as? String ?? "") else { return }
         emit(body)
     }
 
@@ -274,7 +273,7 @@ final class WebSession: PortalView {
         self.target = target
         toolbarName = name
         let hosted = options.flag("hosted")
-        let page = WebPage(target: target, toolbar: kind, hosted: hosted)
+        let page = WebPage(toolbar: kind, hosted: hosted)
         page.toolbarModel?.canEdit = name == "markdown"
         self.page = page
         bridge = hosted ? WebBridge(target: target, page: page) : nil

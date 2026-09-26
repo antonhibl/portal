@@ -35,7 +35,13 @@ A web view opened with `:hosted` gets a bridge when it opens (`WebBridge` in
   If that call fails, the bridge queues an `error` message for Emacs.
 
 A hosted page also reports to its bridge when a load fails or its web process
-stops, as `error` messages. No asynchronous AppKit or WebKit callback
+stops, as `error` messages. It sends `page` with the URL of each page it
+commits, including after Back and Forward, and `follow` with the URL of each
+local `file:` link the user clicks, after giving Emacs the keyboard.
+`portal-web.el` handles these for every hosted app, tracking the page on
+screen and visiting linked files, and never passes them to the buffer's
+bridge function; an app cannot post them itself. URLs travel this way, not in
+records, because a long path would not fit in one. No asynchronous AppKit or WebKit callback
 keeps an `emacs_env` or calls Lisp.
 
 Hosted pages keep no cookies or storage between sessions, and never leave the

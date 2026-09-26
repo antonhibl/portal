@@ -75,10 +75,15 @@ makes the app host ready."
   "Return the URL TARGET, by default the selected pane's view, loaded last."
   (plist-get (portal--inspect (or target (portal-view-target))) :url))
 
-(defun portal-tasks-test--page (target path)
-  "Send a `page' record: TARGET's view now shows app host PATH."
+(defun portal-tasks-test--message (target type url)
+  "Send TARGET's view's bridge message TYPE about URL, as the view does."
   (with-current-buffer "*scratch*"
-    (portal-fake-native-send (format "page %s %s%s\n" target portal-tasks-test--host path))))
+    (portal-fake-native-post target (json-serialize (list :type type :url url)))
+    (portal-fake-native-send (format "bridge %s\n" target))))
+
+(defun portal-tasks-test--page (target path)
+  "Send a `page' message: TARGET's view now shows app host PATH."
+  (portal-tasks-test--message target "page" (concat portal-tasks-test--host path)))
 
 (ert-deftest portal-tasks-is-a-command-once-portal-is-loaded ()
   (should (commandp #'portal-tasks))
@@ -206,10 +211,9 @@ makes the app host ready."
       (portal-view-sync)
       (portal-input-focus)
       (should (plist-get (portal--inspect target) :focused))
-      (with-current-buffer "*scratch*"
-        (portal-fake-native-send
-         (format "follow %s file://%s#L2\n" target
-                 (url-hexify-string file (cons ?/ url-unreserved-chars)))))
+      (portal-tasks-test--message
+       target "follow"
+       (format "file://%s#L2" (url-hexify-string file (cons ?/ url-unreserved-chars))))
       (while unread-command-events
         (let ((event (pop unread-command-events)))
           (funcall (lookup-key global-map (vector (car event))) event)))

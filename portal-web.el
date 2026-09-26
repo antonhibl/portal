@@ -8,6 +8,7 @@
 ;; A hosted app and its buffer exchange JSON messages over the bridge.
 ;; A Markdown preview follows links to other Markdown files itself, and hands
 ;; links to other local files to Emacs, which visits them in another pane.
+;; Its view reports the pages it shows, and those links, over the bridge.
 
 (require 'browse-url)
 (require 'json)
@@ -236,7 +237,12 @@ pane, as does `portal-preview-open-in-emacs' for the file on screen;
   "Decode percent-encoded UTF-8 TEXT."
   (decode-coding-string (url-unhex-string text) 'utf-8))
 
-(defun portal-web--page (_target url)
+(defun portal-web--queue (event &rest arguments)
+  "Queue EVENT with ARGUMENTS as input, for its command to run in the command loop.
+Visiting a file can prompt, which a process filter must never do."
+  (setq unread-command-events (nconc unread-command-events (list (list event arguments)))))
+
+(defun portal-web--page (url)
   "Note that this buffer's hosted app shows percent-encoded URL now.
 A page of the same app becomes the app host path to load, so g reloads
 the page on screen, even after the app host restarts with a new token.
@@ -260,8 +266,6 @@ identity, so previewing the file finds this buffer."
               portal-web--hosted-path (portal-web--markdown-path file))
         (unless (string-prefix-p name (buffer-name))
           (rename-buffer name t))))))
-
-(setf (alist-get "page" portal-view-record-handlers nil nil #'equal) #'portal-web--page)
 
 (defun portal-web--display-elsewhere (buffer alist)
   "Display BUFFER in a window other than the selected one, reusing one if possible.
@@ -318,13 +322,8 @@ A fragment such as #L42 or #L42-L50 moves to line 42."
   (interactive "e")
   (portal-web--from-view (car (cadr event)) #'portal-preview-open-in-emacs))
 
-;; Queued, since visiting a file can prompt, and runs in the view's own pane.
-(dolist (type '("follow" "edit"))
-  (let ((event (intern (concat "portal-web-" type))))
-    (setf (alist-get type portal-view-record-handlers nil nil #'equal)
-          (lambda (&rest record)
-            (setq unread-command-events
-                  (nconc unread-command-events (list (list event record))))))))
+(setf (alist-get "edit" portal-view-record-handlers nil nil #'equal)
+      (lambda (target) (portal-web--queue 'portal-web-edit target)))
 (define-key global-map [portal-web-follow] #'portal-web--follow)
 (define-key global-map [portal-web-edit] #'portal-web--edit)
 
@@ -360,10 +359,15 @@ The app receives it through `window.portalBridge.receive'."
 
 (defun portal-web--bridge (target)
   "Pass each message waiting on TARGET's bridge to `portal-web-bridge-function'.
+The view's own messages are handled here instead: \"page\" reports each
+page it commits, and \"follow\" each click on a link to a local file.
 Receiving the messages lets the next ones send a new record."
-  (let ((messages (json-parse-string (portal--web-receive target) :object-type 'plist)))
-    (when portal-web-bridge-function
-      (mapc portal-web-bridge-function messages))))
+  (mapc (lambda (message)
+          (pcase (plist-get message :type)
+            ("page" (portal-web--page (plist-get message :url)))
+            ("follow" (portal-web--queue 'portal-web-follow target (plist-get message :url)))
+            (_ (when portal-web-bridge-function (funcall portal-web-bridge-function message)))))
+        (json-parse-string (portal--web-receive target) :object-type 'plist)))
 
 (setf (alist-get "bridge" portal-view-record-handlers nil nil #'equal) #'portal-web--bridge)
 
