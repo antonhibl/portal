@@ -17,6 +17,7 @@
 
 (defvar-local portal-web--target nil "This buffer's web view target, or nil.")
 (defvar-local portal-web--url nil "The URL this buffer's web view shows, unless it is a hosted app.")
+(defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-preview-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
 
 (define-derived-mode portal-web-mode special-mode "Portal Web"
@@ -141,8 +142,9 @@ Previewing the same file or URL again reuses its buffer and reloads it."
                    (user-error "Choose a readable regular file: %s" path))
                  (browse-url-file-url path)))))
     (portal-web--check-url url)
-    (portal-web--visit (portal-web--find 'portal-web--url url)
-                       (portal-web--page-name url) url "contents")))
+    (portal-web--visit (portal-web--find 'portal-web--preview url)
+                       (portal-web--page-name url) url "contents")
+    (setq portal-web--preview url)))
 
 ;;;###autoload
 (defun portal-hello ()

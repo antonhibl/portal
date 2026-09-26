@@ -124,6 +124,27 @@
     (dolist (input '("" "relative/missing.html" "/ssh:host:/index.html" "javascript:alert(1)"))
       (should-error (portal-preview-html input) :type 'user-error))))
 
+(ert-deftest portal-web-preview-html-only-reuses-preview-buffers ()
+  (portal-web-test--environment
+    (let* ((file (make-temp-file "portal-web-" nil ".html" "<title>Page</title>"))
+           (url (browse-url-file-url file)))
+      (unwind-protect
+          (progn
+            (portal-open-url url)
+            (let ((page (current-buffer)))
+              (switch-to-buffer (generate-new-buffer "client"))
+              (portal-web-open url "none")
+              (let ((client (current-buffer)))
+                (portal-preview-html file)
+                (let ((preview (current-buffer)))
+                  (should-not (memq preview (list page client)))
+                  (should (equal (portal-web-test--toolbar) "contents"))
+                  (switch-to-buffer page)
+                  (portal-preview-html file)
+                  (should (eq (current-buffer) preview))
+                  (should (= (length (portal-fake-native-calls 'portal--open)) 3))))))
+        (delete-file file)))))
+
 (ert-deftest portal-web-quit-window-hides-and-kill-buffer-releases ()
   (portal-web-test--environment
     (portal-open-url "about:blank")
