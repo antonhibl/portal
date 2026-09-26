@@ -206,6 +206,7 @@ struct CheckFocus {
               onload="webkit.messageHandlers.portal.postMessage({type:'second'})"></iframe>
             <script>
             window.portalBridge = {receive: async (m) => webkit.messageHandlers.portal.postMessage({type: 'echo-' + m.type})};
+            webkit.messageHandlers.portal.postMessage({type: 'follow', url: 'file:///etc/passwd'});
             webkit.messageHandlers.portal.postMessage({type: 'first'});
             </script>
             """
@@ -221,7 +222,7 @@ struct CheckFocus {
         // Let the frame load and post too.
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
         precondition(records().isEmpty, "A second record went out before Emacs received the first")
-        precondition(types(web) == ["page", "first", "second"], "The bridge lost, reordered or accepted a frame's message")
+        precondition(types(web) == ["page", "first", "second"], "The bridge lost, reordered or accepted a frame's or reserved message")
         precondition(types(web).isEmpty, "Receiving did not drain the bridge")
         try web.send(#"{"type":"ping"}"#)
         received = ""
