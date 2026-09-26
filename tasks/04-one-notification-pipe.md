@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 04: One notification pipe owned by portal-view.el
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 

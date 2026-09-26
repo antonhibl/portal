@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 08: Markdown preview follows links, with back and forward
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 

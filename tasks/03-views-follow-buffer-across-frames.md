@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 03: Portal views follow their buffer into any frame
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 

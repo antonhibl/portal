@@ -1,6 +1,10 @@
+---
+status: done
+---
+
 # 02: Terminal views run on the shared Portal view lifecycle
 
-Type: AFK · Status: done
+Type: AFK
 
 ## What to build
 
