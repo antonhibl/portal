@@ -229,6 +229,21 @@ struct CheckFocus {
         wait { received += records(); return received.contains("\n") }
         precondition(received == "bridge \(hosted)\n", "Receiving did not re-arm the bridge record")
         precondition(types(web) == ["echo-ping"], "The app did not receive Emacs's message")
+        // A record still waiting when Emacs replaces its pipe is dropped, so the
+        // bridge announces its messages again on the new one.
+        let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
+        while write(fds[1], filler, filler.count) > 0 {}
+        while write(fds[1], filler, 1) > 0 {}
+        try web.send(#"{"type":"pong"}"#)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
+        close(fds[0])
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.connect(fds[1])
+        received = ""
+        wait { received += records(); return received.contains("\n") }
+        precondition(received == "bridge \(hosted)\n", "Reconnecting the channel stalled the bridge")
+        precondition(types(web) == ["echo-pong"], "The bridge lost a message across reconnecting")
         try Views.close(hosted)
 
         let plain = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))

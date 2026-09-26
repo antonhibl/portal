@@ -75,6 +75,13 @@ enum Views {
     }()
     private static let parking = NativeHost.bind(window: parkingWindow)!
 
+    /// Connect `channel` to Emacs's pipe. It drops records waiting for the old
+    /// one, so every bridge announces its waiting messages again.
+    static func connect(_ fd: Int32) {
+        channel.connect(fd)
+        for web in all(WebSession.self) { web.reannounce() }
+    }
+
     static func open(kind: String, options: ViewOptions) throws -> String {
         guard let type = kinds[kind] else { throw NativeError.message("Unknown Portal view kind: \(kind)") }
         nextID += 1

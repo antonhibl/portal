@@ -4,7 +4,8 @@ import Darwin
 /// A nonblocking notification pipe into Emacs's command loop. Feature payloads
 /// stay in their sessions; only short, newline-framed notifications use the pipe.
 /// No asynchronous native callback may retain or call an emacs_env.
-/// `Views.channel` is the one pipe, and carries every view's records.
+/// `Views.channel` is the one pipe, and carries every view's records; connect
+/// it through `Views.connect`.
 @MainActor
 final class NativeEventChannel {
     private var descriptor: Int32 = -1
@@ -12,6 +13,7 @@ final class NativeEventChannel {
     private var waiting: [String] = []
     private var retry: Task<Void, Never>?
 
+    /// Records still waiting for the old pipe are dropped.
     func connect(_ fd: Int32) {
         if descriptor >= 0 { Darwin.close(descriptor) }
         descriptor = fd
@@ -49,6 +51,8 @@ final class NativeEventChannel {
             let written = line.withCString { Darwin.write(descriptor, $0, line.utf8.count) }
             if written == line.utf8.count {
                 waiting.removeFirst()
+            } else if written < 0 && errno == EINTR {
+                continue
             } else if written < 0 && errno == EAGAIN {
                 if retry == nil {
                     retry = Task { [weak self] in

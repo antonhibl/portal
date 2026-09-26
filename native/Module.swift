@@ -199,7 +199,7 @@ private let connectChannel: emacs_function = { env, _, args, _ in
     let fd = env.pointee.is_not_nil(env, args![0]) ? env.pointee.open_channel(env, args![0]) : -1
     guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return symbol(env, "nil") }
     return call(env) {
-        Views.channel.connect(fd)
+        Views.connect(fd)
         return true
     } convert: { boolean(env, $0) }
 }
