@@ -329,14 +329,16 @@ Emacs gets the keyboard, and `portal-preview-return' comes back here."
 ;;;###autoload
 (defun portal-preview-return ()
   "Return to the Markdown preview this frame last opened a file from.
-Select a pane showing it, or show it again if it is hidden, and give its
-view the keyboard.  The page stays as it was."
+Select a pane showing it, in this frame or any other, or show it again
+if it is hidden, and give its view the keyboard.  The page stays as it was."
   (interactive)
   (let ((preview (frame-parameter nil 'portal-preview-return)))
     (unless (memq preview (portal-view-buffers 'web))
       (user-error "No live Markdown preview to return to"))
-    (if-let* ((window (get-buffer-window preview)))
-        (select-window window)
+    ;; A handoff can select another frame, leaving the preview shown in the first.
+    (if-let* ((window (or (get-buffer-window preview) (get-buffer-window preview t))))
+        (progn (select-frame-set-input-focus (window-frame window))
+               (select-window window))
       (pop-to-buffer preview))
     (portal-view-focus)))
 

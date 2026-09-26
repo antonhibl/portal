@@ -597,7 +597,13 @@ A Markdown FILE gets its preview URL, and any other a file: URL."
           (portal-web-test--run-events))
         (should (eq (selected-frame) frame))
         (should (eq (frame-parameter frame 'portal-preview-return) preview))
-        (should (eq (frame-parameter portal-fake-native--selected 'portal-preview-return) preview))))))
+        (should (eq (frame-parameter portal-fake-native--selected 'portal-preview-return) preview))
+        ;; Return selects the preview's pane in the first frame, not a copy here.
+        (let ((origin (get-buffer-window preview portal-fake-native--selected)))
+          (portal-preview-return)
+          (should (eq (selected-window) origin))
+          (should-not (get-buffer-window preview frame))
+          (should (plist-get (portal-web-test--state (portal-view-target)) :focused)))))))
 
 (ert-deftest portal-web-click-selects-the-views-pane ()
   (portal-web-test--environment
