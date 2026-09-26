@@ -86,15 +86,17 @@ is hollow when Emacs owns the keyboard, green when the view owns it, blue while
 an Emacs prefix is pending, and amber in passthrough. Click the dot to enter or
 return to Emacs. No global physical keybinding is installed in ordinary buffers.
 
-The 28 pixel toolbar reserves space above the content. Web pages have navigation,
-find, zoom, and reload; Markdown and HTML previews have a table of contents in
-place of navigation. Terminals have text size controls. Excalidraw and quick
+The 28 pixel toolbar reserves space above the content. Web pages have back,
+forward, find, zoom, and reload; Markdown and HTML previews also have a table of
+contents, and Markdown previews an **Open in Emacs** button. Terminals have text
+size controls. Excalidraw and quick
 terminals have no toolbar. The command that opens a web view chooses its toolbar.
 `(setq portal-toolbar nil)` hides toolbars live, and `t` restores them. Colors
 follow Emacs faces and update after theme changes.
 
-`portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`, and
-`portal-find` use the same native state as the buttons. Terminal equivalents are
+`portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`,
+`portal-find`, `portal-web-back` (`l`), and `portal-web-forward` (`r`) use the
+same native state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
 `portal-terminal-text-size-reset`. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
@@ -112,9 +114,10 @@ Customize shared operations in `portal-command-map`; they take precedence over
 feature shortcuts. The native first chord accepts modified ASCII, with Meta =
 Option and Super = Command. The rest of a sequence uses normal Emacs keys.
 
-Click inside a page or press `RET` to interact. After returning to Emacs,
-`q` hides the web view and `g` loads its page again. The mode line and
-minibuffer remain available.
+Click inside a page or press `RET` to interact. A click that enters a view also
+selects the Emacs pane showing it, so the selected pane and the keyboard always
+agree. After returning to Emacs, `q` hides the web view and `g` loads its page
+again. The mode line and minibuffer remain available.
 
 Restart Emacs after rebuilding the native module to try these controls.
 
@@ -477,14 +480,48 @@ in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
 anchors are supported. Press `C-b d` or Command-Escape to return to Emacs, then
-`g` (`portal-web-reload`) to reread the file from disk. `g` also starts a
+`g` (`portal-web-reload`) to reread the file on screen from disk. `g` also starts a
 stopped host. A loaded preview stays as it is while the host stops or restarts.
-Missing or unreadable files produce an error page. Links to other sites, such
-as `https://` links, open in the default browser, and the preview stays.
+Missing or unreadable files produce an error page.
+
+The preview follows links like a browser:
+
+| Link | Where it goes |
+| --- | --- |
+| `#anchor` | Scrolls within the page |
+| A local Markdown file, such as `architecture.md` or `other.md#heading` | Opens in the same preview, at the heading if there is one |
+| Any other local file, such as `src/server.ts#L42` | Opens in Emacs in another pane, at line 42 for `#L42` or `#L42-L50` |
+| A local image or folder | Opens in Emacs, in `image-mode` or Dired |
+| `https://…` and other sites | Opens in the default browser |
+
+Relative links resolve from the folder of the document on screen, and local
+absolute paths and `file:` URLs work the same way. After following a Markdown
+link, the buffer is renamed after the new file, `g` rereads it, and
+`portal-preview-markdown` on that file finds this preview. Back and Forward in
+the toolbar, or `l` and `r` in the preview buffer, move through the documents
+this preview has shown and restore their reading positions. Following a new
+link after going back discards the old forward pages, as in a browser; opening
+a file in Emacs or a website does not.
+
+Opening a file in Emacs is one click, with no need to leave the preview first.
+Emacs selects the file's pane and takes the keyboard, ready for editing, while
+the preview stays in its own pane at the same reading position. The file goes
+to another pane, reusing one or splitting the frame. Rules in
+`display-buffer-alist` still decide: if one puts the file in the preview's own
+pane, the hidden preview keeps its page. **Open in Emacs** in the toolbar, or
+`M-x portal-preview-open-in-emacs`, does the same for the Markdown file on
+screen, including after Back or Forward.
+
+To go back to reading, click the preview, which selects its pane and gives it
+the keyboard, or select its pane and press `RET`. From anywhere else,
+`M-x portal-preview-return` selects the preview that the frame last opened a
+file from, showing it again if it was hidden, and gives it the keyboard. The
+page is not reloaded. There is no global key for it; bind one if you like.
 
 This version previews saved contents only, with no automatic refresh. It does
-not serve relative images or linked local files, or add syntax highlighting,
-Mermaid, or math rendering. HTTP(S) images and links can use their absolute URLs.
+not show relative inline images, or add syntax highlighting, Mermaid, or math
+rendering. HTTP(S) images and links can use their absolute URLs. Going back past
+an app host restart shows a "Not found" page; `g` reloads from the running host.
 Raw HTML is displayed as text, and a page-specific Content Security Policy
 blocks scripts. Bun currently marks its Markdown API unstable; it is tested
 here with the Bun version listed above.
@@ -508,18 +545,25 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
   storage between Emacs sessions.
 - A hosted app's page never leaves the app host. When it would navigate
   anywhere else, the navigation is cancelled and the URL opens in the default
-  browser.
+  browser. Clicking a link to a local `file:` URL gives Emacs the keyboard and
+  sends a `follow TARGET URL` record instead: WebKit never lets an app host
+  page load a local file, so a script in its own content world, out of the
+  page's reach, catches such clicks. Each page a hosted app commits, including
+  after Back and Forward, sends a `page TARGET URL` record. Records carry URLs
+  percent-encoded, so they have no spaces.
 - The shared Portal prefix and Command-Escape work while a page has focus.
-  Clicking a web view does not change Emacs's selected pane; use Emacs window
-  navigation after returning focus.
+  Clicking a view to enter it sends a `select TARGET` record, and Emacs selects
+  the pane showing it.
 - This is a URL viewer, without an address bar, downloads, popup windows, or
   JavaScript dialog UI. Failed loads can be inspected through `:error` in
   `(portal--inspect (portal-view-target))`.
 
 Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
 for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
-find, zoom and reload), `"contents"` (a table of contents in place of back and
-forward) or `"none"`.
+find, zoom and reload), `"contents"` (those and a table of contents),
+`"markdown"` (those, a table of contents and Open in Emacs) or `"none"`.
+Loading the page a view shows again, ignoring its fragment, reloads it without
+a new history entry.
 `(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
 opens at once, at `about:blank`, and loads PATH, such as `"/hello"`, from the
 app host as soon as the host is ready, starting the host if needed.
@@ -603,7 +647,11 @@ Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
 pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
 killing the buffer, the toolbar each command chooses, and Hello and the Markdown
-preview opening at once and loading once a simulated app host is ready. One test
+preview opening at once and loading once a simulated app host is ready. Markdown
+tests feed the fake native adapter `page`, `follow`, `edit` and `select` records.
+They check document identity, handoff placement with and without
+`display-buffer-alist` rules, line fragments, images and folders, failed
+handoffs, Open in Emacs, and return tracking across buffers, previews and frames. One test
 opens a Markdown preview with the real app host, which `ctest` passes through
 `PORTAL_TEST_HOST`. It checks that the preview loads once the host is ready,
 stays as it is while the host stops and restarts, and that `g` reloads it.
@@ -611,8 +659,13 @@ stays as it is while the host stops and restarts, and that `g` reloads it.
 The graphical web tests wait for real WebKit page loads. They verify JavaScript
 execution, relative local assets, a page staying loaded while hidden, repeated
 loading and native URL validation.
-The combined graphical suite includes web, terminal, Excalidraw, and shared
-input tests, plus
+The Markdown graphical tests use the real app host and real mouse clicks. They
+check that Back and Forward restore reading positions, that a source link hands
+the keyboard to Emacs in one click, that clicking the preview selects its pane,
+that `portal-preview-return` and `RET` return without reloading, and that
+Command-Escape and `C-b d` still return to Emacs.
+The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
+shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
@@ -630,6 +683,7 @@ emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   -l "$PWD/test/portal-excalidraw-gui-tests.el" \
   -l "$PWD/test/portal-input-gui-tests.el" \
   -l "$PWD/test/portal-toolbar-gui-tests.el" \
+  -l "$PWD/test/portal-markdown-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
@@ -648,14 +702,17 @@ build/check-focus
 
 The checks open web views through the same `Views` registry as Emacs. They also
 check that a hosted web view keeps no data between sessions, that a page
-outside the app host goes to the default browser while the app stays, and that
-only a hosted app's main frame can use the bridge.
+outside the app host goes to the default browser while the app stays, that
+only a hosted app's main frame can use the bridge, and that a hosted app
+reports each committed page. A click on it sends `select`, and a click on a
+local link sends `follow` and returns the keyboard to Emacs.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
 without Ghostty.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
-focus-preserving buttons, zoom limits, TOC, find, and retained state.
+focus-preserving buttons, back and forward in previews, zoom limits, TOC, find,
+retained state, and a Markdown preview's Open in Emacs.
 
 The compiled-host integration tests run without a graphical display:
 
@@ -667,8 +724,8 @@ ctest --test-dir build --output-on-failure
 They exercise real HTTP requests, a relocated binary with no Bun on PATH,
 shared startup, graceful shutdown, restart, crash recovery, startup timeout,
 and partial or incompatible readiness messages.
-They also check Markdown output, rereading saved changes, invalid paths,
-access-token and Host validation, and non-executable raw HTML.
+They also check Markdown output, local link rewriting, rereading saved changes,
+invalid paths, access-token and Host validation, and non-executable raw HTML.
 
 ## Scope
 

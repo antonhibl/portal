@@ -6,6 +6,8 @@
 ;; Hosted apps open at once, at about:blank, and load once the app host is
 ;; ready.  After that they keep their page while the app host stops or restarts.
 ;; A hosted app and its buffer exchange JSON messages over the bridge.
+;; A Markdown preview follows links to other Markdown files itself, and hands
+;; links to other local files to Emacs, which visits them in another pane.
 
 (require 'browse-url)
 (require 'json)
@@ -26,6 +28,7 @@
 It is nil while a hosted app waits for the app host.")
 (defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-preview-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
+(defvar-local portal-web--markdown nil "The Markdown file this preview shows, or nil.")
 (defvar-local portal-web-bridge-function nil
   "Function called with each message this buffer's hosted app sends, in order.
 Each message is a JSON object parsed into a plist.  The function runs with
@@ -35,12 +38,14 @@ queues commands through `unread-command-events'.")
 (define-derived-mode portal-web-mode special-mode "Portal Web"
   "Major mode for a buffer presenting a web view.
 RET or a click enters the page, and Command-Escape returns to Emacs.
-g loads the page again.  q hides the view while the page keeps running,
-and killing the buffer closes it."
+g loads the page again, and l and r go back and forward.  q hides the view
+while the page keeps running, and killing the buffer closes it."
   (setq-local cursor-type nil)
   (setq-local portal-input--map-function (lambda () portal-web-mode-map))
   (portal-input-mode 1))
 (keymap-set portal-web-mode-map "g" #'portal-web-reload)
+(keymap-set portal-web-mode-map "l" #'portal-web-back)
+(keymap-set portal-web-mode-map "r" #'portal-web-forward)
 
 (defun portal-web--check-url (url)
   "Signal a user error unless URL is a URL a web view can load."
@@ -51,8 +56,9 @@ and killing the buffer closes it."
 (defun portal-web-open (url toolbar)
   "Open a web view for the current buffer, load URL in it and return its target.
 URL is an absolute http, https, file, data or about URL.  TOOLBAR is
-\"navigation\" for back, forward, find, zoom and reload, \"contents\" for a
-table of contents in place of back and forward, or \"none\".
+\"navigation\" for back, forward, find, zoom and reload, \"contents\" for
+those and a table of contents, \"markdown\" for those, a table of contents
+and Open in Emacs, or \"none\".
 Once URL starts loading, this turns on `portal-input-mode', keeping the
 buffer's major mode.  If the view cannot open or load URL, it is closed."
   (portal-web--check-url url)
@@ -93,6 +99,16 @@ A hosted app loads from the app host, which starts first if needed."
   (if portal-web--hosted-path
       (portal-web--load-hosted)
     (portal--web-load portal-web--target portal-web--url)))
+
+(defun portal-web-back ()
+  "Go back to the previous page in this web view's history."
+  (interactive)
+  (portal-toolbar--action "back"))
+
+(defun portal-web-forward ()
+  "Go forward to the next page in this web view's history."
+  (interactive)
+  (portal-toolbar--action "forward"))
 
 (defun portal-web--find (variable value)
   "Return the web buffer whose buffer-local VARIABLE is VALUE, or nil."
@@ -189,7 +205,11 @@ Previewing the same file or URL again reuses its buffer and reloads it."
 Use the current buffer's file when it has a Markdown mode or extension;
 otherwise prompt for FILE.  With a prefix argument, always prompt.
 Previewing the same file again reuses its buffer.  Press g in the preview
-buffer to reread the file from disk.  Unsaved edits are not included."
+buffer to reread the file from disk.  Unsaved edits are not included.
+A link to another Markdown file opens it in the same preview, and l and r
+go back and forward.  A link to any other local file opens it in another
+pane, as does `portal-preview-open-in-emacs' for the file on screen;
+`portal-preview-return' comes back."
   (interactive
    (list
     (if (and (not current-prefix-arg) buffer-file-name
@@ -204,8 +224,121 @@ buffer to reread the file from disk.  Unsaved edits are not included."
       (user-error "Choose a local Markdown file"))
     (unless (and (file-regular-p path) (file-readable-p path))
       (user-error "Choose a readable regular file: %s" path))
-    (portal-web--visit-hosted (concat "/markdown?path=" (url-hexify-string path))
-                              (file-name-nondirectory path) "contents")))
+    (portal-web--visit-hosted (portal-web--markdown-path path)
+                              (file-name-nondirectory path) "markdown")
+    (setq portal-web--markdown path)))
+
+(defun portal-web--markdown-path (file)
+  "Return the app host path that previews Markdown FILE."
+  (concat "/markdown?path=" (url-hexify-string file)))
+
+(defun portal-web--unhex (text)
+  "Decode percent-encoded UTF-8 TEXT."
+  (decode-coding-string (url-unhex-string text) 'utf-8))
+
+(defun portal-web--page (_target url)
+  "Note that this buffer's hosted app shows percent-encoded URL now.
+A Markdown preview that shows another Markdown file takes that file's
+identity, so g reloads it and previewing the file finds this buffer."
+  (let ((parsed (url-generic-parse-url url)))
+    (when (and portal-web--markdown
+               (equal (url-type parsed) "http") (equal (url-host parsed) "127.0.0.1")
+               (string-match "\\`/[[:xdigit:]]+/markdown\\?\\(?:[^#]*&\\)?path=\\([^&#]*\\)"
+                             (url-filename parsed)))
+      (let* ((file (portal-web--unhex (match-string 1 (url-filename parsed))))
+             (name (format "*portal: %s*" (file-name-nondirectory file))))
+        (setq portal-web--markdown file
+              portal-web--hosted-path (portal-web--markdown-path file))
+        (unless (string-prefix-p name (buffer-name))
+          (rename-buffer name t))))))
+
+(setf (alist-get "page" portal-view-record-handlers nil nil #'equal) #'portal-web--page)
+
+(defun portal-web--display-elsewhere (buffer alist)
+  "Display BUFFER in a window other than the selected one, reusing one if possible.
+This is a `display-buffer' action function.  Rules in `display-buffer-alist'
+come first, and ALIST keeps them free to use the selected window."
+  (let ((alist (cons '(inhibit-same-window . t) alist)))
+    (or (display-buffer-reuse-window buffer alist)
+        (display-buffer-use-some-window buffer alist)
+        (display-buffer-pop-up-window buffer alist))))
+
+(defun portal-web--hand-off (file &optional line)
+  "Visit FILE in a pane other than this Markdown preview's, at LINE if non-nil.
+Select that pane with Emacs owning the keyboard, and remember this preview
+for `portal-preview-return' in both frames involved."
+  (let ((preview (current-buffer))
+        (origin (selected-window))
+        (buffer (find-file-noselect file)))
+    (portal-input--action "unfocus" portal-web--target)
+    (setq portal-input--resume nil)
+    (pop-to-buffer buffer '(portal-web--display-elsewhere))
+    (when line
+      (goto-char (point-min))
+      (forward-line (1- line)))
+    (dolist (frame (list (window-frame origin) (selected-frame)))
+      (set-frame-parameter frame 'portal-preview-return preview))))
+
+(defun portal-web--from-view (target function)
+  "Call FUNCTION with web view TARGET's buffer current, in the pane showing it.
+With no such pane, FUNCTION runs in the selected pane."
+  (when-let* ((buffer (portal-view--target-buffer target)))
+    (when-let* ((window (portal-input--window target)))
+      (select-window window))
+    (set-buffer buffer)
+    (funcall function)))
+
+(defun portal-web--follow (event)
+  "Visit the local file whose link EVENT's Markdown preview followed.
+A fragment such as #L42 or #L42-L50 moves to line 42."
+  (interactive "e")
+  (pcase-let ((`(,target ,url) (cadr event)))
+    (portal-web--from-view
+     target
+     (lambda ()
+       (let* ((parsed (url-generic-parse-url url))
+              (fragment (or (url-target parsed) "")))
+         (portal-web--hand-off
+          (portal-web--unhex (url-filename parsed))
+          (and (string-match "\\`L\\([0-9]+\\)\\(?:-L[0-9]+\\)?\\'" fragment)
+               (string-to-number (match-string 1 fragment)))))))))
+
+(defun portal-web--edit (event)
+  "Open the Markdown file on screen in EVENT's preview, from its toolbar."
+  (interactive "e")
+  (portal-web--from-view (car (cadr event)) #'portal-preview-open-in-emacs))
+
+;; Queued, since visiting a file can prompt, and runs in the view's own pane.
+(dolist (type '("follow" "edit"))
+  (let ((event (intern (concat "portal-web-" type))))
+    (setf (alist-get type portal-view-record-handlers nil nil #'equal)
+          (lambda (&rest record)
+            (setq unread-command-events
+                  (nconc unread-command-events (list (list event record))))))))
+(define-key global-map [portal-web-follow] #'portal-web--follow)
+(define-key global-map [portal-web-edit] #'portal-web--edit)
+
+;;;###autoload
+(defun portal-preview-open-in-emacs ()
+  "Visit the Markdown file this preview shows, in another pane.
+Emacs gets the keyboard, and `portal-preview-return' comes back here."
+  (interactive)
+  (unless portal-web--markdown (user-error "This buffer is not a Markdown preview"))
+  (portal-web--hand-off portal-web--markdown))
+
+;;;###autoload
+(defun portal-preview-return ()
+  "Return to the Markdown preview this frame last opened a file from.
+Select a pane showing it, or show it again if it is hidden, and give its
+view the keyboard.  The page stays as it was."
+  (interactive)
+  (let ((preview (frame-parameter nil 'portal-preview-return)))
+    (unless (memq preview (portal-view-buffers 'web))
+      (user-error "No live Markdown preview to return to"))
+    (if-let* ((window (get-buffer-window preview)))
+        (select-window window)
+      (pop-to-buffer preview))
+    (portal-view-focus)))
 
 ;; Hosted apps.
 (defun portal-web-send (plist)

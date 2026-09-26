@@ -36,6 +36,14 @@ struct CheckToolbar {
         func button(_ tooltip: String) -> NSButton {
             container.toolbar!.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == tooltip }!
         }
+        // Previews go back and forward like pages; only Markdown ones open in Emacs.
+        precondition(!button("Back").isHidden && !button("Back").isEnabled && !button("Forward").isEnabled)
+        precondition(button("Open in Emacs").isHidden)
+        try Views.view(target, as: WebSession.self).load("data:text/html,<title>Second page</title>")
+        wait("second page did not load") { web.title == "Second page" && button("Back").isEnabled }
+        button("Back").performClick(nil)
+        wait("back did not return") { web.title == "Toolbar test" && !web.isLoading && model.hasHeadings }
+        precondition(button("Forward").isEnabled && !button("Back").isEnabled && window.firstResponder === editor)
         button("Zoom in").performClick(nil)
         precondition(web.pageZoom == 1.1 && window.firstResponder === editor)
         try model.perform("increase")
@@ -102,6 +110,32 @@ struct CheckToolbar {
         precondition(NativeToolbar.color("success") == NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
         try Views.close(target)
         precondition(window.contentView!.subviews.count == 1)
-        print("Toolbar layout, focus, zoom limits, TOC, find, theme and retained state passed")
+        try checkMarkdown(window: window, editor: editor)
+        print("Toolbar layout, focus, zoom limits, TOC, find, back, forward, theme and retained state passed")
+    }
+
+    /// A Markdown preview's Open in Emacs hands the keyboard and the command to Emacs.
+    @MainActor
+    static func checkMarkdown(window: NSWindow, editor: NSView) throws {
+        var fds: [Int32] = [0, 0]
+        precondition(pipe(&fds) == 0)
+        _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
+        Views.channel.connect(fds[1])
+        defer { Views.channel.connect(-1); close(fds[0]) }
+        let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("markdown")]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        let container = window.contentView!.subviews.compactMap { $0 as? NativeContainer }.first!
+        let edit = container.toolbar!.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == "Open in Emacs" }!
+        precondition(!edit.isHidden && container.model.kind == .preview)
+        let focused = try NativeInput.perform(target, action: "focus")
+        precondition(focused && window.firstResponder !== editor)
+        edit.performClick(nil)
+        var buffer = [UInt8](repeating: 0, count: 512)
+        let count = read(fds[0], &buffer, buffer.count)
+        precondition(count > 0 && String(decoding: buffer[..<count], as: UTF8.self) == "edit \(target)\n",
+                     "Open in Emacs did not notify Emacs")
+        precondition(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")
+        try Views.close(target)
+        print("Markdown previews open their file in Emacs from the toolbar")
     }
 }

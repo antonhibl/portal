@@ -131,6 +131,51 @@
             (should-not (string-match-p "<strong>Bold</strong>" page))))
       (delete-directory directory t))))
 
+(defun portal-server-test--href (page text)
+  "Return the href of the link with TEXT in Markdown PAGE."
+  (should (string-match (format "<a href=\"\\([^\"]*\\)\"[^>]*>%s</a>" (regexp-quote text)) page))
+  (match-string 1 page))
+
+(ert-deftest portal-server-markdown-rewrites-local-links ()
+  (let* ((directory (make-temp-file "portal-markdown-" t))
+         (docs (expand-file-name "docs é" directory))
+         (file (expand-file-name "Guide.md" docs))
+         (preview (lambda (path)
+                    (concat "markdown?path=" (url-hexify-string (expand-file-name path docs)))))
+         (visit (lambda (path)
+                  (concat "file://" (url-hexify-string (expand-file-name path docs)
+                                                       (cons ?/ url-unreserved-chars))))))
+    (unwind-protect
+        (portal-server-test--with-host
+          (make-directory docs)
+          (with-temp-file file
+            (insert "# Top\n\n[same](#top) [other](other%20file.md#next-steps) "
+                    "[up](../README.MD) [résumé](résumé.md) [amp](a&b.md) [missing](gone.md) "
+                    "[code](<src/main file.ts#L42-L50>) [image](img/pic.png) [dir](src/) "
+                    "[absolute](/tmp/abs.markdown#x) [file](file:///tmp/x%20y.ts#L3) "
+                    "[web](https://example.com/a.md) [mail](mailto:a@example.com)\n"))
+          (portal-start-server)
+          (portal-server-test--wait #'portal-server-url)
+          (let ((page (decode-coding-string
+                       (portal-server-test--get (concat "/markdown?path=" (url-hexify-string file)))
+                       'utf-8)))
+            (dolist (link `(("same" . "#top")
+                            ("other" . ,(concat (funcall preview "other file.md") "#next-steps"))
+                            ("up" . ,(funcall preview "../README.MD"))
+                            ("résumé" . ,(funcall preview "résumé.md"))
+                            ("amp" . ,(funcall preview "a&b.md"))
+                            ("missing" . ,(funcall preview "gone.md"))
+                            ("code" . ,(concat (funcall visit "src/main file.ts") "#L42-L50"))
+                            ("image" . ,(funcall visit "img/pic.png"))
+                            ("dir" . ,(funcall visit "src/"))
+                            ("absolute" . "markdown?path=%2Ftmp%2Fabs.markdown#x")
+                            ("file" . "file:///tmp/x%20y.ts#L3")
+                            ("web" . "https://example.com/a.md")
+                            ("mail" . "mailto:a@example.com")))
+              (ert-info ((car link))
+                (should (equal (portal-server-test--href page (car link)) (cdr link)))))))
+      (delete-directory directory t))))
+
 (ert-deftest portal-server-markdown-rejects-invalid-requests ()
   (let ((directory (make-temp-file "portal-markdown-" t)))
     (unwind-protect

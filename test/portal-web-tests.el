@@ -216,7 +216,7 @@
                     (markdown-url (concat "http://127.0.0.1:1/token/markdown?path="
                                           (url-hexify-string file))))
                 (should (equal (buffer-name) (format "*portal: %s*" (file-name-nondirectory file))))
-                (should (equal (portal-web-test--toolbar) "contents"))
+                (should (equal (portal-web-test--toolbar) "markdown"))
                 ;; Both views open at once, before the app host is ready.
                 (should (= starts 2))
                 (dolist (target (list hello-target markdown-target))
@@ -359,15 +359,259 @@
         (should (= (portal-zoom-in) 110))
         (should (portal-toggle-toc))
         (portal-find)
+        (call-interactively (key-binding "l"))
+        (call-interactively (key-binding "r"))
         (should (equal (reverse calls)
-                       `((,target "increase") (,target "toc") (,target "find"))))
+                       `((,target "increase") (,target "toc") (,target "find")
+                         (,target "back") (,target "forward"))))
         (should-error (portal-terminal-text-size-increase) :type 'user-error)
         ;; A pane showing another buffer has no view to act on.
         (set-window-buffer other (get-buffer "*scratch*"))
         (select-window other)
         (portal-view-sync)
         (should-error (portal-zoom-in) :type 'user-error)
-        (should (= (length calls) 3))))))
+        (should (= (length calls) 5))))))
+
+;; Markdown previews: navigation, handoff to Emacs, and return.
+
+(defconst portal-web-test--host "http://127.0.0.1:1/0123abcd"
+  "The simulated app host's base URL.")
+
+(defvar portal-web-test--directory nil "The Markdown tests' temporary folder.")
+
+(defmacro portal-web-test--markdown (&rest body)
+  "Run BODY with a simulated app host and `portal-web-test--directory'.
+The folder holds README.md, \"docs é/arch notes.md\", a source file with
+60 lines, an image and a folder."
+  (declare (indent 0))
+  `(portal-web-test--environment
+     (let* ((portal-web-test--directory (make-temp-file "portal-markdown-" t))
+            (directory portal-web-test--directory)
+            (display-buffer-alist nil))
+       (unwind-protect
+           (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+                     ((symbol-function 'portal-server-url) (lambda () portal-web-test--host)))
+             (make-directory (expand-file-name "docs é" directory))
+             (make-directory (expand-file-name "src" directory))
+             (with-temp-file (expand-file-name "README.md" directory) (insert "# Read me\n"))
+             (with-temp-file (expand-file-name "docs é/arch notes.md" directory) (insert "# Arch\n"))
+             (with-temp-file (expand-file-name "src/main file.ts" directory)
+               (dotimes (line 60) (insert (format "// line %d\n" (1+ line)))))
+             (with-temp-file (expand-file-name "pic.png" directory) (insert "\211PNG\r\n\032\n"))
+             ,@body)
+         (dolist (buffer (buffer-list))
+           (when (and (buffer-file-name buffer) (file-in-directory-p (buffer-file-name buffer) directory))
+             (kill-buffer buffer)))
+         (delete-directory directory t)))))
+
+(defun portal-web-test--file (name)
+  "Return file NAME in `portal-web-test--directory'."
+  (expand-file-name name portal-web-test--directory))
+
+(defun portal-web-test--record (type target &optional file fragment)
+  "Send native record TYPE for TARGET, with a URL for FILE when non-nil.
+A Markdown FILE gets its preview URL, and any other a file: URL."
+  (let ((url (cond ((null file) nil)
+                   ((string-suffix-p ".md" file)
+                    (concat portal-web-test--host "/markdown?path=" (url-hexify-string file)))
+                   (t (concat "file://" (url-hexify-string file (cons ?/ url-unreserved-chars)))))))
+    (with-current-buffer "*scratch*"
+      (portal-fake-native-send
+       (concat type " " target (and url (concat " " url (and fragment (concat "#" fragment)))) "\n")))))
+
+(defun portal-web-test--run-events ()
+  "Run the commands that native records queued, as the command loop would."
+  (while unread-command-events
+    (let ((event (pop unread-command-events)))
+      (funcall (lookup-key global-map (vector (car event))) event))))
+
+(defun portal-web-test--preview (file)
+  "Preview Markdown FILE; return its buffer, which the selected pane shows."
+  (portal-preview-markdown file)
+  (portal-view-sync)
+  (current-buffer))
+
+(ert-deftest portal-web-markdown-preview-takes-the-identity-of-the-page-it-shows ()
+  (portal-web-test--markdown
+    (let* ((readme (portal-web-test--file "README.md"))
+           (arch (portal-web-test--file "docs é/arch notes.md"))
+           (preview (portal-web-test--preview readme))
+           (target (portal-view-target)))
+      (should (equal (buffer-name) "*portal: README.md*"))
+      ;; A link to another Markdown file, with a heading, commits in the view.
+      (portal-web-test--record "page" target arch "decisions")
+      (should (equal (buffer-name preview) "*portal: arch notes.md*"))
+      ;; g rereads the file on screen.
+      (setq portal-fake-native-log nil)
+      (call-interactively (key-binding "g"))
+      (should (equal portal-fake-native-log
+                     `((portal--web-load ,target ,(concat portal-web-test--host "/markdown?path="
+                                                          (url-hexify-string arch))))))
+      ;; Previewing the file on screen finds this buffer; the first file does not.
+      (switch-to-buffer "*scratch*")
+      (should (eq (portal-web-test--preview arch) preview))
+      (let ((other (portal-web-test--preview readme)))
+        (should-not (eq other preview))
+        (should (equal (buffer-name other) "*portal: README.md*"))
+        ;; Each preview keeps its own identity, even for the same file.
+        (portal-web-test--record "page" (portal-view-target) arch)
+        (should (equal (buffer-name other) "*portal: arch notes.md*<2>"))
+        (should (equal (buffer-name preview) "*portal: arch notes.md*"))
+        ;; Back in the first preview.
+        (portal-web-test--record "page" target readme)
+        (should (equal (buffer-name preview) "*portal: README.md*"))
+        (switch-to-buffer "*scratch*")
+        (should (eq (portal-web-test--preview readme) preview)))
+      ;; Other pages, and pages of other hosted apps, change nothing.
+      (portal-web-test--record "page" target nil)
+      (with-current-buffer "*scratch*"
+        (portal-fake-native-send (format "page %s about:blank\n" target)
+                                 (format "page %s %s/hello\n" target portal-web-test--host)))
+      (should (equal (buffer-name preview) "*portal: README.md*"))
+      (portal-hello)
+      (portal-web-test--record "page" (portal-view-target) arch)
+      (should (equal (buffer-name) "*portal: hello*")))))
+
+(ert-deftest portal-web-markdown-preview-hands-local-files-to-another-pane ()
+  (portal-web-test--markdown
+    (let* ((preview (portal-web-test--preview (portal-web-test--file "README.md")))
+           (target (portal-view-target))
+           (origin (selected-window))
+           (source (portal-web-test--file "src/main file.ts")))
+      (portal-input-focus)
+      (should (plist-get (portal-web-test--state target) :focused))
+      ;; With one pane, the file gets a new one and the preview stays.
+      (portal-web-test--record "follow" target source "L42-L50")
+      (portal-web-test--run-events)
+      (should (equal buffer-file-name source))
+      (should (= (line-number-at-pos) 42))
+      (should-not (eq (selected-window) origin))
+      (should (eq (window-buffer origin) preview))
+      (portal-view-sync)
+      (should (plist-get (portal-web-test--state target) :visible))
+      (should-not (plist-get (portal-web-test--state target) :focused))
+      (should (eq (frame-parameter nil 'portal-preview-return) preview))
+      ;; The clicked preview's pane need not be selected; its other pane is reused.
+      (let ((other (selected-window)))
+        (should (= (count-windows) 2))
+        (portal-web-test--record "follow" target (portal-web-test--file "pic.png"))
+        (portal-web-test--run-events)
+        (should (eq (selected-window) other))
+        (should (equal buffer-file-name (portal-web-test--file "pic.png")))
+        (select-window origin)
+        (portal-web-test--record "follow" target (portal-web-test--file "src/"))
+        (portal-web-test--run-events)
+        (should (eq (selected-window) other))
+        (should (eq major-mode 'dired-mode))
+        ;; Existing buffers keep their point and edits; other fragments are ignored.
+        (portal-web-test--record "follow" target source)
+        (portal-web-test--run-events)
+        (should (= (line-number-at-pos) 42))
+        (insert "unsaved ")
+        (forward-line -32)
+        (portal-web-test--record "follow" target source "heading")
+        (portal-web-test--run-events)
+        (should (buffer-modified-p))
+        (should (= (line-number-at-pos) 10))
+        (set-buffer-modified-p nil))
+      (should (= (count-windows) 2))
+      (should (eq (window-buffer origin) preview))
+      (should (= (length (portal-fake-native-calls 'portal--web-load)) 2)))))
+
+(ert-deftest portal-web-markdown-handoff-respects-placement-rules-and-failures ()
+  (portal-web-test--markdown
+    (let* ((preview (portal-web-test--preview (portal-web-test--file "README.md")))
+           (target (portal-view-target))
+           (source (portal-web-test--file "src/main file.ts")))
+      ;; A failed visit reports the error and leaves the preview as it was.
+      (cl-letf (((symbol-function 'find-file-noselect)
+                 (lambda (&rest _) (signal 'file-error '("Opening input file" "Permission denied")))))
+        (portal-web-test--record "follow" target source)
+        (should-error (portal-web-test--run-events) :type 'file-error))
+      (should (eq (window-buffer) preview))
+      (should (= (count-windows) 1))
+      ;; Placement rules win, even when they replace the preview.
+      (let ((display-buffer-alist '(("\\.ts\\'" display-buffer-same-window))))
+        (portal-web-test--record "follow" target source)
+        (portal-web-test--run-events))
+      (should (equal buffer-file-name source))
+      (should (= (count-windows) 1))
+      (portal-view-sync)
+      (should-not (plist-get (portal-web-test--state target) :visible))
+      ;; Return shows it again, with the page it had.
+      (setq portal-fake-native-log nil)
+      (portal-preview-return)
+      (should (eq (window-buffer) preview))
+      (should (plist-get (portal-web-test--state target) :visible))
+      (should (plist-get (portal-web-test--state target) :focused))
+      (should-not (portal-fake-native-calls 'portal--web-load)))))
+
+(ert-deftest portal-web-markdown-open-in-emacs-and-return ()
+  (portal-web-test--markdown
+    (let* ((readme (portal-web-test--file "README.md"))
+           (arch (portal-web-test--file "docs é/arch notes.md"))
+           (preview (portal-web-test--preview readme))
+           (target (portal-view-target))
+           (origin (selected-window)))
+      (should-error (with-current-buffer "*scratch*" (portal-preview-open-in-emacs)) :type 'user-error)
+      (should-error (portal-preview-return) :type 'user-error)
+      ;; The toolbar opens the file on screen, after back or forward too.
+      (portal-web-test--record "page" target arch)
+      (portal-web-test--record "edit" target)
+      (portal-web-test--run-events)
+      (should (equal buffer-file-name arch))
+      (should-not (eq (selected-window) origin))
+      (should-not (plist-get (portal-web-test--state target) :focused))
+      (portal-web-test--record "page" target readme)
+      (select-window origin)
+      (portal-preview-open-in-emacs)
+      (should (equal buffer-file-name readme))
+      ;; Return survives switching among source buffers, and does not reload.
+      (find-file (portal-web-test--file "src/main file.ts"))
+      (find-file arch)
+      (setq portal-fake-native-log nil)
+      (portal-preview-return)
+      (should (eq (selected-window) origin))
+      (should (plist-get (portal-web-test--state target) :focused))
+      (should-not (portal-fake-native-calls 'portal--web-load))
+      ;; The most recent handoff wins, and a killed preview is reported.
+      (switch-to-buffer "*scratch*")
+      (let ((second (portal-web-test--preview arch)))
+        (should-not (eq second preview))
+        (portal-preview-open-in-emacs)
+        (portal-preview-return)
+        (should (eq (window-buffer) second))
+        (kill-buffer second))
+      (should (buffer-live-p preview))
+      (should-error (portal-preview-return) :type 'user-error))))
+
+(ert-deftest portal-web-markdown-return-follows-a-handoff-into-another-frame ()
+  (portal-web-test--markdown
+    (portal-fake-native-with-frame frame
+      (let* ((preview (portal-web-test--preview (portal-web-test--file "README.md")))
+             (source (portal-web-test--file "src/main file.ts")))
+        (with-selected-frame frame (find-file source))
+        (let ((display-buffer-alist
+               '(("\\.ts\\'" (display-buffer-reuse-window) (reusable-frames . t)))))
+          (portal-web-test--record "follow" (portal-view-target) source)
+          (portal-web-test--run-events))
+        (should (eq (selected-frame) frame))
+        (should (eq (frame-parameter frame 'portal-preview-return) preview))
+        (should (eq (frame-parameter portal-fake-native--selected 'portal-preview-return) preview))))))
+
+(ert-deftest portal-web-click-selects-the-views-pane ()
+  (portal-web-test--environment
+    (portal-open-url "about:blank")
+    (let ((target (portal-view-target))
+          (origin (selected-window)))
+      (select-window (split-window-right))
+      (switch-to-buffer "*scratch*")
+      (portal-view-sync)
+      (with-current-buffer "*scratch*"
+        (portal-fake-native-send (format "select %s\n" target)))
+      (portal-web-test--run-events)
+      (should (eq (selected-window) origin))
+      (should (plist-get (portal-web-test--state target) :focused)))))
 
 (provide 'portal-web-tests)
 ;;; portal-web-tests.el ends here

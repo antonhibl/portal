@@ -154,6 +154,20 @@ The queued event is (EVENT (TARGET SERIAL KEY))."
   (setf (alist-get type portal-view-record-handlers nil nil #'equal)
         (portal-input--queue (intern (concat "portal-input-" type)))))
 
+(defun portal-input--select (event)
+  "Select the pane showing the view clicked in EVENT, and give the view focus.
+The click already gave the view the keyboard; this makes Emacs agree."
+  (interactive "e")
+  (let ((target (car (cadr event))))
+    (when-let* ((window (portal-input--window target)))
+      (select-window window)
+      (portal-input--action "focus" target))))
+
+(setf (alist-get "select" portal-view-record-handlers nil nil #'equal)
+      (lambda (target)
+        (setq unread-command-events
+              (nconc unread-command-events (list (list 'portal-input-select (list target)))))))
+
 (defun portal-input--connect ()
   "Load the module and give it the current prefix."
   (portal-view--load)
@@ -212,15 +226,20 @@ The queued event is (EVENT (TARGET SERIAL KEY))."
   (interactive)
   (portal-input--run (portal-input--target) nil (vconcat (kbd portal-input-prefix)) (portal-input--map)))
 
+(defun portal-input--window (target)
+  "Return the window showing native view TARGET, in any frame, or nil."
+  (let (origin)
+    (walk-windows (lambda (window)
+                    (when (equal target (portal-input--target window)) (setq origin window)))
+                  'no-minibuffer t)
+    origin))
+
 (defun portal-input--dispatch (event)
   "Dispatch EVENT in its originating native view's actual Emacs window."
   (interactive "e")
   (pcase-let ((`(,target ,serial ,key) (cadr event)))
     (when (portal-input--action "pending" target serial)
-      (let (origin)
-        (walk-windows (lambda (window)
-                        (when (equal target (portal-input--target window)) (setq origin window)))
-                      'no-minibuffer t)
+      (let ((origin (portal-input--window target)))
         (if (not origin)
             (portal-input--action "finish" target serial)
           (select-window origin)
@@ -236,5 +255,6 @@ The queued event is (EVENT (TARGET SERIAL KEY))."
 (define-key global-map [portal-input-prefix] #'portal-input--dispatch)
 (define-key global-map [portal-input-binding] #'portal-input--dispatch)
 (define-key global-map [portal-input-escape] #'portal-input-unfocus)
+(define-key global-map [portal-input-select] #'portal-input--select)
 (provide 'portal-input)
 ;;; portal-input.el ends here

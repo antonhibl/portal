@@ -17,13 +17,16 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     private(set) var address: URL?
     /// A hosted app's bridge, which hears about failures the app cannot report.
     weak var bridge: WebBridge?
+    private let target: String
 
-    init(toolbar: ToolbarModel.Kind?, hosted: Bool) {
+    init(target: String, toolbar: ToolbarModel.Kind?, hosted: Bool) {
+        self.target = target
         self.hosted = hosted
         let configuration = WKWebViewConfiguration()
         if hosted { configuration.websiteDataStore = .nonPersistent() }
         super.init(frame: .zero, configuration: configuration)
         if let toolbar { controls = WebToolbar(web: self, kind: toolbar) }
+        if hosted { WebLinks.install(in: self) }
         navigationDelegate = self
         uiDelegate = self
     }
@@ -33,11 +36,24 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     func navigate(to url: URL) {
         loadError = nil
         address = url
-        if url.isFileURL {
+        // A new page is blank already. Loading about:blank would put a blank
+        // page in its history, before the first page Back could return to.
+        if url.absoluteString == "about:blank" && backForwardList.currentItem == nil { return }
+        // Loading the page on screen again rereads it, without a new history entry.
+        if let current = self.url, Self.document(current) == Self.document(url) {
+            reload()
+        } else if url.isFileURL {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    /// URL without its fragment.
+    private static func document(_ url: URL) -> URL? {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.url
     }
 
     private static func origin(_ url: URL) -> String {
@@ -71,7 +87,23 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
         record(error)
     }
 
+    /// Emacs tracks which page a hosted app shows, including after back and forward.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if hosted, let url { Views.channel.notify("page", target: target, fields: [Self.field(url)]) }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls?.loaded() }
+
+    /// Emacs visits a local file that a hosted app's page links to, in another pane.
+    func follow(_ url: URL) {
+        input?.handOff("follow", fields: [Self.field(url)])
+    }
+
+    /// Records are split on spaces, so a URL goes in one percent-encoded field.
+    private static func field(_ url: URL) -> String {
+        url.absoluteString.addingPercentEncoding(
+            withAllowedCharacters: CharacterSet.urlFragmentAllowed.union(["#", "%"])) ?? ""
+    }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         bridge?.emit(["type": "error", "message": "The page's web process stopped."])
@@ -92,6 +124,38 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
             loadError = error.localizedDescription
             bridge?.emit(["type": "error", "message": error.localizedDescription])
         }
+    }
+}
+
+/// A hosted app's links to local files. WebKit never lets a page on the app
+/// host navigate to a file: URL, and does not ask the navigation delegate
+/// either, so a script out of the page's reach catches the user's clicks.
+@MainActor
+private final class WebLinks: NSObject, WKScriptMessageHandler {
+    private static let world = WKContentWorld.world(name: "Portal links")
+    private static let script = """
+        document.addEventListener('click', event => {
+          const link = event.target instanceof Element && event.target.closest('a[href]');
+          if (!event.isTrusted || event.button !== 0 || !link || link.protocol !== 'file:') return;
+          event.preventDefault();
+          window.webkit.messageHandlers.follow.postMessage(link.href);
+        }, true);
+        """
+    private weak var page: WebPage?
+
+    static func install(in page: WebPage) {
+        let links = WebLinks()
+        links.page = page
+        let controller = page.configuration.userContentController
+        controller.add(links, contentWorld: world, name: "follow")
+        controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: world))
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let text = message.body as? String,
+              let url = URL(string: text), url.isFileURL else { return }
+        page?.follow(url)
     }
 }
 
@@ -188,7 +252,7 @@ final class WebSession: PortalView {
     /// Where a hosted app's links to other sites go. Checks replace it.
     static var openInBrowser: (URL) -> Void = { NSWorkspace.shared.open($0) }
     private static let toolbars: [String: ToolbarModel.Kind?] = [
-        "navigation": .web, "contents": .preview, "none": nil]
+        "navigation": .web, "contents": .preview, "markdown": .preview, "none": nil]
     private let target: String
     private let toolbarName: String
     private let page: WebPage
@@ -199,16 +263,19 @@ final class WebSession: PortalView {
     private var rectangle: CGRect
     private var edges: [Int] = []
 
-    /// `:toolbar` is "navigation", "contents" or "none". With `:hosted`, the page
-    /// keeps no data between sessions, never leaves the app host, and has a bridge.
+    /// `:toolbar` is "navigation", "contents", "markdown" or "none"; "markdown"
+    /// is "contents" with Open in Emacs. With `:hosted`, the page keeps no data
+    /// between sessions, never leaves the app host, and has a bridge.
     init(target: String, options: ViewOptions, parking: NativeHost) throws {
         guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
-            throw NativeError.message("A web view's :toolbar must be \"navigation\", \"contents\" or \"none\"")
+            throw NativeError.message(
+                "A web view's :toolbar must be \"navigation\", \"contents\", \"markdown\" or \"none\"")
         }
         self.target = target
         toolbarName = name
         let hosted = options.flag("hosted")
-        let page = WebPage(toolbar: kind, hosted: hosted)
+        let page = WebPage(target: target, toolbar: kind, hosted: hosted)
+        page.toolbarModel?.canEdit = name == "markdown"
         self.page = page
         bridge = hosted ? WebBridge(target: target, page: page) : nil
         host = parking
