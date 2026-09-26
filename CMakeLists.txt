@@ -28,6 +28,7 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.portal-host" "${CMAKE_BINARY_DIR}/portal-host"
     DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
+        host/tasks.ts host/tasks.css
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
         host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -65,6 +66,13 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-web-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(web PROPERTIES TIMEOUT 30)
+    add_test(NAME tasks
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-tasks-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(tasks PROPERTIES TIMEOUT 30)
     add_test(NAME toolbar
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-toolbar-tests.el"

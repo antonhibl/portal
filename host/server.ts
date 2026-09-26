@@ -4,6 +4,7 @@ import { assets } from "./.generated/assets";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
 import { markdown } from "./markdown";
+import { taskFile, tasks } from "./tasks";
 
 // Applies only to the local editor. Fonts, images and lazy modules cannot fall
 // back to a CDN; user-authored URLs cannot embed remote pages or run scripts.
@@ -28,6 +29,8 @@ async function respond(request: Request): Promise<Response> {
 	if (
 		route !== "/hello" &&
 		route !== "/markdown" &&
+		route !== "/tasks" &&
+		route !== "/tasks/file" &&
 		route !== "/excalidraw/" &&
 		!asset
 	) {
@@ -40,6 +43,8 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
+	if (route === "/tasks") return tasks(url.searchParams);
+	if (route === "/tasks/file") return taskFile(url.searchParams);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
 			headers: { "Content-Type": asset.type },

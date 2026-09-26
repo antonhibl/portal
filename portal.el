@@ -23,5 +23,12 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
+(require 'portal-tasks
+         (expand-file-name "portal-tasks"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
+
 (provide 'portal)
 ;;; portal.el ends here

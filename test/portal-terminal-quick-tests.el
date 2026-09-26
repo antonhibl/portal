@@ -15,7 +15,7 @@
   (declare (indent 0))
   `(let ((directory (make-temp-file "portal-quick-" t))
          (parameters (mapcar (lambda (key) (cons key (frame-parameter nil key)))
-                             '(portal-terminal-quick-context
+                             '(portal-project-context
                                portal-terminal-quick-return-window
                                portal-terminal-quick-height)))
          (initial-buffers (buffer-list)))

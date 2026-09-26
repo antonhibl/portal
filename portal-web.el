@@ -238,9 +238,18 @@ pane, as does `portal-preview-open-in-emacs' for the file on screen;
 
 (defun portal-web--page (_target url)
   "Note that this buffer's hosted app shows percent-encoded URL now.
+A page of the same app becomes the app host path to load, so g reloads
+the page on screen, even after the app host restarts with a new token.
 A Markdown preview that shows another Markdown file takes that file's
-identity, so g reloads it and previewing the file finds this buffer."
-  (let ((parsed (url-generic-parse-url url)))
+identity, so previewing the file finds this buffer."
+  (let* ((parsed (url-generic-parse-url url))
+         (route (and (equal (url-type parsed) "http") (equal (url-host parsed) "127.0.0.1")
+                     (string-match "\\`/[[:xdigit:]]+\\(/[^?#]*\\)\\([^#]*\\)" (url-filename parsed))
+                     (list (match-string 1 (url-filename parsed))
+                           (match-string 2 (url-filename parsed))))))
+    (when (and route portal-web--hosted-path
+               (equal (car route) (car (split-string portal-web--hosted-path "?"))))
+      (setq portal-web--hosted-path (apply #'concat route)))
     (when (and portal-web--markdown
                (equal (url-type parsed) "http") (equal (url-host parsed) "127.0.0.1")
                (string-match "\\`/[[:xdigit:]]+/markdown\\?\\(?:[^#]*&\\)?path=\\([^&#]*\\)"
@@ -264,9 +273,10 @@ come first, and ALIST keeps them free to use the selected window."
         (display-buffer-pop-up-window buffer alist))))
 
 (defun portal-web--hand-off (file &optional line)
-  "Visit FILE in a pane other than this Markdown preview's, at LINE if non-nil.
-Select that pane with Emacs owning the keyboard, and remember this preview
-for `portal-preview-return' in both frames involved."
+  "Visit FILE in a pane other than this hosted page's, at LINE if non-nil.
+The page is a Markdown preview or the task browser.  Select that pane with
+Emacs owning the keyboard, and remember this page's buffer for
+`portal-preview-return' in both frames involved."
   (let ((preview (current-buffer))
         (origin (selected-window))
         (buffer (find-file-noselect file)))
@@ -289,7 +299,7 @@ With no such pane, FUNCTION runs in the selected pane."
     (funcall function)))
 
 (defun portal-web--follow (event)
-  "Visit the local file whose link EVENT's Markdown preview followed.
+  "Visit the local file whose link EVENT's hosted page followed.
 A fragment such as #L42 or #L42-L50 moves to line 42."
   (interactive "e")
   (pcase-let ((`(,target ,url) (cadr event)))
@@ -328,7 +338,7 @@ Emacs gets the keyboard, and `portal-preview-return' comes back here."
 
 ;;;###autoload
 (defun portal-preview-return ()
-  "Return to the Markdown preview this frame last opened a file from.
+  "Return to the Markdown preview or task page this frame last opened a file from.
 Select a pane showing it, in this frame or any other, or show it again
 if it is hidden, and give its view the keyboard.  The page stays as it was."
   (interactive)

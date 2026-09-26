@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'project)
+(require 'portal-project)
 (require 'portal-terminal)
 
 (defcustom portal-terminal-quick-height 0.5
@@ -28,20 +29,9 @@ Manual resizing is remembered in each frame until it is deleted."
   "Restricted native prefix commands for quick terminals.
 Ordinary terminal naming, creation and cycling belong to regular terminals.")
 
-(defun portal-terminal-quick--remember-context (&optional frame)
-  "Remember FRAME's most recently selected file or Dired directory."
-  (let ((frame (or frame (selected-frame))))
-    (with-current-buffer (window-buffer (frame-selected-window frame))
-      (when (or buffer-file-name (derived-mode-p 'dired-mode))
-        (set-frame-parameter frame 'portal-terminal-quick-context default-directory)))))
-(add-hook 'post-command-hook #'portal-terminal-quick--remember-context)
-(add-hook 'window-selection-change-functions #'portal-terminal-quick--remember-context)
-
 (defun portal-terminal-quick--root ()
   "Resolve the current editing project's canonical root without prompting."
-  (portal-terminal-quick--remember-context)
-  (let ((directory (or (frame-parameter nil 'portal-terminal-quick-context)
-                       portal-terminal-quick-directory)))
+  (let ((directory (or (portal-project-context) portal-terminal-quick-directory)))
     (when (file-remote-p directory)
       (user-error "Quick terminals require a local project; use ssh inside a terminal"))
     (let* ((default-directory (file-name-as-directory (expand-file-name directory)))

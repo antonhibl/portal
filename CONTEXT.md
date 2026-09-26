@@ -27,7 +27,7 @@ _Avoid_: scratch shell, quick shell
 ## Web content
 
 **Hosted app**:
-Web content served by Portal's app host, such as Hello, the Markdown preview, or Excalidraw.
+Web content served by Portal's app host, such as Hello, the Markdown preview, the task browser, or Excalidraw.
 _Avoid_: hosted page, editor, UI
 
 **App host**:

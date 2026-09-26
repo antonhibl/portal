@@ -1,8 +1,8 @@
 # Portal: native views in Emacs
 
 Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
-one Swift dynamic module. A bundled Bun server hosts Hello World and local
-Markdown previews and an offline Excalidraw editor. Each buffer has one native view,
+one Swift dynamic module. A bundled Bun server hosts Hello World, local
+Markdown previews, a task browser and an offline Excalidraw editor. Each buffer has one native view,
 which follows its buffer across splits, resizing and frames; hidden pages and
 terminal sessions keep running.
 
@@ -34,7 +34,8 @@ if Bun is not discoverable. Both binaries are built for the current Mac.
 
 Or load `portal.el` in graphical Emacs and run `M-x portal-hello`.
 Run `M-x portal-preview-markdown` to preview the current Markdown file or
-select another local file.
+select another local file, and `M-x portal-tasks` to browse the project's
+[tasks](#task-browser).
 To distribute this layout, include all `portal*.el` files at the package root,
 `build/portal-host`, and the complete `build/portal.bundle`;
 the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
@@ -433,8 +434,8 @@ does not hot-reload that library.
 ## Bun UI host
 
 Loading the Lisp package or native module does not start a server. The first
-`portal-hello`, `portal-preview-markdown`, or drawing buffer starts one shared child process
-asynchronously. Hello and the Markdown preview are hosted apps: each opens its
+`portal-hello`, `portal-preview-markdown`, `portal-tasks`, or drawing buffer starts one shared
+child process asynchronously. Hello, the Markdown preview and the task browser are hosted apps: each opens its
 web view at once, at `about:blank`, and loads its page as soon as the host sends
 its readiness message. Opening external URLs does not require the server.
 
@@ -442,7 +443,8 @@ its readiness message. Opening external URLs does not require the server.
   its own host; all its web views reuse that host.
 - Each host generates a fresh access token and sends it through the readiness
   pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello` or
-  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
+  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`, and task
+  pages `http://127.0.0.1:PORT/TOKEN/tasks?root=ENCODED_ABSOLUTE_PATH`. The host
   validates the token and Host header; responses suppress outgoing referrers.
 - Closing or hiding a view keeps the server running. `M-x portal-start-server`
   can prewarm it explicitly; `M-x portal-stop-server` stops it, and
@@ -525,6 +527,109 @@ an app host restart shows a "Not found" page; `g` reloads from the running host.
 Raw HTML is displayed as text, and a page-specific Content Security Policy
 blocks scripts. Bun currently marks its Markdown API unstable; it is tested
 here with the Bun version listed above.
+
+## Task browser
+
+`M-x portal-tasks`, or `(portal-tasks)` from Lisp, lists the current project's
+saved Markdown tasks in a web view with the navigation toolbar. The view opens
+at once and loads the list when the app host is ready, starting the host first
+if needed. Click a task to read it in the same view; the **Tasks** link returns
+to the list. Emacs stays the editor: the task browser reads files and never
+writes, moves or deletes them.
+
+### Choosing the task root
+
+`portal-tasks-directory` names the task root. It defaults to `tasks/`, which is
+relative to the `project.el` root; an absolute directory is used as it is. Set
+it for one project in that project's `.dir-locals.el`:
+
+```elisp
+((nil . ((portal-tasks-directory . "docs/tasks/"))))
+```
+
+The project is the one being edited. From a terminal, a web view or another
+auxiliary buffer, it is the project of the file or Dired buffer the frame
+selected last, as for [quick terminals](#quick-project-terminal), and that
+project's directory-local settings apply. Outside a project, the command asks
+for a task folder, and `C-u M-x portal-tasks` chooses any local folder. Remote
+folders are rejected, and symbolic links in the path are resolved.
+
+Each task root has one buffer, such as `*portal: tasks ~/src/app/tasks*`.
+Running the command again shows it at its current page; another project gets
+its own. A missing task folder shows how to start one, without creating it. A
+folder with no tasks shows "No tasks", and one with only completed tasks offers
+**Show completed**.
+
+### Writing tasks
+
+A task is a single Markdown file, or a folder holding its document and
+attachments. Both work the same:
+
+```text
+tasks/
+  fix-search.md                 # a task
+  markdown-navigation/          # a task with attachments
+    content.md
+    mockup.png
+    implementation-notes.md     # a supporting document, not a task
+  assets/
+    search.png                  # an attachment of fix-search.md
+  README.md                     # a document, since it has no status
+```
+
+Only `.md` files directly in the task root, and a file named exactly
+`content.md` directly in one of its folders, can be tasks. Deeper folders,
+other files and symbolic links are supporting material. A document is a task
+when its YAML front matter has a `status`:
+
+```markdown
+---
+status: todo
+---
+
+# Fix search
+
+Searching with spaces returns no results.
+```
+
+`status` is `todo` or `done`, exactly. Completed tasks leave the list until you
+turn on **Show completed**, and their pages stay reachable. Documents without
+front matter, or without a `status`, are not listed. Front matter that is not
+closed or not a YAML mapping, an invalid status or title, and unreadable files
+are listed under **Problems** with their paths, and the other tasks still show.
+
+A task's title is its front matter `title`, or else its first level-one
+heading outside code fences, or else its ID. The ID is the file name without
+`.md`, or the folder name, so moving `fix-search.md` to
+`fix-search/content.md` keeps the task's ID and address. Renaming it changes
+both. If both forms exist, neither is listed: **Problems** names both files,
+and the task's page shows the conflict until one is removed. The list is
+ordered by ID.
+
+To complete a task, edit `status: todo` to `status: done` in Emacs, save, and
+press `g` in the task view. `g` rereads the page on screen from the saved files,
+including after an app host restart. There is no automatic refresh.
+
+### Links and attachments
+
+Relative links and images in a task resolve from its attachment folder: the
+task root for a single-file task, or the task's own folder.
+
+| Link | Where it goes |
+| --- | --- |
+| `#anchor` | Scrolls within the page |
+| Another task's file, such as `../fix-search.md#notes` | That task's page in the same view, keeping the filter |
+| An inline image, such as `![Search](assets/search.png)` | Shown in the page |
+| Any other file in the attachment folder | Opens in Emacs in another pane, as from a Markdown preview; `#L42` goes to line 42 |
+| A missing file, or one outside the attachment folder | Crossed out, with the reason as its tooltip |
+| `https://…` and other sites | Opens in the default browser |
+
+Mock-up HTML and code open in Emacs as source; the task browser never runs them.
+Opening a file keeps the task page and its history, and
+`M-x portal-preview-return` comes back to it. Back and Forward in the toolbar,
+or `l` and `r`, move between list and task pages, keeping the filter and reading
+position. Raw HTML in a task is shown as text, and the host serves only image
+files from the attachment folder.
 
 ## Web view behaviour
 
@@ -655,6 +760,11 @@ handoffs, Open in Emacs, and return tracking across buffers, previews and frames
 opens a Markdown preview with the real app host, which `ctest` passes through
 `PORTAL_TEST_HOST`. It checks that the preview loads once the host is ready,
 stays as it is while the host stops and restarts, and that `g` reloads it.
+Batch task browser tests run with `ctest --test-dir build -R tasks`. They cover
+project-relative, absolute and directory-local task roots, auxiliary buffers,
+explicit and prompted roots, remote roots, one buffer per root, `g` and restart
+recovery of the page on screen, and attachment handoff. One test runs the real
+app host.
 
 The graphical web tests wait for real WebKit page loads. They verify JavaScript
 execution, relative local assets, a page staying loaded while hidden, repeated
@@ -664,6 +774,11 @@ check that Back and Forward restore reading positions, that a source link hands
 the keyboard to Emacs in one click, that clicking the preview selects its pane,
 that `portal-preview-return` and `RET` return without reloading, and that
 Command-Escape and `C-b d` still return to Emacs.
+The task browser graphical tests check real list and task pages: Back and
+Forward restore the filter and reading positions, `g` rereads the saved file,
+and `g` loads the page on screen after an app host restart. They also check
+task links, inline images in both layouts, and one-click handoff of
+attachments, with mock-up HTML opening as source.
 The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
 shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
@@ -684,6 +799,7 @@ emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   -l "$PWD/test/portal-input-gui-tests.el" \
   -l "$PWD/test/portal-toolbar-gui-tests.el" \
   -l "$PWD/test/portal-markdown-gui-tests.el" \
+  -l "$PWD/test/portal-tasks-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
@@ -726,6 +842,10 @@ shared startup, graceful shutdown, restart, crash recovery, startup timeout,
 and partial or incompatible readiness messages.
 They also check Markdown output, local link rewriting, rereading saved changes,
 invalid paths, access-token and Host validation, and non-executable raw HTML.
+Task browser tests use real folders: shallow discovery of both layouts,
+symbolic links, status and title rules, problems and duplicates, filtering,
+ID-preserving conversion, reloads after edits, link rewriting, missing and
+invalid roots, and image reads kept inside the attachment folder.
 
 ## Scope
 
