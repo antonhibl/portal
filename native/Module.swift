@@ -146,20 +146,88 @@ private let inspect: emacs_function = { env, _, _, _ in
     })
 }
 
-private let openTerminal: emacs_function = { env, nargs, args, _ in
+private func readIntegers(_ env: Environment, _ vector: emacs_value?) -> [Int]? {
+    let count = env.pointee.vec_size(env, vector)
+    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return nil }
+    let values = (0..<count).map { env.pointee.extract_integer(env, env.pointee.vec_get(env, vector, $0)) }
+    return env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return ? values : nil
+}
+
+/// Read a plist of keywords to strings, t or nil, such as (:directory "~/" :quick t).
+private func readOptions(_ env: Environment, _ plist: emacs_value?) -> ViewOptions? {
+    var arguments = [plist]
+    let vector = env.pointee.funcall(env, symbol(env, "vconcat"), 1, &arguments)
+    let count = env.pointee.vec_size(env, vector)
+    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return nil }
+    guard count % 2 == 0 else { _ = fail(env, "Options must be a plist"); return nil }
+    var values: [String: ViewOption] = [:]
+    for index in stride(from: 0, to: count, by: 2) {
+        var key = [env.pointee.vec_get(env, vector, index)]
+        let value = env.pointee.vec_get(env, vector, index + 1)
+        guard let name = readString(env, env.pointee.funcall(env, symbol(env, "symbol-name"), 1, &key)),
+              name.hasPrefix(":") else {
+            if env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return {
+                _ = fail(env, "Option names must be keywords")
+            }
+            return nil
+        }
+        if !env.pointee.is_not_nil(env, value) {
+            values[String(name.dropFirst())] = .flag(false)
+        } else if env.pointee.eq(env, value, symbol(env, "t")) {
+            values[String(name.dropFirst())] = .flag(true)
+        } else if env.pointee.eq(env, env.pointee.type_of(env, value), symbol(env, "string")),
+                  let text = readString(env, value) {
+            values[String(name.dropFirst())] = .string(text)
+        } else {
+            _ = fail(env, "Option \(name) must be a string, t or nil")
+            return nil
+        }
+    }
+    return ViewOptions(values: values)
+}
+
+private func lisp(_ env: Environment, _ value: ViewValue) -> emacs_value? {
+    switch value {
+    case .flag(let flag): return boolean(env, flag)
+    case .integer(let integer): return env.pointee.make_integer(env, integer)
+    case .integers(let integers): return list(env, integers.map { env.pointee.make_integer(env, $0) })
+    case .string(let text): return string(env, text)
+    }
+}
+
+private let openView: emacs_function = { env, _, args, _ in
     let env = env!
-    guard let title = readString(env, args![0]), let directory = readString(env, args![1]) else {
-        return symbol(env, "nil")
-    }
-    var theme: String?
-    if nargs > 2, env.pointee.is_not_nil(env, args![2]) {
-        guard let name = readString(env, args![2]) else { return symbol(env, "nil") }
-        theme = name
-    }
-    let quick = nargs > 3 && env.pointee.is_not_nil(env, args![3])
-    return call(env) {
-        try Terminals.open(title: title, directory: directory, themeName: theme, quick: quick)
-    } convert: { env.pointee.make_integer(env, $0) }
+    guard let kind = readString(env, args![0]), let options = readOptions(env, args![1]) else { return nil }
+    return call(env) { try Views.open(kind: kind, options: options) } convert: { string(env, $0) }
+}
+
+private let placeView: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]), let edges = readIntegers(env, args![1]),
+          let title = readString(env, args![2]) else { return nil }
+    return call(env) { try Views.place(target, edges: edges, title: title); return true }
+        convert: { boolean(env, $0) }
+}
+
+private let hideView: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]) else { return nil }
+    return call(env) { try Views.hide(target); return true } convert: { boolean(env, $0) }
+}
+
+private let closeView: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]) else { return nil }
+    return call(env) { try Views.close(target); return true } convert: { boolean(env, $0) }
+}
+
+private let inspectView: emacs_function = { env, _, args, _ in
+    let env = env!
+    guard let target = readString(env, args![0]) else { return nil }
+    return call(env, { Views.inspect(target) }, convert: { state in
+        guard let state else { return symbol(env, "nil") }
+        return list(env, state.flatMap { [symbol(env, ":" + $0.0), lisp(env, $0.1)] })
+    })
 }
 
 private let setTerminalTheme: emacs_function = { env, _, args, _ in
@@ -182,87 +250,20 @@ private let terminalThemes: emacs_function = { env, _, _, _ in
     })
 }
 
-private let layoutTerminal: emacs_function = { env, nargs, args, _ in
+private let pasteTerminal: emacs_function = { env, nargs, args, _ in
     let env = env!
-    let id = optionalID(env, nargs, args, 1)
-    let vector = args![0]
-    let count = env.pointee.vec_size(env, vector)
-    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return symbol(env, "nil") }
-    var edges: [Int] = []
-    for index in 0..<count { edges.append(env.pointee.extract_integer(env, env.pointee.vec_get(env, vector, index))) }
-    guard env.pointee.non_local_exit_check(env) == emacs_funcall_exit_return else { return symbol(env, "nil") }
+    guard let target = readString(env, args![0]), let text = readString(env, args![1]) else { return nil }
+    let enter = nargs > 2 && env.pointee.is_not_nil(env, args![2])
     return call(env) {
-        guard edges.isEmpty || (edges.count == 4 && edges[2] > edges[0] && edges[3] > edges[1]) else {
-            throw NativeError.message("Expected [] or [LEFT TOP RIGHT BOTTOM] with positive dimensions")
-        }
-        try Terminals.layout(edges, id: id)
+        try Terminals.paste(target, text: text, enter: enter)
         return true
     } convert: { boolean(env, $0) }
 }
 
-private let focusTerminal: emacs_function = { env, nargs, args, _ in
+private let terminalText: emacs_function = { env, _, args, _ in
     let env = env!
-    let id = optionalID(env, nargs, args, 0)
-    return call(env) {
-        try Terminals.focus(id)
-        return true
-    } convert: { boolean(env, $0) }
-}
-
-private let closeTerminal: emacs_function = { env, nargs, args, _ in
-    let env = env!
-    let id = optionalID(env, nargs, args, 0)
-    return call(env) { Terminals.destroy(id); return false } convert: { boolean(env, $0) }
-}
-
-private let unfocusTerminal: emacs_function = { env, nargs, args, _ in
-    let env = env!
-    let id = optionalID(env, nargs, args, 0)
-    return call(env) { Terminals.unfocus(id); return true } convert: { boolean(env, $0) }
-}
-
-private let inputTerminal: emacs_function = { env, nargs, args, _ in
-    let env = env!
-    let id = optionalID(env, nargs, args, 2)
-    guard let text = readString(env, args![0]) else { return symbol(env, "nil") }
-    let enter = env.pointee.is_not_nil(env, args![1])
-    return call(env) {
-        try Terminals.input(text, enter: enter, id: id)
-        return true
-    } convert: { boolean(env, $0) }
-}
-
-private let inspectTerminal: emacs_function = { env, nargs, args, _ in
-    let env = env!
-    let id = optionalID(env, nargs, args, 0)
-    return call(env, { Terminals.snapshot(id) }, convert: { state in
-        guard let state else { return symbol(env, "nil") }
-        return list(env, [
-            symbol(env, ":ready"), boolean(env, state.ready),
-            symbol(env, ":visible"), boolean(env, state.visible),
-            symbol(env, ":focused"), boolean(env, state.focused),
-            symbol(env, ":title"), string(env, state.title),
-            symbol(env, ":closed"), boolean(env, state.closed),
-            symbol(env, ":columns"), env.pointee.make_integer(env, state.columns),
-            symbol(env, ":rows"), env.pointee.make_integer(env, state.rows),
-            symbol(env, ":edges"), list(env, state.edges.map { env.pointee.make_integer(env, $0) }),
-            symbol(env, ":layer"), string(env, state.layer)
-        ])
-    })
-}
-
-private let snapshotTerminal: emacs_function = { env, nargs, args, _ in
-    let env = env!
-    let id = optionalID(env, nargs, args, 0)
-    return call(env) {
-        try Terminals.text(id)
-    } convert: { string(env, $0) }
-}
-
-private func optionalID(_ env: Environment, _ count: Int, _ args: UnsafeMutablePointer<emacs_value?>?,
-                        _ index: Int) -> Int? {
-    guard count > index, env.pointee.is_not_nil(env, args![index]) else { return nil }
-    return env.pointee.extract_integer(env, args![index])
+    guard let target = readString(env, args![0]) else { return nil }
+    return call(env) { try Terminals.text(target) } convert: { string(env, $0) }
 }
 
 private let connectChannel: emacs_function = { env, _, args, _ in
@@ -392,17 +393,19 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--native-views", 0, 0, inspect,
          "Inspect attached native views as plists with :visible, :edges, :window, :url, :title, :loading and :error.")
     ]
+    let viewFunctions: [(String, Int, Int, emacs_function, String)] = [
+        ("portal--open", 2, 2, openView,
+         "Open a view of KIND (\"terminal\") with an OPTIONS plist; return its target, such as \"terminal:1\"."),
+        ("portal--place", 3, 3, placeView, "Show TARGET at EDGES [LEFT TOP RIGHT BOTTOM] in the frame titled TITLE."),
+        ("portal--hide", 1, 1, hideView, "Hide TARGET, keeping its session alive."),
+        ("portal--close", 1, 1, closeView, "End TARGET and release its view."),
+        ("portal--inspect", 1, 1, inspectView, "Return TARGET's native state as a plist, or nil for an unknown target.")
+    ]
     let terminalFunctions: [(String, Int, Int, emacs_function, String)] = [
-        ("portal--terminal-open", 2, 4, openTerminal, "Create a native Ghostty session in frame TITLE at DIRECTORY with optional THEME and QUICK flag."),
         ("portal--terminal-theme", 1, 1, setTerminalTheme, "Apply named THEME to all terminals; nil restores system appearance defaults."),
         ("portal--terminal-themes", 0, 0, terminalThemes, "Return the available terminal theme names."),
-        ("portal--terminal-layout", 1, 2, layoutTerminal, "Set native terminal EDGES, or [] to hide without ending the session."),
-        ("portal--terminal-focus", 0, 1, focusTerminal, "Give the visible Ghostty view keyboard focus."),
-        ("portal--terminal-unfocus", 0, 1, unfocusTerminal, "Return native keyboard focus to Emacs without ending the session."),
-        ("portal--terminal-close", 0, 1, closeTerminal, "Destroy the terminal view and end its session."),
-        ("portal--terminal-input", 2, 3, inputTerminal, "Paste TEXT into the terminal; press Enter if ENTER is non-nil."),
-        ("portal--terminal-text", 0, 1, snapshotTerminal, "Select all terminal scrollback and return its text. Leaves the native selection active."),
-        ("portal--terminal-state", 0, 1, inspectTerminal, "Inspect the native terminal's actual surface, focus and grid."),
+        ("portal--terminal-paste", 2, 3, pasteTerminal, "Paste TEXT into terminal TARGET; press Enter if ENTER is non-nil."),
+        ("portal--terminal-text", 1, 1, terminalText, "Select all of TARGET's scrollback and return its text. Leaves the native selection active."),
         ("portal--input-channel", 1, 1, connectChannel, "Connect a pipe PROCESS for prefix notifications; nil disconnects."),
         ("portal--terminal-bindings", 1, 1, configureBindings, "Atomically replace runtime binding profiles from JSON."),
         ("portal--input-prefix", 2, 2, configurePrefix, "Set the native prefix CHARACTER and AppKit modifier FLAGS."),
@@ -422,7 +425,8 @@ public func initializePortal(_ env: UnsafeMutablePointer<emacs_env>) -> Int32 {
         ("portal--editor-close", 1, 1, closeEditor, "Release editor ID and its document session."),
         ("portal--editor-channel", 1, 1, connectEditorChannel, "Connect a pipe PROCESS for editor notifications; nil disconnects.")
     ]
-    for (name, minimum, maximum, callback, doc) in webFunctions + terminalFunctions + editorFunctions + toolbarFunctions {
+    for (name, minimum, maximum, callback, doc) in viewFunctions + webFunctions + terminalFunctions + editorFunctions
+        + toolbarFunctions {
         let function = doc.withCString { env.pointee.make_function(env, minimum, maximum, callback, $0, nil) }
         var args = [symbol(env, name), function]
         _ = env.pointee.funcall(env, symbol(env, "fset"), args.count, &args)

@@ -23,18 +23,18 @@
 
 (ert-deftest portal-toolbar-terminal-grid-and-text-size ()
   (portal-terminal-test--session
-    (portal-terminal-test--wait (lambda () (> (plist-get (portal--terminal-state) :rows) 0)))
-    (let* ((initial (portal--terminal-state))
+    (portal-terminal-test--wait (lambda () (> (plist-get (portal-terminal-test--state) :rows) 0)))
+    (let* ((initial (portal-terminal-test--state))
            (rows (plist-get initial :rows))
            (columns (plist-get initial :columns))
            (default (alist-get 'value (portal-toolbar--action "state" t))))
       (should (= (portal-terminal-text-size-increase) (1+ default)))
-      (portal-terminal-test--wait (lambda () (< (plist-get (portal--terminal-state) :columns) columns)))
+      (portal-terminal-test--wait (lambda () (< (plist-get (portal-terminal-test--state) :columns) columns)))
       (should (= (portal-terminal-text-size-reset) default))
-      (portal-terminal-test--wait (lambda () (= (plist-get (portal--terminal-state) :rows) rows)))
+      (portal-terminal-test--wait (lambda () (= (plist-get (portal-terminal-test--state) :rows) rows)))
       (let ((portal-toolbar nil))
-        (portal-terminal-test--wait (lambda () (> (plist-get (portal--terminal-state) :rows) rows))))
-      (portal-terminal-test--wait (lambda () (= (plist-get (portal--terminal-state) :rows) rows))))))
+        (portal-terminal-test--wait (lambda () (> (plist-get (portal-terminal-test--state) :rows) rows))))
+      (portal-terminal-test--wait (lambda () (= (plist-get (portal-terminal-test--state) :rows) rows))))))
 
 (ert-deftest portal-toolbar-deleted-pane-releases-retained-webview ()
   (portal-test--with-web

@@ -1,6 +1,6 @@
 # 02: Terminal views run on the shared Portal view lifecycle
 
-Type: AFK · Status: todo
+Type: AFK · Status: done
 
 ## What to build
 
@@ -43,23 +43,23 @@ This is the first slice through the new architecture from end to end (see ADR 00
 
 ## Acceptance criteria
 
-- [ ] `M-x portal-terminal` opens a working terminal view
-- [ ] Split, selecting the other pane, `quit-window`, showing the buffer again and `kill-buffer` all follow ADR 0001: there is one view, it follows the selected pane, it is hidden rather than ended, and killing the buffer ends the shell
-- [ ] RET focuses the view, and the prefix and Command-Escape still work (the GUI terminal suite passes)
-- [ ] Batch tests through `portal-view.el` with the fake adapter cover:
-  - [ ] open
-  - [ ] split
-  - [ ] selection change
-  - [ ] `quit-window`
-  - [ ] showing the buffer in another pane
-  - [ ] `kill-buffer`
-  - [ ] no native call when nothing moved
-  - [ ] a failed open leaves nothing registered
-- [ ] The new batch suite runs under CTest
-- [ ] `portal--terminal-open/layout/focus/unfocus/close/state` and `Terminals.activeID` are deleted
-- [ ] No Elisp outside `portal-view.el` calls a native lifecycle function for terminals
-- [ ] The quick terminal still works (still per frame until task 03)
-- [ ] The README's terminal and architecture sections are updated
+- [x] `M-x portal-terminal` opens a working terminal view
+- [x] Split, selecting the other pane, `quit-window`, showing the buffer again and `kill-buffer` all follow ADR 0001: there is one view, it follows the selected pane, it is hidden rather than ended, and killing the buffer ends the shell
+- [x] RET focuses the view, and the prefix and Command-Escape still work (the GUI terminal suite passes)
+- [x] Batch tests through `portal-view.el` with the fake adapter cover:
+  - [x] open
+  - [x] split
+  - [x] selection change
+  - [x] `quit-window`
+  - [x] showing the buffer in another pane
+  - [x] `kill-buffer`
+  - [x] no native call when nothing moved
+  - [x] a failed open leaves nothing registered
+- [x] The new batch suite runs under CTest
+- [x] `portal--terminal-open/layout/focus/unfocus/close/state` and `Terminals.activeID` are deleted
+- [x] No Elisp outside `portal-view.el` calls a native lifecycle function for terminals
+- [x] The quick terminal still works (still per frame until task 03)
+- [x] The README's terminal and architecture sections are updated
 
 ## Blocked by
 

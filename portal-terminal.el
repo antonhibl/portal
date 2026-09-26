@@ -15,21 +15,10 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
-(declare-function portal--terminal-open "portal-terminal" (title directory &optional theme quick))
 (declare-function portal--terminal-theme "portal-terminal" (theme))
 (declare-function portal--terminal-themes "portal-terminal" ())
-(declare-function portal--terminal-layout "portal-terminal" (edges &optional id))
-(declare-function portal--terminal-focus "portal-terminal" (&optional id))
-(declare-function portal--terminal-unfocus "portal-terminal" (&optional id))
-(declare-function portal--terminal-close "portal-terminal" (&optional id))
-(declare-function portal--terminal-input "portal-terminal" (text enter &optional id))
-(declare-function portal--terminal-state "portal-terminal" (&optional id))
 
-(defvar portal-terminal--buffers nil "Terminal buffers in creation order.")
-(defvar-local portal-terminal--id nil)
 (defvar-local portal-terminal--frame nil)
-(defvar-local portal-terminal--window nil)
-(defvar-local portal-terminal--geometry nil)
 (defvar-local portal-terminal--last-buffer nil)
 (defvar-local portal-terminal--quick-root nil)
 (defvar portal-terminal-quick-prefix-map)
@@ -62,7 +51,7 @@ the name is validated when the native module is available."
 
 (defun portal-terminal-themes ()
   "Return the available terminal theme names from the bundled catalog."
-  (portal-native--load)
+  (portal-view--load)
   (portal--terminal-themes))
 
 (defcustom portal-terminal-prefix-map
@@ -102,13 +91,10 @@ C-g cancels.  The current leader repeated sends a literal leader key."
 RET focuses Ghostty.  The configurable leader dispatches Emacs commands.
 Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
   (setq-local cursor-type nil)
-  (setq-local portal-input--target-function
-              (lambda (window) (when (and portal-terminal--id (eq window portal-terminal--window))
-                                 (format "terminal:%d" portal-terminal--id))))
-  (setq-local portal-input--focus-function #'portal-terminal-focus)
   (setq-local portal-input--map-function
               (lambda () (if portal-terminal--quick-root portal-terminal-quick-prefix-map
                            portal-terminal-prefix-map)))
+  (add-hook 'kill-buffer-hook #'portal-terminal--dismiss-quick nil t)
   (portal-input-mode 1))
 (keymap-set portal-terminal-mode-map "RET" #'portal-terminal-focus)
 (keymap-set portal-terminal-mode-map "C-c C-k" #'portal-terminal-close)
@@ -116,40 +102,15 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
 (defun portal-terminal--frame-buffers (&optional frame)
   "Return live terminal buffers owned by FRAME, defaulting to this frame."
   (let ((frame (or frame (selected-frame))))
-    (cl-remove-if-not
-     (lambda (buffer)
-       (and (buffer-live-p buffer)
-            (buffer-local-value 'portal-terminal--id buffer)
-            (eq (buffer-local-value 'portal-terminal--frame buffer) frame)))
-     portal-terminal--buffers)))
+    (cl-remove-if-not (lambda (buffer)
+                        (eq (buffer-local-value 'portal-terminal--frame buffer) frame))
+                      (portal-view-buffers 'terminal))))
 
 (defun portal-terminal--regular-buffers ()
   "Return this frame's ordinary terminals, excluding quick shells."
   (cl-remove-if (lambda (buffer)
                   (buffer-local-value 'portal-terminal--quick-root buffer))
                 (portal-terminal--frame-buffers)))
-
-(defun portal-terminal--sync (frame)
-  "Place each terminal in its chosen pane of FRAME, or hide it."
-  (dolist (buffer (portal-terminal--frame-buffers frame))
-    (with-current-buffer buffer
-      (let* ((windows (get-buffer-window-list buffer nil frame))
-             (window (or (and (memq (frame-selected-window frame) windows)
-                              (frame-selected-window frame))
-                         (and (memq portal-terminal--window windows)
-                              portal-terminal--window)
-                         (car windows)))
-             (edges (if window (vconcat (window-inside-pixel-edges window)) []))
-             (geometry (cons (frame-pixel-height frame) edges)))
-        (unless (equal geometry portal-terminal--geometry)
-          (portal--terminal-layout edges portal-terminal--id)
-          (setq portal-terminal--geometry geometry))
-        (setq portal-terminal--window window)))))
-
-(defun portal-terminal--frame-deleted (frame)
-  "End every terminal owned by deleted FRAME."
-  (dolist (buffer (portal-terminal--frame-buffers frame))
-    (with-current-buffer buffer (portal-terminal-close))))
 
 (defun portal-terminal--connect ()
   "Connect shared input and refresh terminal-specific native bindings."
@@ -180,7 +141,6 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
   (let ((directory (expand-file-name default-directory))
-        (frame (selected-frame))
         (previous (current-buffer))
         (buffer (generate-new-buffer
                  (if quick-root
@@ -193,44 +153,35 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
             (portal-terminal-mode)
             (setq default-directory directory
                   portal-terminal--quick-root quick-root
-                  portal-terminal--frame frame
-                  portal-terminal--last-buffer previous))
+                  portal-terminal--frame (selected-frame)
+                  portal-terminal--last-buffer previous)
+            (let ((inhibit-read-only t))
+              (insert "Native Ghostty terminal\n\n"
+                      "RET or a click focuses Ghostty. Command-Escape returns to Emacs.\n"
+                      "Use the configured prefix then ? for terminal commands.\n"
+                      "This buffer has one live view, which follows its selected pane.\n")))
           (if quick-root
               (portal-terminal-quick--display buffer)
             (switch-to-buffer buffer))
-          (let ((inhibit-read-only t))
-            (insert "Native Ghostty terminal\n\n"
-                    "RET or a click focuses Ghostty. Command-Escape returns to Emacs.\n"
-                    "Use the configured prefix then ? for terminal commands.\n"
-                    "This buffer has one live view, which follows its selected pane.\n"))
           (redisplay t)
-          (setq portal-terminal--id
-                (portal-native--call-with-frame frame #'portal--terminal-open
-                                               directory portal-terminal-theme (and quick-root t)))
-          (setq portal-terminal--buffers (append portal-terminal--buffers (list buffer)))
-          (add-hook 'window-state-change-functions #'portal-terminal--sync)
-          (add-hook 'window-selection-change-functions #'portal-terminal--sync)
-          (add-hook 'delete-frame-functions #'portal-terminal--frame-deleted)
-          (add-hook 'kill-emacs-hook #'portal-terminal-close-all)
-          (add-hook 'kill-buffer-hook #'portal-terminal-close nil t)
-          (add-hook 'change-major-mode-hook #'portal-terminal-close nil t)
-          (portal-terminal-focus)
+          (with-current-buffer buffer
+            (portal-view-open 'terminal (list :directory directory
+                                              :theme portal-terminal-theme
+                                              :quick (and quick-root t)))
+            (portal-terminal-focus))
           (setq ready t))
-      (unless ready
-        (with-current-buffer buffer (portal-terminal-close))
-        (kill-buffer buffer)))
+      (unless ready (kill-buffer buffer)))
     buffer))
 
 ;;;###autoload
 (defun portal-terminal-focus ()
   "Give this buffer's native terminal keyboard focus."
   (interactive)
-  (unless portal-terminal--id (user-error "No terminal in this buffer"))
+  (unless (memq (current-buffer) (portal-view-buffers 'terminal))
+    (user-error "No terminal in this buffer"))
   (unless (eq (selected-frame) portal-terminal--frame)
     (user-error "This terminal belongs to another frame"))
-  (redisplay t)
-  (portal-terminal--sync portal-terminal--frame)
-  (portal--terminal-focus portal-terminal--id))
+  (portal-view-focus))
 
 (defalias 'portal-terminal-unfocus #'portal-input-unfocus)
 
@@ -238,31 +189,20 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
 (defun portal-terminal-close ()
   "End this buffer's native shell.  Other terminal sessions keep running."
   (interactive)
-  (when portal-terminal--id
-    (when (and portal-terminal--quick-root
-               (eq portal-terminal--frame (selected-frame))
-               (eq (get-buffer-window (current-buffer))
-                   (portal-terminal-quick--window))
-               (get-buffer-window (current-buffer)))
-      (save-current-buffer (portal-terminal-quick-dismiss)))
-    (portal--terminal-close portal-terminal--id)
-    (setq portal-terminal--buffers (delq (current-buffer) portal-terminal--buffers))
-    (remove-hook 'kill-buffer-hook #'portal-terminal-close t)
-    (remove-hook 'change-major-mode-hook #'portal-terminal-close t)
-    (setq portal-terminal--id nil portal-terminal--geometry nil
-          portal-terminal--window nil portal-terminal--frame nil))
-  (unless portal-terminal--buffers
-    (remove-hook 'window-state-change-functions #'portal-terminal--sync)
-    (remove-hook 'window-selection-change-functions #'portal-terminal--sync)
-    (remove-hook 'delete-frame-functions #'portal-terminal--frame-deleted)
-    (remove-hook 'kill-emacs-hook #'portal-terminal-close-all)))
+  (portal-terminal--dismiss-quick)
+  (portal-view-close))
+
+(defun portal-terminal--dismiss-quick ()
+  "Dismiss the quick panel when it shows this buffer."
+  (when-let* ((window (get-buffer-window (current-buffer))))
+    (when (and portal-terminal--quick-root (eq window (portal-terminal-quick--window)))
+      (save-current-buffer (portal-terminal-quick-dismiss)))))
 
 (defun portal-terminal-close-all ()
   "End all native shells, for Emacs shutdown or explicit cleanup."
   (interactive)
-  (dolist (buffer (copy-sequence portal-terminal--buffers))
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer (portal-terminal-close)))))
+  (dolist (buffer (portal-view-buffers 'terminal))
+    (with-current-buffer buffer (portal-terminal-close))))
 
 (defalias 'portal-terminal--dispatch #'portal-input--dispatch)
 (defalias 'portal-terminal-send-prefix #'portal-input-send-prefix)

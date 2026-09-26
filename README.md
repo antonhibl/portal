@@ -225,7 +225,7 @@ After `./build.sh`, load `portal.el` and run `M-x portal-terminal`, or launch a
 fresh graphical Emacs:
 
 ```sh
-emacs -Q -l "$PWD/portal.el" --eval '(portal-terminal)'
+emacs -Q -L "$PWD" -l "$PWD/portal.el" --eval '(portal-terminal)'
 ```
 
 This embeds a real Ghostty Metal terminal surface inside the pane. Ghostty owns
@@ -244,8 +244,10 @@ convert output to Emacs text or use WebKit or the Bun server.
 - Select with the mouse and use `Command-C` / `Command-V` for the macOS clipboard.
   Scroll with the trackpad or mouse wheel. Non-Latin IME composition has not
   been manually verified.
-- Hidden buffers keep their shells running. Killing a terminal buffer, running
-  `portal-terminal-close` in it, or deleting its frame ends that shell.
+- Hidden buffers keep their shells running: `quit-window` or switching buffers
+  hides the terminal, and showing the buffer again brings the same shell back.
+  Killing a terminal buffer, running `portal-terminal-close` in it, or deleting
+  its frame ends that shell.
   `portal-terminal-close-all` ends all embedded shells.
 
 Defaults follow [tmux's key bindings](https://man.openbsd.org/tmux#DEFAULT_KEY_BINDINGS)
@@ -269,9 +271,11 @@ where an Emacs counterpart exists. Every row follows the prefix (`C-b` by defaul
 
 These are Emacs operations: terminal buffers stand in for tmux windows and Emacs
 windows stand in for panes. There are no tmux session servers, saved per-terminal
-pane layouts, or tmux copy mode. Each terminal belongs to its creating frame and
-has one native view; displaying the same buffer twice moves that view to the
-selected pane. Different terminal buffers can display and run simultaneously.
+pane layouts, or tmux copy mode. Each terminal buffer has one Portal view,
+which appears in the selected pane showing the buffer; other panes showing the
+same buffer display only its text ([ADR 0001](docs/adr/0001-one-portal-view-per-buffer.md)).
+For now, each terminal belongs to the frame that created it. Different terminal
+buffers can display and run simultaneously.
 
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
@@ -318,10 +322,11 @@ operate on the terminal. The native view still shares Emacs's main thread for
 input and presentation; this is not a guarantee of latency parity during Emacs GC
 or long-running Lisp.
 
-`(portal--terminal-state)` (optionally with a native session ID) reports the actual native surface, grid, bounds, focus
-and title. `(portal--terminal-text)` selects all native scrollback and returns its
-text for inspection; it leaves that selection active. Neither is polled during
-normal use. Restart Emacs after rebuilding a module it has already loaded.
+`(portal--inspect (portal-view-target))` reports the selected terminal's actual
+native surface, grid, bounds, focus and title. `(portal--terminal-text TARGET)`
+selects all native scrollback and returns its text for inspection; it leaves
+that selection active. Neither is polled during normal use. Restart Emacs after
+rebuilding a module it has already loaded.
 
 The graphical terminal tests exercise a real shell, alternate-screen output,
 native keyboard and clipboard input, focus return, resizing, hidden-session
@@ -329,7 +334,9 @@ continuity, shell termination, and editing/saving a file in Vim. They also exerc
 rapid native prefix sequences, multiple sessions and splits, live prefix/map
 customization, runtime binding registration/unbinding, quick-only shortcuts,
 shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
-Batch binding tests run with `ctest --test-dir build -R terminal-bindings`.
+Batch binding tests run with `ctest --test-dir build -R terminal-bindings`, and
+batch tests of the view lifecycle (opening, splits, selection, `quit-window`,
+showing the buffer elsewhere and killing it) run with `ctest --test-dir build -R view`.
 Build the test-only AppKit event injector (no Accessibility permission required):
 
 ```sh
@@ -337,8 +344,8 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
   -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
   -framework AppKit -framework WebKit \
   -o build/test-terminal-input.dylib
-emacs -Q --module-assertions -l "$PWD/portal.el" \
-  --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
+emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
+  --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-terminal-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-terminal-")'
 ```
@@ -508,10 +515,11 @@ with text beside the remaining view.
 
 | File | Responsibility |
 | --- | --- |
-| `portal-native.el` | Shared module loading and native frame identification |
+| `portal-view.el` | Module loading and the shared Portal view lifecycle: open, placement, hiding and closing |
+| `portal-native.el` | Frame identification and event pipe framing for web views and editors |
 | `portal.el` | Web/demo buffers, pane tracking, geometry, and lifecycle hooks |
 | `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
-| `portal-terminal.el` | Terminal buffers, tmux shortcuts, geometry, and lifecycle |
+| `portal-terminal.el` | Terminal buffers and tmux shortcuts |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
 | `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
 | `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
@@ -523,7 +531,8 @@ with text beside the remaining view.
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | WebKit/demo views, navigation, and inspection |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
-| `native/Terminal.swift` | Ghostty sessions and terminal input |
+| `native/Views.swift` | The view registry, keyed by native target, and the view kind protocol |
+| `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
 | `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
 | `native/WebToolbar.swift` | Web zoom, find, navigation, and isolated page TOC support |
@@ -541,6 +550,20 @@ Features own their state and cleanup. Removing a web view does not destroy a
 terminal, and closing a terminal does not remove web views. Hidden web views are
 released and recreated when shown; hidden terminals stay attached so their PTYs
 continue running. The Emacs bridge converts arguments and registers both APIs.
+
+Terminal views run on the shared Portal view lifecycle
+([ADR 0002](docs/adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
+every native lifecycle call: `portal--open KIND OPTIONS` returns a target such as
+`terminal:3`, and `portal--place`, `portal--hide`, `portal--close` and
+`portal--inspect` take that target. In Swift, `Views` keeps one registry keyed by
+target; each view kind implements the small `PortalView` protocol, and IDs are
+never reused. On each window change, `portal-view.el` picks one window per view:
+the selected window if it shows the buffer, then the view's current window, then
+any other window showing the buffer. With none, the view is hidden. A geometry
+cache means nothing crosses the seam when nothing moved. Each placement renames
+the frame briefly so Swift can find its native window; nothing about frames is
+cached. Killing the buffer or changing its major mode closes the view. Batch
+tests replace the native module with `test/portal-fake-native.el`.
 
 For web/demo views, the Lisp `window-state-change-functions` hook measures `window-inside-pixel-edges`
 during redisplay. Each pane receives a stable numeric ID. Lisp sends the complete
@@ -592,8 +615,8 @@ graphical Emacs. Batch Emacs has no native window and
 cannot exercise these behaviours:
 
 ```sh
-emacs -Q --module-assertions -l "$PWD/portal.el" \
-  --eval '(module-load (expand-file-name "build/test-terminal-input.dylib"))' \
+emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
+  --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-tests.el" \
   -l "$PWD/test/portal-terminal-tests.el" \
   -l "$PWD/test/portal-integration-tests.el" \
