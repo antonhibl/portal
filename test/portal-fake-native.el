@@ -39,6 +39,32 @@
   (or (gethash target portal-fake-native--views)
       (error "No Portal view %s" target)))
 
+(require 'term/xterm) ; Makes `xterm-extra-capabilities' special where the macro expands.
+
+(defmacro portal-fake-native-with-frame (frame &rest body)
+  "Run BODY with FRAME bound to a new frame, then delete FRAME.
+Batch Emacs has a single frame, so FRAME is a terminal frame on a
+pseudo-terminal, large enough to split.  Its terminal is suspended, because
+nothing reads the pseudo-terminal and redisplay would block writing to it.
+The selected frame is kept."
+  (declare (indent 1))
+  `(let* ((portal-fake-native--tty
+           (make-process :name "portal-fake-tty" :command '("sleep" "3600")
+                         :connection-type 'pty :filter #'ignore :noquery t))
+          (portal-fake-native--selected (selected-frame))
+          (,frame (let ((xterm-extra-capabilities nil)) ; Nothing answers queries.
+                    (make-frame `((tty . ,(process-tty-name portal-fake-native--tty))
+                                  (tty-type . "xterm"))))))
+     (unwind-protect
+         (progn
+           (set-frame-size ,frame 160 50)
+           (suspend-tty (frame-terminal ,frame))
+           (select-frame portal-fake-native--selected)
+           ,@body)
+       (select-frame portal-fake-native--selected)
+       (when (frame-live-p ,frame) (delete-frame ,frame))
+       (delete-process portal-fake-native--tty))))
+
 (defun portal--open (kind options)
   (portal-fake-native--call 'portal--open kind options)
   (let ((target (format "%s:%d" kind (cl-incf portal-fake-native--next-id))))

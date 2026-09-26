@@ -2,9 +2,10 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; A buffer has at most one Portal view.  The view appears in the selected pane
-;; that shows the buffer, and is hidden, not ended, while no pane shows it
-;; (docs/adr/0001).  This file makes every native lifecycle call, addressing
-;; each view by its native target, such as "terminal:1" (docs/adr/0002).
+;; that shows the buffer, in any frame, and is hidden, not ended, while no pane
+;; shows it (docs/adr/0001).  This file makes every native lifecycle call,
+;; addressing each view by its native target, such as "terminal:1"
+;; (docs/adr/0002).
 
 (require 'cl-lib)
 
@@ -26,7 +27,6 @@
 
 (defvar portal-view--buffers nil "Buffers with a Portal view, in creation order.")
 (defvar-local portal-view--target nil "This buffer's native target.")
-(defvar-local portal-view--frame nil "The frame this buffer's view was opened in.")
 (defvar-local portal-view--window nil "The window showing this buffer's view, or nil.")
 (defvar-local portal-view--geometry nil
   "The placement last sent to the native view, or nil while it is hidden.
@@ -68,17 +68,16 @@ The native module finds FRAME's window by this title."
 (defun portal-view-open (kind options)
   "Open a Portal view of KIND for the current buffer and return its target.
 KIND is a symbol, such as `terminal'.  OPTIONS is a plist for that kind.
-The view follows the selected pane showing the buffer, is hidden while no
-pane shows it, and ends when the buffer is killed or changes major mode.
-In this version, the view stays in the frame that was selected."
+The view follows the selected pane showing the buffer, in any frame, is
+hidden while no pane shows it, and ends when the buffer is killed or
+changes major mode."
   (when portal-view--target (error "This buffer already has a Portal view"))
   (portal-view--load)
   (let ((target (portal--open (symbol-name kind) options))
         ready)
     (unwind-protect
         (progn
-          (setq portal-view--target target
-                portal-view--frame (selected-frame))
+          (setq portal-view--target target)
           (unless portal-view--buffers (portal-view--hooks t))
           (setq portal-view--buffers (append portal-view--buffers (list (current-buffer))))
           (add-hook 'kill-buffer-hook #'portal-view-close 90 t)
@@ -93,7 +92,6 @@ In this version, the view stays in the frame that was selected."
   (when-let* ((target portal-view--target))
     (setq portal-view--buffers (delq (current-buffer) portal-view--buffers)
           portal-view--target nil
-          portal-view--frame nil
           portal-view--window nil
           portal-view--geometry nil)
     (remove-hook 'kill-buffer-hook #'portal-view-close t)
@@ -123,15 +121,14 @@ With KIND, a symbol such as `terminal', return only views of that kind."
 (defun portal-view--sync-buffer (buffer)
   "Place BUFFER's view in its chosen window, or hide it when no window shows it.
 The chosen window is the selected window, then the view's current window,
-then any other window showing BUFFER.  Nothing is sent when nothing moved."
+then any other window showing BUFFER, in any frame.  Placing the view in
+another frame moves it there.  Nothing is sent when nothing moved."
   (with-current-buffer buffer
-    (let* ((frame portal-view--frame)
-           (windows (and (frame-live-p frame) (get-buffer-window-list buffer nil frame)))
-           (window (and windows
-                        (cond ((memq (frame-selected-window frame) windows)
-                               (frame-selected-window frame))
-                              ((memq portal-view--window windows) portal-view--window)
-                              (t (car windows)))))
+    (let* ((windows (get-buffer-window-list buffer nil t))
+           (window (cond ((memq (selected-window) windows) (selected-window))
+                         ((memq portal-view--window windows) portal-view--window)
+                         (t (car windows))))
+           (frame (and window (window-frame window)))
            (geometry (and window (list frame (frame-pixel-height frame)
                                        (vconcat (window-inside-pixel-edges window))))))
       (unless (equal geometry portal-view--geometry)
@@ -142,13 +139,12 @@ then any other window showing BUFFER.  Nothing is sent when nothing moved."
         (setq portal-view--geometry geometry))
       (setq portal-view--window window))))
 
-(defun portal-view-sync (&optional frame)
+(defun portal-view-sync (&optional _frame)
   "Place or hide each Portal view to match the windows showing its buffer.
-With FRAME, only sync the views in FRAME.  Window change hooks call this;
-call it directly where they do not run, such as in batch Emacs."
-  (dolist (buffer (portal-view-buffers))
-    (when (or (null frame) (eq frame (buffer-local-value 'portal-view--frame buffer)))
-      (portal-view--sync-buffer buffer))))
+Window change hooks call this with the frame that changed, but a change in
+one frame can move a view out of another, so every view is synced.  Call it
+directly where the hooks do not run, such as in batch Emacs."
+  (mapc #'portal-view--sync-buffer (portal-view-buffers)))
 
 (defun portal-view-focus ()
   "Give the current buffer's Portal view keyboard focus."
@@ -159,10 +155,14 @@ call it directly where they do not run, such as in batch Emacs."
     (user-error "No visible Portal view to focus")))
 
 (defun portal-view--frame-deleted (frame)
-  "End the views in FRAME, which is being deleted."
+  "Hide the views in FRAME, which is being deleted, keeping their sessions.
+The next sync places each one wherever its buffer is still shown."
   (dolist (buffer (portal-view-buffers))
-    (when (eq frame (buffer-local-value 'portal-view--frame buffer))
-      (with-current-buffer buffer (portal-view-close)))))
+    (with-current-buffer buffer
+      (when (eq frame (car portal-view--geometry))
+        (portal--hide portal-view--target)
+        (setq portal-view--geometry nil
+              portal-view--window nil)))))
 
 (defun portal-view--close-all ()
   "End every Portal view, for Emacs shutdown."

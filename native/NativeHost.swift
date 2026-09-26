@@ -58,8 +58,12 @@ final class NativeHost: NSObject {
     }
 
     static func bind(title: String) -> NativeHost? {
-        guard let window = NSApp?.windows.first(where: { $0.title == title }),
-              let view = window.contentView else { return nil }
+        guard let window = NSApp?.windows.first(where: { $0.title == title }) else { return nil }
+        return bind(window: window)
+    }
+
+    static func bind(window: NSWindow) -> NativeHost? {
+        guard let view = window.contentView else { return nil }
         if let host = frames.object(forKey: window), host.view === view { return host }
         let host = NativeHost(view: view)
         frames.setObject(host, forKey: window)

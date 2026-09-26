@@ -18,7 +18,6 @@
 (declare-function portal--terminal-theme "portal-terminal" (theme))
 (declare-function portal--terminal-themes "portal-terminal" ())
 
-(defvar-local portal-terminal--frame nil)
 (defvar-local portal-terminal--last-buffer nil)
 (defvar-local portal-terminal--quick-root nil)
 (defvar portal-terminal-quick-prefix-map)
@@ -99,18 +98,11 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
 (keymap-set portal-terminal-mode-map "RET" #'portal-terminal-focus)
 (keymap-set portal-terminal-mode-map "C-c C-k" #'portal-terminal-close)
 
-(defun portal-terminal--frame-buffers (&optional frame)
-  "Return live terminal buffers owned by FRAME, defaulting to this frame."
-  (let ((frame (or frame (selected-frame))))
-    (cl-remove-if-not (lambda (buffer)
-                        (eq (buffer-local-value 'portal-terminal--frame buffer) frame))
-                      (portal-view-buffers 'terminal))))
-
 (defun portal-terminal--regular-buffers ()
-  "Return this frame's ordinary terminals, excluding quick shells."
+  "Return the ordinary terminals in creation order, excluding quick shells."
   (cl-remove-if (lambda (buffer)
                   (buffer-local-value 'portal-terminal--quick-root buffer))
-                (portal-terminal--frame-buffers)))
+                (portal-view-buffers 'terminal)))
 
 (defun portal-terminal--connect ()
   "Connect shared input and refresh terminal-specific native bindings."
@@ -119,7 +111,7 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
 
 ;;;###autoload
 (defun portal-terminal (&optional new)
-  "Open or return to a native Ghostty terminal in the current frame.
+  "Open or return to a native Ghostty terminal in the selected pane.
 With prefix argument NEW, always start a new shell.  Hidden shells persist."
   (interactive "P")
   (let ((buffer (car (portal-terminal--regular-buffers))))
@@ -153,7 +145,6 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
             (portal-terminal-mode)
             (setq default-directory directory
                   portal-terminal--quick-root quick-root
-                  portal-terminal--frame (selected-frame)
                   portal-terminal--last-buffer previous)
             (let ((inhibit-read-only t))
               (insert "Native Ghostty terminal\n\n"
@@ -179,8 +170,6 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
   (interactive)
   (unless (memq (current-buffer) (portal-view-buffers 'terminal))
     (user-error "No terminal in this buffer"))
-  (unless (eq (selected-frame) portal-terminal--frame)
-    (user-error "This terminal belongs to another frame"))
   (portal-view-focus))
 
 (defalias 'portal-terminal-unfocus #'portal-input-unfocus)
@@ -238,7 +227,7 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (unless buffer (user-error "No terminal at that index"))
     (portal-terminal--switch buffer)))
 (defun portal-terminal-choose ()
-  "Choose a terminal in this frame with Emacs completion."
+  "Choose a terminal with Emacs completion."
   (interactive)
   (portal-terminal--switch
    (get-buffer (completing-read "Terminal: " (mapcar #'buffer-name (portal-terminal--regular-buffers)) nil t))))
