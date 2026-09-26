@@ -87,13 +87,13 @@
     (let ((web-window (selected-window)))
       (select-window (split-window-right))
       (portal-terminal)
-      (let ((terminal-id portal-terminal--id))
+      (let ((terminal-id (portal-view-target)))
         (unwind-protect
             (progn
               (select-window web-window)
               (portal-input-gui--prefix '(31 0 "o"))
               (should (eq major-mode 'portal-terminal-mode))
-              (should (plist-get (portal--terminal-state terminal-id) :focused)))
+              (should (plist-get (portal-terminal-test--state terminal-id) :focused)))
           (portal-terminal-close-all))))))
 
 (defvar portal-input-gui--ran nil)

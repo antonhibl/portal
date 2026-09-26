@@ -4,13 +4,27 @@
 (require 'ert)
 (require 'json)
 (require 'portal-terminal)
-(declare-function portal--terminal-text "portal-terminal" (&optional id))
-(declare-function portal--terminal-input "portal-terminal" (text enter &optional id))
-(declare-function portal--terminal-state "portal-terminal" (&optional id))
-(declare-function portal--terminal-focus "portal-terminal" (&optional id))
-(declare-function portal--terminal-close "portal-terminal" (&optional id))
+(declare-function portal--terminal-text "portal-terminal" (target))
+(declare-function portal--terminal-paste "portal-terminal" (target text &optional enter))
+(declare-function portal--inspect "portal-view" (target))
+(declare-function portal--close "portal-view" (target))
 (declare-function portal-test-native-key "test-terminal-input" (code flags text &optional windowless))
 (declare-function portal-test-native-post-key "test-terminal-input" (code flags text &optional windowless))
+
+(defvar portal-terminal-test--target nil
+  "The target of the terminal each test session starts with.")
+
+(defun portal-terminal-test--state (&optional target)
+  "Inspect TARGET, defaulting to the session's first terminal."
+  (portal--inspect (or target portal-terminal-test--target)))
+
+(defun portal-terminal-test--paste (text enter &optional target)
+  "Paste TEXT into TARGET, pressing Enter if ENTER is non-nil."
+  (portal--terminal-paste (or target portal-terminal-test--target) text enter))
+
+(defun portal-terminal-test--text (&optional target)
+  "Return TARGET's scrollback, defaulting to the session's first terminal."
+  (portal--terminal-text (or target portal-terminal-test--target)))
 
 (defconst portal-terminal-test--color-probe
   (expand-file-name "terminal-colors.py" (file-name-directory load-file-name)))
@@ -21,7 +35,7 @@
          (receipt (expand-file-name "colors.json" directory)))
     (unwind-protect
         (progn
-          (portal--terminal-input
+          (portal-terminal-test--paste
            (format "/usr/bin/python3 %s %s"
                    (shell-quote-argument portal-terminal-test--color-probe)
                    (shell-quote-argument receipt)) t id)
@@ -48,7 +62,8 @@
            (progn (delete-other-windows)
                   (select-frame-set-input-focus (selected-frame))
                   (sit-for 0.1)
-                  (portal-terminal) ,@body)
+                  (portal-terminal)
+                  (let ((portal-terminal-test--target (portal-view-target))) ,@body))
          (portal-terminal-close-all)))))
 
 (ert-deftest portal-terminal-theme-live-and-new-sessions ()
@@ -59,7 +74,7 @@
           (setq portal-terminal-theme "Dracula")
           (portal-terminal-test--session
             (should (member "Dracula" (portal-terminal-themes)))
-            (let* ((first portal-terminal--id)
+            (let* ((first (portal-view-target))
                    (initial (portal-terminal-test--colors first)))
               (should (equal (plist-get initial :background) "282a36"))
               (should (equal (plist-get initial :foreground) "f8f8f2"))
@@ -67,8 +82,8 @@
               (should (equal (plist-get initial :red) "ff5555"))
               ;; Hide the first shell, then recolor both existing sessions.
               (portal-terminal-new)
-              (let ((second portal-terminal--id))
-                (should-not (plist-get (portal--terminal-state first) :visible))
+              (let ((second (portal-view-target)))
+                (should-not (plist-get (portal-terminal-test--state first) :visible))
                 (setopt portal-terminal-theme "Alabaster")
                 (dolist (id (list first second))
                   (should (equal (plist-get (portal-terminal-test--colors id) :background)
@@ -78,7 +93,7 @@
                 (should (equal portal-terminal-theme "Alabaster"))
                 ;; New shells use the same setting; the original shell survives.
                 (portal-terminal-new)
-                (should (equal (plist-get (portal-terminal-test--colors portal-terminal--id)
+                (should (equal (plist-get (portal-terminal-test--colors (portal-view-target))
                                          :background) "f7f7f7"))
                 (should (equal (plist-get (portal-terminal-test--colors first) :pid)
                                (plist-get initial :pid)))
@@ -93,18 +108,18 @@
            (directory (make-temp-file "portal-terminal-test-" t))
            (receipt (expand-file-name "receipt" directory))
            (resumed (expand-file-name "resumed" directory))
-           (initial (portal--terminal-state)))
+           (initial (portal-terminal-test--state)))
       (unwind-protect
           (progn
             (should (plist-get initial :ready))
             (should (plist-get initial :visible))
             (should (plist-get initial :focused))
             (should (string-match-p "[Ll]ayer" (plist-get initial :layer)))
-            (portal--terminal-input
+            (portal-terminal-test--paste
              (format "export PORTAL_TEST_VALUE=survived; printf '\\033[32mGHOSTTY_RENDER_OK\\033[0m\\n'; printf '%%s' \"$$\" > %s"
                      (shell-quote-argument receipt)) t)
             (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-            (should (string-match-p "GHOSTTY_RENDER_OK" (portal--terminal-text)))
+            (should (string-match-p "GHOSTTY_RENDER_OK" (portal-terminal-test--text)))
             (let ((pid (with-temp-buffer
                          (insert-file-contents receipt)
                          (string-to-number (buffer-string)))))
@@ -112,8 +127,8 @@
               ;; Hiding must leave the same shell alive and draining its PTY.
               (switch-to-buffer (get-buffer-create "*scratch*"))
               (redisplay t)
-              (should-not (plist-get (portal--terminal-state) :visible))
-              (portal--terminal-input
+              (should-not (plist-get (portal-terminal-test--state) :visible))
+              (portal-terminal-test--paste
                (format "printf '%%s:%%s' \"$$\" \"$PORTAL_TEST_VALUE\" > %s"
                        (shell-quote-argument resumed)) t)
               (portal-terminal-test--wait (lambda () (file-exists-p resumed)))
@@ -122,18 +137,18 @@
                              (format "%s:survived" pid)))
               (switch-to-buffer terminal-buffer)
               (redisplay t)
-              (should (plist-get (portal--terminal-state) :visible))
+              (should (plist-get (portal-terminal-test--state) :visible))
               ;; Splitting updates both the actual viewport and PTY dimensions.
               (let ((other (split-window-right)))
                 (set-window-buffer other (get-buffer "*scratch*"))
                 (redisplay t)
                 (portal-terminal-test--wait
-                 (lambda () (< (plist-get (portal--terminal-state) :columns)
+                 (lambda () (< (plist-get (portal-terminal-test--state) :columns)
                                (plist-get initial :columns))))
-                (should (equal (plist-get (portal--terminal-state) :edges)
+                (should (equal (plist-get (portal-terminal-test--state) :edges)
                                (window-inside-pixel-edges (selected-window)))))
               (portal-terminal-close)
-              (should-not (portal--terminal-state))
+              (should-not (portal-terminal-test--state))
               (portal-terminal-test--wait (lambda () (not (process-attributes pid))))))
         (delete-directory directory t)))))
 
@@ -141,14 +156,14 @@
   (portal-terminal-test--session
     ;; A real interactive shell writes alternate-screen control sequences.
     ;; Read the actual Ghostty grid to verify the parser and screen switching.
-    (portal--terminal-input
+    (portal-terminal-test--paste
      "printf '\\033[?1049h\\033[2J\\033[HPORTAL_ALT_SCREEN'; sleep 1; printf '\\033[?1049l'; printf '\\nPORTAL_PRIMARY_SCREEN\\n'" t)
     (portal-terminal-test--wait
-     (lambda () (string-prefix-p "PORTAL_ALT_SCREEN" (portal--terminal-text))))
+     (lambda () (string-prefix-p "PORTAL_ALT_SCREEN" (portal-terminal-test--text))))
     (portal-terminal-test--wait
-     (lambda () (string-match-p "^PORTAL_PRIMARY_SCREEN" (portal--terminal-text))))
+     (lambda () (string-match-p "^PORTAL_PRIMARY_SCREEN" (portal-terminal-test--text))))
     (kill-buffer (current-buffer))
-    (should-not (portal--terminal-state))))
+    (should-not (portal-terminal-test--state))))
 
 (ert-deftest portal-terminal-native-keys-clipboard-and-focus ()
   (skip-unless (fboundp 'portal-test-native-key))
@@ -163,24 +178,24 @@
             (should (portal-test-native-key 9 (ash 1 20) "v"))
             (should (portal-test-native-key 36 0 "\r"))
             (portal-terminal-test--wait
-             (lambda () (string-match-p "^PORTAL_KEYBOARD_OK" (portal--terminal-text))))
+             (lambda () (string-match-p "^PORTAL_KEYBOARD_OK" (portal-terminal-test--text))))
             ;; The inspection selected the actual grid; Cmd-C must copy it.
             (should (portal-test-native-key 8 (ash 1 20) "c"))
             (should (string-match-p "PORTAL_KEYBOARD_OK"
                                     (gui-get-selection 'CLIPBOARD 'STRING)))
-            (portal--terminal-input "sleep 30" t)
+            (portal-terminal-test--paste "sleep 30" t)
             (accept-process-output nil 0.1)
             (should (portal-test-native-key 8 (ash 1 18) "\C-c"))
-            (portal--terminal-input "printf '\\nPORTAL_INTERRUPT_OK\\n'" t)
+            (portal-terminal-test--paste "printf '\\nPORTAL_INTERRUPT_OK\\n'" t)
             (portal-terminal-test--wait
-             (lambda () (string-match-p "^PORTAL_INTERRUPT_OK" (portal--terminal-text))))
+             (lambda () (string-match-p "^PORTAL_INTERRUPT_OK" (portal-terminal-test--text))))
             ;; Escape remains terminal input. Cmd-Escape alone returns focus.
             (should (portal-test-native-key 53 0 "\e"))
-            (should (plist-get (portal--terminal-state) :focused))
+            (should (plist-get (portal-terminal-test--state) :focused))
             (should (portal-test-native-key 53 (ash 1 20) "\e"))
-            (should-not (plist-get (portal--terminal-state) :focused))
+            (should-not (plist-get (portal-terminal-test--state) :focused))
             (portal-terminal-focus)
-            (should (plist-get (portal--terminal-state) :focused)))
+            (should (plist-get (portal-terminal-test--state) :focused)))
         (gui-set-selection 'CLIPBOARD clipboard)))))
 
 (ert-deftest portal-terminal-windowless-escape-restores-emacs-input ()
@@ -190,7 +205,7 @@
     (portal-terminal-focus)
     ;; AppKit may route keys through the key window without event.window.
     (should (portal-test-native-key 53 (ash 1 20) "\e" t))
-    (should-not (plist-get (portal--terminal-state) :focused))
+    (should-not (plist-get (portal-terminal-test--state) :focused))
     ;; Pump the real Emacs event loop: checking firstResponder alone misses
     ;; broken handoffs that still prevent Emacs commands from receiving keys.
     (should (portal-test-native-post-key 7 (ash 1 18) "\C-x"))
@@ -200,24 +215,22 @@
       (should (equal keys (vconcat (kbd "C-x b"))))
       (should (eq (key-binding keys) #'switch-to-buffer)))))
 
-(ert-deftest portal-terminal-header-control-returns-focus ()
+(ert-deftest portal-terminal-unfocus-command-returns-focus ()
   (portal-terminal-test--session
-    (let* ((button (substring (portal-input--header) 1))
-           (map (get-text-property 0 'local-map button))
-           (command (lookup-key map [header-line mouse-1])))
-      (should (commandp command))
-      (should (plist-get (portal--terminal-state) :focused))
-      (call-interactively command)
-      (should-not (plist-get (portal--terminal-state) :focused))
-      (should (plist-get (portal--terminal-state) :ready))
-      (portal-terminal-focus)
-      (should (plist-get (portal--terminal-state) :focused)))))
+    (should (plist-get (portal-terminal-test--state) :focused))
+    (call-interactively #'portal-terminal-unfocus)
+    (should-not (plist-get (portal-terminal-test--state) :focused))
+    (should (plist-get (portal-terminal-test--state) :ready))
+    (portal-terminal-focus)
+    (should (plist-get (portal-terminal-test--state) :focused))))
 
-(ert-deftest portal-terminal-invalid-session-id-preserves-live-shell ()
+(ert-deftest portal-terminal-invalid-target-preserves-live-shell ()
   (portal-terminal-test--session
-    (should-error (portal--terminal-close "invalid") :type 'wrong-type-argument)
-    (should (plist-get (portal--terminal-state) :ready))
-    (should (plist-get (portal--terminal-state) :focused))))
+    (should-error (portal--close 42) :type 'wrong-type-argument)
+    (should-error (portal--close "terminal:0"))
+    (should-not (portal--inspect "terminal:0"))
+    (should (plist-get (portal-terminal-test--state) :ready))
+    (should (plist-get (portal-terminal-test--state) :focused))))
 
 (ert-deftest portal-terminal-native-vim-edits-a-real-file ()
   (skip-unless (and (fboundp 'portal-test-native-key) (executable-find "vim")))
@@ -227,10 +240,10 @@
           (progn
             (select-frame-set-input-focus (selected-frame))
             (portal-terminal-focus)
-            (portal--terminal-input
+            (portal-terminal-test--paste
              (format "vim -Nu NONE -n -i NONE %s" (shell-quote-argument file)) t)
             (portal-terminal-test--wait
-             (lambda () (string-match-p "\\[New\\]" (portal--terminal-text))))
+             (lambda () (string-match-p "\\[New\\]" (portal-terminal-test--text))))
             (should (portal-test-native-key 34 0 "i"))
             (should (portal-test-native-key 0 0 "Edited inside native Ghostty"))
             (should (portal-test-native-key 53 0 "\e"))
@@ -265,13 +278,13 @@
 (ert-deftest portal-terminal-prefix-creates-splits-and-switches ()
   (portal-terminal-test--session
     (let ((first (current-buffer))
-          (first-id portal-terminal--id))
+          (first-id (portal-view-target)))
       (portal-terminal-test--prefix '(8 0 "c"))
       (let ((second (current-buffer)))
         (should-not (eq second first))
         (should (= (length (portal-terminal--frame-buffers)) 2))
-        (should (plist-get (portal--terminal-state portal-terminal--id) :focused))
-        (should-not (plist-get (portal--terminal-state first-id) :visible))
+        (should (plist-get (portal-terminal-test--state (portal-view-target)) :focused))
+        (should-not (plist-get (portal-terminal-test--state first-id) :visible))
         (portal-terminal-test--prefix '(35 0 "p"))
         (should (eq (current-buffer) first))
         (portal-terminal-test--prefix '(45 0 "n"))
@@ -281,7 +294,7 @@
         (portal-terminal-test--prefix (list 23 (ash 1 17) "%"))
         (should (= (length (window-list)) 2))
         (should (= (length (portal-terminal--frame-buffers)) 3))
-        (should (plist-get (portal--terminal-state first-id) :visible))
+        (should (plist-get (portal-terminal-test--state first-id) :visible))
         (let ((right (current-buffer)))
           (portal-terminal-test--prefix '(31 0 "o"))
           (should (eq (current-buffer) first))
@@ -305,7 +318,7 @@
             (setq portal-terminal-prefix prefix)
             (let ((ready (expand-file-name (concat prefix "-ready") directory))
                   (receipt (expand-file-name prefix directory)))
-              (portal--terminal-input
+              (portal-terminal-test--paste
                (format "old=$(stty -g); stty -icanon -echo min 1 time 0; touch %s; dd bs=1 count=1 2>/dev/null | od -An -tu1 > %s; stty \"$old\""
                        (shell-quote-argument ready) (shell-quote-argument receipt)) t)
               (portal-terminal-test--wait (lambda () (file-exists-p ready)))
@@ -320,7 +333,7 @@
               (should (= (with-temp-buffer (insert-file-contents receipt)
                                           (string-to-number (buffer-string)))
                          (if (equal prefix "C-a") 1 2)))
-              (should (plist-get (portal--terminal-state) :focused))))
+              (should (plist-get (portal-terminal-test--state) :focused))))
         (setq portal-terminal-prefix original)
         (delete-directory directory t)))))
 
@@ -337,21 +350,21 @@
       (portal-terminal-test--prefix '(14 0 "e") '(4 0 "h") '(34 0 "i") '(36 0 "\r"))
       (should (equal portal-terminal-test--answer "hi"))
       (should-not (active-minibuffer-window))
-      (should (plist-get (portal--terminal-state) :focused))
+      (should (plist-get (portal-terminal-test--state) :focused))
       ;; M-x completes before returning input to the selected native app.
       (portal-terminal-test--prefix
        (list 41 (ash 1 17) ":") '(34 0 "i") '(5 0 "g") '(45 0 "n")
        '(31 0 "o") '(15 0 "r") '(14 0 "e") '(36 0 "\r"))
       (should-not (active-minibuffer-window))
-      (should (plist-get (portal--terminal-state) :focused))
+      (should (plist-get (portal-terminal-test--state) :focused))
       (portal-terminal-test--prefix '(50 0 "`"))
-      (should (plist-get (portal--terminal-state) :focused))
+      (should (plist-get (portal-terminal-test--state) :focused))
       (portal-terminal-test--prefix (list 5 (ash 1 18) "\C-g"))
-      (should (plist-get (portal--terminal-state) :focused))
+      (should (plist-get (portal-terminal-test--state) :focused))
       (portal-test-native-key 53 (ash 1 20) "\e")
-      (should-not (plist-get (portal--terminal-state) :focused))
+      (should-not (plist-get (portal-terminal-test--state) :focused))
       (portal-terminal-test--prefix '(2 0 "d"))
-      (should-not (plist-get (portal--terminal-state) :focused))
+      (should-not (plist-get (portal-terminal-test--state) :focused))
       (portal-test-native-post-key 7 (ash 1 18) "\C-x")
       (portal-test-native-post-key 11 0 "b")
       (should (equal (with-timeout (3 (ert-fail "Detached editor did not receive C-x b"))
@@ -361,18 +374,18 @@
 (ert-deftest portal-terminal-prefix-follows-native-pane-and-keeps-shells-independent ()
   (portal-terminal-test--session
     (let ((left (current-buffer))
-          (left-id portal-terminal--id)
+          (left-id (portal-view-target))
           (left-window (selected-window))
           (directory (make-temp-file "portal-sessions-" t)))
       (unwind-protect
           (progn
             (portal-terminal-split-right)
             (let ((right (current-buffer))
-                  (right-id portal-terminal--id)
+                  (right-id (portal-view-target))
                   (left-file (expand-file-name "left" directory))
                   (right-file (expand-file-name "right" directory)))
-              (portal--terminal-input (format "echo $$ > %s" (shell-quote-argument left-file)) t left-id)
-              (portal--terminal-input (format "echo $$ > %s" (shell-quote-argument right-file)) t right-id)
+              (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument left-file)) t left-id)
+              (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument right-file)) t right-id)
               (portal-terminal-test--wait
                (lambda () (and (file-exists-p left-file) (file-exists-p right-file))))
               (should-not
@@ -380,7 +393,7 @@
                       (with-temp-buffer (insert-file-contents right-file) (buffer-string))))
               ;; A click can focus a native pane without selecting its Emacs
               ;; window. The notification must carry the actual session ID.
-              (portal--terminal-focus left-id)
+              (should (portal--input left-id "focus"))
               (should (eq (current-buffer) right))
               (portal-test-native-key 11 (ash 1 18) "\C-b" t)
               (portal-test-native-key 8 0 "c")
@@ -390,10 +403,10 @@
                   (portal-terminal--dispatch event)))
               (should (eq (selected-window) left-window))
               (should-not (memq (current-buffer) (list left right)))
-              (should (plist-get (portal--terminal-state right-id) :visible))
+              (should (plist-get (portal-terminal-test--state right-id) :visible))
               (kill-buffer right)
-              (should-not (portal--terminal-state right-id))
-              (should (plist-get (portal--terminal-state left-id) :ready))))
+              (should-not (portal-terminal-test--state right-id))
+              (should (plist-get (portal-terminal-test--state left-id) :ready))))
         (delete-directory directory t)))))
 
 ;;; portal-terminal-tests.el ends here
@@ -416,8 +429,8 @@
             (select-frame-set-input-focus (selected-frame))
             (sit-for 0.1)
             (portal-terminal-toggle)
-            (let ((id portal-terminal--id) (quick (current-buffer)))
-              (portal--terminal-input
+            (let ((id (portal-view-target)) (quick (current-buffer)))
+              (portal-terminal-test--paste
                (format "export PORTAL_QUICK_VALUE=preserved; cd /; printf '%%s' \"$$\" > %s; sleep 1; printf 'done' > %s"
                        (shell-quote-argument receipt) (shell-quote-argument finished)) t id)
               (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
@@ -427,14 +440,14 @@
                 (keymap-set portal-terminal-quick-prefix-map "t" #'portal-terminal-toggle)
                 (portal-terminal-test--prefix '(17 0 "t")))
               (should (eq (current-buffer) source))
-              (should-not (plist-get (portal--terminal-state id) :visible))
-              (should-not (plist-get (portal--terminal-state id) :focused))
+              (should-not (plist-get (portal-terminal-test--state id) :visible))
+              (should-not (plist-get (portal-terminal-test--state id) :focused))
               (portal-terminal-test--wait (lambda () (file-exists-p finished)))
               (portal-terminal-toggle)
               (should (eq (current-buffer) quick))
-              (should (= portal-terminal--id id))
-              (should (plist-get (portal--terminal-state id) :focused))
-              (portal--terminal-input
+              (should (equal (portal-view-target) id))
+              (should (plist-get (portal-terminal-test--state id) :focused))
+              (portal-terminal-test--paste
                (format "printf '%%s:%%s:%%s' \"$$\" \"$PORTAL_QUICK_VALUE\" \"$PWD\" > %s"
                        (shell-quote-argument resumed)) t id)
               (portal-terminal-test--wait (lambda () (file-exists-p resumed)))
@@ -444,10 +457,10 @@
               ;; The restricted native prefix also dismisses without killing.
               (portal-terminal-test--prefix '(12 0 "q"))
               (should (eq (current-buffer) source))
-              (should (plist-get (portal--terminal-state id) :ready))
+              (should (plist-get (portal-terminal-test--state id) :ready))
               (should-not (portal-terminal--regular-buffers))
               (kill-buffer quick)
-              (should-not (portal--terminal-state id))))
+              (should-not (portal-terminal-test--state id))))
         (portal-terminal-close-all)
         (kill-buffer source)
         (set-frame-parameter nil 'portal-terminal-quick-context context)
@@ -484,7 +497,7 @@
          (receipt (expand-file-name "byte" directory)))
     (unwind-protect
         (progn
-          (portal--terminal-input
+          (portal-terminal-test--paste
            (format "old=$(stty -g); stty -icanon -echo min 1 time 0; touch %s; dd bs=1 count=1 2>/dev/null | od -An -tu1 > %s; stty \"$old\""
                    (shell-quote-argument ready) (shell-quote-argument receipt)) t)
           (portal-terminal-test--wait (lambda () (file-exists-p ready)))
@@ -503,21 +516,21 @@
 (ert-deftest portal-terminal-bindings-live-rebind-prompt-error-and-unbind ()
   (portal-terminal-test--native-maps
     (portal-terminal-test--session
-      (let ((id portal-terminal--id))
+      (let ((id (portal-view-target)))
         (portal-terminal-bind-key portal-terminal-native-map "C-]" #'ignore)
         (portal-terminal-test--native-binding (list 30 (ash 1 18) "\C-]" t))
-        (should (plist-get (portal--terminal-state id) :focused))
+        (should (plist-get (portal-terminal-test--state id) :focused))
         ;; Rebind a live session; rapid follow-ups must reach the minibuffer.
         (portal-terminal-bind-key portal-terminal-native-map "C-]" #'portal-terminal-test--prompt)
         (setq portal-terminal-test--answer nil)
         (portal-terminal-test--native-binding
          (list 30 (ash 1 18) "\C-]" t) '(4 0 "h") '(34 0 "i") '(36 0 "\r"))
         (should (equal portal-terminal-test--answer "hi"))
-        (should (= portal-terminal--id id))
-        (should (plist-get (portal--terminal-state id) :focused))
+        (should (equal (portal-view-target) id))
+        (should (plist-get (portal-terminal-test--state id) :focused))
         (portal-terminal-bind-key portal-terminal-native-map "C-]" #'portal-terminal-test--binding-failure)
         (portal-terminal-test--native-binding (list 30 (ash 1 18) "\C-]" t))
-        (should-not (plist-get (portal--terminal-state id) :focused))
+        (should-not (plist-get (portal-terminal-test--state id) :focused))
         ;; Unbinding restores the actual terminal control byte, not a Lisp stub.
         (portal-terminal-unbind-key portal-terminal-native-map "C-]")
         (portal-terminal-focus)
@@ -548,22 +561,22 @@
 (ert-deftest portal-terminal-bindings-quick-only-toggle-and-hidden-session-updates ()
   (portal-terminal-test--native-maps
     (portal-terminal-test--session
-      (let ((regular (current-buffer)) (regular-id portal-terminal--id))
+      (let ((regular (current-buffer)) (regular-id (portal-view-target)))
         (portal-terminal-bind-key portal-terminal-quick-native-map "C-]" #'portal-terminal-toggle)
         ;; A quick-only binding must still reach an ordinary terminal's PTY.
         (portal-terminal-test--raw-byte
          (lambda () (portal-test-native-key 30 (ash 1 18) "\C-]" t)) 29)
         (portal-terminal-quick--show (file-name-as-directory temporary-file-directory))
-        (let ((quick (current-buffer)) (id portal-terminal--id))
+        (let ((quick (current-buffer)) (id (portal-view-target)))
           (portal-terminal-quick-dismiss)
           (portal-terminal-bind-key portal-terminal-quick-native-map "s-`" #'portal-terminal-toggle)
           (portal-terminal-quick--show (file-name-as-directory temporary-file-directory))
-          (should (= portal-terminal--id id))
+          (should (equal (portal-view-target) id))
           (portal-terminal-test--native-binding (list 50 (ash 1 20) "`" t))
           (should (eq (current-buffer) regular))
-          (should-not (plist-get (portal--terminal-state id) :visible))
-          (should (plist-get (portal--terminal-state id) :ready))
-          (should (plist-get (portal--terminal-state regular-id) :ready))
+          (should-not (plist-get (portal-terminal-test--state id) :visible))
+          (should (plist-get (portal-terminal-test--state id) :ready))
+          (should (plist-get (portal-terminal-test--state regular-id) :ready))
           (kill-buffer quick))))))
 
 (ert-deftest portal-terminal-bindings-new-session-and-native-validation ()

@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'cl-lib)
 (require 'portal-native)
+(require 'portal-view)
 (require 'portal-toolbar)
 
 (defgroup portal-input nil "Input for Portal native views." :group 'applications)
@@ -18,8 +19,12 @@
 (defvar portal-input--resume nil)
 (defvar portal-input--origin nil)
 (defvar portal-input--serial nil)
-(defvar-local portal-input--target-function nil "Function returning WINDOW's native target, or nil.")
-(defvar-local portal-input--focus-function nil "Function to synchronize and focus this buffer's view.")
+(defvar-local portal-input--target-function nil
+  "Function returning WINDOW's native target, or nil.
+Only for views not yet on the shared lifecycle; see `portal-view-target'.")
+(defvar-local portal-input--focus-function nil
+  "Function to synchronize and focus this buffer's view.
+Only for views not yet on the shared lifecycle; see `portal-view-focus'.")
 (defvar-local portal-input--map-function nil "Function returning this view's feature command map.")
 (defvar portal-input-mode-map (make-sparse-keymap))
 (defvaralias 'portal-terminal-prefix 'portal-input-prefix)
@@ -86,8 +91,10 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
   "Return the native target for WINDOW, defaulting to the selected window."
   (let ((window (or window (selected-window))))
     (with-current-buffer (window-buffer window)
-      (when (and portal-input-mode portal-input--target-function)
-        (funcall portal-input--target-function window)))))
+      (when portal-input-mode
+        (or (portal-view-target window)
+            (and portal-input--target-function
+                 (funcall portal-input--target-function window)))))))
 
 (defun portal-input--action (action &optional target serial)
   "Perform ACTION on TARGET, checking handoff SERIAL when supplied."
@@ -98,8 +105,9 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
 (defun portal-input-focus ()
   "Give the selected Portal view keyboard focus."
   (interactive)
-  (unless portal-input--focus-function (user-error "No Portal view in this buffer"))
-  (funcall portal-input--focus-function))
+  (if portal-input--focus-function
+      (funcall portal-input--focus-function)
+    (portal-view-focus)))
 
 (defun portal-input-unfocus ()
   "Return to Emacs and stay there; RET re-enters the selected Portal view."
@@ -164,7 +172,7 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
 
 (defun portal-input--connect ()
   "Load the module and establish the shared input notification channel."
-  (portal-native--load)
+  (portal-view--load)
   (unless (fboundp 'portal--input)
     (user-error "Restart Emacs to load the rebuilt Portal input bridge"))
   (unless (process-live-p portal-input--channel)
@@ -217,7 +225,8 @@ Shared bindings take precedence over feature-specific compatibility shortcuts."
                  (message "Portal command: %s" (error-message-string err))))
       (let ((valid (or (null serial) (portal-input--action "finish" target serial))))
         (when (and valid portal-input--resume portal-input-mode
-                   portal-input--focus-function (not (active-minibuffer-window)))
+                   (or portal-input--focus-function (memq (current-buffer) (portal-view-buffers)))
+                   (not (active-minibuffer-window)))
           (portal-input-focus))))))
 
 (defun portal-input-command ()

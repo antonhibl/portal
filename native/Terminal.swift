@@ -54,26 +54,25 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     }
 }
 
+/// The terminal view kind: one Ghostty session. Its shell starts when the view
+/// first enters a frame, and keeps running while the view is hidden.
 @MainActor
-private final class TerminalSession {
-    let id: Int
+final class TerminalSession: PortalView {
+    let target: String
     let quick: Bool
-    let terminal: HostedTerminal
-    let host: NativeHost
+    fileprivate let terminal: HostedTerminal
+    private var host: NativeHost?
+    private(set) var input: NativeInput?
     let controls = ToolbarModel(.terminal)
-    var edges: [Int] = []
-    lazy var input = NativeInput(target: "terminal:\(id)", view: terminal, host: host,
-                                 profile: quick ? "quick" : "regular") { [weak self] in
-        guard let self, !terminal.isHidden, terminal.acquireProgrammaticFocus() else { return false }
-        Terminals.didFocus(id)
-        return true
-    }
+    private var edges: [Int] = []
 
-    init(id: Int, host: NativeHost, directory: String, theme: TerminalTheme, quick: Bool) throws {
-        self.id = id
-        self.quick = quick
-        self.host = host
-        terminal = HostedTerminal(directory: directory, theme: theme)
+    init(target: String, options: ViewOptions) throws {
+        guard let directory = try options.string("directory") else {
+            throw NativeError.message("A terminal view needs a :directory")
+        }
+        self.target = target
+        quick = options.flag("quick")
+        terminal = HostedTerminal(directory: directory, theme: try Terminals.resolveTheme(options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         terminal.session = self
         controls.value = HostedTerminal.defaultFontSize
@@ -83,24 +82,48 @@ private final class TerminalSession {
         controls.action = { [weak self] in try self?.textSize($0) }
     }
 
-    func layout(_ rectangle: [Int]) throws {
-        edges = rectangle
-        if rectangle.isEmpty {
-            terminal.setSurfaceVisible(false)
-            // Ghostty must stay attached so hidden shells keep draining their PTYs.
-            host.hide(terminal)
-            return
+    func place(in host: NativeHost, rectangle: CGRect) throws {
+        if let current = self.host, current !== host {
+            throw NativeError.message("A terminal view cannot move to another frame")
         }
-        let frame = CGRect(x: rectangle[0], y: rectangle[1],
-                           width: rectangle[2] - rectangle[0], height: rectangle[3] - rectangle[1])
-        guard host.place(terminal, rectangle: frame) else {
+        self.host = host
+        if input == nil {
+            input = NativeInput(target: target, view: terminal, host: host,
+                                profile: quick ? "quick" : "regular") { [weak self] in
+                guard let terminal = self?.terminal, !terminal.isHidden else { return false }
+                return terminal.acquireProgrammaticFocus()
+            }
+        }
+        guard host.place(terminal, rectangle: rectangle) else {
             throw NativeError.message("The terminal's frame was deleted")
         }
+        edges = [Int(rectangle.minX), Int(rectangle.minY), Int(rectangle.maxX), Int(rectangle.maxY)]
         terminal.setSurfaceVisible(true)
         terminal.fitToSize()
         guard terminal.terminalSurface != nil else {
             throw NativeError.message("Ghostty could not create a Metal terminal surface")
         }
+    }
+
+    func hide() {
+        edges = []
+        terminal.setSurfaceVisible(false)
+        // Ghostty must stay attached so hidden shells keep draining their PTYs.
+        host?.hide(terminal)
+    }
+
+    func close() { host?.remove(terminal) }
+
+    func inspect() -> [(String, ViewValue)] {
+        [("ready", .flag(terminal.terminalSurface != nil)),
+         ("visible", .flag(terminal.window != nil && !terminal.isHiddenOrHasHiddenAncestor)),
+         ("focused", .flag(host?.ownsFocus(terminal) ?? false)),
+         ("title", .string(terminal.terminalTitle)),
+         ("closed", .flag(terminal.closed)),
+         ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
+         ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
+         ("edges", .integers(edges)),
+         ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]
     }
 
     func textSize(_ action: String) throws {
@@ -120,11 +143,10 @@ private final class TerminalSession {
         controls.changed?()
     }
 
-    func returnFocus() { host.returnFocus(from: terminal) }
+    func returnFocus() { host?.returnFocus(from: terminal) }
 
     func handleKeyEvent(_ event: NSEvent) -> Bool {
-        Terminals.didFocus(id)
-        if input.handleKeyEvent(event) { return true }
+        if input?.handleKeyEvent(event) == true { return true }
         if event.type == .keyDown,
            event.modifierFlags.intersection([.command, .control, .option]) == .command {
             let key = event.charactersIgnoringModifiers ?? ""
@@ -141,40 +163,14 @@ private final class TerminalSession {
         }
         return true
     }
-
-    func close() {
-        host.remove(terminal)
-    }
 }
 
-struct TerminalSnapshot: Sendable {
-    var ready: Bool
-    var visible: Bool
-    var focused: Bool
-    var title: String
-    var closed: Bool
-    var columns: Int
-    var rows: Int
-    var edges: [Int]
-    var layer: String
-}
-
-/// Independent Ghostty sessions. Nothing here depends on the web feature.
+/// Operations shared by all terminal views. Nothing here depends on the web feature.
 @MainActor
 enum Terminals {
-    private static var sessions: [Int: TerminalSession] = [:]
-    private static var nextID = 0
-    private static var activeID: Int?
-    private static func session(_ id: Int?) -> TerminalSession? {
-        guard let id = id ?? activeID else { return nil }
-        return sessions[id]
-    }
-
-    static func didFocus(_ id: Int) { activeID = id }
-
     static func themeNames() -> [String] { GhosttyThemeCatalog.allThemes.map(\.name).sorted() }
 
-    private static func resolveTheme(_ name: String?) throws -> TerminalTheme {
+    fileprivate static func resolveTheme(_ name: String?) throws -> TerminalTheme {
         guard let name else { return .default }
         guard let theme = GhosttyThemeCatalog.theme(named: name) else {
             throw NativeError.message("Unknown terminal theme: \(name)")
@@ -185,7 +181,7 @@ enum Terminals {
     static func setTheme(_ name: String?) throws {
         // Resolve before touching any session, including when none are open.
         let theme = try resolveTheme(name)
-        for session in sessions.values {
+        for session in Views.all(TerminalSession.self) {
             guard let controller = session.terminal.controller, controller.theme != theme else { continue }
             guard controller.setTheme(theme) else {
                 throw NativeError.message(controller.lastConfigurationIssue ?? "Could not apply terminal theme")
@@ -193,48 +189,14 @@ enum Terminals {
         }
     }
 
-    static func open(title: String, directory: String, themeName: String?, quick: Bool = false) throws -> Int {
-        let theme = try resolveTheme(themeName)
-        guard let host = NativeHost.bind(title: title) else {
-            throw NativeError.message("Cannot find the requested native Emacs frame")
-        }
-        nextID += 1
-        sessions[nextID] = try TerminalSession(id: nextID, host: host, directory: directory, theme: theme, quick: quick)
-        activeID = nextID
-        return nextID
-    }
-
-    static func layout(_ edges: [Int], id: Int?) throws {
-        guard let session = session(id) else { throw NativeError.message("No native terminal is open") }
-        try session.layout(edges)
-    }
-
-    static func focus(_ id: Int?) throws {
-        guard let session = session(id), !session.terminal.isHidden,
-              session.terminal.acquireProgrammaticFocus() else {
-            throw NativeError.message("No visible terminal to focus")
-        }
-        activeID = session.id
-    }
-
-    static func unfocus(_ id: Int?) { session(id)?.returnFocus() }
-
-    static func destroy(_ id: Int?) {
-        guard let session = session(id) else { return }
-        session.close()
-        sessions[session.id] = nil
-        if activeID == session.id { activeID = sessions.keys.max() }
-    }
-
-    static func input(_ text: String, enter: Bool, id: Int?) throws {
-        guard let terminal = session(id)?.terminal, terminal.paste(text: text) else {
-            throw NativeError.message("No terminal accepting input")
-        }
+    static func paste(_ target: String, text: String, enter: Bool) throws {
+        let terminal = try Views.view(target, as: TerminalSession.self).terminal
+        guard terminal.paste(text: text) else { throw NativeError.message("No terminal accepting input") }
         if enter { _ = terminal.sendKey(.enter) }
     }
 
-    static func text(_ id: Int?) throws -> String {
-        guard let surface = session(id)?.terminal.terminalSurface else {
+    static func text(_ target: String) throws -> String {
+        guard let surface = try Views.view(target, as: TerminalSession.self).terminal.terminalSurface else {
             throw NativeError.message("No terminal surface to copy")
         }
         guard surface.performBindingAction("select_all") else {
@@ -242,18 +204,4 @@ enum Terminals {
         }
         return surface.readSelection() ?? ""
     }
-
-    static func snapshot(_ id: Int?) -> TerminalSnapshot? {
-        guard let session = session(id) else { return nil }
-        let terminal = session.terminal
-        return TerminalSnapshot(
-            ready: terminal.terminalSurface != nil,
-            visible: terminal.window != nil && !terminal.isHiddenOrHasHiddenAncestor,
-            focused: session.host.ownsFocus(terminal),
-            title: terminal.terminalTitle, closed: terminal.closed,
-            columns: Int(terminal.grid?.columns ?? 0), rows: Int(terminal.grid?.rows ?? 0),
-            edges: session.edges,
-            layer: terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? "")
-    }
-
 }

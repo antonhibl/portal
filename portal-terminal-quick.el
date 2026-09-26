@@ -4,8 +4,6 @@
 (require 'project)
 (require 'portal-terminal)
 
-(declare-function portal--terminal-unfocus "portal-terminal" (&optional id))
-
 (defcustom portal-terminal-quick-height 0.5
   "Initial quick panel height as a fraction of the frame.
 Manual resizing is remembered in each frame until it is deleted."
@@ -105,17 +103,14 @@ No global keybinding is installed; bind this command in your configuration."
   "Dismiss the quick panel without changing or ending its shell."
   (interactive)
   (when-let* ((window (portal-terminal-quick--window)))
-    (let ((return (frame-parameter nil 'portal-terminal-quick-return-window))
-          (buffer (window-buffer window)))
+    (let ((return (frame-parameter nil 'portal-terminal-quick-return-window)))
       (set-frame-parameter nil 'portal-terminal-quick-height (window-total-height window))
       (setq portal-terminal--resume nil)
-      (when-let* ((id (buffer-local-value 'portal-terminal--id buffer)))
-        (portal-input--action "unfocus" (format "terminal:%d" id))
-        (portal--terminal-unfocus id))
       (delete-window window)
       (when (and (window-live-p return) (eq (window-frame return) (selected-frame)))
         (select-window return))
-      (portal-terminal--sync (selected-frame)))))
+      ;; Hiding the view also returns keyboard focus to Emacs.
+      (portal-view-sync (selected-frame)))))
 
 (defun portal-terminal-quick--target ()
   "Return the visible quick shell's root, or the current editing project root."

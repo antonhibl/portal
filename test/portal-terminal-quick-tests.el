@@ -1,49 +1,48 @@
 ;;; portal-terminal-quick-tests.el --- Quick terminal behavior -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'ert)
+(require 'portal-fake-native
+         (expand-file-name "portal-fake-native"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
 (require 'portal-terminal)
 
-;; Exercise real Emacs buffers/windows/project detection with only the native
-;; surface boundary replaced.  PTY and keyboard checks live in the GUI suite.
+;; Exercise real Emacs buffers/windows/project detection against the fake
+;; native module.  PTY and keyboard checks live in the GUI suite.
 (defmacro portal-quick-test--environment (&rest body)
   (declare (indent 0))
-  `(let ((native-comp-enable-subr-trampolines nil)
-         (portal-terminal--buffers nil)
-         (portal-terminal--channel nil)
-         (directory (make-temp-file "portal-quick-" t))
-         (next-id 0) closed
+  `(let ((directory (make-temp-file "portal-quick-" t))
          (parameters (mapcar (lambda (key) (cons key (frame-parameter nil key)))
                              '(portal-terminal-quick-context
                                portal-terminal-quick-return-window
                                portal-terminal-quick-height)))
          (initial-buffers (buffer-list)))
+     (portal-fake-native-reset)
      (save-window-excursion
        (unwind-protect
-           (cl-letf (((symbol-function 'portal-terminal--connect) #'ignore)
-                     ((symbol-function 'portal--terminal-open)
-                      (lambda (&rest _) (cl-incf next-id)))
-                     ((symbol-function 'portal--terminal-close)
-                      (lambda (id) (push id closed)))
-                     ((symbol-function 'portal--terminal-layout) #'ignore)
-                     ((symbol-function 'portal--terminal-focus) #'ignore)
-                     ((symbol-function 'portal--terminal-unfocus) #'ignore)
-                     ((symbol-function 'portal--input) #'ignore))
+           (progn
              (dolist (parameter parameters) (set-frame-parameter nil (car parameter) nil))
              (delete-other-windows)
              (switch-to-buffer (generate-new-buffer "quick-test-source"))
              (setq buffer-file-name (expand-file-name "source.el" directory)
                    default-directory (file-name-as-directory directory))
              ,@body)
-         (cl-letf (((symbol-function 'portal--terminal-close) #'ignore)
-                   ((symbol-function 'portal--terminal-layout) #'ignore)
-                   ((symbol-function 'portal--terminal-unfocus) #'ignore)
-                   ((symbol-function 'portal--input) #'ignore))
-           (portal-terminal-quick-dismiss)
-           (dolist (buffer (cl-set-difference (buffer-list) initial-buffers))
-             (when (buffer-live-p buffer) (kill-buffer buffer))))
+         (portal-terminal-quick-dismiss)
+         (dolist (buffer (cl-set-difference (buffer-list) initial-buffers))
+           (when (buffer-live-p buffer) (kill-buffer buffer)))
          (dolist (parameter parameters)
            (set-frame-parameter nil (car parameter) (cdr parameter)))
          (delete-directory directory t)))))
+
+(defun portal-quick-test--opened ()
+  "Return how many views have been opened."
+  (length (portal-fake-native-calls 'portal--open)))
+
+(defun portal-quick-test--closed ()
+  "Return the targets closed so far, oldest first."
+  (mapcar #'car (portal-fake-native-calls 'portal--close)))
 
 (ert-deftest portal-quick-toggle-preserves-session-layout-and-editor-position ()
   (portal-quick-test--environment
@@ -53,7 +52,7 @@
            (right (split-window-right))
            (point (point)))
       (portal-terminal-toggle)
-      (let ((quick (current-buffer)) (id portal-terminal--id)
+      (let ((quick (current-buffer)) (target (portal-view-target))
             (panel (selected-window)))
         (should (eq (window-parameter panel 'window-side) 'bottom))
         (should (= (window-total-width panel) (frame-width)))
@@ -69,11 +68,12 @@
         (should (eq (current-buffer) source))
         (should (= (point) point))
         (should (window-live-p right))
-        (should-not closed)
+        (should-not (portal-quick-test--closed))
+        (should-not (plist-get (portal--inspect target) :visible))
         (portal-terminal-toggle)
         (should (eq (current-buffer) quick))
-        (should (= portal-terminal--id id))
-        (should (= next-id 1))))))
+        (should (equal (portal-view-target) target))
+        (should (= (portal-quick-test--opened) 1))))))
 
 (ert-deftest portal-quick-project-context-and-auxiliary-buffers ()
   (portal-quick-test--environment
@@ -100,27 +100,27 @@
         (portal-terminal-toggle)
         (should-not (eq (current-buffer) first))
         (should (= (length (portal-terminal--frame-buffers)) 2))
-        (should-not closed)))))
+        (should-not (portal-quick-test--closed))))))
 
 (ert-deftest portal-quick-reset-forget-and-cancel ()
   (portal-quick-test--environment
     (portal-terminal-toggle)
-    (let ((first (current-buffer)) (id portal-terminal--id))
+    (let ((first (current-buffer)) (target (portal-view-target)))
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
         (portal-terminal-quick-reset)
         (should (eq (current-buffer) first))
-        (should-not closed))
+        (should-not (portal-quick-test--closed)))
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
         (portal-terminal-quick-reset)
         (should-not (buffer-live-p first))
-        (should-not (= portal-terminal--id id))
-        (should (equal closed (list id)))
+        (should-not (equal (portal-view-target) target))
+        (should (equal (portal-quick-test--closed) (list target)))
         (portal-terminal-quick-dismiss)
         (portal-terminal-quick-forget)
         (should-not (portal-terminal--frame-buffers))
         (should-not (portal-terminal-quick--window))
         (portal-terminal-toggle)
-        (should (= next-id 3))))))
+        (should (= (portal-quick-test--opened) 3))))))
 
 (ert-deftest portal-quick-resize-and-layout-edits-survive-dismissal ()
   (portal-quick-test--environment
@@ -140,14 +140,16 @@
     (let ((origin (selected-window)))
       (setq default-directory "/ssh:example:/work/")
       (should-error (portal-terminal-toggle) :type 'user-error)
-      (should (= next-id 0))
+      (should (= (portal-quick-test--opened) 0))
       (setq default-directory (file-name-as-directory directory))
-      (cl-letf (((symbol-function 'portal--terminal-open)
-                 (lambda (&rest _) (error "Native creation failed"))))
-        (should-error (portal-terminal-toggle))
+      (dolist (failure '(portal--open portal--place))
+        (let ((portal-fake-native-failures (list failure)))
+          (should-error (portal-terminal-toggle)))
         (should-not (portal-terminal-quick--window))
         (should (eq (selected-window) origin))
-        (should-not (portal-terminal--frame-buffers))))))
+        (should-not (portal-terminal--frame-buffers))
+        (should-not (portal-view-buffers))
+        (should-not (portal-fake-native-targets))))))
 
 (ert-deftest portal-quick-hidden-kill-does-not-dismiss-another-project ()
   (portal-quick-test--environment

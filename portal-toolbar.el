@@ -1,6 +1,6 @@
 ;;; portal-toolbar.el --- Controls for native Portal views -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-(require 'portal-native)
+(require 'portal-view)
 (require 'json)
 
 (defgroup portal-toolbar nil "Native view controls." :group 'applications)
@@ -48,7 +48,7 @@ Changes apply immediately.  Quick terminals and the square demo have no strip."
   (when (fboundp 'portal--toolbar)
     (portal--toolbar portal-toolbar)
     (portal-toolbar--theme)))
-(add-hook 'portal-native-load-hook #'portal-toolbar--initialize)
+(add-hook 'portal-view-load-hook #'portal-toolbar--initialize)
 (add-hook 'enable-theme-functions #'portal-toolbar--theme)
 (add-hook 'disable-theme-functions #'portal-toolbar--theme)
 (portal-toolbar--initialize)
