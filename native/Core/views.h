@@ -53,8 +53,10 @@ portal_view *portal_views_find(portal_string target, int kind, portal_text *erro
 /* TARGET's input, if TARGET names an open view; valid until it closes. */
 struct portal_input *portal_views_input(portal_string target);
 
-/* Apply terminal theme NAME, or the default for a null NAME, to every open
-   terminal view. */
-bool portal_views_terminal_theme(const portal_string *name, portal_text *error);
+/* Call VISIT with each open view of KIND, oldest first, until it returns
+   false; return whether every call returned true.  VISIT may call platform
+   primitives but must not open or close views. */
+bool portal_views_each(portal_kind kind, bool (*visit)(portal_view *view, void *context),
+                       void *context);
 
 #endif

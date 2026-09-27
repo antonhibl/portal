@@ -9,11 +9,19 @@
    A view created with the option :description describes itself with exactly
    that text instead, for tests of how the core reads descriptions.
 
+   A terminal describes the facts every platform's terminal reports, "ready",
+   "title", "columns", "rows" and "exited", which is true once a test ends
+   its process.  Its "text" is everything pasted into it, with a newline for
+   each Enter, and its "theme" the last one applied, false for the default.
+   The engine's themes are those in `themes' below, listed out of order.
+
    Failures on demand: creating a view with the option :fail fails, with that
    option's string as the message; attaching to a frame whose title starts
-   with "deleted" fails, as the frame is gone; and while a test says so,
-   every view primitive refuses to run, as on the wrong thread.  Timers fire only when a test
-   fires them.  A destroyed view's memory is kept, marked destroyed, so a
+   with "deleted" fails, as the frame is gone; every terminal primitive on a
+   terminal created with the option :broken fails, with that option's string
+   as the message; and while a test says so, every view and terminal
+   primitive refuses to run, as on the wrong thread.  Timers fire only when a
+   test fires them.  A destroyed view's memory is kept, marked destroyed, so a
    later call that names it is counted instead of reading freed memory
    (portal-fake-backend.h).
 
@@ -42,9 +50,10 @@ struct press {
 /* One property that portal--inspect reports. */
 struct property {
     portal_text name;
-    enum { FLAG, INTEGER, INTEGERS, STRING } kind;
+    enum { FLAG, INTEGER, INTEGERS, REAL, STRING } kind;
     bool flag;
     int64_t integer;
+    double real;
     int64_t *integers; /* COUNT of them. */
     size_t count;
     portal_text string;
@@ -192,6 +201,12 @@ static void put_format(struct json *json, const char *format, long long value)
     put(json, number, (size_t) snprintf(number, sizeof number, format, value));
 }
 
+static void put_real(struct json *json, double value)
+{
+    char number[32];
+    put(json, number, (size_t) snprintf(number, sizeof number, "%g", value));
+}
+
 static void put_string(struct json *json, portal_text text)
 {
     put(json, "\"", 1);
@@ -207,7 +222,7 @@ static void put_string(struct json *json, portal_text text)
     put(json, "\"", 1);
 }
 
-/* Whether a view primitive refuses to run, setting *ERROR. */
+/* Whether a view or terminal primitive refuses to run, setting *ERROR. */
 static bool refused(portal_text *error)
 {
     return refusing && !fail(error, "The fake refuses to run view primitives");
@@ -256,6 +271,13 @@ bool portal_view_create(portal_kind kind, portal_string target, const portal_opt
         abort();
     all[view_count++] = view;
     set_flag(view, "attached", false);
+    if (kind == PORTAL_TERMINAL) {
+        set_flag(view, "ready", true);
+        set_string(view, "title", "Fake terminal", 13);
+        set_integer(view, "columns", 80);
+        set_integer(view, "rows", 24);
+        set_flag(view, "exited", false);
+    }
     for (size_t i = 0; i < count; i++) {
         struct property *entry = property(view, options[i].name.data, options[i].name.length);
         entry->kind = options[i].is_string ? STRING : FLAG;
@@ -324,6 +346,8 @@ static void put_properties(struct json *json, const struct portal_view *view)
             put(json, property->flag ? "true" : "false", property->flag ? 4 : 5);
         else if (property->kind == INTEGER)
             put_format(json, "%lld", property->integer);
+        else if (property->kind == REAL)
+            put_real(json, property->real);
         else if (property->kind == STRING)
             put_string(json, property->string);
         else
@@ -431,63 +455,83 @@ bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error)
     return true;
 }
 
-static const char *const themes[] = {"Alpha", "Beta", "Ωmega"};
-
-/* Like the real one, resolve the theme before touching any terminal. */
-bool portal_terminal_theme(const portal_string *name, portal_view *const *terminals,
-                           size_t count, portal_text *error)
+void portal_fake_exit(portal_view *terminal)
 {
-    bool known = !name;
-    for (size_t i = 0; name && i < sizeof themes / sizeof *themes; i++)
-        known = known || is(*name, themes[i]);
-    if (!known)
-        return fail(error, "Unknown terminal theme: %.*s", (int) name->length, name->data);
-    for (size_t i = 0; i < count; i++)
-        if (!usable(terminals[i], PORTAL_TERMINAL, error))
-            return false;
-    for (size_t i = 0; i <= count; i++) {
-        struct portal_view *view = i < count ? terminals[i] : &settings;
-        if (name)
-            set_string(view, "theme", name->data, name->length);
-        else
-            set_flag(view, "theme", false);
-    }
+    set_flag(terminal, "exited", true);
+}
+
+/* The engine's themes, not in order.  One needs escaping in JSON. */
+static const char *const themes[] = {"Ωmega", "Beta", "Back\\slash \"quoted\"", "Alpha"};
+
+bool portal_terminal_list_themes(portal_text **names, size_t *count, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    calls.listed++;
+    *count = sizeof themes / sizeof *themes;
+    *names = malloc(*count * sizeof **names);
+    for (size_t i = 0; i < *count; i++)
+        (*names)[i] = copy(themes[i], strlen(themes[i]));
     return true;
 }
 
-bool portal_terminal_themes(portal_text *names, portal_text *error)
+/* Whether a terminal primitive may run on TERMINAL, which must be open and
+   not :broken. */
+static bool working(struct portal_view *terminal, portal_text *error)
 {
-    (void) error;
-    struct json json = {0};
-    put(&json, "[", 1);
-    for (size_t i = 0; i < sizeof themes / sizeof *themes; i++) {
-        if (i)
-            put(&json, ",", 1);
-        put_string(&json, (portal_text) {(char *) themes[i], strlen(themes[i])});
-    }
-    put(&json, "]", 1);
-    *names = (portal_text) {json.data, json.length};
+    if (!usable(terminal, PORTAL_TERMINAL, error) || refused(error))
+        return false;
+    const struct property *broken = get(terminal, "broken");
+    return !broken || broken->kind != STRING
+        || fail(error, "%.*s", (int) broken->string.length, broken->string.data);
+}
+
+bool portal_terminal_apply_theme(portal_view *terminal, const portal_string *name,
+                                 portal_text *error)
+{
+    if (!working(terminal, error))
+        return false;
+    calls.themed++;
+    if (name)
+        set_string(terminal, "theme", name->data, name->length);
+    else
+        set_flag(terminal, "theme", false);
     return true;
 }
 
-/* The fake terminal's scrollback is everything pasted into it. */
-bool portal_terminal_paste(portal_view *terminal, portal_string text, bool enter,
-                           portal_text *error)
+bool portal_terminal_paste_text(portal_view *terminal, portal_string text, portal_text *error)
 {
-    if (!usable(terminal, PORTAL_TERMINAL, error))
+    if (!working(terminal, error))
         return false;
     append(terminal, "text", "", text.data, text.length);
-    if (enter)
-        append(terminal, "text", "", "\n", 1);
     return true;
 }
 
-bool portal_terminal_text(portal_view *terminal, portal_text *text, portal_text *error)
+bool portal_terminal_press_enter(portal_view *terminal, portal_text *error)
 {
-    if (!usable(terminal, PORTAL_TERMINAL, error))
+    calls.entered++; /* Even if it fails. */
+    if (!working(terminal, error))
+        return false;
+    append(terminal, "text", "", "\n", 1);
+    return true;
+}
+
+bool portal_terminal_read_text(portal_view *terminal, portal_text *text, portal_text *error)
+{
+    if (!working(terminal, error))
         return false;
     const struct property *scrollback = get(terminal, "text");
     *text = scrollback ? copy(scrollback->string.data, scrollback->string.length) : copy("", 0);
+    return true;
+}
+
+bool portal_terminal_set_font_size(portal_view *terminal, double points, portal_text *error)
+{
+    if (!working(terminal, error))
+        return false;
+    struct property *entry = property(terminal, "font-size", 9);
+    entry->kind = REAL;
+    entry->real = points;
     return true;
 }
 

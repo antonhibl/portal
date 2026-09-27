@@ -28,7 +28,7 @@
 
 (defun portal-module-tests--next-id ()
   "Open and close a view; return the ID the backend gives the next one."
-  (let* ((target (portal--open "terminal" nil))
+  (let* ((target (portal--open "terminal" '(:directory "/")))
          (id (plist-get (portal--inspect target) :id)))
     (portal--close target)
     (1+ id)))
@@ -86,7 +86,7 @@
 
 (ert-deftest portal-module-copies-strings-exactly ()
   (let* ((text (string ?a 0 ?b ?é ?🙂))
-         (target (portal--open "terminal" (list :name text :name "last"))))
+         (target (portal--open "terminal" (list :directory "/" :name text :name "last"))))
     ;; Explicit lengths keep NUL bytes; a later duplicate option wins.
     (should (equal (plist-get (portal--inspect target) :name) "last"))
     (should (eq (portal--terminal-paste target text) t))
@@ -156,7 +156,7 @@
                        (list 'error (cdr case))))))))
 
 (ert-deftest portal-module-optional-arguments ()
-  (let ((terminal (portal--open "terminal" nil)))
+  (let ((terminal (portal--open "terminal" '(:directory "/"))))
     (should (eq (portal--terminal-paste terminal "a") t))
     (should (eq (portal--terminal-paste terminal "b" nil) t))
     (should (eq (portal--terminal-paste terminal "c" 'enter) t))
@@ -181,9 +181,11 @@
     (portal--close terminal)))
 
 (ert-deftest portal-module-returns-backend-results ()
-  (should (equal (portal--terminal-themes) '("Alpha" "Beta" "Ωmega")))
+  ;; The core sorts the platform's names.
+  (should (equal (portal--terminal-themes)
+                 '("Alpha" "Back\\slash \"quoted\"" "Beta" "Ωmega")))
   (should (eq (portal--input "terminal:0" "focus") nil))
-  (let ((terminal (portal--open "terminal" nil)))
+  (let ((terminal (portal--open "terminal" '(:directory "/"))))
     (should (eq (portal--input terminal "pending") nil))
     (portal--close terminal))
   ;; Portal's modifiers, not a platform's: 2 is Control.
@@ -217,9 +219,14 @@
 
 (ert-deftest portal-module-signals-backend-errors ()
   (let ((web (portal--open "web" nil))
-        (terminal (portal--open "terminal" nil)))
+        (terminal (portal--open "terminal" '(:directory "/")))
+        (broken (portal--open "terminal" '(:directory "/" :broken "Metal is gone"))))
     (dolist (case `(((portal--open "50%s" nil) . "Unknown Portal view kind: 50%s")
                     ((portal--open "web" (:fail "No web ✗")) . "No web ✗")
+                    ((portal--open "terminal" nil) . "A terminal view needs a :directory")
+                    ((portal--open "terminal" (:directory t)) . "Option :directory must be a string")
+                    ((portal--open "terminal" (:directory "/" :theme "Gamma"))
+                     . "Unknown terminal theme: Gamma")
                     ((portal--place "web:0" [0 0 1 1] "t") . "No Portal view web:0")
                     ((portal--hide "web:0") . "No Portal view web:0")
                     ((portal--web-load ,terminal "about:blank") . ,(format "No Portal view %s" terminal))
@@ -230,6 +237,9 @@
                     ((portal--terminal-paste ,web "x") . ,(format "No Portal view %s" web))
                     ((portal--terminal-text ,web) . ,(format "No Portal view %s" web))
                     ((portal--terminal-theme "Gamma") . "Unknown terminal theme: Gamma")
+                    ((portal--terminal-theme "Beta") . "Metal is gone")
+                    ((portal--terminal-paste ,broken "x" t) . "Metal is gone")
+                    ((portal--terminal-text ,broken) . "Metal is gone")
                     ((portal--terminal-bindings "[]") . "Invalid native terminal binding")
                     ((portal--terminal-bindings "{}") . "Invalid native terminal binding")
                     ((portal--terminal-bindings "{\"regular\":[]}") . "Invalid native terminal binding")
@@ -248,8 +258,11 @@
                      . "No toolbar controls for this native view")
                     ((portal--toolbar-action "web:0" "zoom-in") . "No Portal view web:0")))
       (should (equal (should-error (apply (caar case) (cdar case))) (list 'error (cdr case)))))
+    ;; The terminal before the one that rejected the theme has it.
+    (should (equal (plist-get (portal--inspect terminal) :theme) "Beta"))
     (portal--close web)
-    (portal--close terminal)))
+    (portal--close terminal)
+    (portal--close broken)))
 
 (ert-deftest portal-module-keeps-the-first-pending-signal ()
   ;; Conversion stops at the first bad argument; its signal reaches Lisp intact.

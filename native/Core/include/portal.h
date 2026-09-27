@@ -4,16 +4,18 @@
    The C core in native/Core is the module's portable part.  emacs.c
    registers the Lisp interface (docs/adr/0002), converts arguments and
    results, and signals errors.  views.c owns every Portal view's identity
-   and lifecycle, input.c decides who gets each key press, and channel.c owns
-   the pipe that carries records to Emacs.
+   and lifecycle, input.c decides who gets each key press, terminals.c keeps
+   the rules of terminal views, and channel.c owns the pipe that carries
+   records to Emacs.
    The platform implements the operations below: the production module links
    the macOS backend, native/Backend.swift, and the core's tests link
    test/portal-fake-backend.c.  Nothing here knows about Emacs values or a UI
    toolkit.
 
    These operations are becoming the primitives of docs/adr/0003.  The view
-   lifecycle and input already are; the web, terminal and toolbar operations
-   still mirror their Lisp functions, until their rules move into the core.
+   lifecycle, input and terminal operations already are; the web and toolbar
+   operations still mirror their Lisp functions, until their rules move into
+   the core.
 
    Threads: the core calls each operation synchronously, on the thread that
    runs the Emacs module call.  A backend may require a particular thread and
@@ -120,15 +122,40 @@ bool portal_web_load(portal_view *web, portal_string url, portal_text *error);
 bool portal_web_send(portal_view *web, portal_string json, portal_text *error);
 bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error);
 
-/* Terminal views.  Apply the theme NAME, or the default theme for a null
-   NAME, to the COUNT open TERMINALS; an unknown NAME changes none of them.
-   NAMES is a JSON array of strings. */
-bool portal_terminal_theme(const portal_string *name, portal_view *const *terminals,
-                           size_t count, portal_text *error);
-bool portal_terminal_themes(portal_text *names, portal_text *error);
-bool portal_terminal_paste(portal_view *terminal, portal_string text, bool enter,
-                           portal_text *error);
-bool portal_terminal_text(portal_view *terminal, portal_text *text, portal_text *error);
+/* Terminal views.  The core implements the terminal Lisp functions with
+   these primitives, each on one terminal, and keeps Portal's rules: it checks
+   a terminal's options before creating it, and a theme's name against
+   portal_terminal_list_themes before applying it to any terminal.  A
+   terminal's options, passed to portal_view_create, are :directory, the
+   working directory, a string; :command, a shell command line to run instead
+   of the login shell, a string or false; :theme, a name the platform lists,
+   or false for the default; and :quick, a flag.
+
+   A terminal describes itself with "ready", whether its engine can draw and
+   take input; "title", which the running program may set; "columns" and
+   "rows", its grid, 0 until known; and "exited", whether its process has
+   ended.  A process that exits leaves its view open, showing its last
+   output, until Lisp closes it; destroying a view ends its process.  Any
+   other fact a platform describes, such as macOS's "layer", the class of the
+   renderer's layer, is a diagnostic for tests.
+
+   List the names of the themes the terminal engine offers, in any order:
+   *NAMES is an array of *COUNT texts, allocated with malloc like each text,
+   and the core frees them all. */
+bool portal_terminal_list_themes(portal_text **names, size_t *count, portal_text *error);
+/* Apply the theme NAME, which the platform listed, or the default theme for a
+   null NAME, to TERMINAL.  The default may follow the system's appearance. */
+bool portal_terminal_apply_theme(portal_view *terminal, const portal_string *name,
+                                 portal_text *error);
+/* Paste TEXT as the user's paste, bracketed if the running program asked. */
+bool portal_terminal_paste_text(portal_view *terminal, portal_string text, portal_text *error);
+/* Press and release the Enter key. */
+bool portal_terminal_press_enter(portal_view *terminal, portal_text *error);
+/* Read all of TERMINAL's text, its scrollback and screen.  macOS reads it by
+   selecting everything, and leaves that selection active. */
+bool portal_terminal_read_text(portal_view *terminal, portal_text *text, portal_text *error);
+/* Set TERMINAL's font size to POINTS, which is positive. */
+bool portal_terminal_set_font_size(portal_view *terminal, double points, portal_text *error);
 
 /* Input, for a view of any kind.  The core decides what each key press in a
    view does: the view's app gets it, or it starts a handoff, in which Emacs

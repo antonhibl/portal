@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "channel.h"
+#include "core.h"
 #include "input.h"
 #include "views.h"
 
@@ -34,31 +35,6 @@ static struct {
 
 /* C-g, which cancels the key sequence Emacs is reading. */
 static const portal_chord cancel = {'g', PORTAL_CONTROL};
-
-static bool is(portal_string string, const char *literal)
-{
-    return string.length == strlen(literal) && !memcmp(string.data, literal, string.length);
-}
-
-/* Set *ERROR to MESSAGE followed by DETAIL, which may hold any bytes. */
-static bool fail(portal_text *error, const char *message, portal_string detail)
-{
-    size_t length = strlen(message);
-    char *text = malloc(length + detail.length + 1);
-    if (text) {
-        memcpy(text, message, length);
-        if (detail.length)
-            memcpy(text + length, detail.data, detail.length);
-        text[length + detail.length] = '\0';
-        *error = (portal_text) {text, length + detail.length};
-    }
-    return false;
-}
-
-static bool fail_with(portal_text *error, const char *message)
-{
-    return fail(error, message, (portal_string) {"", 0});
-}
 
 /* CHORD as the core compares chords: only the known modifiers, a letter in
    lower case, and no Shift on another printable ASCII character, which

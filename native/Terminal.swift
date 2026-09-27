@@ -16,7 +16,8 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var terminalTitle = "Terminal"
     var grid: TerminalGridMetrics?
     var terminalSurface: TerminalSurface?
-    var closed = false
+    /// The process has ended. The view stays, showing its last output.
+    var exited = false
 
     init(directory: String, command: String?, theme: TerminalTheme) {
         super.init(frame: .zero)
@@ -45,7 +46,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     func terminalDidAttachSurface(_ surface: TerminalSurface) { terminalSurface = surface }
     func terminalDidDetachSurface() { terminalSurface = nil }
     func terminalDidClose(processAlive: Bool) {
-        closed = true
+        exited = true
         session?.returnFocus()
     }
     func terminalDidRequestOpenURL(_ text: String, kind: TerminalOpenURLKind) {
@@ -57,11 +58,13 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
 
 /// The terminal view kind: one Ghostty session. Its shell starts in the parking
 /// window when the view opens, and keeps running while the view is hidden.
+/// The core owns Portal's terminal rules (native/Core/terminals.c): it checks
+/// the options and theme names, and calls the primitives below on one session.
 @MainActor
 final class TerminalSession: PortalView {
     let target: String
     let quick: Bool
-    fileprivate let terminal: HostedTerminal
+    private let terminal: HostedTerminal
     var surface: any NativeSurface { terminal }
     let input: NativeInput
     let controls = ToolbarModel(.terminal)
@@ -69,12 +72,12 @@ final class TerminalSession: PortalView {
 
     init(target: String, options: ViewOptions) throws {
         guard let directory = try options.string("directory") else {
-            throw NativeError.message("A terminal view needs a :directory")
+            throw NativeError.message("The core passed a terminal without a :directory")
         }
         self.target = target
         quick = options.flag("quick")
         let terminal = HostedTerminal(directory: directory, command: try options.string("command"),
-                                      theme: try Terminals.resolveTheme(options.string("theme")))
+                                      theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
         input = NativeInput(target: target, view: terminal, host: NativeView.parking) { [weak terminal] in
@@ -108,27 +111,61 @@ final class TerminalSession: PortalView {
     func describe() -> [(String, ViewValue)] {
         [("ready", .flag(terminal.terminalSurface != nil)),
          ("title", .string(terminal.terminalTitle)),
-         ("closed", .flag(terminal.closed)),
+         ("exited", .flag(terminal.exited)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
          ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]
     }
 
+    /// The toolbar's and keyboard's text size steps, until the core owns them.
     func textSize(_ action: String) throws {
-        let binding: String
         let next: Double
         switch action {
-        case "increase": next = min(controls.maximum, controls.value + 1); binding = "increase_font_size:1"
-        case "decrease": next = max(controls.minimum, controls.value - 1); binding = "decrease_font_size:1"
-        case "reset": next = controls.defaultValue; binding = "reset_font_size"
+        case "increase": next = min(controls.maximum, controls.value + 1)
+        case "decrease": next = max(controls.minimum, controls.value - 1)
+        case "reset": next = controls.defaultValue
         default: throw NativeError.message("Unknown terminal toolbar action: \(action)")
         }
         guard next != controls.value else { return }
+        try setFontSize(next)
+        controls.value = next
+        controls.changed?()
+    }
+
+    // The terminal primitives of native/Core/include/portal.h.
+
+    func applyTheme(_ name: String?) throws {
+        let theme = try Terminals.theme(named: name)
+        guard let controller = terminal.controller, controller.theme != theme else { return }
+        guard controller.setTheme(theme) else {
+            throw NativeError.message(controller.lastConfigurationIssue ?? "Could not apply terminal theme")
+        }
+    }
+
+    func paste(_ text: String) throws {
+        guard terminal.paste(text: text) else { throw NativeError.message("No terminal accepting input") }
+    }
+
+    func pressEnter() throws {
+        guard terminal.sendKey(.enter) else { throw NativeError.message("No terminal accepting input") }
+    }
+
+    /// Select all and read the selection, which stays active.
+    func text() throws -> String {
+        guard let surface = terminal.terminalSurface else {
+            throw NativeError.message("No terminal surface to copy")
+        }
+        guard surface.performBindingAction("select_all") else {
+            throw NativeError.message("Ghostty could not select terminal text")
+        }
+        return surface.readSelection() ?? ""
+    }
+
+    func setFontSize(_ points: Double) throws {
+        let binding = String(format: "set_font_size:%g", points)
         guard terminal.terminalSurface?.performBindingAction(binding) == true else {
             throw NativeError.message("No terminal accepting text size changes")
         }
-        controls.value = next
-        controls.changed?()
     }
 
     func returnFocus() { input.host.returnFocus(from: terminal) }
@@ -153,43 +190,18 @@ final class TerminalSession: PortalView {
     }
 }
 
-/// Operations shared by all terminal views. Nothing here depends on the web feature.
+/// The Ghostty theme catalog.
 @MainActor
 enum Terminals {
-    static func themeNames() -> [String] { GhosttyThemeCatalog.allThemes.map(\.name).sorted() }
+    static func themeNames() -> [String] { GhosttyThemeCatalog.allThemes.map(\.name) }
 
-    fileprivate static func resolveTheme(_ name: String?) throws -> TerminalTheme {
+    /// The theme NAME, which the core has checked, or the default for nil,
+    /// which follows the system's appearance.
+    static func theme(named name: String?) throws -> TerminalTheme {
         guard let name else { return .default }
         guard let theme = GhosttyThemeCatalog.theme(named: name) else {
             throw NativeError.message("Unknown terminal theme: \(name)")
         }
         return theme.toTerminalTheme()
-    }
-
-    static func setTheme(_ name: String?, sessions: [TerminalSession]) throws {
-        // Resolve before touching any session, including when none are open.
-        let theme = try resolveTheme(name)
-        for session in sessions {
-            guard let controller = session.terminal.controller, controller.theme != theme else { continue }
-            guard controller.setTheme(theme) else {
-                throw NativeError.message(controller.lastConfigurationIssue ?? "Could not apply terminal theme")
-            }
-        }
-    }
-
-    static func paste(_ session: TerminalSession, text: String, enter: Bool) throws {
-        let terminal = session.terminal
-        guard terminal.paste(text: text) else { throw NativeError.message("No terminal accepting input") }
-        if enter { _ = terminal.sendKey(.enter) }
-    }
-
-    static func text(_ session: TerminalSession) throws -> String {
-        guard let surface = session.terminal.terminalSurface else {
-            throw NativeError.message("No terminal surface to copy")
-        }
-        guard surface.performBindingAction("select_all") else {
-            throw NativeError.message("Ghostty could not select terminal text")
-        }
-        return surface.readSelection() ?? ""
     }
 }

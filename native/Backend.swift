@@ -158,37 +158,50 @@ public func portalWebReceive(_ web: OpaquePointer, _ json: UnsafeMutablePointer<
     return perform(error, into: json) { try session(web, as: WebSession.self).receive() }
 }
 
-@_cdecl("portal_terminal_theme")
-public func portalTerminalTheme(_ name: UnsafePointer<portal_string>?,
-                                _ terminals: UnsafePointer<OpaquePointer?>?, _ count: Int,
-                                _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let name = name.map { String(copying: $0.pointee) }
-    let terminals = UnsafeBufferPointer(start: terminals, count: count).compactMap { $0.map(native) }
-    return perform(error) {
-        try Terminals.setTheme(name, sessions: terminals.map { try session($0, as: TerminalSession.self) })
-    } != nil
+@_cdecl("portal_terminal_list_themes")
+public func portalTerminalListThemes(_ names: UnsafeMutablePointer<UnsafeMutablePointer<portal_text>?>,
+                                     _ count: UnsafeMutablePointer<Int>,
+                                     _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    guard let themes = perform(error, { Terminals.themeNames() }) else { return false }
+    let array = allocate(portal_text.self, themes.count)
+    for (index, name) in themes.enumerated() { (array + index).initialize(to: owned(name)) }
+    names.pointee = array
+    count.pointee = themes.count
+    return true
 }
 
-@_cdecl("portal_terminal_themes")
-public func portalTerminalThemes(_ names: UnsafeMutablePointer<portal_text>,
-                                 _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    perform(error, into: names) { try json(Terminals.themeNames()) }
+@_cdecl("portal_terminal_apply_theme")
+public func portalTerminalApplyTheme(_ terminal: OpaquePointer, _ name: UnsafePointer<portal_string>?,
+                                     _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let terminal = native(terminal), name = name.map { String(copying: $0.pointee) }
+    return perform(error) { try session(terminal, as: TerminalSession.self).applyTheme(name) } != nil
 }
 
-@_cdecl("portal_terminal_paste")
-public func portalTerminalPaste(_ terminal: OpaquePointer, _ text: portal_string, _ enter: Bool,
-                                _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+@_cdecl("portal_terminal_paste_text")
+public func portalTerminalPasteText(_ terminal: OpaquePointer, _ text: portal_string,
+                                    _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let terminal = native(terminal), text = String(copying: text)
-    return perform(error) {
-        try Terminals.paste(session(terminal, as: TerminalSession.self), text: text, enter: enter)
-    } != nil
+    return perform(error) { try session(terminal, as: TerminalSession.self).paste(text) } != nil
 }
 
-@_cdecl("portal_terminal_text")
-public func portalTerminalText(_ terminal: OpaquePointer, _ text: UnsafeMutablePointer<portal_text>,
-                               _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+@_cdecl("portal_terminal_press_enter")
+public func portalTerminalPressEnter(_ terminal: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let terminal = native(terminal)
-    return perform(error, into: text) { try Terminals.text(session(terminal, as: TerminalSession.self)) }
+    return perform(error) { try session(terminal, as: TerminalSession.self).pressEnter() } != nil
+}
+
+@_cdecl("portal_terminal_read_text")
+public func portalTerminalReadText(_ terminal: OpaquePointer, _ text: UnsafeMutablePointer<portal_text>,
+                                   _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let terminal = native(terminal)
+    return perform(error, into: text) { try session(terminal, as: TerminalSession.self).text() }
+}
+
+@_cdecl("portal_terminal_set_font_size")
+public func portalTerminalSetFontSize(_ terminal: OpaquePointer, _ points: Double,
+                                      _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let terminal = native(terminal)
+    return perform(error) { try session(terminal, as: TerminalSession.self).setFontSize(points) } != nil
 }
 
 @_cdecl("portal_view_focus")

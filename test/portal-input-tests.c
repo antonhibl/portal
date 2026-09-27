@@ -132,9 +132,11 @@ static bool act(const char *target, const char *action, int64_t serial)
    with the keyboard. */
 static char *open_view(const char *kind, bool quick)
 {
-    portal_option option = {.name = text("quick"), .flag = true};
+    /* Terminals need a directory (terminals.c). */
+    portal_option options[] = {{.name = text("directory"), .is_string = true, .string = text("/")},
+                               {.name = text("quick"), .flag = true}};
     portal_text target = {0}, error = {0};
-    if (!portal_views_open(text(kind), &option, quick, &target, &error)
+    if (!portal_views_open(text(kind), options, quick ? 2 : 1, &target, &error)
         || !portal_views_place(text(target.data), (portal_edges) {0, 0, 100, 100}, text("frame"),
                                &error))
         abort();
