@@ -19,16 +19,18 @@ let package = Package(
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909")
     ],
     targets: [
-        // The C ABI entry point and header import; all Swift features share one target.
-        .target(name: "CEmacs", path: "Emacs",
+        // The C Emacs bindings and portal.h, the interface the Swift backend implements.
+        // Core/CMakeLists.txt compiles the same sources into the fake-backend tests.
+        .target(name: "PortalCore", path: "Core", exclude: ["CMakeLists.txt"],
                 cSettings: [.unsafeFlags(["-I", emacsInclude, "-Wall", "-Wextra", "-Werror"])]),
+        // The macOS backend; all Swift features share one target.
         .target(name: "Portal", dependencies: [
-            "CEmacs", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+            "PortalCore", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "GhosttyTheme", package: "libghostty-spm")
-        ], path: ".", exclude: ["Emacs", "Info.plist"],
-           sources: ["Module.swift", "NativeHost.swift", "NativeEventChannel.swift", "NativeInput.swift",
+        ], path: ".", exclude: ["Core", "Info.plist"],
+           sources: ["Backend.swift", "NativeHost.swift", "NativeEventChannel.swift", "NativeInput.swift",
                      "Views.swift", "WebView.swift", "Terminal.swift", "Toolbar.swift",
                      "WebToolbar.swift"],
-           swiftSettings: [.unsafeFlags(["-warnings-as-errors", "-Xcc", "-I" + emacsInclude])])
+           swiftSettings: [.unsafeFlags(["-warnings-as-errors"])])
     ]
 )
