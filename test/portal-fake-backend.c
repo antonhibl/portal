@@ -408,6 +408,30 @@ void portal_fake_fire_timers(void)
         portal_timer_fired(fired[i]);
 }
 
+/* The fake's URL parser percent-encodes, in uppercase, each byte a URL may
+   not hold raw, such as a space or non-ASCII, as a real parser would.  It
+   changes nothing else: real parsers also spell hosts in punycode. */
+bool portal_web_parse_url(portal_string url, portal_text *parsed, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    static const char hex[] = "0123456789ABCDEF";
+    char *data = malloc(3 * url.length + 1), *end = data;
+    for (size_t i = 0; i < url.length; i++) {
+        unsigned char c = (unsigned char) url.data[i];
+        if (c > ' ' && c < 0x7f && !strchr("\"<>\\^`{|}", c)) {
+            *end++ = (char) c;
+        } else {
+            *end++ = '%';
+            *end++ = hex[c >> 4];
+            *end++ = hex[c & 15];
+        }
+    }
+    *end = '\0';
+    *parsed = (portal_text) {data, (size_t) (end - data)};
+    return true;
+}
+
 /* A web view records the "url" it loaded last, and the "history" steps it
    took, such as "reload".  Its page does nothing by itself: tests report
    what pages do by calling the core as the platform does. */

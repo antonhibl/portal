@@ -128,10 +128,17 @@ bool portal_view_describe(portal_view *view, portal_text *state, portal_text *er
    errors come from portal_view_describe.
 
    Load URL in WEB as a new document, adding it to WEB's history.  The core
-   has checked that URL is an absolute http, https, file, data or about URL;
-   the platform fails only for a URL it cannot parse.  A file URL may read
-   the other files in its directory. */
+   has checked that URL is an absolute http, https, file, data or about URL,
+   and passes it as portal_web_parse_url spelled it.  A file URL may read the
+   other files in its directory. */
 bool portal_web_load(portal_view *web, portal_string url, portal_text *error);
+/* Parse URL as this platform's web views do, and return in *PARSED how the
+   platform spells the result, as it spells the URLs it reports to the core:
+   characters such as spaces percent-encoded, and a Unicode host in
+   punycode, for example.  The core keeps and compares URLs only in this
+   spelling, so one parser, the platform's, decides when two are the same.
+   Fails for a URL the platform cannot parse. */
+bool portal_web_parse_url(portal_string url, portal_text *parsed, portal_text *error);
 /* A step through a web view's history. */
 typedef enum portal_history { PORTAL_BACK, PORTAL_FORWARD, PORTAL_RELOAD } portal_history;
 /* Go back or forward in WEB's history, doing nothing where there is no page
@@ -303,7 +310,8 @@ typedef struct portal_sender {
 /* The page in TARGET posted JSON, a JSON object the platform has checked,
    whose "type" member is TYPE, or "" when it has none or it is not a string.
    The core keeps it for Emacs only from a hosted app's main frame, showing
-   the URL Emacs loaded last, and never with a type the core itself sends. */
+   the URL Emacs loaded last, spelled as portal_web_parse_url spells it,
+   and never with a type the core itself sends. */
 void portal_web_posted(portal_string target, portal_sender sender, portal_string type,
                        portal_string json);
 /* What a web view does with a navigation its page asks for. */

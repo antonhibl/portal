@@ -131,6 +131,18 @@ public func portalViewDescribe(_ view: OpaquePointer, _ state: UnsafeMutablePoin
     }
 }
 
+/// Foundation's parser, which `WebSession.load` uses too, and the spelling
+/// WebKit reports URLs in: percent-encoded, with Unicode hosts in punycode.
+@_cdecl("portal_web_parse_url")
+public func portalWebParseURL(_ url: portal_string, _ parsed: UnsafeMutablePointer<portal_text>,
+                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let url = String(copying: url)
+    return perform(error, into: parsed) {
+        guard let parsed = URL(string: url) else { throw NativeError.message("WebKit cannot parse the URL \(url)") }
+        return parsed.absoluteString
+    }
+}
+
 @_cdecl("portal_web_load")
 public func portalWebLoad(_ web: OpaquePointer, _ url: portal_string,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {

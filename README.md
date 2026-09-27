@@ -975,9 +975,12 @@ to reload it. It answers every navigation a hosted app's page asks for: allow it
 the app host's origin, open another site in the default browser, or hand a local
 file to Emacs. It owns the bridge's queue and its one outstanding `bridge` record,
 and decides which posted messages to keep from what the platform observed about
-the sender, never from what a page claims. The platform supplies three primitives
-for web views, all on one view: load a URL, step through history (back, forward or
-reload, as an enum), and post a message to the page. It reports what pages do by
+the sender, never from what a page claims. The platform supplies four primitives
+for web views: parse a URL, returning its own spelling of it, and, on one view, load
+a URL, step through history (back, forward or reload, as an enum), and post a
+message to the page. The core keeps every URL in the platform's spelling, the one
+WebKit reports pages in, with spaces percent-encoded and Unicode hosts in punycode,
+so it compares URLs byte for byte and one parser decides when two are the same. It reports what pages do by
 calling the core: a message was posted, a navigation is wanted, a page was
 committed, something failed, or the toolbar asked to edit in Emacs. Those calls name
 the view by target, so a completion that finishes after the view closed reaches

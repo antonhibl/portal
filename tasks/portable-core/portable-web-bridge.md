@@ -127,8 +127,9 @@ ownership, trusted provenance, and navigation generations in the interface.
   outstanding `bridge TARGET` record, and answers `portal--web-receive`
   itself. `emacs.c` calls `portal_views_web_load`, `_send` and `_receive`.
 - `portal.h` no longer declares `portal_web_send` or `portal_web_receive`.
-  Its web primitives are `portal_web_load(view, url)`, `portal_web_go(view,
-  step)` and `portal_web_post(view, json, token)`. Platform calls into the
+  Its web primitives are `portal_web_parse_url(url)`, `portal_web_load(view,
+  url)`, `portal_web_go(view, step)` and `portal_web_post(view, json,
+  token)`. Platform calls into the
   core are `portal_web_posted(target, sender, type, json)`,
   `portal_web_navigating(target, url, main_frame)`, `portal_web_committed`,
   `portal_web_failed(target, token, message)` and `portal_web_edit`, plus
@@ -167,9 +168,12 @@ ownership, trusted provenance, and navigation generations in the interface.
     text.
   - **Provenance.** A `portal_sender` is what WebKit reports about the
     posting frame: main frame or not, and its document URL. It must be the
-    URL Emacs loaded last, compared as a URL parser spells both (raw and
-    percent-encoded bytes alike), as are the URLs that decide a reload. A
-    page's own claims never count.
+    URL Emacs loaded last. A page's own claims never count.
+  - **URL spelling.** Lisp keeps URLs as the user typed them, while WebKit
+    reports them parsed: percent-encoded, with Unicode hosts in punycode.
+    The core stores each loaded URL in the platform's spelling,
+    `portal_web_parse_url`, and compares URLs byte for byte, for reloads,
+    senders and origins. The core never reimplements a URL parser or IDNA.
   - **Ownership and generations.** Platform calls name the view by target,
     so a late call after close finds nothing. Each commit starts a new
     generation, and a post's token is the generation it went to, so a failed
@@ -189,11 +193,13 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
   --output-on-failure` passed all 16 tests, including the new `web-core`
   test. `bun run --cwd host check` and `bun run --cwd host typecheck` passed.
 - Mutations of `web.c` (stale-token guard, reserved types, the escape before
-  a handoff, the about:blank rule, sender URL matching and restoring the
-  address) each failed `portal-web-tests`.
+  a handoff, the about:blank rule, sender URL matching, restoring the address,
+  and comparing Lisp's spelling instead of the platform's) each failed
+  `portal-web-tests`; storing Lisp's spelling also failed `check-focus`.
 - `build/check-focus` and `build/check-toolbar` passed with real WKWebViews:
   hosted storage, main-frame provenance, reserved types, external and local
-  links, a link longer than a record, reload and history, bridge readiness on
+  links, a link longer than a record, reload and history, a hosted app loaded
+  from a raw URL with spaces, bridge readiness on
   first load and reload, a failed delivery, the TOC and count scripts, and
   Open in Emacs sending `prefix`, `escape` and `bridge` in order.
 - The graphical Excalidraw suite passed 7 of 7: open, edit, hide and reopen,

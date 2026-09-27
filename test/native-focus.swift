@@ -278,6 +278,21 @@ struct CheckFocus {
         received = ""
         wait { received += records(); return received.contains("\n") }
         check(types(hosted) == ["error"], "A failed delivery did not reach Emacs")
+        // A URL spelled raw, as a user may type it, is still the app's own page
+        // once WebKit has parsed it: the app can post, and loading it again
+        // reloads it.
+        let spaced = "data:text/html,<title>A b</title><script>portalBridge.postMessage({type: 'spaced'})</script>"
+        let hostedPage = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        var history: [Int] = []
+        for _ in 0..<2 {
+            try Views.load(hosted, spaced)
+            received = ""
+            wait { received += records(); return received.contains("\n") }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+            check(types(hosted) == ["page", "spaced"], "A raw URL's app could not post")
+            history.append(hostedPage.backForwardList.backList.count)
+        }
+        check(history[0] == history[1], "Loading a raw URL again added a history entry")
         try Views.close(hosted)
 
         let plain = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
