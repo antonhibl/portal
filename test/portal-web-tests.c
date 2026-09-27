@@ -151,6 +151,37 @@ static void test_loading(void)
     close_view(terminal);
 }
 
+static void test_urls_compare_as_parsed(void)
+{
+    portal_text error = {0};
+    char *web = open_web(false);
+    /* The platform reports URLs as its parser spells them, with characters
+       such as spaces percent-encoded; the page on screen is still the one
+       Lisp loaded, however Lisp spelled it. */
+    const struct {
+        const char *loaded, *committed;
+    } spellings[] = {
+        {"data:text/html,<p>a b</p>", "data:text/html,%3Cp%3Ea%20b%3C/p%3E"},
+        {"file:///tmp/my notes/r\xc3\xa9sum\xc3\xa9.html#top", "file:///tmp/my%20notes/r%C3%A9sum%C3%A9.html"},
+        {"https://example.com/100%/{x}", "https://example.com/100%25/%7bx%7D"},
+    };
+    for (size_t i = 0; i < sizeof spellings / sizeof *spellings; i++) {
+        size_t loads = portal_fake_calls().loaded, reloads = portal_fake_calls().went;
+        CHECK(load(web, spellings[i].loaded, &error));
+        portal_web_committed(text(web), text(spellings[i].committed));
+        CHECK(load(web, spellings[i].loaded, &error));
+        CHECK(portal_fake_calls().loaded == loads + 1 && portal_fake_calls().went == reloads + 1);
+    }
+    /* Encoding a character that a URL may hold as it is makes another URL. */
+    size_t loads = portal_fake_calls().loaded;
+    CHECK(load(web, "https://example.com/a%2Fb", &error));
+    portal_web_committed(text(web), text("https://example.com/a%2Fb"));
+    CHECK(load(web, "https://example.com/a/b", &error));
+    CHECK(load(web, "https://example.com/a%23b", &error));
+    CHECK(portal_fake_calls().loaded == loads + 3);
+    close_view(web);
+}
+
 static void test_the_address_survives_a_failed_load(void)
 {
     portal_text error = {0};
@@ -219,6 +250,8 @@ static void test_only_the_apps_main_frame_may_post(void)
          "{\"type\":\"other\",\"origin\":\"http://127.0.0.1:8080\"}");
     post(web, true, "http://127.0.0.1:8080/0123/app?context=1#x", "fragment",
          "{\"type\":\"fragment\"}");
+    post(web, true, "http://127.0.0.1:8080/0123/app?context=%31", "encoded",
+         "{\"type\":\"encoded\"}");
     /* The core's own types are reserved. */
     const char *const reserved[] = {"page", "follow", "edit"};
     for (size_t i = 0; i < sizeof reserved / sizeof *reserved; i++)
@@ -228,6 +261,16 @@ static void test_only_the_apps_main_frame_may_post(void)
     post(web, true, app, "error", "{\"type\":\"error\",\"message\":\"app\"}");
     CHECK(sent(web, "bridge %s\n"));
     CHECK(receives(web, "[{\"type\":\"error\",\"message\":\"app\"}]"));
+    close_view(web);
+
+    /* The platform reports the sender's URL as its parser spelled the
+       address. */
+    web = open_web(true);
+    CHECK(load(web, "http://127.0.0.1:8080/0123/app?path=my notes.md", &error));
+    post(web, true, "http://127.0.0.1:8080/0123/app?path=my%20notes.md", "spelled",
+         "{\"type\":\"spelled\"}");
+    CHECK(sent(web, "bridge %s\n"));
+    CHECK(receives(web, "[{\"type\":\"spelled\"}]"));
     close_view(web);
 }
 
@@ -463,6 +506,7 @@ int main(void)
     records = fds[0];
     CHECK(portal_channel_connect(fds[1]));
     test_loading();
+    test_urls_compare_as_parsed();
     test_the_address_survives_a_failed_load();
     test_messages_keep_their_order_under_one_record();
     test_only_the_apps_main_frame_may_post();

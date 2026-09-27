@@ -5,8 +5,9 @@
    and tells the core what pages do through the calls in portal.h.
 
    Pages.  The core remembers the URL Emacs loaded last, its address, and
-   the URL of the page committed last.  Loading the page on screen again,
-   ignoring fragments, reloads it without a new history entry, and a view
+   the URL of the page committed last, and compares URLs as a parser would
+   spell them (same_url).  Loading the page on screen again, ignoring
+   fragments, reloads it without a new history entry, and a view
    that has shown nothing yet is at about:blank already.  A hosted app's main
    frame stays at its address's origin: other pages open in the default
    browser, and local files, which WebKit would not load there, go to Emacs.
@@ -197,11 +198,55 @@ static bool same_origin(portal_string a, portal_string b)
         && same_ignoring_case(first.host, second.host) && same(first.port, second.port);
 }
 
-/* URL without its fragment. */
-static portal_string document(portal_string url)
+/* The value of hexadecimal digit C, or -1. */
+static int hex(char c)
 {
-    const char *hash = memchr(url.data, '#', url.length);
-    return (portal_string) {url.data, hash ? (size_t) (hash - url.data) : url.length};
+    c = lower(c);
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+}
+
+/* The next unit of URL at *I, as a URL parser spells it, advancing *I: a
+   character that a URL may hold as it is, or 256 plus a byte it
+   percent-encodes, whether URL writes that byte as %XX or raw, as in
+   "data:,a b".  The first '#' starts the fragment and is itself a
+   character, which *FRAGMENT records.  -1 at the end. */
+static int unit(portal_string url, size_t *i, bool *fragment)
+{
+    if (*i >= url.length)
+        return -1;
+    unsigned char c = (unsigned char) url.data[(*i)++];
+    if (c == '%' && *i + 1 < url.length && hex(url.data[*i]) >= 0 && hex(url.data[*i + 1]) >= 0) {
+        int byte = hex(url.data[*i]) << 4 | hex(url.data[*i + 1]);
+        *i += 2;
+        return 256 + byte;
+    }
+    bool literal = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+        || (c && strchr("-._~!$&'()*+,;=:@/?", c)) || (c == '#' && !*fragment);
+    if (c == '#')
+        *fragment = true;
+    return literal ? c : 256 + c;
+}
+
+/* Whether URLs A and B name the same resource once parsed, ignoring their
+   fragments if DOCUMENTS.  Lisp may spell a URL as the user typed it, while
+   the platform reports what its parser made of it, with characters such as
+   spaces percent-encoded, so the core compares URLs this way, never byte by
+   byte. */
+static bool same_url(portal_string a, portal_string b, bool documents)
+{
+    size_t i = 0, k = 0;
+    bool in_a = false, in_b = false;
+    for (;;) {
+        int first = unit(a, &i, &in_a), second = unit(b, &k, &in_b);
+        if (documents && first == '#')
+            first = -1;
+        if (documents && second == '#')
+            second = -1;
+        if (first != second)
+            return false;
+        if (first == -1)
+            return true;
+    }
 }
 
 /* Whether a web view may load URL: an absolute http or https URL with a
@@ -393,7 +438,7 @@ bool portal_web_views_load(portal_string target, portal_string url, portal_text 
     bool loaded;
     if (!web->page.data && is(url, "about:blank"))
         loaded = true; /* Loading it would put a blank page in the history. */
-    else if (web->page.data && same(document(url), document(borrow(web->page))))
+    else if (web->page.data && same_url(url, borrow(web->page), true))
         loaded = portal_web_go(native, PORTAL_RELOAD, error);
     else
         loaded = portal_web_load(native, url, error);
@@ -458,7 +503,7 @@ void portal_web_posted(portal_string target, portal_sender sender, portal_string
 {
     struct portal_web_state *web;
     if (find(target, &web) && web->hosted && sender.main_frame && web->address.data
-        && same(sender.url, borrow(web->address)) && !reserved(type))
+        && same_url(sender.url, borrow(web->address), false) && !reserved(type))
         queue(web, target, is(type, "change"), json.data, json.length);
 }
 

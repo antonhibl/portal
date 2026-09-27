@@ -166,9 +166,10 @@ ownership, trusted provenance, and navigation generations in the interface.
     to the page, cross as `callAsyncJavaScript` arguments, never as script
     text.
   - **Provenance.** A `portal_sender` is what WebKit reports about the
-    posting frame: main frame or not, and its document URL. It must equal,
-    byte for byte, the URL Emacs loaded last. A page's own claims never
-    count.
+    posting frame: main frame or not, and its document URL. It must be the
+    URL Emacs loaded last, compared as a URL parser spells both (raw and
+    percent-encoded bytes alike), as are the URLs that decide a reload. A
+    page's own claims never count.
   - **Ownership and generations.** Platform calls name the view by target,
     so a late call after close finds nothing. Each commit starts a new
     generation, and a post's token is the generation it went to, so a failed
