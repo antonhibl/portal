@@ -1,98 +1,61 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
+import PortalCore
 
-@MainActor
-final class ToolbarModel {
-    enum Kind { case web, preview, terminal }
-    var kind: Kind { didSet { changed?() } }
-    weak var input: NativeInput?
-    var changed: (() -> Void)?
-    var action: ((String) throws -> Void)?
-    var focusFind: (() -> Void)?
-    var search: ((String, Bool) -> Void)?
-    var value = 100.0
-    var defaultValue = 100.0
-    var minimum = 50.0
-    var maximum = 300.0
-    var canGoBack = false
-    var canGoForward = false
-    var hasHeadings = false
-    /// Open in Emacs, which a hosted Markdown preview's toolbar offers.
-    var edit: (() -> Void)?
-    var tocOpen = false
+/// One view's toolbar as the core last drew it (`portal_toolbar` in
+/// portal.h). The core owns every value; this only draws them.
+struct ToolbarState: Sendable {
+    enum Owner: Sendable { case emacs, view, pending, passthrough }
+    var visible = false
+    /// Face colors by role, as sRGB components; a missing role uses AppKit's default.
+    var colors: [String: [Double]] = [:]
+    var owner = Owner.emacs
+    var buttons: UInt32 = 0
+    var enabled: UInt32 = 0
+    var selected: UInt32 = 0
+    var value = 0.0
+    var standard = 0.0
+    var points = false
     var finding = false
     var query = ""
-    var matchCount = 0
-    var matchIndex = 0
+    var match = 0
+    var matches = 0
 
-    init(_ kind: Kind) { self.kind = kind }
+    init() {}
 
-    func perform(_ command: String) throws {
-        if command == "state" { return }
-        if command == "find" {
-            guard kind == .web || kind == .preview, NativeToolbar.enabled else {
-                throw NativeError.message("Find needs a visible web toolbar")
-            }
-            let opening = !finding
-            finding = true
-            changed?()
-            focusFind?()
-            if opening && !query.isEmpty { find() }
-        } else if command == "close-find" {
-            finding = false
-            search?("", false)
-            // Only restore the content responder if find still owns the keyboard.
-            if input?.view.map({ input?.host.ownsFocus($0) ?? false }) == true { _ = input?.focusView() }
-        } else {
-            try action?(command)
+    init(_ state: portal_toolbar) {
+        visible = state.visible
+        let colors = state.colors
+        for (name, color) in [("background", colors.background), ("border", colors.border),
+                              ("shadow", colors.shadow), ("foreground", colors.foreground),
+                              ("success", colors.success), ("accent", colors.accent),
+                              ("warning", colors.warning)] where color.set {
+            self.colors[name] = [color.red, color.green, color.blue]
         }
-        changed?()
-    }
-
-    func find(backwards: Bool = false) {
-        search?(query, backwards)
-    }
-
-    func snapshot() throws -> String {
-        let state: [String: Any] = ["value": value, "toc": tocOpen, "headings": hasHeadings,
-                                    "find": finding, "query": query, "matches": matchCount,
-                                    "match": matchIndex, "back": canGoBack, "forward": canGoForward]
-        return String(decoding: try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]), as: UTF8.self)
-    }
-}
-
-@MainActor
-enum NativeToolbar {
-    static var enabled = true
-    static var revision = 0
-    static var colors: [String: NSColor] = [:]
-
-    /// Perform ACTION on a view's toolbar MODEL and return its state as JSON.
-    static func perform(_ action: String, model: ToolbarModel?) throws -> String {
-        guard let model else {
-            throw NativeError.message("No toolbar controls for this native view")
+        switch state.owner {
+        case PORTAL_OWNER_VIEW: owner = .view
+        case PORTAL_OWNER_PENDING: owner = .pending
+        case PORTAL_OWNER_PASSTHROUGH: owner = .passthrough
+        default: owner = .emacs
         }
-        try model.perform(action)
-        return try model.snapshot()
+        buttons = state.buttons
+        enabled = state.enabled
+        selected = state.selected
+        value = state.value
+        standard = state.standard
+        points = state.unit == PORTAL_POINTS
+        finding = state.finding
+        query = String(copying: state.query)
+        match = Int(state.match)
+        matches = Int(state.matches)
     }
 
-    static func configure(_ enabled: Bool) {
-        self.enabled = enabled
-        NativeHost.refreshToolbars(layout: true)
-    }
+    func has(_ button: portal_button) -> Bool { buttons & 1 << button.rawValue != 0 }
+    func allows(_ button: portal_button) -> Bool { enabled & 1 << button.rawValue != 0 }
+    func toggled(_ button: portal_button) -> Bool { selected & 1 << button.rawValue != 0 }
 
-    static func theme(_ json: String) throws {
-        let values = try JSONDecoder().decode([String: [Double]].self, from: Data(json.utf8))
-        revision += 1
-        colors = values.compactMapValues { rgb in
-            guard rgb.count == 3, rgb.allSatisfy({ (0...1).contains($0) }) else { return nil }
-            return NSColor(srgbRed: rgb[0], green: rgb[1], blue: rgb[2], alpha: 1)
-        }
-        NativeHost.refreshToolbars()
-    }
-
-    static func color(_ name: String) -> NSColor {
-        if let color = colors[name] { return color }
+    func color(_ name: String) -> NSColor {
+        if let rgb = colors[name] { return NSColor(srgbRed: rgb[0], green: rgb[1], blue: rgb[2], alpha: 1) }
         switch name {
         case "background": return .windowBackgroundColor
         case "border": return .separatorColor
@@ -105,38 +68,39 @@ enum NativeToolbar {
     }
 }
 
-/// The feature keeps its identity and lifetime; only its available height changes.
+/// A view and, while the core shows one, its toolbar strip above it. The
+/// feature keeps its identity and lifetime; only its available height changes.
 @MainActor
 final class NativeContainer: NSView {
     let content: NSView
-    let model: ToolbarModel
+    let target: String
     private(set) var toolbar: ToolbarView?
+    private(set) var state: ToolbarState
     override var isFlipped: Bool { true }
 
-    init(content: NSView, model: ToolbarModel) {
+    init(content: NSView, target: String, state: ToolbarState) {
         self.content = content
-        self.model = model
+        self.target = target
+        self.state = state
         super.init(frame: .zero)
         addSubview(content)
-        model.changed = { [weak self] in self?.toolbar?.refresh() }
-        model.focusFind = { [weak self] in self?.toolbar?.focusSearch() }
-        updateToolbar()
+        apply(state)
     }
     required init?(coder: NSCoder) { nil }
 
-    func updateToolbar() {
-        if NativeToolbar.enabled, toolbar == nil {
-            let strip = ToolbarView(model: model)
+    func apply(_ state: ToolbarState) {
+        self.state = state
+        if state.visible, toolbar == nil {
+            let strip = ToolbarView(target: target)
             toolbar = strip
             addSubview(strip)
-        } else if !NativeToolbar.enabled, let toolbar {
-            if model.finding { try? model.perform("close-find") }
+        } else if !state.visible, let toolbar {
             toolbar.removeFromSuperview()
             self.toolbar = nil
         }
         needsLayout = true
         layoutSubtreeIfNeeded()
-        toolbar?.refresh()
+        toolbar?.apply(state)
     }
 
     override func layout() {
@@ -151,9 +115,10 @@ final class NativeContainer: NSView {
 private final class ToolbarButton: NSButton {
     var invoke: (() -> Void)?
     var symbol: String?
-    var dot: NativeInput.Ownership?
+    var dot: ToolbarState.Owner?
     var selected = false
     var dimmed = true
+    weak var strip: ToolbarView?
     private var hovering = false
     override var acceptsFirstResponder: Bool { false }
     override func becomeFirstResponder() -> Bool { false }
@@ -180,16 +145,17 @@ private final class ToolbarButton: NSButton {
     override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        let accent = NativeToolbar.color("accent")
-        let foreground = NativeToolbar.color("foreground")
+        let colors = strip?.state ?? ToolbarState()
+        let accent = colors.color("accent")
+        let foreground = colors.color("foreground")
         if isEnabled && (hovering || isHighlighted || selected) {
             (selected ? accent : foreground).withAlphaComponent(isHighlighted ? 0.20 : hovering ? 0.13 : 0.09).setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).fill()
         }
-        let color = (selected ? accent : hovering && isEnabled || !dimmed ? foreground : NativeToolbar.color("shadow"))
+        let color = (selected ? accent : hovering && isEnabled || !dimmed ? foreground : colors.color("shadow"))
             .withAlphaComponent(isEnabled ? 1 : 0.3)
         if let dot {
-            let dotColor = NativeToolbar.color(dot == .emacs ? "shadow" : dot == .pending ? "accent" : dot == .passthrough ? "warning" : "success")
+            let dotColor = colors.color(dot == .emacs ? "shadow" : dot == .pending ? "accent" : dot == .passthrough ? "warning" : "success")
             let rect = NSRect(x: bounds.midX - 4, y: bounds.midY - 4, width: 8, height: 8)
             if dot == .view {
                 dotColor.withAlphaComponent(0.13).setFill()
@@ -216,18 +182,21 @@ private final class ToolbarButton: NSButton {
     }
 }
 
+/// The strip: the ownership dot and the buttons the core gives the view, or
+/// the find field with its matches. A click, or an edit of the field, goes
+/// to the core, which draws the result.
 @MainActor
 final class ToolbarView: NSView, NSSearchFieldDelegate {
-    let model: ToolbarModel
-    private var buttons: [String: ToolbarButton] = [:]
+    let target: String
+    private(set) var state = ToolbarState()
+    private var buttons: [UInt32: ToolbarButton] = [:]
     private let field = NSSearchField()
     private let count = NSTextField(labelWithString: "")
     private var separators: [CGFloat] = []
-    private var lastState = ""
     override var isFlipped: Bool { true }
 
-    init(model: ToolbarModel) {
-        self.model = model
+    init(target: String) {
+        self.target = target
         super.init(frame: .zero)
         wantsLayer = true
         field.delegate = self
@@ -237,72 +206,61 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         count.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         addSubview(field)
         addSubview(count)
-        let specs: [(String, String, String?)] = [
-            ("owner", "Click to enter", nil), ("back", "Back", "chevron.left"),
-            ("forward", "Forward", "chevron.right"), ("find", "Find in page", "magnifyingglass"),
-            ("toc", "Table of contents", "list.bullet"), ("edit", "Open in Emacs", "square.and.pencil"),
-            ("decrease", "Zoom out", "minus"),
-            ("reset", "Reset to 100%", nil), ("increase", "Zoom in", "plus"),
-            ("reload", "Reload", "arrow.clockwise"), ("previous", "Previous match", "chevron.up"),
-            ("next", "Next match", "chevron.down"), ("close-find", "Close find", "xmark")]
+        let specs: [(portal_button, String, String?)] = [
+            (PORTAL_BUTTON_OWNER, "Click to enter", nil), (PORTAL_BUTTON_BACK, "Back", "chevron.left"),
+            (PORTAL_BUTTON_FORWARD, "Forward", "chevron.right"),
+            (PORTAL_BUTTON_FIND, "Find in page", "magnifyingglass"),
+            (PORTAL_BUTTON_CONTENTS, "Table of contents", "list.bullet"),
+            (PORTAL_BUTTON_EDIT, "Open in Emacs", "square.and.pencil"),
+            (PORTAL_BUTTON_DECREASE, "Zoom out", "minus"), (PORTAL_BUTTON_RESET, "Reset to 100%", nil),
+            (PORTAL_BUTTON_INCREASE, "Zoom in", "plus"), (PORTAL_BUTTON_RELOAD, "Reload", "arrow.clockwise"),
+            (PORTAL_BUTTON_PREVIOUS, "Previous match", "chevron.up"),
+            (PORTAL_BUTTON_NEXT, "Next match", "chevron.down"), (PORTAL_BUTTON_CLOSE, "Close find", "xmark")]
         for (id, tooltip, symbol) in specs {
-            let button = ToolbarButton(tooltip, symbol: symbol) { [weak self] in self?.activate(id) }
-            if id == "toc" { button.setAccessibilityRole(.checkBox) }
-            buttons[id] = button
+            let button = ToolbarButton(tooltip, symbol: symbol) { [weak self] in self?.click(id) }
+            button.strip = self
+            if id == PORTAL_BUTTON_CONTENTS { button.setAccessibilityRole(.checkBox) }
+            buttons[id.rawValue] = button
             addSubview(button)
         }
-        refresh()
     }
     required init?(coder: NSCoder) { nil }
 
-    private func activate(_ id: String) {
-        switch id {
-        case "owner": model.input?.toggleOwnership()
-        case "edit": model.edit?()
-        case "previous": model.find(backwards: true)
-        case "next": model.find()
-        default: try? model.perform(id)
-        }
-        refresh()
+    private func button(_ id: portal_button) -> ToolbarButton? { buttons[id.rawValue] }
+
+    private func click(_ id: portal_button) { Core.clicked(target, id) }
+
+    private func label(_ id: portal_button, _ name: String) {
+        button(id)?.toolTip = name
+        button(id)?.setAccessibilityLabel(name)
     }
 
-    func refresh() {
-        let owner = model.input?.ownership ?? .emacs
-        let signature = "\(owner) \(model.kind) \(NativeToolbar.revision) \((try? model.snapshot()) ?? "") \(model.minimum) \(model.maximum)"
-        guard signature != lastState else { return }
-        lastState = signature
-        buttons["owner"]?.dot = owner
-        let tooltip: String
-        switch owner {
-        case .emacs: tooltip = "Click to enter"
-        case .view: tooltip = "Click to return to Emacs · ⌘⎋"
-        case .pending: tooltip = "Emacs is reading a command"
-        case .passthrough: tooltip = "Passthrough · ⌘⎋ returns to Emacs"
+    func apply(_ state: ToolbarState) {
+        self.state = state
+        let owner = button(PORTAL_BUTTON_OWNER)
+        owner?.dot = state.owner
+        switch state.owner {
+        case .emacs: label(PORTAL_BUTTON_OWNER, "Click to enter")
+        case .view: label(PORTAL_BUTTON_OWNER, "Click to return to Emacs · ⌘⎋")
+        case .pending: label(PORTAL_BUTTON_OWNER, "Emacs is reading a command")
+        case .passthrough: label(PORTAL_BUTTON_OWNER, "Passthrough · ⌘⎋ returns to Emacs")
         }
-        buttons["owner"]?.toolTip = tooltip
-        buttons["owner"]?.setAccessibilityLabel(tooltip)
-        buttons["owner"]?.isEnabled = owner != .pending
-        buttons["back"]?.isEnabled = model.canGoBack
-        buttons["forward"]?.isEnabled = model.canGoForward
-        buttons["toc"]?.isEnabled = model.hasHeadings
-        buttons["toc"]?.selected = model.tocOpen
-        buttons["toc"]?.setAccessibilityValue(model.tocOpen ? 1 : 0)
-        buttons["decrease"]?.isEnabled = model.value > model.minimum
-        buttons["increase"]?.isEnabled = model.value < model.maximum
-        buttons["reset"]?.title = String(format: model.kind == .terminal ? "%g pt" : "%g%%", model.value)
-        buttons["reset"]?.dimmed = model.value == model.defaultValue
-        if model.kind == .terminal {
-            for (id, name) in [("decrease", "Decrease text size"), ("increase", "Increase text size"),
-                               ("reset", "Reset to \(String(format: "%g", model.defaultValue)) pt")] {
-                buttons[id]?.toolTip = name
-                buttons[id]?.setAccessibilityLabel(name)
-            }
-        }
-        buttons["reset"]?.setAccessibilityValue(buttons["reset"]?.title)
-        count.stringValue = "\(model.matchIndex) of \(model.matchCount)"
-        count.textColor = NativeToolbar.color("shadow")
-        for id in ["previous", "next"] { buttons[id]?.isEnabled = model.matchCount > 0 }
-        if field.stringValue != model.query { field.stringValue = model.query }
+        for (id, button) in buttons { button.isEnabled = state.allows(portal_button(rawValue: id)) }
+        let contents = button(PORTAL_BUTTON_CONTENTS)
+        contents?.selected = state.toggled(PORTAL_BUTTON_CONTENTS)
+        contents?.setAccessibilityValue(contents?.selected == true ? 1 : 0)
+        let reading = String(format: "%g", state.standard)
+        let value = String(format: state.points ? "%g pt" : "%g%%", state.value)
+        label(PORTAL_BUTTON_DECREASE, state.points ? "Decrease text size" : "Zoom out")
+        label(PORTAL_BUTTON_INCREASE, state.points ? "Increase text size" : "Zoom in")
+        label(PORTAL_BUTTON_RESET, state.points ? "Reset to \(reading) pt" : "Reset to \(reading)%")
+        let reset = button(PORTAL_BUTTON_RESET)
+        reset?.title = value
+        reset?.dimmed = state.value == state.standard
+        reset?.setAccessibilityValue(value)
+        count.stringValue = "\(state.match) of \(state.matches)"
+        count.textColor = state.color("shadow")
+        if field.stringValue != state.query { field.stringValue = state.query }
         needsLayout = true
         needsDisplay = true
         for button in buttons.values { button.needsDisplay = true }
@@ -311,65 +269,65 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
 
     func focusSearch() {
         window?.makeFirstResponder(field)
-        model.input?.host.refreshOwnership()
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        lastState = ""
-        refresh()
+        apply(state)
     }
 
     override func layout() {
         super.layout()
         for button in buttons.values { button.isHidden = true }
         separators = []
-        field.isHidden = !model.finding
-        count.isHidden = !model.finding
-        func place(_ id: String, _ x: CGFloat, width: CGFloat = 24) {
-            guard id == "owner" || x >= 31 else { return }
-            buttons[id]?.frame = NSRect(x: x, y: 3, width: width, height: 22)
-            buttons[id]?.isHidden = false
+        field.isHidden = !state.finding
+        count.isHidden = !state.finding
+        func place(_ id: portal_button, _ x: CGFloat, width: CGFloat = 24) {
+            guard state.has(id), id == PORTAL_BUTTON_OWNER || x >= 31 else { return }
+            button(id)?.frame = NSRect(x: x, y: 3, width: width, height: 22)
+            button(id)?.isHidden = false
         }
-        place("owner", 5, width: 22)
+        place(PORTAL_BUTTON_OWNER, 5, width: 22)
         var right = bounds.width - 6
-        func trailing(_ id: String, width: CGFloat = 24) { right -= width; place(id, right, width: width); right -= 2 }
+        func trailing(_ id: portal_button, width: CGFloat = 24) {
+            guard state.has(id) else { return }
+            right -= width; place(id, right, width: width); right -= 2
+        }
         func separator() { right -= 5; separators.append(right); right -= 6 }
-        if model.finding {
-            trailing("close-find")
-            if bounds.width >= 240 { trailing("next"); trailing("previous") }
+        if state.finding {
+            trailing(PORTAL_BUTTON_CLOSE)
+            if bounds.width >= 240 { trailing(PORTAL_BUTTON_NEXT); trailing(PORTAL_BUTTON_PREVIOUS) }
             count.isHidden = bounds.width < 180
             if !count.isHidden { right -= 68 }
             count.frame = NSRect(x: right, y: 7, width: 66, height: 16)
             field.frame = NSRect(x: 33, y: 3, width: max(20, right - 38), height: 22)
         } else {
-            if model.kind != .terminal { trailing("reload"); separator() }
-            trailing("increase"); trailing("reset", width: 46); trailing("decrease")
-            if model.kind != .terminal {
+            if state.has(PORTAL_BUTTON_RELOAD) { trailing(PORTAL_BUTTON_RELOAD); separator() }
+            trailing(PORTAL_BUTTON_INCREASE); trailing(PORTAL_BUTTON_RESET, width: 46); trailing(PORTAL_BUTTON_DECREASE)
+            if state.has(PORTAL_BUTTON_FIND) {
                 separator()
-                if model.kind == .preview { trailing("toc") }
-                if model.edit != nil { trailing("edit") }
-                trailing("find")
-                if right >= 93 { separators.append(33); place("back", 39); place("forward", 65) }
+                trailing(PORTAL_BUTTON_CONTENTS)
+                trailing(PORTAL_BUTTON_EDIT)
+                trailing(PORTAL_BUTTON_FIND)
+                if right >= 93 { separators.append(33); place(PORTAL_BUTTON_BACK, 39); place(PORTAL_BUTTON_FORWARD, 65) }
             }
         }
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NativeToolbar.color("background").setFill(); bounds.fill()
-        NativeToolbar.color("border").setFill()
+        state.color("background").setFill(); bounds.fill()
+        state.color("border").setFill()
         NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
         for x in separators { NSRect(x: x, y: 7, width: 1, height: 14).fill() }
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        model.query = field.stringValue
-        model.find()
+        Core.typed(target, field.stringValue)
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        if selector == #selector(NSResponder.cancelOperation(_:)) { activate("close-find"); return true }
+        if selector == #selector(NSResponder.cancelOperation(_:)) { click(PORTAL_BUTTON_CLOSE); return true }
         if selector == #selector(NSResponder.insertNewline(_:)) {
-            model.find(backwards: NSApp.currentEvent?.modifierFlags.contains(.shift) == true)
+            click(NSApp.currentEvent?.modifierFlags.contains(.shift) == true ? PORTAL_BUTTON_PREVIOUS : PORTAL_BUTTON_NEXT)
             return true
         }
         return false

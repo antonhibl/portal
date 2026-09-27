@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Standalone AppKit/WebKit integration test. See README.md for the compiler command.
+// The core owns every toolbar's state (native/Core/toolbar.c); these checks
+// click real buttons, type into the real field and read what AppKit shows.
 import AppKit
 import WebKit
 
@@ -20,6 +22,24 @@ struct CheckToolbar {
     }
 
     @MainActor
+    static func key(_ window: NSWindow, _ characters: String, ignoring: String? = nil, code: UInt16,
+                    flags: NSEvent.ModifierFlags = []) -> NSEvent {
+        require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+                                 windowNumber: window.windowNumber, context: nil, characters: characters,
+                                 charactersIgnoringModifiers: ignoring ?? characters, isARepeat: false,
+                                 keyCode: code))
+    }
+
+    /// Press a key as the event loop delivers a real one, which makes it the
+    /// current event: the find field reads Shift from there.
+    @MainActor
+    static func press(_ event: NSEvent) {
+        NSApp.postEvent(event, atStart: false)
+        NSApp.sendEvent(require(NSApp.nextEvent(matching: .keyDown, until: .distantFuture, inMode: .default,
+                                                dequeue: true)))
+    }
+
+    @MainActor
     static func run() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
@@ -35,94 +55,137 @@ struct CheckToolbar {
         try Views.load(target, "data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>")
         var container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         let web = require(container.content as? WKWebView)
-        let model = container.model
-        wait("page did not load") { web.title == "Toolbar test" && !web.isLoading && model.hasHeadings }
+        func state() throws -> [String: Any] { try Views.toolbar(target, "state") }
+        func flag(_ name: String) -> Bool { (try? state())?[name] as? Bool ?? false }
+        wait("page did not load") { web.title == "Toolbar test" && !web.isLoading && flag("headings") }
         check(web.frame.height == 452 && require(container.toolbar).frame.height == 28)
         func button(_ tooltip: String) -> NSButton {
             require(require(container.toolbar).subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == tooltip }, "Missing toolbar button: \(tooltip)")
         }
+        func dot() -> NSButton {
+            require(require(container.toolbar).subviews.compactMap { $0 as? NSButton }.first { $0.frame.minX == 5 && !$0.isHidden },
+                    "Missing ownership dot")
+        }
+        let field = require(require(container.toolbar).subviews.compactMap { $0 as? NSSearchField }.first)
+        check(field.isHidden && container.state.owner == .emacs)
         // Previews go back and forward like pages; only Markdown ones open in Emacs.
         check(!button("Back").isHidden && !button("Back").isEnabled && !button("Forward").isEnabled)
-        check(button("Open in Emacs").isHidden)
+        check(button("Open in Emacs").isHidden && button("Table of contents").isEnabled)
         try Views.load(target, "data:text/html,<title>Second page</title>")
         wait("second page did not load") { web.title == "Second page" && button("Back").isEnabled }
+        check(!button("Table of contents").isEnabled, "A page without headings offers its contents")
         button("Back").performClick(nil)
-        wait("back did not return") { web.title == "Toolbar test" && !web.isLoading && model.hasHeadings }
+        wait("back did not return") { web.title == "Toolbar test" && !web.isLoading && flag("headings") }
         check(button("Forward").isEnabled && !button("Back").isEnabled && window.firstResponder === editor)
         button("Zoom in").performClick(nil)
-        check(web.pageZoom == 1.1 && window.firstResponder === editor)
-        try model.perform("increase")
+        check(web.pageZoom == 1.1 && window.firstResponder === editor && button("Reset to 100%").title == "110%")
+        _ = try Views.toolbar(target, "increase")
         check(web.pageZoom == 1.25)
-        for _ in 0..<20 { try model.perform("increase") }
+        for _ in 0..<20 { _ = try Views.toolbar(target, "increase") }
         check(web.pageZoom == 3 && !button("Zoom in").isEnabled)
-        for _ in 0..<20 { try model.perform("decrease") }
-        check(web.pageZoom == 0.5 && !button("Zoom out").isEnabled)
-        try model.perform("reset")
-        check(web.pageZoom == 1)
-        try model.perform("toc")
-        check(model.tocOpen)
+        for _ in 0..<20 { button("Zoom out").performClick(nil) }
+        check(web.pageZoom == 0.5 && !button("Zoom out").isEnabled && button("Zoom in").isEnabled)
+        button("Reset to 100%").performClick(nil)
+        check(web.pageZoom == 1 && button("Reset to 100%").title == "100%")
+        button("Table of contents").performClick(nil)
+        check(flag("toc") && button("Table of contents").accessibilityValue() as? Int == 1)
         var tocVisible = false
         web.evaluateJavaScript("!!document.querySelector('nav[aria-label=\"Table of contents\"]:not([hidden])')") { value, _ in tocVisible = value as? Bool ?? false }
         wait("TOC missing") { tocVisible }
-        model.input?.toggleOwnership()
-        check(model.input?.ownership == .view)
+        // The dot moves the keyboard, and buttons never take it.
+        dot().performClick(nil)
+        check(container.state.owner == .view && Views.owner(target) == PORTAL_OWNER_VIEW)
+        check(dot().toolTip == "Click to return to Emacs · ⌘⎋")
         let responder = window.firstResponder
         button("Zoom in").performClick(nil)
         check(window.firstResponder === responder)
-        model.input?.toggleOwnership()
-        check(window.firstResponder === editor && model.input?.ownership == .emacs)
-        try model.perform("find")
-        check(model.input?.ownership == .view, "find did not own the keyboard")
-        check(window.firstResponder !== web)
-        model.query = "needle"
-        model.find()
-        wait("find count") { model.matchCount == 3 && model.matchIndex == 1 }
-        model.find()
-        wait("find next") { model.matchIndex == 2 }
-        model.find(backwards: true)
-        wait("find previous") { model.matchIndex == 1 }
-        model.find()
-        model.find()
-        wait("rapid find next") { model.matchIndex == 3 }
-        let escape = require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                      windowNumber: window.windowNumber, context: nil, characters: "\u{1b}",
-                                      charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
-        app.sendEvent(escape)
-        check(!model.finding && model.input?.ownership == .view)
-        let commandF = require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
-                                        windowNumber: window.windowNumber, context: nil, characters: "f",
-                                        charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3))
-        app.sendEvent(commandF)
-        check(model.finding && window.firstResponder !== web, "Command-F did not open find")
-        wait("find query was not retained") { model.matchCount == 3 }
+        dot().performClick(nil)
+        check(window.firstResponder === editor && container.state.owner == .emacs)
+        // Find: the real field takes the keyboard and edits natively.
+        _ = try Views.toolbar(target, "find")
+        check(!field.isHidden && container.state.owner == .view, "find did not own the keyboard")
+        check(window.firstResponder !== web && field.currentEditor() != nil)
+        require(field.currentEditor()).insertText("needle")
+        wait("find count") { container.state.matches == 3 && container.state.match == 1 }
+        check(container.state.query == "needle" && field.stringValue == "needle")
+        press(key(window, "\r", code: 36))
+        wait("find next") { container.state.match == 2 }
+        press(key(window, "\r", code: 36, flags: .shift))
+        wait("find previous") { container.state.match == 1 }
+        press(key(window, "\r", code: 36))
+        press(key(window, "\r", code: 36))
+        wait("rapid find next") { container.state.match == 3 }
+        button("Next match").performClick(nil)
+        wait("find wraps") { container.state.match == 1 }
+        press(key(window, "\u{1b}", code: 53))
+        check(!container.state.finding && field.isHidden && container.state.owner == .view)
+        check(window.firstResponder === web || (window.firstResponder as? NSView)?.isDescendant(of: web) == true,
+              "Closing find did not return the keyboard to the page")
+        let commandF = key(window, "f", code: 3, flags: .command)
+        press(commandF)
+        check(container.state.finding && window.firstResponder !== web, "Command-F did not open find")
+        wait("find query was not retained") { container.state.matches == 3 }
         _ = try Views.input(target, action: "unfocus")
-        try model.perform("find")
-        check(model.input?.ownership == .view, "Repeated find must focus its field")
-        try model.perform("close-find")
+        _ = try Views.toolbar(target, "find")
+        check(container.state.owner == .view, "Repeated find must focus its field")
+        // Closing find after the user moved to Emacs leaves Emacs the keyboard.
+        window.makeFirstResponder(editor)
+        NotificationCenter.default.post(name: NSWindow.didUpdateNotification, object: window)
+        check(container.state.owner == .emacs)
+        _ = try Views.toolbar(target, "close-find")
+        check(window.firstResponder === editor && !container.state.finding, "Closing find took the keyboard")
         _ = try Views.input(target, action: "passthrough")
-        check(model.input?.ownership == .passthrough)
-        app.sendEvent(commandF)
-        check(!model.finding && model.input?.ownership == .passthrough, "Passthrough must pass Command-F")
-        model.input?.toggleOwnership()
-        check(model.input?.ownership == .emacs)
-        NativeToolbar.configure(false)
+        check(container.state.owner == .passthrough)
+        press(commandF)
+        check(!container.state.finding && container.state.owner == .passthrough, "Passthrough must pass Command-F")
+        dot().performClick(nil)
+        check(container.state.owner == .emacs)
+        // Visibility is live, and the view keeps its state.
+        Views.showToolbars(false)
         check(container.toolbar == nil && web.frame.height == 480)
-        NativeToolbar.configure(true)
+        Views.showToolbars(true)
         check(container.toolbar != nil && web.frame.height == 452 && web.pageZoom == 1.1)
         try Views.hide(target)
         check(web.window !== window && web.isHiddenOrHasHiddenAncestor && window.firstResponder === editor)
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
         container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
-        check(container.content === web && !container.isHidden && model.tocOpen && web.pageZoom == 1.1)
-        try model.perform("reload")
+        check(container.content === web && !container.isHidden && flag("toc") && web.pageZoom == 1.1)
+        check(button("Reset to 100%").title == "110%" && container.state.query == "needle")
+        button("Reload").performClick(nil)
         wait("reload") { !web.isLoading }
-        check(web.pageZoom == 1.1 && model.tocOpen)
-        try NativeToolbar.theme(#"{"background":[0.1,0.2,0.3],"success":[0,1,0]}"#)
-        check(NativeToolbar.color("success") == NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        tocVisible = false
+        web.evaluateJavaScript("!!document.querySelector('nav[aria-label=\"Table of contents\"]:not([hidden])')") { value, _ in tocVisible = value as? Bool ?? false }
+        wait("TOC not kept across reload") { tocVisible }
+        check(web.pageZoom == 1.1 && flag("toc"))
+        // Colors are the core's; the strip draws them.
+        var colors = portal_colors()
+        colors.success = portal_color(set: true, red: 0, green: 1, blue: 0)
+        colors.background = portal_color(set: true, red: 0.1, green: 0.2, blue: 0.3)
+        Views.paintToolbars(colors)
+        check(container.state.color("success") == NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        check(require(container.toolbar).state.color("background") == NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1))
+        Views.paintToolbars(portal_colors())
+        check(container.state.color("success") == .systemGreen)
         try Views.close(target)
         check(require(window.contentView).subviews.count == 1)
+        try checkWithoutToolbar(window: window)
         try checkMarkdown(window: window, editor: editor)
         print("Toolbar layout, focus, zoom limits, TOC, find, back, forward, theme and retained state passed")
+    }
+
+    /// A view without a toolbar fills its pane, even while toolbars show.
+    @MainActor
+    static func checkWithoutToolbar(window: NSWindow) throws {
+        let target = try Views.open(kind: "web", options: ViewOptions(values: [
+            "toolbar": .string("none"), "hosted": .flag(true)]))
+        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        let container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
+        check(container.toolbar == nil && container.content.frame.height == 480)
+        Views.showToolbars(false)
+        Views.showToolbars(true)
+        check(container.toolbar == nil && container.content.frame.height == 480)
+        try Views.close(target)
+        print("Views without a toolbar fill their pane")
     }
 
     /// A hosted Markdown preview's Open in Emacs gives Emacs the keyboard and
@@ -134,16 +197,16 @@ struct CheckToolbar {
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
         check(portal_channel_connect(fds[1]))
         defer { _ = portal_channel_connect(-1); close(fds[0]) }
-        func container(_ target: String) -> NativeContainer {
+        func container() -> NativeContainer {
             require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         }
         func edit(hosted: Bool) throws -> (String, NSButton) {
             let target = try Views.open(kind: "web", options: ViewOptions(values: [
                 "toolbar": .string("markdown"), "hosted": .flag(hosted)]))
             try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-            let container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
-            check(container.model.kind == .preview)
-            return (target, require(require(container.toolbar).subviews.compactMap { $0 as? NSButton }
+            check(!require(container().toolbar).subviews.compactMap { $0 as? NSButton }
+                .first { $0.toolTip == "Table of contents" }!.isHidden)
+            return (target, require(require(container().toolbar).subviews.compactMap { $0 as? NSButton }
                 .first { $0.toolTip == "Open in Emacs" }, "Missing Open in Emacs button"))
         }
         // Without a bridge there is no way to ask Emacs, so no button.
@@ -156,10 +219,8 @@ struct CheckToolbar {
         check(focused && window.firstResponder !== editor)
         // Clicking while Emacs reads a prefix ends that read first, so Emacs
         // runs the edit instead of taking it for the prefix's next key.
-        NSApp.sendEvent(require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
-                                         windowNumber: window.windowNumber, context: nil, characters: "\u{2}",
-                                         charactersIgnoringModifiers: "b", isARepeat: false, keyCode: 11)))
-        check(container(target).model.input?.ownership == .pending, "The prefix is not pending")
+        NSApp.sendEvent(key(window, "\u{2}", ignoring: "b", code: 11, flags: .control))
+        check(container().state.owner == .pending, "The prefix is not pending")
         button.performClick(nil)
         var buffer = [UInt8](repeating: 0, count: 512)
         let count = read(fds[0], &buffer, buffer.count)
@@ -170,6 +231,7 @@ struct CheckToolbar {
         let messages = try Views.receive(target)
         check(messages == #"[{"type":"edit"}]"#, "Open in Emacs did not ask Emacs to edit")
         check(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")
+        check(container().state.owner == .emacs)
         try Views.close(target)
         print("Markdown previews open their file in Emacs from the toolbar")
     }

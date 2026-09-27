@@ -3,6 +3,7 @@ import AppKit
 import Darwin
 import GhosttyTerminal
 import GhosttyTheme
+import PortalCore
 
 /// Start programs through the same kind of shell as an ordinary terminal.
 /// The shell owns startup files, PATH and executable lookup; Lisp supplies argv.
@@ -48,9 +49,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
-    var toolbarModel: ToolbarModel? { session?.toolbar }
     func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
-    static let defaultFontSize = 14.0
     var terminalTitle = "Terminal"
     var grid: TerminalGridMetrics?
     var terminalSurface: TerminalSurface?
@@ -67,7 +66,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
-            builder.withFontSize(Float(Self.defaultFontSize))
+            builder.withFontSize(Float(PORTAL_TERMINAL_POINTS))
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
             builder.withCustom("keybind", "super+t=unbind")
@@ -100,22 +99,19 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
 /// window when the view opens, and keeps running while the view is hidden.
 /// The core owns Portal's terminal rules (native/Core/terminals.c): it checks
 /// the options and theme names, and calls the primitives below on one session.
+/// Its toolbar and text size are the core's too (toolbar.c).
 @MainActor
 final class TerminalSession: PortalView {
     let target: String
-    let quick: Bool
     private let terminal: HostedTerminal
     var surface: any NativeSurface { terminal }
     let input: NativeInput
-    let controls = ToolbarModel(.terminal)
-    var toolbar: ToolbarModel? { quick ? nil : controls }
 
     init(target: String, options: ViewOptions) throws {
         guard let directory = try options.string("directory") else {
             throw NativeError.message("The core passed a terminal without a :directory")
         }
         self.target = target
-        quick = options.flag("quick")
         let terminal = HostedTerminal(directory: directory, command: try terminalCommand(options, directory: directory),
                                       theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
@@ -125,11 +121,6 @@ final class TerminalSession: PortalView {
             return terminal.acquireProgrammaticFocus()
         }
         terminal.session = self
-        controls.value = HostedTerminal.defaultFontSize
-        controls.defaultValue = HostedTerminal.defaultFontSize
-        controls.minimum = 1
-        controls.maximum = 255
-        controls.action = { [weak self] in try self?.textSize($0) }
     }
 
     /// Ghostty makes its surface once the view is in a window.
@@ -155,21 +146,6 @@ final class TerminalSession: PortalView {
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
          ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]
-    }
-
-    /// The toolbar's and keyboard's text size steps, until the core owns them.
-    func textSize(_ action: String) throws {
-        let next: Double
-        switch action {
-        case "increase": next = min(controls.maximum, controls.value + 1)
-        case "decrease": next = max(controls.minimum, controls.value - 1)
-        case "reset": next = controls.defaultValue
-        default: throw NativeError.message("Unknown terminal toolbar action: \(action)")
-        }
-        guard next != controls.value else { return }
-        try setFontSize(next)
-        controls.value = next
-        controls.changed?()
     }
 
     // The terminal primitives of native/Core/include/portal.h.
@@ -210,16 +186,9 @@ final class TerminalSession: PortalView {
 
     func returnFocus() { input.host.returnFocus(from: terminal) }
 
+    /// The core decides what each key does, including text size shortcuts.
     func handleKeyEvent(_ event: NSEvent) -> Bool {
         if input.handleKeyEvent(event) { return true }
-        if event.type == .keyDown,
-           event.modifierFlags.intersection([.command, .control, .option]) == .command {
-            let key = event.charactersIgnoringModifiers ?? ""
-            if let action = ["+": "increase", "=": "increase", "-": "decrease", "0": "reset"][key] {
-                try? textSize(action)
-                return true
-            }
-        }
         switch event.type {
         case .keyDown: terminal.keyDown(with: event)
         case .keyUp: terminal.keyUp(with: event)

@@ -38,14 +38,23 @@ static bool sent(const char *target, const char *format)
     return !strcmp(got, expected);
 }
 
-/* Open a web view, hosted when HOSTED; return its target to free. */
+/* Open a web view with a Markdown preview's toolbar, hosted when HOSTED;
+   return its target to free. */
 static char *open_web(bool hosted)
 {
-    portal_option option = {.name = text("hosted"), .flag = true};
+    portal_option options[] = {{.name = text("toolbar"), .is_string = true,
+                                .string = text("markdown")},
+                               {.name = text("hosted"), .flag = true}};
     portal_text target = {0}, error = {0};
-    if (!portal_views_open(text("web"), &option, hosted, &target, &error))
+    if (!portal_views_open(text("web"), options, hosted ? 2 : 1, &target, &error))
         abort();
     return target.data;
+}
+
+/* The user clicks Open in Emacs in TARGET's toolbar. */
+static void edit(const char *target)
+{
+    portal_toolbar_clicked(text(target), PORTAL_BUTTON_EDIT);
 }
 
 static bool load(const char *target, const char *url, portal_text *error)
@@ -306,7 +315,7 @@ static void test_ordinary_pages_have_no_bridge(void)
     portal_web_committed(text(web), text("https://example.com/"));
     post(web, true, "https://example.com/", "hello", "{\"type\":\"hello\"}");
     portal_web_failed(text(web), 0, text("Failed"));
-    portal_web_edit(text(web));
+    edit(web);
     CHECK(portal_web_navigating(text(web), text("file:///etc/passwd"), true)
           == PORTAL_NAVIGATION_ALLOW);
     CHECK(portal_web_navigating(text(web), text("https://elsewhere.example/"), true)
@@ -393,7 +402,7 @@ static void test_local_links_and_edits_go_to_emacs(void)
     char prefix[64];
     snprintf(prefix, sizeof prefix, "prefix %s %%" SCNd64 " 0\n", web);
     CHECK(sscanf(drain(), prefix, &serial) == 1 && serial > 0);
-    portal_web_edit(text(web));
+    edit(web);
     char escape[64];
     snprintf(escape, sizeof escape, "escape %%s %" PRId64 " 0\n", serial);
     CHECK(sent(web, escape));
@@ -459,7 +468,7 @@ static void test_a_closed_view_hears_nothing(void)
     portal_web_committed(text(target), text(app));
     portal_web_failed(text(target), 0, text("Late"));
     portal_web_failed(text(target), 2, text("Late"));
-    portal_web_edit(text(target));
+    edit(target);
     CHECK(portal_web_navigating(text(target), text("file:///etc/passwd"), true)
           == PORTAL_NAVIGATION_ALLOW);
     CHECK(sent(target, ""));

@@ -62,6 +62,30 @@ enum Views {
         return take(&json)
     }
 
+    /// Perform ACTION on TARGET's toolbar, as `portal--toolbar-action` does;
+    /// return its state as JSON.
+    static func toolbar(_ target: String, _ action: String) throws -> [String: Any] {
+        var json = portal_text()
+        try with(target) { target in
+            try with(action) { action in try call { portal_toolbar_perform(target, action, &json, $0) } }
+        }
+        return require(try JSONSerialization.jsonObject(with: Data(take(&json).utf8)) as? [String: Any])
+    }
+
+    /// Show every toolbar, or none, as `portal--toolbar` does.
+    static func showToolbars(_ shown: Bool) { portal_toolbar_show(shown) }
+
+    /// Draw every toolbar in COLORS, as `portal--toolbar-theme` does.
+    static func paintToolbars(_ colors: portal_colors) {
+        var colors = colors
+        portal_toolbar_paint(&colors)
+    }
+
+    /// Who has TARGET's keyboard, as its toolbar's dot shows.
+    static func owner(_ target: String) -> portal_owner {
+        with(target) { portal_input_owner($0) }
+    }
+
     /// TARGET's session, which must be of KIND.
     static func view<Kind: PortalView>(_ target: String, as kind: Kind.Type) throws -> Kind {
         guard let session = try native(target).kind as? Kind else {

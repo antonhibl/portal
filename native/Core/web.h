@@ -30,8 +30,19 @@ struct portal_web_state;
 /* The state of a new web view opened with OPTIONS, which is hosted when its
    :hosted option is a string or t; NULL when out of memory. */
 struct portal_web_state *portal_web_state_new(const portal_option *options, size_t count);
+/* Whether STATE is a hosted app's. */
+bool portal_web_state_hosted(const struct portal_web_state *state);
 /* Free STATE and any messages still waiting in it. */
 void portal_web_state_free(struct portal_web_state *state);
+
+/* For the toolbar, toolbar.c.  Whether web view TARGET's page can go back
+   and forward, as the platform last reported; false for a TARGET that names
+   no open web view. */
+void portal_web_views_history(portal_string target, bool *back, bool *forward);
+/* The user asked, from hosted web view TARGET's toolbar, to open the
+   document it shows in Emacs: give Emacs the keyboard, then send the app's
+   buffer an "edit" message.  Does nothing for any other TARGET. */
+void portal_web_views_edit(portal_string target);
 
 /* For web.c, from views.c: TARGET's platform view, and its state in *STATE,
    if TARGET names an open web view.  Otherwise return NULL and, unless ERROR

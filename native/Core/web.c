@@ -9,7 +9,9 @@
    them (portal_web_parse_url), so it compares URLs byte for byte with those
    the platform reports.  Loading the page on screen again, ignoring
    fragments, reloads it without a new history entry, and a view
-   that has shown nothing yet is at about:blank already.  A hosted app's main
+   that has shown nothing yet is at about:blank already.  Whether the page
+   can go back and forward, as the platform reports it, is here too, for the
+   toolbar (toolbar.c), which also shows its pages.  A hosted app's main
    frame stays at its address's origin: other pages open in the default
    browser, and local files, which WebKit would not load there, go to Emacs.
 
@@ -35,6 +37,7 @@
 #include "channel.h"
 #include "core.h"
 #include "input.h"
+#include "toolbar.h"
 #include "views.h"
 #include "web.h"
 
@@ -53,6 +56,7 @@ struct portal_web_state {
     uint64_t generation;         /* 1 + pages committed: the token of posts now. */
     struct message *first, *last; /* Waiting messages, oldest first. */
     bool announced;              /* Whether a bridge record went out for them. */
+    bool back, forward;          /* Whether the page can go back and forward. */
 };
 
 /* The shared scripts, embedded with C23's #embed, which Clang and GCC 15
@@ -215,46 +219,6 @@ static bool loadable(portal_string url)
     return has_scheme(url, "file") || has_scheme(url, "data") || has_scheme(url, "about");
 }
 
-/* JSON for the core's own messages. */
-
-struct json {
-    char *data;
-    size_t length;
-    bool failed; /* Out of memory. */
-};
-
-static void put(struct json *json, const char *data, size_t length)
-{
-    char *grown = json->failed ? NULL : realloc(json->data, json->length + length + 1);
-    if (!grown) {
-        json->failed = true;
-        return;
-    }
-    json->data = grown;
-    memcpy(json->data + json->length, data, length);
-    json->length += length;
-    json->data[json->length] = '\0';
-}
-
-static void put_string(struct json *json, portal_string string)
-{
-    static const char hex[] = "0123456789abcdef";
-    put(json, "\"", 1);
-    for (size_t i = 0; i < string.length; i++) {
-        unsigned char c = (unsigned char) string.data[i];
-        if (c == '"' || c == '\\') {
-            char escaped[] = {'\\', (char) c};
-            put(json, escaped, 2);
-        } else if (c < 0x20) {
-            char escaped[] = {'\\', 'u', '0', '0', hex[c >> 4], hex[c & 15]};
-            put(json, escaped, sizeof escaped);
-        } else {
-            put(json, (const char *) &c, 1);
-        }
-    }
-    put(json, "\"", 1);
-}
-
 /* The bridge. */
 
 /* Types only the core sends. */
@@ -366,6 +330,11 @@ struct portal_web_state *portal_web_state_new(const portal_option *options, size
     return web;
 }
 
+bool portal_web_state_hosted(const struct portal_web_state *web)
+{
+    return web->hosted;
+}
+
 void portal_web_state_free(struct portal_web_state *web)
 {
     if (!web)
@@ -455,6 +424,23 @@ bool portal_web_views_receive(portal_string target, portal_text *json, portal_te
     return true;
 }
 
+/* For toolbar.c. */
+
+void portal_web_views_history(portal_string target, bool *back, bool *forward)
+{
+    struct portal_web_state *web;
+    bool found = find(target, &web);
+    *back = found && web->back;
+    *forward = found && web->forward;
+}
+
+void portal_web_views_edit(portal_string target)
+{
+    struct portal_web_state *web;
+    if (find(target, &web) && web->hosted)
+        hand_off(target, "edit", literal(""));
+}
+
 /* The platform's calls, from portal.h. */
 
 void portal_web_posted(portal_string target, portal_sender sender, portal_string type,
@@ -491,6 +477,7 @@ void portal_web_committed(portal_string target, portal_string url)
     web->generation++;
     if (web->hosted)
         queue_own(web, target, "page", "url", url);
+    portal_toolbar_committed(target);
 }
 
 void portal_web_failed(portal_string target, uint64_t token, portal_string message)
@@ -500,12 +487,14 @@ void portal_web_failed(portal_string target, uint64_t token, portal_string messa
         queue_own(web, target, "error", "message", message);
 }
 
-void portal_web_edit(portal_string target)
+void portal_web_history(portal_string target, bool back, bool forward)
 {
     struct portal_web_state *web;
-    portal_view *native = find(target, &web);
-    if (native && web->hosted)
-        hand_off(target, "edit", literal(""));
+    if (!find(target, &web))
+        return;
+    web->back = back;
+    web->forward = forward;
+    portal_toolbar_refresh(target);
 }
 
 portal_string portal_web_script(portal_script script)

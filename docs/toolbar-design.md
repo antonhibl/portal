@@ -1,7 +1,11 @@
 # Native toolbar design
 
-Design date: 23 September 2026. This is a specification, not implemented behavior.
-Mockups: [toolbar-mockup.html](toolbar-mockup.html) (open it in a browser).
+Design date: 23 September 2026. Mockups: [toolbar-mockup.html](toolbar-mockup.html)
+(open it in a browser). The toolbar's look and controls below are implemented. Where
+its state lives changed later: see [Ownership](#ownership), which describes the code
+today, and the README's implementation notes. [Changes to existing
+code](#changes-to-existing-code) and [Rejected alternatives](#rejected-alternatives)
+are historical.
 
 Portal replaces the Emacs header line on native views with a thin toolbar that
 Swift draws at the top of each view. The toolbar holds only controls that act on
@@ -15,12 +19,13 @@ the view itself. Emacs keeps everything that is Emacs behavior.
   part of the native view, not an overlay, and never covers content.
 - The strip contains an ownership dot and the view's own controls. It shows no
   file name, because the mode line already shows it.
-- Clicking a toolbar button never sends a message to Elisp. Buttons call Swift,
-  which calls WebKit, Ghostty, or the page. The one exception is a Markdown
-  preview's **Open in Emacs**, which gives Emacs the keyboard and sends an
-  `edit` message over the preview's bridge, as a link to a source file does.
-- Swift is the only place view state lives. Elisp commands that do the same thing,
-  such as zoom or TOC, call the same native functions and read the value back.
+- Clicking a toolbar button never sends a message to Elisp. Buttons call the C
+  core, which asks the platform to act on WebKit, Ghostty, or the page. The one
+  exception is a Markdown preview's **Open in Emacs**, which gives Emacs the
+  keyboard and sends an `edit` message over the preview's bridge, as a link to a
+  source file does.
+- The C core is the only place toolbar state lives. Elisp commands that do the
+  same thing, such as zoom or TOC, run the same code and read the value back.
 - A single option, `portal-toolbar`, shows or hides the strip.
 
 ## What belongs in the toolbar
@@ -28,7 +33,7 @@ the view itself. Emacs keeps everything that is Emacs behavior.
 A control belongs in the toolbar only if all of these are true:
 
 1. It acts only on this native view.
-2. Swift can do it by itself through WebKit, Ghostty, or JavaScript in the page.
+2. The platform can do it by itself through WebKit, Ghostty, or JavaScript in the page.
 3. It changes no Emacs state: no windows, buffers, files, keymaps, or focus
    decisions that Elisp makes.
 
@@ -86,9 +91,9 @@ left after the dot, separated by a rule.
 
 The dot shows who receives the keyboard. The C core already knows this: the
 platform reports each change of keyboard focus, and the core keeps each view's
-handoff and passthrough state (`native/Core/input.c`). Swift reads it with
-`portal_input_owner` whenever it refreshes the strip, so the dot updates
-immediately with no polling.
+handoff and passthrough state (`native/Core/input.c`). The toolbar core puts it in
+the view's toolbar snapshot and redraws the strip whenever it changes, so the dot
+updates immediately with no polling.
 
 | State | Appearance | Tooltip | Click |
 | --- | --- | --- | --- |
@@ -142,15 +147,14 @@ Zoom and text size show their current value between the − and + buttons.
 | AppKit square demo | No strip | Nothing to control; Hello World is a web page and gets the web controls |
 
 Zoom steps: 50, 67, 75, 85, 100, 110, 125, 150, 175, 200, 250, 300%. Text size
-changes by 1 pt, and resetting returns to the size from the terminal
-configuration.
+changes by 1 pt, from 1 to 255 pt, and resetting returns to the size a terminal
+starts at, 14 pt.
 
 ### TOC
 
-The TOC is drawn by the page, not by Swift. The button toggles it through
-JavaScript, and the page reports whether headings exist. If a page has no
-headings, the button is disabled. This needs page support first; see
-`tasks.md`.
+The TOC is drawn by the page, not by the platform. The button toggles it
+through the core's shared contents script, which reports how many headings the
+page has. If a page has no headings, the button is disabled.
 
 ### Find in page
 
@@ -162,14 +166,38 @@ match. Escape or the close button closes find, and the controls come back.
 
 ## State
 
-- Each native view instance owns its state: zoom, TOC open, text size, find text.
+- Each view has its own state: zoom, TOC open, text size, find text.
 - State survives hiding and showing, because hidden views are kept. A reload
   keeps the zoom. A new preview starts from the defaults.
 - State is not saved across Emacs sessions.
-- Elisp commands are another way to reach the same native functions, and never
-  keep their own copy. Proposed names: `portal-zoom-in`, `portal-zoom-out`,
-  `portal-zoom-reset`, `portal-toggle-toc`, `portal-find`, and
-  `portal-terminal-text-size-increase` / `-decrease` / `-reset`.
+- Elisp commands are another way to reach the same state, and never keep their
+  own copy: `portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`,
+  `portal-toggle-toc`, `portal-find`, and `portal-terminal-text-size-increase` /
+  `-decrease` / `-reset`.
+
+## Ownership
+
+The C core owns every toolbar's state, in `native/Core/toolbar.c`, and the platform
+only draws it ([ADR 0003](adr/0003-platform-interface-primitives.md)).
+
+| State | Owner |
+| --- | --- |
+| Layout: which buttons a view has | `toolbar.c`, fixed at open from `:toolbar`, `:hosted` and `:quick` |
+| Zoom, text size, their steps and limits | `toolbar.c`; the platform sets them with `portal_web_zoom` and `portal_terminal_set_font_size` |
+| TOC open, heading count | `toolbar.c`; the contents script shows the TOC and reports headings |
+| Find text, matches, waiting searches | `toolbar.c`; the platform finds with `portal_web_find`, and the contents script counts |
+| Who has the keyboard (the dot) | `input.c`; the toolbar reads it when it draws |
+| Back and forward availability | `web.c`, as the platform reports it; the toolbar reads it when it draws |
+| Visibility and colors | `toolbar.c`, from `portal-toolbar` and Emacs faces |
+| Layout in points, symbols, tooltips, hover, `NSColor`s | The platform |
+
+The core draws a snapshot of a view's toolbar, `portal_toolbar`, only when it
+differs from the last one it drew. The platform reports clicks and the find field's
+text; the field's Return, Shift-Return and Escape count as clicks on next, previous
+and close. Opening find asks the platform to give the field the keyboard
+(`portal_toolbar_focus`). Closing find gives the page the keyboard
+(`portal_view_focus`) only while the view still has it, so it never takes the
+keyboard back from Emacs or another view.
 
 ## Theme
 
@@ -211,6 +239,8 @@ part of this design.
 
 ## Changes to existing code
 
+Historical: the changes this design first asked for.
+
 - `portal-input.el`: remove the `header-line-format` setting in
   `portal-input-mode`, `portal-input--header`, and the `[header-line mouse-1]`
   binding in `portal-input--read`.
@@ -218,7 +248,7 @@ part of this design.
   of the bare feature view, and publish ownership changes to the strip.
 - New `native/Toolbar.swift`: the strip, buttons, dot, find field, and theme colors.
 - `native/WebView.swift`, `native/Terminal.swift`: provide each view's controls
-  and state.
+  and state. The state later moved into the C core.
 - README: replace the description of the header's **Return to Emacs** control.
 
 ## Rejected alternatives
@@ -236,8 +266,9 @@ rejected for these reasons:
 
 ## Open questions
 
-- TOC needs page support: heading extraction and a toggle in the Markdown page.
-- Ghostty's Swift wrapper has font-size actions but no obvious getter. Swift may
-  need to count steps from the configured size to show the value.
 - Whether `pageZoom` should also apply to the hosted Excalidraw page, which
   currently has no zoom button because the editor has its own zoom.
+
+Settled: the TOC is the core's shared contents script, in an isolated world. A
+terminal starts at the core's size, `PORTAL_TERMINAL_POINTS`, and the core counts
+from there, since Ghostty offers no getter.

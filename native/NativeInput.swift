@@ -44,25 +44,6 @@ final class NativeInput: NativeInputHandler {
         focusView = focus
     }
 
-    enum Ownership { case emacs, view, pending, passthrough }
-    var ownership: Ownership {
-        switch Core.owner(target) {
-        case PORTAL_OWNER_VIEW: .view
-        case PORTAL_OWNER_PENDING: .pending
-        case PORTAL_OWNER_PASSTHROUGH: .passthrough
-        default: .emacs
-        }
-    }
-
-    func toggleOwnership() {
-        switch ownership {
-        case .pending: break
-        case .emacs: focus()
-        case .view, .passthrough: escape()
-        }
-        host.refreshOwnership()
-    }
-
     /// Return to Emacs, as Command-Escape does, ending any handoff Emacs is
     /// handling: Emacs would otherwise read the next event as its next key.
     func escape() {

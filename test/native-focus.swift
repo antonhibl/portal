@@ -147,7 +147,7 @@ struct CheckFocus {
         let page = "<title>Links</title><a style='display:block;height:80px' href='\(file)'>code</a>"
         let app = "data:text/html;base64," + Data(page.utf8).base64EncodedString()
         let first = "data:text/html,%3Ctitle%3EFirst%3C/title%3E"
-        let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        let web = require(require(window.contentView).subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first)
         // Every committed page is reported, including after going back.
         try Views.load(target, first)
         check(wait(for: "bridge \(target)\n") == [["page", first]])
@@ -198,7 +198,7 @@ struct CheckFocus {
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
         let app = "data:text/html,<title>App</title><script>onload=()=>location.href='https://example.com/'</script>"
         try Views.load(target, app)
-        let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        let web = require(require(window.contentView).subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first)
         check(!web.configuration.websiteDataStore.isPersistent, "A hosted app keeps its data")
         let deadline = Date(timeIntervalSinceNow: 10)
         while opened.isEmpty && Date() < deadline {
@@ -292,7 +292,7 @@ struct CheckFocus {
         // once WebKit has parsed it: the app can post, and loading it again
         // reloads it.
         let spaced = "data:text/html,<title>A b</title><script>portalBridge.postMessage({type: 'spaced'})</script>"
-        let hostedPage = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        let hostedPage = require(require(window.contentView).subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first)
         var history: [Int] = []
         for _ in 0..<2 {
             try Views.load(hosted, spaced)
@@ -310,7 +310,7 @@ struct CheckFocus {
         try Views.load(plain, app)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
         check(records().isEmpty, "A page that is not a hosted app reached the bridge")
-        let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        let web = require(require(window.contentView).subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first)
         var bridgeType = ""
         web.evaluateJavaScript("typeof portalBridge") { value, _ in bridgeType = value as? String ?? "" }
         wait { !bridgeType.isEmpty }
