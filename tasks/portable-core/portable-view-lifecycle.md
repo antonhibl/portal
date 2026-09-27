@@ -176,20 +176,23 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1, and CMake 4.4.3 on 2026-09-27:
   attach succeeds, sending records for unknown targets, ignoring the kind,
   dropping the 32-bit range check, not restoring a view whose destroy was
   refused, and marking a view detached when its detach was refused. The fake
-  counted no call naming a destroyed or wrong-kind view.
+  counted no call naming a destroyed or wrong-kind view. A description with
+  JSON whitespace, such as `{ }` or a pretty-printed object, gave malformed
+  JSON before the core learned to skip it; the test now covers both.
 - `./build.sh` built without warnings. `nm` shows the five `portal_view_*`
   primitives defined in `portal.dylib`, none of the removed operations, and no
   undefined `portal_*` symbols. `ctest --test-dir build --output-on-failure`
-  passed 14 of 15. The failure, `ui-host`, is two task-list tests
-  (`portal-server-tasks-discover-a-mixed-root-recursively` and
-  `…-keep-their-id-and-reflect-saved-changes`) that find no completed rows.
-  Their host code and tests are unchanged from `main`, so this is outside
-  this task.
+  passed 15 of 15, with `main`'s broken task-row test pattern fixed by
+  [PR #34](https://github.com/xiaoxinghu/portal/pull/34), merged into this
+  branch. Before that fix, `ui-host` failed on `main` too.
 - `build/check-focus` and `build/check-toolbar`, now built with `Backend.swift`
   and the core's registry, passed, including the full-pipe check on an open
   view and a closed view's record being dropped.
 - The README's combined graphical suite, run through the production module
-  with `--module-assertions`, passed 52 of 52. An earlier run failed four
+  with `--module-assertions`, passed 52 of 52. After the JSON whitespace fix
+  it passed 51 of 52: `portal-excalidraw-gui-revert-reloads-the-saved-drawing`
+  timed out waiting for the drawing, and all seven Excalidraw GUI tests then
+  passed on their own. An earlier run failed four
   injection tests one after another: a stray `down-mouse-1` reached the
   Excalidraw save test, and its command then arrived late in the next test. A
   rerun of the web, terminal, integration, Excalidraw and input suites failed

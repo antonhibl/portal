@@ -368,6 +368,48 @@ static void test_a_refusing_platform_changes_nothing(void)
     CHECK(!portal_fake_calls().misused);
 }
 
+/* TARGET's state, exactly as the core makes it: a string to free. */
+static char *described(const char *description)
+{
+    portal_text error = {0};
+    char *target = open_view("web", &error, "description", description, NULL);
+    char *state = inspect(target);
+    close_view(target);
+    return state;
+}
+
+static void test_descriptions_may_hold_json_whitespace(void)
+{
+    const char *cases[][2] = {
+        {"{}", ""},
+        {"{ }", ""},
+        {" \t\r\n{\n}\n", ""},
+        {"{\"a\":1}", ",\"a\":1}"},
+        {"\n{\n  \"a\": 1,\n  \"b\": [ 2 ]\n}\n", ",\"a\": 1,\n  \"b\": [ 2 ]\n}"},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+        char *state = described(cases[i][0]);
+        const char *end = strstr(state, "\"edges\":[]");
+        CHECK(end != NULL);
+        if (!end)
+            continue;
+        end += strlen("\"edges\":[]");
+        bool same = *cases[i][1] ? !strcmp(end, cases[i][1]) : !strcmp(end, "}");
+        if (!same)
+            fprintf(stderr, "Description \"%s\" became \"%s\"\n", cases[i][0], state);
+        CHECK(same);
+        free(state);
+    }
+    const char *invalid[] = {"", "  ", "{", "}", "[]", "x{}", "{}x"};
+    for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
+        portal_text error = {0}, state = {0};
+        char *target = open_view("web", &error, "description", invalid[i], NULL);
+        CHECK(!portal_views_inspect(text(target), &state, &error));
+        CHECK(says(&error, "The platform described a view with no JSON object"));
+        close_view(target);
+    }
+}
+
 /* Everything the pipe holds now, valid until the next call. */
 static char *drain(int fd)
 {
@@ -436,6 +478,7 @@ int main(void)
     test_a_failed_placement_changes_nothing();
     test_hiding_keeps_the_session_and_its_size();
     test_a_refusing_platform_changes_nothing();
+    test_descriptions_may_hold_json_whitespace();
     test_closing_ends_the_view_once();
     CHECK(!portal_fake_calls().misused);
     if (failures) {

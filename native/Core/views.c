@@ -177,6 +177,12 @@ bool portal_views_close(portal_string target, portal_text *error)
     return true;
 }
 
+/* Whether C is JSON whitespace. */
+static bool blank(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
 bool portal_views_inspect(portal_string target, portal_text *state, portal_text *error)
 {
     struct view *view = find(target, PORTAL_ANY_KIND, NULL);
@@ -191,12 +197,21 @@ bool portal_views_inspect(portal_string target, portal_text *state, portal_text 
     portal_text described = {0};
     if (!portal_view_describe(view->native, &described, error))
         return false;
-    /* Splice the core's properties into the platform's object: {"id":...,REST}. */
-    size_t length = described.length;
-    if (length < 2 || described.data[0] != '{' || described.data[length - 1] != '}') {
+    /* Splice the core's properties into the platform's object: {"id":...,REST}.
+       Any JSON whitespace may surround the object or fill an empty one. */
+    const char *data = described.data;
+    size_t start = 0, end = described.length;
+    while (start < end && blank(data[start]))
+        start++;
+    while (end > start && blank(data[end - 1]))
+        end--;
+    if (end - start < 2 || data[start] != '{' || data[end - 1] != '}') {
         free(described.data);
         return fail_with(error, "The platform described a view with no JSON object");
     }
+    size_t rest = start + 1; /* The object's first member, or its '}'. */
+    while (blank(data[rest]))
+        rest++;
     char prefix[256];
     if (view->attached)
         snprintf(prefix, sizeof prefix,
@@ -208,8 +223,8 @@ bool portal_views_inspect(portal_string target, portal_text *state, portal_text 
         snprintf(prefix, sizeof prefix,
                  "{\"id\":%" PRIu64 ",\"kind\":\"%s\",\"visible\":false,\"edges\":[]", view->id,
                  kinds[view->kind]);
-    bool empty = length == 2;
-    size_t head = strlen(prefix), total = head + (empty ? 1 : length);
+    bool empty = rest == end - 1;
+    size_t head = strlen(prefix), total = head + (empty ? 1 : 1 + end - rest);
     char *json = malloc(total + 1);
     if (!json) {
         free(described.data);
@@ -220,7 +235,7 @@ bool portal_views_inspect(portal_string target, portal_text *state, portal_text 
         json[head] = '}';
     } else {
         json[head] = ',';
-        memcpy(json + head + 1, described.data + 1, length - 1);
+        memcpy(json + head + 1, data + rest, end - rest);
     }
     json[total] = '\0';
     free(described.data);

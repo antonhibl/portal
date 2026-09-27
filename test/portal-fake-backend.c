@@ -6,6 +6,9 @@
    "size" it was last attached with, whether it is "attached", and the
    global settings, as "fake".  Views never move: attaching records where.
 
+   A view created with the option :description describes itself with exactly
+   that text instead, for tests of how the core reads descriptions.
+
    Failures on demand: creating a view with the option :fail fails, with that
    option's string as the message; attaching to a frame whose title starts
    with "deleted" fails, as the frame is gone; and while a test says so,
@@ -303,6 +306,11 @@ bool portal_view_describe(portal_view *view, portal_text *state, portal_text *er
     if (!usable(view, -1, error) || refused(error))
         return false;
     calls.described++;
+    const struct property *description = get(view, "description");
+    if (description && description->kind == STRING) {
+        *state = copy(description->string.data, description->string.length);
+        return true;
+    }
     struct json json = {0};
     put(&json, "{", 1);
     put_properties(&json, view);
