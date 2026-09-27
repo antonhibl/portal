@@ -56,7 +56,7 @@ static bool known(portal_string name, portal_text *error)
 
 bool portal_terminals_check(const portal_option *options, size_t count, portal_text *error)
 {
-    const char *const strings[] = {"directory", "command", "theme"};
+    const char *const strings[] = {"directory", "command", "environment", "theme"};
     for (size_t i = 0; i < sizeof strings / sizeof *strings; i++) {
         const portal_option *value = option(options, count, strings[i]);
         if (value && !value->is_string && value->flag) {

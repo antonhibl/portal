@@ -19,12 +19,12 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     /// The process has ended. The view stays, showing its last output.
     var exited = false
 
-    init(directory: String, command: String?, theme: TerminalTheme) {
+    init(directory: String, command: String?, environment: [String: String], theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: ["INSIDE_EMACS": "portal-ghostty"],
+            envVars: environment.merging(["INSIDE_EMACS": "portal-ghostty"]) { _, value in value },
             command: command,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
@@ -79,6 +79,7 @@ final class TerminalSession: PortalView {
         self.target = target
         quick = options.flag("quick")
         let terminal = HostedTerminal(directory: directory, command: try options.string("command"),
+                                      environment: try Self.commandEnvironment(options.string("environment")),
                                       theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
@@ -92,6 +93,18 @@ final class TerminalSession: PortalView {
         controls.minimum = 1
         controls.maximum = 255
         controls.action = { [weak self] in try self?.textSize($0) }
+    }
+
+    /// Lisp's process-environment is independent of the native process environ.
+    /// Pass values per surface; never change the environment of Emacs itself.
+    private static func commandEnvironment(_ json: String?) throws -> [String: String] {
+        guard let json else { return [:] }
+        guard let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: String],
+              values.allSatisfy({ !$0.key.isEmpty && !$0.key.contains("=")
+                  && !$0.key.contains("\0") && !$0.value.contains("\0") }) else {
+            throw NativeError.message("Terminal :environment must contain valid environment names and string values")
+        }
+        return values
     }
 
     /// Ghostty makes its surface once the view is in a window.

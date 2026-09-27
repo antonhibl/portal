@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'cl-lib)
+(require 'json)
 (require 'seq)
 (require 'windmove)
 
@@ -128,9 +129,10 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Dismiss the quick terminal before opening an ordinary terminal"))
   (portal-terminal--new))
 
-(defun portal-terminal--new (&optional quick-root command name elsewhere)
+(defun portal-terminal--new (&optional quick-root command name elsewhere environment)
   "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
-NAME names its buffer.  ELSEWHERE displays it in another pane."
+NAME names its buffer.  ELSEWHERE displays it in another pane.
+ENVIRONMENT is a JSON object of environment overrides for COMMAND."
   (when (file-remote-p default-directory)
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
@@ -163,6 +165,7 @@ NAME names its buffer.  ELSEWHERE displays it in another pane."
           (with-current-buffer buffer
             (portal-view-open 'terminal (list :directory directory
                                               :command command
+                                              :environment environment
                                               :theme portal-terminal-theme
                                               :quick (and quick-root t)))
             (portal-terminal-focus))
@@ -170,10 +173,39 @@ NAME names its buffer.  ELSEWHERE displays it in another pane."
       (unless ready (kill-buffer buffer)))
     buffer))
 
+(defun portal-terminal--command-environment (program)
+  "Encode the current buffer's exported environment for PROGRAM.
+Ghostty owns terminal metadata and shell integration.  Other values come
+from `process-environment', including changes made by `setenv'."
+  (let ((values (make-hash-table :test #'equal))
+        (seen (make-hash-table :test #'equal)))
+    (dolist (entry process-environment)
+      (let* ((entry (if (multibyte-string-p entry) entry
+                      (decode-coding-string entry locale-coding-system)))
+             (separator (string-search "=" entry))
+             (name (if separator (substring entry 0 separator) entry)))
+        ;; Like getenv, the first entry wins, including an unset entry.
+        (unless (gethash name seen)
+          (puthash name t seen)
+          (when (and separator
+                     (not (member name '("TERM" "TERMINFO" "TERMINFO_DIRS" "COLORTERM"
+                                         "TERM_PROGRAM" "TERM_PROGRAM_VERSION" "INSIDE_EMACS"
+                                         "PWD" "COLUMNS" "LINES" "VTE_VERSION")))
+                     (not (string-prefix-p "GHOSTTY_" name)))
+            ;; Ghostty injects ZDOTDIR before applying these overrides.  Its
+            ;; zsh bootstrap must restore our value rather than be bypassed.
+            (puthash (if (and (equal name "ZDOTDIR")
+                             (equal (file-name-nondirectory program) "zsh"))
+                         "GHOSTTY_ZSH_ZDOTDIR" name)
+                     (substring entry (1+ separator)) values)))))
+    (json-serialize values)))
+
 (defun portal-terminal-start (directory program arguments &optional name)
   "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
 Return its buffer.  NAME optionally names the buffer.  Arguments are literal
-strings, quoted once for Ghostty's POSIX shell command interface."
+strings, quoted once for Ghostty's POSIX shell command interface.
+Exported values in the calling buffer's `process-environment' override the
+native process's environment; Ghostty supplies terminal metadata."
   (unless (and (stringp directory) (file-name-absolute-p directory)
                (not (file-remote-p directory)) (file-directory-p directory))
     (user-error "Choose an existing local terminal directory"))
@@ -192,7 +224,7 @@ strings, quoted once for Ghostty's POSIX shell command interface."
         (portal-terminal--new
          nil (mapconcat #'shell-quote-argument
                         (cons executable (append arguments nil)) " ")
-         name t)
+         name t (portal-terminal--command-environment executable))
       (error (set-window-configuration configuration)
              (portal-view-sync)
              (signal (car err) (cdr err))))))

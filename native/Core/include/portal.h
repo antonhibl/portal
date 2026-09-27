@@ -128,8 +128,9 @@ bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error)
    portal_terminal_list_themes before applying it to any terminal.  A
    terminal's options, passed to portal_view_create, are :directory, the
    working directory, a string; :command, a shell command line to run instead
-   of the login shell, a string or false; :theme, a name the platform lists,
-   or false for the default; and :quick, a flag.
+   of the login shell, a string or false; :environment, a JSON object of
+   exported environment overrides, a string or false; :theme, a name the
+   platform lists, or false for the default; and :quick, a flag.
 
    A terminal describes itself with "ready", whether its engine can draw and
    take input; "title", which the running program may set; "columns" and

@@ -66,6 +66,72 @@
                   (let ((portal-terminal-test--target (portal-view-target))) ,@body))
          (portal-terminal-close-all)))))
 
+(ert-deftest portal-terminal-start-inherits-emacs-environment ()
+  (skip-unless (eq window-system 'ns))
+  (let* ((directory (file-truename (make-temp-file "portal-launch-env-" t)))
+         (program (expand-file-name "portal-env-cli" directory))
+         (receipt (expand-file-name "receipt" directory))
+         (process-environment (copy-sequence process-environment))
+         (value "from Emacs: 'quoted' = é\nsecond line"))
+    (unwind-protect
+        (save-window-excursion
+          (with-temp-file program (insert "#!/bin/sh\nprintf 'cli-found\\n'\n"))
+          (set-file-modes program #o700)
+          ;; Lisp's environment differs from the native process's environment,
+          ;; as with exec-path-from-shell or a GUI-launched Emacs.
+          (setenv "PATH" (concat directory ":/usr/bin:/bin"))
+          (setenv "PORTAL_TEST_LAUNCH_ENV" value)
+          (setenv "TERM" "dumb")
+          (setenv "TERM_PROGRAM" "parent-terminal")
+          (dotimes (index 2)
+            ;; Changes after the first Ghostty controller loads must also work.
+            (setenv "PORTAL_TEST_LAUNCH_INDEX" (number-to-string index))
+            (let ((buffer
+                   (portal-terminal-start
+                    directory "/bin/sh"
+                    (list "-c"
+                          (concat "{ portal-env-cli; printf '%s\\n%s\\n%s\\n%s\\n%s' "
+                                  "\"$PORTAL_TEST_LAUNCH_INDEX\" \"$TERM\" \"$TERM_PROGRAM\" "
+                                  "\"$INSIDE_EMACS\" \"$PORTAL_TEST_LAUNCH_ENV\"; } > "
+                                  (shell-quote-argument (concat receipt ".tmp"))
+                                  " && /bin/mv " (shell-quote-argument (concat receipt ".tmp"))
+                                  " " (shell-quote-argument receipt))))))
+              (unwind-protect
+                  (progn
+                    (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
+                    (should
+                     (equal (with-temp-buffer (insert-file-contents receipt) (buffer-string))
+                            (format "cli-found\n%d\nxterm-ghostty\nghostty\nportal-ghostty\n%s"
+                                    index value))))
+                (kill-buffer buffer)
+                (delete-file receipt)))))
+      (delete-directory directory t))))
+
+(ert-deftest portal-terminal-start-preserves-zsh-startup-and-integration ()
+  (skip-unless (eq window-system 'ns))
+  (let* ((directory (file-truename (make-temp-file "portal-zdotdir-" t)))
+         (receipt (expand-file-name "receipt" directory))
+         (process-environment (copy-sequence process-environment)))
+    (unwind-protect
+        (save-window-excursion
+          (with-temp-file (expand-file-name ".zshenv" directory)
+            (insert "export PORTAL_TEST_ZSH_STARTUP=loaded\n"))
+          (setenv "ZDOTDIR" directory)
+          (let ((buffer
+                 (portal-terminal-start
+                  directory "/bin/zsh"
+                  (list "-ic"
+                        (concat "[[ -n $GHOSTTY_ZSH_INTEGRATION_DIR ]] && "
+                                "printf '%s' \"$PORTAL_TEST_ZSH_STARTUP\" > "
+                                (shell-quote-argument receipt))))))
+            (unwind-protect
+                (progn
+                  (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
+                  (should (equal (with-temp-buffer (insert-file-contents receipt) (buffer-string))
+                                 "loaded")))
+              (kill-buffer buffer))))
+      (delete-directory directory t))))
+
 (ert-deftest portal-terminal-theme-live-and-new-sessions ()
   (skip-unless (eq window-system 'ns))
   (let ((original portal-terminal-theme))

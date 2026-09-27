@@ -183,3 +183,22 @@
      (let ((portal-fake-native-failures '(portal--open)))
        (should-error (portal-terminal-start directory "/bin/echo" '("hello"))))
      (should (= (length (portal-view-buffers 'terminal)) 1)))))
+
+(ert-deftest portal-terminal-start-captures-the-calling-buffers-environment ()
+  (portal-actions-test--environment
+   (with-current-buffer (get-buffer-create "*launch source*")
+     (setq-local process-environment
+                 '("PATH=/tools/bin:/usr/bin:/bin" "PORTAL_VALUE=first=é\nline"
+                   "PORTAL_VALUE=shadowed" "PORTAL_EMPTY=" "PORTAL_UNSET" "PORTAL_UNSET=shadowed"
+                   "TERM=dumb" "GHOSTTY_RESOURCES_DIR=/parent" "ZDOTDIR=/custom/zsh"))
+     (let* ((buffer (portal-terminal-start directory "/bin/zsh" '("-c" "exit")))
+            (options (plist-get (portal--inspect (buffer-local-value 'portal-view--target buffer)) :options))
+            (environment (json-parse-string (plist-get options :environment))))
+       (should (equal (gethash "PATH" environment) "/tools/bin:/usr/bin:/bin"))
+       (should (equal (gethash "PORTAL_VALUE" environment) "first=é\nline"))
+       (should (equal (gethash "PORTAL_EMPTY" environment) ""))
+       (should-not (gethash "PORTAL_UNSET" environment))
+       (should-not (gethash "TERM" environment))
+       (should-not (gethash "GHOSTTY_RESOURCES_DIR" environment))
+       (should-not (gethash "ZDOTDIR" environment))
+       (should (equal (gethash "GHOSTTY_ZSH_ZDOTDIR" environment) "/custom/zsh"))))))

@@ -97,8 +97,15 @@ No worktree is created and no task status is changed by launching.
 an optional buffer name. It resolves the executable, quotes the arguments once
 for Ghostty's POSIX shell command interface, and opens a dedicated terminal in
 another pane using Emacs display rules. Swift passes the startup command to
-`TerminalSurfaceOptions` before creating the surface. There is no delayed paste
-or simulated typing. Hidden terminals continue running; closing their buffers
+`TerminalSurfaceOptions` before creating the surface. The calling buffer's
+exported `process-environment` values travel as a JSON `:environment` option and
+become per-surface environment overrides. This includes Lisp-side `setenv` and
+PATH imports, which do not update the native process environment. Ghostty keeps
+ownership of terminal metadata and its shell-integration variables; when zsh
+is launched explicitly, its bootstrap restores the supplied `ZDOTDIR`.
+Programs start directly without loading an interactive shell configuration.
+There is no delayed paste or simulated typing. Hidden terminals continue
+running; closing their buffers
 ends their sessions. Closing the task view does not close a launched terminal.
 
 The POST redirects back to the task detail with a receipt showing success or an

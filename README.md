@@ -601,6 +601,11 @@ Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` befo
 opening a task view to choose the executable or adjust its arguments. The
 executable defaults to Claude on Emacs's PATH, falling back to
 `~/.local/bin/claude`; arguments default to `("--dangerously-skip-permissions")`.
+The launched program receives Emacs's current exported environment, including
+its `PATH` and any shell environment imported into Emacs. Programs start
+directly; they do not source your interactive shell configuration. For a
+GUI-launched Emacs, import your shell environment into Emacs first (for example,
+with `exec-path-from-shell`). Ghostty supplies the terminal-specific variables.
 Claude's first-run login or setup can still appear in the terminal. The view
 keeps running when hidden, and killing its terminal buffer ends it.
 
