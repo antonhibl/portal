@@ -738,7 +738,7 @@ after what it depends on, and otherwise by ID, across every folder. A number
 is a position in that order, not permission to start. A blocked task is dimmed
 and names the positions it waits for, nearest first, such as `after 7, 6`; past
 three it adds a count, such as `+2`. Everything shown at full strength can
-start now. Positions are renumbered as work is done, so they refer only to the
+start now. A done task's title is dimmed and struck through. Positions are renumbered as work is done, so they refer only to the
 list on screen. A done task satisfies the tasks that depend on it, whatever its
 own dependencies. Tasks that cannot be ordered, and the unfinished tasks
 waiting on them, have no number: a `depends_on` that is not a list of IDs, a
@@ -976,7 +976,8 @@ Forward restore the filter and reading positions, `g` rereads the saved file,
 and `g` loads the page on screen after an app host restart. They also check
 task links, inline images in both layouts, and one-click handoff of
 attachments, with mock-up HTML opening as source.
-They also check dimmed blocked rows and what they wait for, links to
+They also check dimmed blocked rows and what they wait for, struck-through
+completed rows, links to
 prerequisites and the tasks they block, including completed ones, the view and
 filter across those links, and a dependent becoming ready after its
 prerequisite is saved as done. For nested folders they check indentation,

@@ -868,9 +868,9 @@ function operations(task: Task, row: boolean): string {
 }
 
 /** TASK's row, a link to its page, with RANKS giving execution positions, and
- * then its buttons. A blocked row is dimmed and says what it waits for. The
- * execution view shows the folders holding it; the tree, which mixes
- * statuses, marks it done. */
+ * then its buttons. A blocked row is dimmed and says what it waits for, and a
+ * completed row's title is struck through. The execution view shows the
+ * folders holding it; the tree, which mixes statuses, marks it done. */
 function row(
 	listing: Listing,
 	found: Snapshot,
@@ -886,7 +886,7 @@ function row(
 		? folders(found, task).map((folder) => folder.task?.title ?? folder.name)
 		: [];
 	return (
-		`<a class="row${text ? " blocked" : ""}" href="${html(taskHref(listing, task.id))}">` +
+		`<a class="row${text ? " blocked" : ""}${task.status === "done" ? " done" : ""}" href="${html(taskHref(listing, task.id))}">` +
 		(rank === undefined ? "" : `<span class="rank">${rank}</span>`) +
 		(!listing.execution && task.status === "done" ? badge(task.status) : "") +
 		`<span class="title">${html(task.title)}</span>` +
