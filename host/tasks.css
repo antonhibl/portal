@@ -43,14 +43,25 @@ ul.tasks {
 .tasks .title {
 	flex: 1;
 }
-.tasks a:hover .title,
-.tasks a:focus-visible .title {
-	text-decoration: underline;
-}
 .rank {
 	flex: none;
 	min-width: 1.5em;
 	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.tasks .blocked .title {
+	color: var(--muted);
+}
+.tasks a:hover .title,
+.tasks a:focus-visible .title {
+	text-decoration: underline;
+}
+.waits {
+	flex: 0 1 auto;
+	max-width: 50%;
+	color: var(--muted);
+	font-size: 0.85em;
 	font-variant-numeric: tabular-nums;
 	text-align: right;
 }

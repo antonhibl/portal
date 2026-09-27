@@ -639,12 +639,16 @@ and never read as paths.
 
 The list shows unfinished tasks in an order they could be completed: each
 after what it depends on, and otherwise by ID. A number is a position in that
-order, not permission to start; only **Ready** tasks can start now. A done
-task satisfies the tasks that depend on it, whatever its own dependencies.
-Tasks that cannot be ordered, and the unfinished tasks waiting on them, are
-listed by ID under **Blocked by dependency problems**: a `depends_on` that is
-not a list of IDs, a missing, invalid, or conflicting task, or a cycle among
-unfinished tasks. **Problems** names each file and ID, including for completed
+order, not permission to start. A blocked task is dimmed and names the
+positions it waits for, nearest first, such as `after 7, 6`; past three it adds
+a count, such as `+2`. Everything shown at full strength can start now.
+Positions are renumbered as work is done, so they refer only to the list on
+screen. A done task satisfies the tasks that depend on it, whatever its own
+dependencies. Tasks that cannot be ordered, and the unfinished tasks waiting on
+them, are listed by ID under **Blocked by dependency problems**: a `depends_on`
+that is not a list of IDs, a missing, invalid, or conflicting task, or a cycle
+among unfinished tasks. Their rows name the problem, or the task they wait for
+by ID when it has no position. **Problems** names each file and ID, including for completed
 tasks. **Show completed** adds a separate **Completed** section and changes no
 position.
 
@@ -828,9 +832,10 @@ Forward restore the filter and reading positions, `g` rereads the saved file,
 and `g` loads the page on screen after an app host restart. They also check
 task links, inline images in both layouts, and one-click handoff of
 attachments, with mock-up HTML opening as source.
-They also check readiness labels, links to prerequisites and the tasks they
-block, including completed ones, the filter across those links, and a
-dependent becoming ready after its prerequisite is saved as done.
+They also check dimmed blocked rows and what they wait for, links to
+prerequisites and the tasks they block, including completed ones, the filter
+across those links, and a dependent becoming ready after its prerequisite is
+saved as done.
 The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
 shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up

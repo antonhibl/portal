@@ -76,10 +76,10 @@ The root is `portal-markdown-gui--directory'."
   "Return the page's visible text."
   (portal-excalidraw-gui--js "return document.body.innerText;"))
 
-(defun portal-tasks-gui--readiness (title)
-  "Return the readiness of the list row titled TITLE, or :null without one."
+(defun portal-tasks-gui--waits (title)
+  "Return what the list row titled TITLE waits for, \"\" when ready, or :null without one."
   (portal-excalidraw-gui--js
-   (format "const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.title')?.textContent === %S); return row ? row.querySelector('.readiness')?.textContent ?? '' : null;"
+   (format "const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.title')?.textContent === %S); return row ? row.querySelector('.waits')?.textContent ?? '' : null;"
            title)))
 
 (ert-deftest portal-tasks-gui-list-and-detail-keep-history-filter-and-position ()
@@ -176,8 +176,11 @@ The root is `portal-markdown-gui--directory'."
      "---\nid: release-notes\nstatus: todo\ndepends_on: [shipped, fix-search]\n---\n# Release notes\n")
     (call-interactively (key-binding "g"))
     (portal-terminal-test--wait
-     (lambda () (equal (portal-tasks-gui--readiness "Release notes") "Blocked by Fix search")))
-    (should (equal (portal-tasks-gui--readiness "Fix search") "Ready"))
+     (lambda () (equal (portal-tasks-gui--waits "Release notes") "after 1")))
+    (should (equal (portal-tasks-gui--waits "Fix search") ""))
+    ;; A blocked row is dimmed, and its title keeps a usable width.
+    (should (portal-excalidraw-gui--js
+             "const row = [...document.querySelectorAll('li.blocked')].find(li => li.textContent.includes('Release notes')); return getComputedStyle(row.querySelector('.title')).color !== getComputedStyle(document.body).color && row.querySelector('.title').getBoundingClientRect().width > row.getBoundingClientRect().width / 2;"))
     ;; Its page links its prerequisites, including completed ones.
     (portal-tasks-gui--link "Release notes")
     (portal-test--wait-for-page "Release notes")
@@ -224,7 +227,7 @@ The root is `portal-markdown-gui--directory'."
     (portal-tasks-gui--route "&task=release-notes&show=all")
     (portal-tasks-gui--link "Tasks")
     (portal-test--wait-for-page "Tasks")
-    (portal-terminal-test--wait (lambda () (equal (portal-tasks-gui--readiness "Release notes") "Ready")))
+    (portal-terminal-test--wait (lambda () (equal (portal-tasks-gui--waits "Release notes") "")))
     (should (portal-excalidraw-gui--js
              "return document.querySelector('.completed').innerText.includes('Fix search');"))))
 
