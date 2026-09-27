@@ -95,7 +95,7 @@ such as the renderer layer name.
   wrong-kind and unknown targets, invalid options, unknown and failing themes,
   platform errors, described facts, and calls after destruction, without the
   Ghostty package.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
+- [x] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
   graphical terminal and combined suites check paste versus Enter, text
   extraction, theme and text size, hidden output, frame movement, exit and
   cleanup. Quick terminals still use one shell per project without a toolbar.
@@ -192,11 +192,14 @@ Run on macOS 27.0 with Emacs 31.1 and CMake 4.4.3 on 2026-09-28:
   hidden-shell output and grid resizing, and close ending the shell; the
   alternate screen and buffer cleanup; invalid targets; frame deletion; and
   the toolbar's terminal grid and text size, which now sets the font size.
-- Not verified: the 27 tests that inject native keys or clicks failed
-  because Emacs could not take the keyboard during the run
-  (`portal-test-native-key` returned nil), with other sessions' graphical
-  suites running around the same time. They include moving a terminal to
-  another frame, native keys, Vim, prefixes and quick-terminal toggling.
-  Unmodified `main` failed the same 15 terminal and integration tests in the
-  same session, so this is the environment, not this change. Rerun them with
-  Emacs in front and no other suite running.
+- The 27 tests that inject native keys or clicks first failed because Emacs
+  could not take the keyboard during the run (`portal-test-native-key`
+  returned nil), with other sessions' graphical suites running around the
+  same time. Unmodified `main` failed the same 15 terminal and integration
+  tests in that session. After merging, the combined graphical suite passed
+  52 of 52 on merged `main` at 526ae93, with Emacs able to take the keyboard
+  and no other suite running. That run includes moving a terminal to another
+  frame, native keys and the clipboard, Vim, prefixes, quick-terminal
+  toggling, and focus and cleanup in either startup order. `./build.sh`,
+  `ctest` (17 of 17), `check-focus` and `check-toolbar` passed on the same
+  commit.
