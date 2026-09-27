@@ -858,7 +858,8 @@ Each function calls one named operation in `portal.h`, such as `portal_web_load`
 which `native/Backend.swift` implements with the Swift features. The operations use
 plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
 `malloc` that the bindings free, and an explicit error result that becomes a Lisp
-`error`. The bindings check that argument strings are valid UTF-8, since Emacs copies
+`error`. Structured results, such as `portal--inspect`'s state, cross as JSON, which
+the bindings parse with `json-parse-string`. The bindings check that argument strings are valid UTF-8, since Emacs copies
 a unibyte string's raw bytes unchanged. A later backend can replace any operation
 without changing its Lisp callers.
 

@@ -13,7 +13,7 @@
 
 int plugin_is_GPL_compatible;
 
-/* A Lisp function.  Emacs checks the arity; only optional arguments use NARGS. */
+/* A Lisp function.  Emacs checks the arity. */
 #define UNUSED __attribute__((unused))
 #define LISP_FUNCTION(name)                                                               \
     static emacs_value name(emacs_env *env, UNUSED ptrdiff_t nargs, UNUSED emacs_value *args, \
@@ -205,111 +205,28 @@ static emacs_value boolean(emacs_env *env, bool value)
     return symbol(env, value ? "t" : "nil");
 }
 
-static emacs_value string(emacs_env *env, portal_text text)
-{
-    return env->make_string(env, text.data ? text.data : "", (ptrdiff_t) text.length);
-}
-
 /* Convert TEXT to a Lisp string and free it. */
 static emacs_value take_string(emacs_env *env, portal_text *text)
 {
-    emacs_value value = string(env, *text);
+    emacs_value value =
+        env->make_string(env, text->data ? text->data : "", (ptrdiff_t) text->length);
     free(text->data);
     *text = (portal_text) {0};
     return value;
 }
 
-/* Convert TEXTS to a list of Lisp strings and free them. */
-static emacs_value take_strings(emacs_env *env, portal_texts *texts)
+/* Parse the JSON TEXT, with objects as plists, arrays as lists, and null and
+   false as nil; free it. */
+static emacs_value take_json(emacs_env *env, portal_text *text)
 {
-    emacs_value result = NULL;
-    emacs_value *items = calloc(texts->count + 1, sizeof *items);
-    if (items) {
-        for (size_t i = 0; i < texts->count; i++)
-            items[i] = string(env, texts->items[i]);
-        result = list(env, items, texts->count);
-    } else {
-        out_of_memory(env);
-    }
-    free(items);
-    for (size_t i = 0; i < texts->count; i++)
-        free(texts->items[i].data);
-    free(texts->items);
-    *texts = (portal_texts) {0};
-    return result;
-}
-
-static emacs_value property_value(emacs_env *env, const portal_property *property)
-{
-    switch (property->kind) {
-    case PORTAL_FLAG:
-        return boolean(env, property->flag);
-    case PORTAL_INTEGER:
-        return env->make_integer(env, property->integer);
-    case PORTAL_INTEGERS: {
-        emacs_value result = NULL;
-        emacs_value *items = calloc(property->count + 1, sizeof *items);
-        if (!items) {
-            out_of_memory(env);
-            return NULL;
-        }
-        for (size_t i = 0; i < property->count; i++)
-            items[i] = env->make_integer(env, property->integers[i]);
-        result = list(env, items, property->count);
-        free(items);
-        return result;
-    }
-    case PORTAL_STRING:
-        return string(env, property->string);
-    }
-    signal_error(env, "Unknown Portal property kind", NULL);
-    return NULL;
-}
-
-/* The keyword :NAME. */
-static emacs_value keyword(emacs_env *env, portal_text name)
-{
-    char *bytes = malloc(name.length + 1);
-    if (!bytes) {
-        out_of_memory(env);
-        return NULL;
-    }
-    bytes[0] = ':';
-    if (name.length)
-        memcpy(bytes + 1, name.data, name.length);
-    emacs_value text = env->make_string(env, bytes, (ptrdiff_t) name.length + 1);
-    free(bytes);
-    return env->funcall(env, symbol(env, "intern"), 1, &text);
-}
-
-/* Convert STATE to a plist, or nil if it was not found, and free it. */
-static emacs_value take_state(emacs_env *env, portal_state *state)
-{
-    emacs_value result = symbol(env, "nil");
-    if (state->found) {
-        emacs_value *items = calloc(2 * state->count + 1, sizeof *items);
-        if (items) {
-            for (size_t i = 0; i < state->count; i++) {
-                items[2 * i] = keyword(env, state->properties[i].name);
-                items[2 * i + 1] = property_value(env, &state->properties[i]);
-            }
-            result = list(env, items, 2 * state->count);
-        } else {
-            out_of_memory(env);
-        }
-        free(items);
-    }
-    for (size_t i = 0; i < state->count; i++) {
-        portal_property *property = &state->properties[i];
-        free(property->name.data);
-        if (property->kind == PORTAL_INTEGERS)
-            free(property->integers);
-        else if (property->kind == PORTAL_STRING)
-            free(property->string.data);
-    }
-    free(state->properties);
-    *state = (portal_state) {0};
-    return result;
+    emacs_value nil = symbol(env, "nil");
+    emacs_value arguments[] = {take_string(env, text),
+                               symbol(env, ":object-type"), symbol(env, "plist"),
+                               symbol(env, ":array-type"), symbol(env, "list"),
+                               symbol(env, ":null-object"), nil,
+                               symbol(env, ":false-object"), nil};
+    return env->funcall(env, symbol(env, "json-parse-string"),
+                        sizeof arguments / sizeof *arguments, arguments);
 }
 
 /* Signal a backend's ERROR and free it. */
@@ -329,6 +246,58 @@ static emacs_value done(emacs_env *env, bool succeeded, portal_text *error)
     fail(env, error);
     return NULL;
 }
+
+/* A Lisp function whose arguments, at most two, are all strings.  OPERATION
+   receives their copies, and RESULT says what reaches Lisp. */
+struct strings_function {
+    bool (*operation)(const portal_string *arguments, portal_text *result, portal_text *error);
+    enum { RESULT_T, RESULT_STRING, RESULT_JSON } result;
+};
+
+LISP_FUNCTION(Fstrings)
+{
+    const struct strings_function *function = data;
+    portal_text copies[2] = {{0}}, result = {0}, error = {0};
+    portal_string arguments[2];
+    emacs_value value = NULL;
+    ptrdiff_t count = 0;
+    while (count < nargs && read_text(env, args[count], &copies[count])) {
+        arguments[count] = borrow(copies[count]);
+        count++;
+    }
+    if (count == nargs) {
+        if (!function->operation(arguments, &result, &error))
+            fail(env, &error);
+        else if (function->result == RESULT_T)
+            value = symbol(env, "t");
+        else if (function->result == RESULT_STRING)
+            value = take_string(env, &result);
+        else
+            value = take_json(env, &result);
+    }
+    while (count > 0)
+        free(copies[--count].data);
+    return value;
+}
+
+/* How each strings function calls its operation, with arguments A. */
+#define STRINGS(name, call)                                                        \
+    static bool name(UNUSED const portal_string *a, UNUSED portal_text *result, \
+                     portal_text *error)                                          \
+    {                                                                             \
+        return call;                                                              \
+    }
+STRINGS(hide, portal_hide(a[0], error))
+STRINGS(close_view, portal_close(a[0], error))
+STRINGS(inspect, portal_inspect(a[0], result, error))
+STRINGS(web_load, portal_web_load(a[0], a[1], error))
+STRINGS(web_send, portal_web_send(a[0], a[1], error))
+STRINGS(web_receive, portal_web_receive(a[0], result, error))
+STRINGS(terminal_themes, portal_terminal_themes(result, error))
+STRINGS(terminal_text, portal_terminal_text(a[0], result, error))
+STRINGS(terminal_bindings, portal_terminal_bindings(a[0], error))
+STRINGS(toolbar_theme, portal_toolbar_theme(a[0], error))
+STRINGS(toolbar_action, portal_toolbar_action(a[0], a[1], result, error))
 
 LISP_FUNCTION(Fopen)
 {
@@ -359,41 +328,6 @@ LISP_FUNCTION(Fplace)
     return result;
 }
 
-LISP_FUNCTION(Fhide)
-{
-    portal_text target = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target))
-        result = done(env, portal_hide(borrow(target), &error), &error);
-    free(target.data);
-    return result;
-}
-
-LISP_FUNCTION(Fclose)
-{
-    portal_text target = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target))
-        result = done(env, portal_close(borrow(target), &error), &error);
-    free(target.data);
-    return result;
-}
-
-LISP_FUNCTION(Finspect)
-{
-    portal_text target = {0}, error = {0};
-    portal_state state = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target)) {
-        if (portal_inspect(borrow(target), &state, &error))
-            result = take_state(env, &state);
-        else
-            fail(env, &error);
-    }
-    free(target.data);
-    return result;
-}
-
 LISP_FUNCTION(Fchannel)
 {
     portal_text error = {0};
@@ -404,42 +338,6 @@ LISP_FUNCTION(Fchannel)
     if (!succeeded && fd >= 0)
         close(fd);
     return done(env, succeeded, &error);
-}
-
-LISP_FUNCTION(Fweb_load)
-{
-    portal_text target = {0}, url = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target) && read_text(env, args[1], &url))
-        result = done(env, portal_web_load(borrow(target), borrow(url), &error), &error);
-    free(target.data);
-    free(url.data);
-    return result;
-}
-
-LISP_FUNCTION(Fweb_send)
-{
-    portal_text target = {0}, json = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target) && read_text(env, args[1], &json))
-        result = done(env, portal_web_send(borrow(target), borrow(json), &error), &error);
-    free(target.data);
-    free(json.data);
-    return result;
-}
-
-LISP_FUNCTION(Fweb_receive)
-{
-    portal_text target = {0}, json = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target)) {
-        if (portal_web_receive(borrow(target), &json, &error))
-            result = take_string(env, &json);
-        else
-            fail(env, &error);
-    }
-    free(target.data);
-    return result;
 }
 
 LISP_FUNCTION(Fterminal_theme)
@@ -455,16 +353,6 @@ LISP_FUNCTION(Fterminal_theme)
     return result;
 }
 
-LISP_FUNCTION(Fterminal_themes)
-{
-    portal_texts names = {0};
-    portal_text error = {0};
-    if (portal_terminal_themes(&names, &error))
-        return take_strings(env, &names);
-    fail(env, &error);
-    return NULL;
-}
-
 LISP_FUNCTION(Fterminal_paste)
 {
     portal_text target = {0}, text = {0}, error = {0};
@@ -475,30 +363,6 @@ LISP_FUNCTION(Fterminal_paste)
                       &error);
     free(target.data);
     free(text.data);
-    return result;
-}
-
-LISP_FUNCTION(Fterminal_text)
-{
-    portal_text target = {0}, text = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target)) {
-        if (portal_terminal_text(borrow(target), &text, &error))
-            result = take_string(env, &text);
-        else
-            fail(env, &error);
-    }
-    free(target.data);
-    return result;
-}
-
-LISP_FUNCTION(Fterminal_bindings)
-{
-    portal_text json = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &json))
-        result = done(env, portal_terminal_bindings(borrow(json), &error), &error);
-    free(json.data);
     return result;
 }
 
@@ -545,74 +409,55 @@ LISP_FUNCTION(Ftoolbar)
     return NULL;
 }
 
-LISP_FUNCTION(Ftoolbar_theme)
-{
-    portal_text json = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &json))
-        result = done(env, portal_toolbar_theme(borrow(json), &error), &error);
-    free(json.data);
-    return result;
-}
-
-LISP_FUNCTION(Ftoolbar_action)
-{
-    portal_text target = {0}, action = {0}, state = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &target) && read_text(env, args[1], &action)) {
-        if (portal_toolbar_action(borrow(target), borrow(action), &state, &error))
-            result = take_string(env, &state);
-        else
-            fail(env, &error);
-    }
-    free(target.data);
-    free(action.data);
-    return result;
-}
+#define STRINGS_FUNCTION(name, result) \
+    Fstrings, &(const struct strings_function) {name, result}
 
 static const struct {
     const char *name;
     ptrdiff_t minimum, maximum;
     emacs_function function;
+    const void *data;
     const char *documentation;
 } exports[] = {
-    {"portal--open", 2, 2, Fopen,
+    {"portal--open", 2, 2, Fopen, NULL,
      "Open a view of KIND (\"terminal\" or \"web\") with an OPTIONS plist; return its target, "
      "such as \"web:1\"."},
-    {"portal--place", 3, 3, Fplace,
+    {"portal--place", 3, 3, Fplace, NULL,
      "Show TARGET at EDGES [LEFT TOP RIGHT BOTTOM] in the frame titled TITLE."},
-    {"portal--hide", 1, 1, Fhide, "Hide TARGET, keeping its session alive."},
-    {"portal--close", 1, 1, Fclose, "End TARGET and release its view."},
-    {"portal--inspect", 1, 1, Finspect,
+    {"portal--hide", 1, 1, STRINGS_FUNCTION(hide, RESULT_T),
+     "Hide TARGET, keeping its session alive."},
+    {"portal--close", 1, 1, STRINGS_FUNCTION(close_view, RESULT_T),
+     "End TARGET and release its view."},
+    {"portal--inspect", 1, 1, STRINGS_FUNCTION(inspect, RESULT_JSON),
      "Return TARGET's native state as a plist, or nil for an unknown target."},
-    {"portal--channel", 1, 1, Fchannel,
+    {"portal--channel", 1, 1, Fchannel, NULL,
      "Send every view's records, lines of \"TYPE TARGET FIELD...\", to pipe PROCESS; nil "
      "disconnects."},
-    {"portal--web-load", 2, 2, Fweb_load,
+    {"portal--web-load", 2, 2, STRINGS_FUNCTION(web_load, RESULT_T),
      "Load URL, an absolute http, https, file, data or about URL, in web view TARGET."},
-    {"portal--web-send", 2, 2, Fweb_send,
+    {"portal--web-send", 2, 2, STRINGS_FUNCTION(web_send, RESULT_T),
      "Send the JSON object JSON to hosted web view TARGET's app over its bridge."},
-    {"portal--web-receive", 1, 1, Fweb_receive,
+    {"portal--web-receive", 1, 1, STRINGS_FUNCTION(web_receive, RESULT_STRING),
      "Return the messages hosted web view TARGET's app sent over its bridge, as a JSON array."},
-    {"portal--terminal-theme", 1, 1, Fterminal_theme,
+    {"portal--terminal-theme", 1, 1, Fterminal_theme, NULL,
      "Apply named THEME to all terminals; nil restores system appearance defaults."},
-    {"portal--terminal-themes", 0, 0, Fterminal_themes,
+    {"portal--terminal-themes", 0, 0, STRINGS_FUNCTION(terminal_themes, RESULT_JSON),
      "Return the available terminal theme names."},
-    {"portal--terminal-paste", 2, 3, Fterminal_paste,
+    {"portal--terminal-paste", 2, 3, Fterminal_paste, NULL,
      "Paste TEXT into terminal TARGET; press Enter if ENTER is non-nil."},
-    {"portal--terminal-text", 1, 1, Fterminal_text,
+    {"portal--terminal-text", 1, 1, STRINGS_FUNCTION(terminal_text, RESULT_STRING),
      "Select all of TARGET's scrollback and return its text. Leaves the native selection "
      "active."},
-    {"portal--terminal-bindings", 1, 1, Fterminal_bindings,
+    {"portal--terminal-bindings", 1, 1, STRINGS_FUNCTION(terminal_bindings, RESULT_T),
      "Atomically replace runtime binding profiles from JSON."},
-    {"portal--input-prefix", 2, 2, Finput_prefix,
+    {"portal--input-prefix", 2, 2, Finput_prefix, NULL,
      "Set the native prefix CHARACTER and AppKit modifier FLAGS."},
-    {"portal--input", 2, 3, Finput,
+    {"portal--input", 2, 3, Finput, NULL,
      "Perform ACTION on native TARGET, optionally validating its handoff SERIAL."},
-    {"portal--toolbar", 1, 1, Ftoolbar, "Show or hide native toolbars live."},
-    {"portal--toolbar-theme", 1, 1, Ftoolbar_theme,
+    {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
+    {"portal--toolbar-theme", 1, 1, STRINGS_FUNCTION(toolbar_theme, RESULT_T),
      "Apply toolbar face colors from JSON RGB arrays."},
-    {"portal--toolbar-action", 2, 2, Ftoolbar_action,
+    {"portal--toolbar-action", 2, 2, STRINGS_FUNCTION(toolbar_action, RESULT_STRING),
      "Perform ACTION on TARGET and return its native state as JSON."},
 };
 
@@ -627,7 +472,7 @@ int emacs_module_init(struct emacs_runtime *runtime)
         emacs_value arguments[] = {
             symbol(env, exports[i].name),
             env->make_function(env, exports[i].minimum, exports[i].maximum, exports[i].function,
-                               exports[i].documentation, NULL)};
+                               exports[i].documentation, (void *) exports[i].data)};
         env->funcall(env, symbol(env, "fset"), 2, arguments);
         if (!returning(env))
             return 1;

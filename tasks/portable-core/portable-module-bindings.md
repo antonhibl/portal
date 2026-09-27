@@ -99,7 +99,10 @@ None; this is the first refactor task.
   and records the conventions: borrowed `portal_string` arguments (UTF-8,
   explicit length, valid only during the call), `malloc`ed results that the
   bindings free, `false` plus an owned message on failure, synchronous calls on
-  the module call's thread, and no callbacks. No opaque handles were needed yet,
+  the module call's thread, and no callbacks. Structured results (inspection
+  state, theme names) are JSON that the bindings parse with
+  `json-parse-string`. The Lisp functions whose arguments are all strings share
+  one C body, chosen by their registration entry. No opaque handles were needed yet,
   since targets remain strings. The header includes no Emacs, Swift, Foundation
   or AppKit declarations.
 - `native/Backend.swift` implements `portal.h` with the existing Swift code and

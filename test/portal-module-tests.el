@@ -77,8 +77,10 @@
     (should (equal (portal--terminal-text target) text))
     (should (equal (portal--terminal-text target) (portal--terminal-text target)))
     (portal--close target)
-    (setq target (portal--open "web" '(:empty "")))
+    (setq target (portal--open "web" (list :empty "" :json (string ?\" ?\\ 0 ?é ?\n))))
+    ;; Structured results cross as JSON.
     (should (equal (plist-get (portal--inspect target) :empty) ""))
+    (should (equal (plist-get (portal--inspect target) :json) (string ?\" ?\\ 0 ?é ?\n)))
     (portal--close target)))
 
 (ert-deftest portal-module-rejects-malformed-strings ()

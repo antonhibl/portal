@@ -28,12 +28,6 @@ private func owned(_ value: String) -> portal_text {
     }
 }
 
-private func owned(_ values: [String]) -> portal_texts {
-    let items = allocate(portal_text.self, values.count)
-    for (index, value) in values.enumerated() { (items + index).initialize(to: owned(value)) }
-    return portal_texts(items: items, count: values.count)
-}
-
 /// Run BODY on the main actor, Emacs's thread, or describe its failure in FAILURE.
 private func perform<T: Sendable>(_ failure: UnsafeMutablePointer<portal_text>,
                                   _ body: @MainActor () throws -> T) -> T? {
@@ -55,26 +49,10 @@ private func perform(_ failure: UnsafeMutablePointer<portal_text>, into output: 
     return true
 }
 
-private func property(_ name: String, _ value: ViewValue) -> portal_property {
-    var property = portal_property()
-    property.name = owned(name)
-    switch value {
-    case .flag(let flag):
-        property.kind = PORTAL_FLAG
-        property.flag = flag
-    case .integer(let integer):
-        property.kind = PORTAL_INTEGER
-        property.integer = Int64(integer)
-    case .integers(let integers):
-        property.kind = PORTAL_INTEGERS
-        property.integers = allocate(Int64.self, integers.count)
-        for (index, integer) in integers.enumerated() { (property.integers + index).initialize(to: Int64(integer)) }
-        property.count = integers.count
-    case .string(let text):
-        property.kind = PORTAL_STRING
-        property.string = owned(text)
-    }
-    return property
+/// VALUE as JSON text.
+private func json(_ value: Any) throws -> String {
+    String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]),
+           as: UTF8.self)
 }
 
 @_cdecl("portal_open")
@@ -112,18 +90,22 @@ public func portalClose(_ target: portal_string, _ error: UnsafeMutablePointer<p
 }
 
 @_cdecl("portal_inspect")
-public func portalInspect(_ target: portal_string, _ state: UnsafeMutablePointer<portal_state>,
+public func portalInspect(_ target: portal_string, _ state: UnsafeMutablePointer<portal_text>,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let target = String(copying: target)
-    guard let found = perform(error, { Views.inspect(target) }) else { return false }
-    guard let properties = found else {
-        state.pointee = portal_state(found: false, properties: nil, count: 0)
-        return true
+    return perform(error, into: state) {
+        guard let properties = Views.inspect(target) else { return "null" }
+        var object: [String: Any] = [:]
+        for (name, value) in properties {
+            switch value {
+            case .flag(let flag): object[name] = flag
+            case .integer(let integer): object[name] = integer
+            case .integers(let integers): object[name] = integers
+            case .string(let text): object[name] = text
+            }
+        }
+        return try json(object)
     }
-    let items = allocate(portal_property.self, properties.count)
-    for (index, (name, value)) in properties.enumerated() { (items + index).initialize(to: property(name, value)) }
-    state.pointee = portal_state(found: true, properties: items, count: properties.count)
-    return true
 }
 
 @_cdecl("portal_channel")
@@ -160,11 +142,9 @@ public func portalTerminalTheme(_ name: UnsafePointer<portal_string>?,
 }
 
 @_cdecl("portal_terminal_themes")
-public func portalTerminalThemes(_ names: UnsafeMutablePointer<portal_texts>,
+public func portalTerminalThemes(_ names: UnsafeMutablePointer<portal_text>,
                                  _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    guard let themes = perform(error, { Terminals.themeNames() }) else { return false }
-    names.pointee = owned(themes)
-    return true
+    perform(error, into: names) { try json(Terminals.themeNames()) }
 }
 
 @_cdecl("portal_terminal_paste")
