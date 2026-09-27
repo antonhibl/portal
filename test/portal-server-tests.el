@@ -230,7 +230,7 @@
 (defun portal-server-test--rows (page)
   "Return the (TITLE HREF) of each task row in PAGE, in order."
   (let ((start 0) rows)
-    (while (string-match "<a class=\"row\\(?: blocked\\)?\" href=\"\\([^\"]*\\)\">\\(?:<span class=\"rank\">[0-9]+</span>\\)?\\(?:<span class=\"status status-done\">done</span>\\)?<span class=\"title\">\\([^<]*\\)</span>"
+    (while (string-match "<a class=\"row\\(?: blocked\\)?\\(?: done\\)?\" href=\"\\([^\"]*\\)\">\\(?:<span class=\"rank\">[0-9]+</span>\\)?\\(?:<span class=\"status status-done\">done</span>\\)?<span class=\"title\">\\([^<]*\\)</span>"
                          page start)
       (push (list (match-string 2 page) (match-string 1 page)) rows)
       (setq start (match-end 0)))
