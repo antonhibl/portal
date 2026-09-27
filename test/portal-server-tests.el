@@ -464,7 +464,11 @@ indented by two spaces."
         (should (string-match-p "<h1 id=\"fix-search\">Fix search</h1>" page))
         (should-not (string-match-p "status: todo" page))
         (should (string-match-p "&lt;script&gt;" page))
-        (should-not (string-match-p "<script>\\|<img src=x" page))
+        ;; The task's content runs nothing; the page runs only its own script.
+        (should-not (string-match-p "<script>\\|<img src=x"
+                                    (portal-server-test--part page "<body>" "</body>")))
+        (should (= (length (split-string page "<script>")) 2))
+        (should (string-match-p "script-src 'sha256-[^']+'; connect-src 'self'" page))
         (let ((case-fold-search t))
           (should (string-match-p "content-security-policy:.*default-src 'none'" page)))
         (dolist (link `(("folder task" . ,(concat "tasks?root=" hex "&task=markdown-navigation#next-steps"))

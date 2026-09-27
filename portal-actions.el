@@ -12,7 +12,8 @@
   "Give this buffer hosted action PROPERTIES and explicit operation HANDLERS.
 PROPERTIES is JSON metadata for the app host.  HANDLERS maps operation names
 to functions taking a JSON arguments plist and returning a JSON result plist.
-Handlers run in the command loop, with the originating view selected."
+Handlers run in the command loop, with the originating view's buffer current
+and its pane selected.  The view keeps the keyboard unless a handler moves it."
   (setq portal-actions--properties properties portal-actions--handlers handlers)
   (add-hook 'portal-view-close-hook #'portal-actions--close nil t))
 
@@ -53,8 +54,6 @@ Called before loading a hosted page, including after an app host restart."
                   (unless handler (user-error "This view does not support that action"))
                   (when-let* ((window (portal-input--window target)))
                     (select-window window))
-                  (portal-input--action "unfocus" target)
-                  (setq portal-input--resume nil)
                   (setq result (funcall handler (plist-get request :arguments))))))
           (error (setq failure (error-message-string err))))
         (portal-server-send

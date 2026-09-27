@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import type { HostActions } from "./actions";
 import { attribute, localTarget, page, render } from "./markdown";
 import styles from "./tasks.css" with { type: "text" };
+import { client } from "./tasks-client";
 
 type Status = "todo" | "done";
 type Task = {
@@ -94,6 +95,18 @@ const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const html = Bun.escapeHTML;
 const encode = encodeURIComponent;
 
+/** Every task page's script, as source text. */
+const script = `(${client})();`;
+
+/** A task browser page. Its script is its only code; task content runs none. */
+function taskPage(title: string, body: string, status = 200): Response {
+	return page(title, body, status, { css: styles, script });
+}
+
+function isStatus(value: unknown): value is Status {
+	return value === "todo" || value === "done";
+}
+
 function byCodeUnit(a: string, b: string): number {
 	return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -109,6 +122,8 @@ type Listing = {
 	execution: boolean;
 	all: boolean;
 	context?: string;
+	/** Whether its Portal view is registered to change and open tasks. */
+	operable?: boolean;
 };
 
 function listHref(
@@ -137,21 +152,32 @@ function errorCode(error: unknown): string | undefined {
 	return (error as NodeJS.ErrnoException).code;
 }
 
+/** Where the YAML of TEXT's front matter starts and ends, and its body starts,
+ * as offsets into TEXT; or null without front matter. Throws when unclosed. */
+function frontMatterSpan(
+	text: string,
+): { start: number; end: number; body: number } | null {
+	const bom = text.startsWith("﻿") ? 1 : 0;
+	const open = /^---\r?\n/.exec(text.slice(bom));
+	if (!open) return null;
+	const start = bom + open[0].length;
+	const close = /^---\r?(?:\n|$)/m.exec(text.slice(start));
+	if (!close) throw new Error("its front matter has no closing --- line");
+	const end = start + close.index;
+	return { start, end, body: end + close[0].length };
+}
+
 /** Split TEXT into its YAML front matter, or null without any, and its body.
  * Throws when the front matter is malformed. */
 export function frontMatter(text: string): {
 	data: Record<string, unknown> | null;
 	body: string;
 } {
-	const source = text.startsWith("﻿") ? text.slice(1) : text;
-	const open = /^---\r?\n/.exec(source);
-	if (!open) return { data: null, body: source };
-	const rest = source.slice(open[0].length);
-	const close = /^---\r?(?:\n|$)/m.exec(rest);
-	if (!close) throw new Error("its front matter has no closing --- line");
+	const span = frontMatterSpan(text);
+	if (!span) return { data: null, body: text.replace(/^﻿/, "") };
 	let data: unknown;
 	try {
-		data = Bun.YAML.parse(rest.slice(0, close.index)) ?? {};
+		data = Bun.YAML.parse(text.slice(span.start, span.end)) ?? {};
 	} catch (error) {
 		throw new Error(
 			`its front matter is not valid YAML: ${(error as Error).message}`,
@@ -160,9 +186,92 @@ export function frontMatter(text: string): {
 	if (typeof data !== "object" || Array.isArray(data) || data === null) {
 		throw new Error("its front matter is not a YAML mapping");
 	}
+	return { data: data as Record<string, unknown>, body: text.slice(span.body) };
+}
+
+/** The edit that gives TASK STATUS, planned from BYTES read from its source
+ * after discovery found it there; or null when it has STATUS already. Throws
+ * when BYTES are no longer that task, such as after another replaced it. */
+export function statusChange(
+	task: Candidate & { id: string },
+	bytes: Buffer,
+	status: Status,
+): { start: number; end: number; text: string } | null {
+	const reading = classify(task, bytes.toString("utf8"));
+	if (reading.kind !== "task" || reading.task.id !== task.id)
+		throw new Error(
+			"The task file changed while the action ran. Reload the page and try again.",
+		);
+	return reading.task.status === status ? null : statusEdit(bytes, status);
+}
+
+/** A `status` key and its todo or done value, plain or quoted, in block or
+ * flow style: the only form the status edit changes. */
+const statusEntry =
+	/(?<=^[ \t]*|[{,][ \t]*)(?:status|'status'|"status")[ \t]*:[ \t]*(todo|done|'todo'|'done'|"todo"|"done")(?=[ \t]*(?:[,}#]|\r?$))/gm;
+
+/** The edit that gives the task document BYTES STATUS, touching nothing but
+ * its status value: bytes START to END become TEXT. Throws, explaining why,
+ * when the edit would be ambiguous or would change anything else; the
+ * document is then left for editing in Emacs. */
+export function statusEdit(
+	bytes: Uint8Array,
+	status: Status,
+): { start: number; end: number; text: string } {
+	let text: string;
+	try {
+		text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+			bytes,
+		);
+	} catch {
+		throw new Error("The task file is not valid UTF-8. Edit it in Emacs.");
+	}
+	const before = frontMatter(text);
+	const span = frontMatterSpan(text);
+	if (!before.data || !span || !Object.hasOwn(before.data, "status"))
+		throw new Error("The task file has no status. Reload the page.");
+	const entries = [...text.slice(span.start, span.end).matchAll(statusEntry)];
+	const [entry] = entries;
+	const value = entry?.[1];
+	if (!entry || value === undefined)
+		throw new Error(
+			"The task's status is not written as a plain `status: todo` or `status: done` entry, so it cannot be changed safely. Edit it in Emacs.",
+		);
+	// With this entry's key renamed, no status may remain: YAML keeps only the
+	// last of duplicate keys, however each is written.
+	const key = span.start + entry.index;
+	const renamed = `${text.slice(0, key)}portal-probe${text.slice(key + entry[0].indexOf(":"))}`;
+	let probe: Record<string, unknown> | null = null;
+	try {
+		probe = frontMatter(renamed).data;
+	} catch {}
+	if (entries.length > 1 || !probe || Object.hasOwn(probe, "status"))
+		throw new Error(
+			"The task's front matter has more than one status entry, so the change would be ambiguous. Edit it in Emacs.",
+		);
+	const start = span.start + entry.index + entry[0].length - value.length;
+	const replacement = value.replace(/todo|done/, status);
+	const patched =
+		text.slice(0, start) + replacement + text.slice(start + value.length);
+	// Accept the edit only if it reads back as the same document, but for status.
+	let after: ReturnType<typeof frontMatter> | null = null;
+	try {
+		after = frontMatter(patched);
+	} catch {}
+	if (
+		!after?.data ||
+		after.body !== before.body ||
+		!Bun.deepEquals(after.data, { ...before.data, status }, true)
+	) {
+		throw new Error(
+			"Changing the status would change other front matter, so it was not saved. Edit it in Emacs.",
+		);
+	}
+	const offset = Buffer.byteLength(text.slice(0, start));
 	return {
-		data: data as Record<string, unknown>,
-		body: rest.slice(close.index + close[0].length),
+		start: offset,
+		end: offset + Buffer.byteLength(value),
+		text: replacement,
 	};
 }
 
@@ -275,7 +384,7 @@ export function classify(
 		message,
 	});
 	const status = data.status;
-	if (status !== "todo" && status !== "done") {
+	if (!isStatus(status)) {
 		return problem(
 			`Invalid status ${JSON.stringify(status) ?? String(status)}: use todo or done.`,
 		);
@@ -640,13 +749,12 @@ async function unusable(root: string): Promise<Response | null> {
 	} catch (error) {
 		const code = errorCode(error);
 		if (code === "ENOENT") {
-			return page(
+			return taskPage(
 				"Tasks",
 				`${header(root)}<p class="empty">This task folder does not exist yet. ` +
 					"Create it and save a Markdown file there with <code>status: todo</code> " +
 					"in its front matter, then press <kbd>g</kbd> to reload.</p>",
 				200,
-				styles,
 			);
 		}
 		if (code === "ENOTDIR")
@@ -663,11 +771,10 @@ function header(root: string, controls = ""): string {
 }
 
 function failure(message: string, root: string, status: number): Response {
-	return page(
+	return taskPage(
 		"Tasks unavailable",
 		`${header(root)}<p class="error">${html(message)}</p>`,
 		status,
-		styles,
 	);
 }
 
@@ -742,9 +849,28 @@ function folders(
 	});
 }
 
-/** TASK's row, a link to its page, with RANKS giving execution positions. A
- * blocked row is dimmed and says what it waits for. The execution view shows
- * the folders holding it; the tree, which mixes statuses, marks it done. */
+/** TASK's Complete or Reopen and Edit in Emacs buttons, which the page script
+ * runs. In a list ROW, their names include the task's title. WebKit tabs to
+ * buttons only with an explicit tabindex, unless macOS keyboard navigation
+ * is on. */
+function operations(task: Task, row: boolean): string {
+	const status: Status = task.status === "todo" ? "done" : "todo";
+	const verb = status === "done" ? "Complete" : "Reopen";
+	const data = `class="task-op" tabindex="0" data-task="${html(task.id)}" data-title="${html(task.title)}"`;
+	const named = (label: string) => (row ? ` aria-label="${html(label)}"` : "");
+	return (
+		`<button type="button" ${data} data-op="status" data-status="${status}"` +
+		`${named(`${verb} ${task.title}`)}>${verb}</button>` +
+		`<button type="button" ${data} data-op="edit"` +
+		`${named(`Edit ${task.title} in Emacs`)}${row ? ` title="Edit in Emacs"` : ""}>` +
+		`${row ? "Edit" : "Edit in Emacs"}</button>`
+	);
+}
+
+/** TASK's row, a link to its page, with RANKS giving execution positions, and
+ * then its buttons. A blocked row is dimmed and says what it waits for. The
+ * execution view shows the folders holding it; the tree, which mixes
+ * statuses, marks it done. */
 function row(
 	listing: Listing,
 	found: Snapshot,
@@ -770,7 +896,10 @@ function row(
 		(text
 			? `<span class="waits${problem ? " dependency-problem" : ""}">${html(text)}</span>`
 			: "") +
-		"</a>"
+		"</a>" +
+		(listing.operable
+			? `<span class="row-actions">${operations(task, true)}</span>`
+			: "")
 	);
 }
 
@@ -950,13 +1079,12 @@ function list(listing: Listing, found: Snapshot): Response {
 	} else {
 		content = treeView(listing, found, ranks);
 	}
-	return page(
+	return taskPage(
 		"Tasks",
 		header(listing.root, controls(listing)) +
 			problemList(listing, found) +
 			content,
 		200,
-		styles,
 	);
 }
 
@@ -982,12 +1110,11 @@ function detailFailure(
 	body: string,
 	status: number,
 ): Response {
-	return page(
+	return taskPage(
 		"Task unavailable",
 		`<nav class="task-nav">${breadcrumbs(listing)}</nav>` +
 			`<h1>Task unavailable</h1>${body}`,
 		status,
-		styles,
 	);
 }
 
@@ -1157,7 +1284,7 @@ function detail(
 			? `<span class="readiness readiness-ready">ready</span>`
 			: `<span class="readiness readiness-blocked">blocked</span>`;
 	}
-	return page(
+	return taskPage(
 		task.title,
 		`<nav class="task-nav">${breadcrumbs(listing, found, task)}` +
 			`<span class="task-state">${badge(task.status)}${readiness}</span></nav>` +
@@ -1165,8 +1292,6 @@ function detail(
 			metadata(listing, found, task) +
 			`<article>${title}${body(listing, found, task)}</article>`,
 		200,
-		styles,
-		true,
 	);
 }
 
@@ -1182,19 +1307,19 @@ export async function tasks(
 ): Promise<Response> {
 	const root = params.get("root");
 	if (!validRoot(root)) {
-		return page(
+		return taskPage(
 			"Tasks unavailable",
 			"<p>Provide an absolute task folder.</p>",
 			400,
-			styles,
 		);
 	}
-	const listing = {
+	const listing: Listing = {
 		root,
 		execution: params.get("view") === "execution",
 		all: params.get("show") === "all",
 		context: params.get("context") ?? undefined,
 	};
+	listing.operable = actions?.operable(listing) ?? false;
 	const id = params.get("task");
 	try {
 		const problem = await unusable(root);
@@ -1255,6 +1380,34 @@ export async function taskFile(params: URLSearchParams): Promise<Response> {
 	}
 }
 
+/** The body of REQUEST, a POST of TYPE from a task page; or why it is refused.
+ * The body is read within a bound, even when chunked. */
+async function admit(
+	request: Request,
+	type: string,
+): Promise<string | { status: number; error: string }> {
+	if (request.headers.get("origin") !== new URL(request.url).origin)
+		return { status: 403, error: "Invalid action origin." };
+	if (request.headers.get("content-type")?.split(";")[0] !== type)
+		return { status: 415, error: `Expected ${type}.` };
+	const reader = request.body?.getReader();
+	let body = "";
+	if (reader) {
+		const decoder = new TextDecoder();
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			body += decoder.decode(value, { stream: true });
+			if (body.length > 4096) {
+				await reader.cancel();
+				return { status: 413, error: "The request is too large." };
+			}
+		}
+		body += decoder.decode();
+	}
+	return body;
+}
+
 type Implementation = {
 	listing: Listing;
 	task: string;
@@ -1271,12 +1424,18 @@ export class TaskActions {
 
 	constructor(private host: HostActions) {}
 
-	controls(listing: Listing, task: Task, result?: string | null): string {
+	/** Whether LISTING's page is in the Portal view registered for its root. */
+	operable(listing: Listing): boolean {
 		const context = this.host.context(listing.context ?? null);
-		if (context?.app !== "tasks" || context.root !== listing.root)
-			return `<p class="action-note">Reload this task view in Portal to enable implementation.</p>`;
-		if (typeof context.project !== "string")
-			return `<p class="action-note">Open this task folder from a project to implement it.</p>`;
+		return context?.app === "tasks" && context.root === listing.root;
+	}
+
+	controls(listing: Listing, task: Task, result?: string | null): string {
+		if (!this.operable(listing))
+			return `<p class="action-note">Reload this task view in Portal to change, edit or implement this task.</p>`;
+		const buttons = `<div class="task-controls">${operations(task, false)}`;
+		if (typeof this.host.context(listing.context ?? null)?.project !== "string")
+			return `${buttons}</div><p class="action-note">Open this task folder from a project to implement it.</p>`;
 		for (const [id, form] of this.forms) {
 			if (Date.now() - form.created > 600_000) this.forms.delete(id);
 		}
@@ -1295,36 +1454,16 @@ export class TaskActions {
 		const id = crypto.randomUUID();
 		this.forms.set(id, { listing, task: task.id, created: Date.now() });
 		return (
-			`${notice}<form class="task-action" method="post" action="tasks/implement">` +
+			`${notice}${buttons}<form class="task-action" method="post" action="tasks/implement">` +
 			`<input type="hidden" name="request" value="${id}">` +
-			`<button type="submit">Implement with Claude</button></form>`
+			`<button type="submit">Implement with Claude</button></form></div>`
 		);
 	}
 
 	async implement(request: Request): Promise<Response> {
-		if (request.headers.get("origin") !== new URL(request.url).origin)
-			return new Response("Invalid action origin", { status: 403 });
-		if (
-			request.headers.get("content-type")?.split(";")[0] !==
-			"application/x-www-form-urlencoded"
-		)
-			return new Response("Expected a form submission", { status: 415 });
-		// Read a bounded body even for chunked requests.
-		const reader = request.body?.getReader();
-		let body = "";
-		if (reader) {
-			const decoder = new TextDecoder();
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				body += decoder.decode(value, { stream: true });
-				if (body.length > 4096) {
-					await reader.cancel();
-					return new Response("Form is too large", { status: 413 });
-				}
-			}
-			body += decoder.decode();
-		}
+		const body = await admit(request, "application/x-www-form-urlencoded");
+		if (typeof body !== "string")
+			return new Response(body.error, { status: body.status });
 		const id = new URLSearchParams(body).get("request") ?? "";
 		const form = this.forms.get(id);
 		if (!form || Date.now() - form.created > 600_000)
@@ -1350,17 +1489,90 @@ export class TaskActions {
 		});
 	}
 
-	private async launch(form: Implementation) {
-		const { listing } = form;
-		const context = this.host.context(listing.context ?? null);
+	/** A task page's status change or Edit in Emacs, posted as JSON: the page's
+	 * root and context, the task ID, the action, and for a status change the
+	 * status to set. Answers `{}`, or `{error}` to show. Actions run one at a
+	 * time, so a repeated status change finds its work already done. */
+	async act(request: Request): Promise<Response> {
+		const body = await admit(request, "application/json");
+		if (typeof body !== "string")
+			return Response.json({ error: body.error }, { status: body.status });
+		let input: Record<string, unknown> = {};
+		try {
+			input = JSON.parse(body) ?? {};
+		} catch {}
+		const { root, context, task, action, status } = input;
 		if (
-			!listing.context ||
-			context?.app !== "tasks" ||
-			context.root !== listing.root
+			typeof root !== "string" ||
+			typeof context !== "string" ||
+			typeof task !== "string" ||
+			!(action === "edit" || (action === "status" && isStatus(status)))
 		)
+			return Response.json({ error: "Invalid task action." }, { status: 400 });
+		const listing: Listing = { root, context, execution: false, all: false };
+		const run = this.queue.then(() =>
+			action === "edit"
+				? this.edit(listing, task)
+				: this.change(listing, task, status as Status),
+		);
+		this.queue = run.catch(() => {});
+		try {
+			await run;
+			return Response.json({});
+		} catch (error) {
+			return Response.json(
+				{ error: (error as Error).message },
+				{ status: 409 },
+			);
+		}
+	}
+
+	private queue: Promise<unknown> = Promise.resolve();
+
+	/** Open task ID's current source in Emacs, in another pane. */
+	private async edit(listing: Listing, id: string) {
+		const task = await this.locate(listing, id);
+		await this.host.request(listing.context ?? "", "task.edit", {
+			file: task.source,
+		});
+	}
+
+	/** Give task ID STATUS, when it has another. The app host plans the edit
+	 * against the bytes it read, and Emacs saves it only if the file still
+	 * has them. */
+	private async change(listing: Listing, id: string, status: Status) {
+		const task = await this.locate(listing, id);
+		const bytes = await readFile(task.source);
+		const edit = statusChange(task, bytes, status);
+		if (!edit) return;
+		await this.host.request(listing.context ?? "", "task.status", {
+			file: task.source,
+			...edit,
+			before: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+		});
+	}
+
+	/** Task ID's current source in LISTING's root, for its registered view. */
+	private async locate(listing: Listing, id: string): Promise<Task> {
+		if (!listing.context || !this.operable(listing))
 			throw new Error(
 				"The task view has closed or expired. Reload before trying again.",
 			);
+		const task = resolve(listing, await discover(listing.root), id);
+		if (task instanceof Response)
+			throw new Error(
+				"The task was removed, became invalid, or has a conflicting ID. Reload the page.",
+			);
+		const source = await realpath(task.source);
+		if (!inside(source, await realpath(listing.root)))
+			throw new Error("The task source is outside its task folder.");
+		return task;
+	}
+
+	private async launch(form: Implementation) {
+		const { listing } = form;
+		const task = await this.locate(listing, form.task);
+		const context = this.host.context(listing.context ?? null) ?? {};
 		if (
 			typeof context.project !== "string" ||
 			!isAbsolute(context.project) ||
@@ -1371,21 +1583,13 @@ export class TaskActions {
 			throw new Error(
 				"This task view needs a project and a Claude executable.",
 			);
-		const found = await snapshot(listing.root);
-		const task = resolve(listing, found, form.task);
-		if (task instanceof Response)
-			throw new Error(
-				"The task was removed, became invalid, or has a conflicting ID. Reload its detail.",
-			);
 		const source = await realpath(task.source);
-		if (!inside(source, await realpath(listing.root)))
-			throw new Error("The task source is outside its task folder.");
 		const project = await realpath(context.project);
 		const path = relative(project, source).normalize("NFC");
 		// Quoted @ references preserve whitespace inside the initial prompt;
 		// shell quoting is a separate concern handled by the terminal launcher.
 		const mention = /[\s"\\]/.test(path) ? JSON.stringify(path) : path;
-		await this.host.request(listing.context, "terminal.open", {
+		await this.host.request(listing.context ?? "", "terminal.open", {
 			directory: project,
 			program: context.program,
 			args: [...context.args, `implement @${mention}`],

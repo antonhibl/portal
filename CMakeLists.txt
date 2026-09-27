@@ -28,7 +28,7 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.portal-host" "${CMAKE_BINARY_DIR}/portal-host"
     DEPENDS host/actions.ts host/server.ts host/hello.html host/markdown.ts host/markdown.css
-        host/tasks.ts host/tasks.css
+        host/tasks.ts host/tasks-client.ts host/tasks.css
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
         host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -43,6 +43,7 @@ find_program(EMACS NAMES emacs REQUIRED)
 include(CTest)
 if(BUILD_TESTING)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
+    add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"

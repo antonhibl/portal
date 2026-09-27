@@ -41,12 +41,13 @@
       (portal-actions-test--drain))
     (should (funcall predicate))))
 
-(defun portal-actions-test--http (url &optional data)
+(defun portal-actions-test--http (url &optional data type)
+  "Fetch URL, or POST DATA of TYPE to it, as a page of the app host would."
   (let* ((url-proxy-services nil)
          (url-request-method (if data "POST" "GET"))
          (url-request-data data)
          (url-request-extra-headers
-          (when data `(("Content-Type" . "application/x-www-form-urlencoded")
+          (when data `(("Content-Type" . ,(or type "application/x-www-form-urlencoded"))
                        ("Origin" . ,(format "http://127.0.0.1:%d" (url-port (url-generic-parse-url url)))))))
          result finished)
     (url-retrieve url (lambda (_status)
@@ -94,6 +95,41 @@
        (portal-actions-test--wait #'portal-server-url)
        (should (string-search "name=\"request\""
                               (portal-actions-test--http (concat portal-web--url "&task=task"))))))))
+
+(ert-deftest portal-actions-real-host-changes-and-opens-tasks-through-emacs ()
+  (skip-unless (file-executable-p portal-server-program))
+  (portal-actions-test--environment
+   (let ((root (expand-file-name "tasks" directory))
+         (file (expand-file-name "tasks/task.md" directory)))
+     (portal-tasks root)
+     (portal-actions-test--wait #'portal-server-url)
+     (let* ((tasks (current-buffer))
+            (target portal-view--target)
+            (act (lambda (&rest body)
+                   (with-current-buffer tasks
+                     (portal-actions-test--http
+                      (concat (portal-server-url) "/tasks/action")
+                      (json-serialize (append (list :root root :context target :task "task") body))
+                      "application/json"))))
+            (page (portal-actions-test--http (concat portal-web--url "&task=task"))))
+       (should (string-search "data-op=\"status\" data-status=\"done\">Complete</button>" page))
+       (should (string-match-p "\n\n{}\\'" (funcall act :action "status" :status "done")))
+       (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
+                      "---\nid: task\nstatus: done\n---\n# Task\n"))
+       ;; Repeating the request leaves the task done.
+       (should (string-match-p "\n\n{}\\'" (funcall act :action "status" :status "done")))
+       (should (string-search "status: done" (with-temp-buffer (insert-file-contents file) (buffer-string))))
+       ;; Unsaved changes in Emacs stop a change, and the page says why.
+       (with-current-buffer (find-file-noselect file)
+         (insert "Draft.\n")
+         (should (string-search "unsaved changes" (funcall act :action "status" :status "todo")))
+         (should (buffer-modified-p))
+         (set-buffer-modified-p nil))
+       (should (string-search "status: done" (with-temp-buffer (insert-file-contents file) (buffer-string))))
+       ;; Edit in Emacs shows the source beside the task page.
+       (should (string-match-p "\n\n{}\\'" (funcall act :action "edit")))
+       (should (equal (buffer-file-name (window-buffer (selected-window))) file))
+       (should (get-buffer-window tasks))))))
 
 (ert-deftest portal-actions-rejects-closed-expired-and-unsupported-requests ()
   (portal-actions-test--environment

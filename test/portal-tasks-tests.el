@@ -230,6 +230,191 @@ makes the app host ready."
       (should (eq (current-buffer) buffer))
       (kill-buffer (get-file-buffer file)))))
 
+;; Operations.
+
+(defun portal-tasks-test--bytes (file)
+  "Return FILE's bytes, as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (buffer-string)))
+
+(defun portal-tasks-test--plan (file status)
+  "Return the edit the app host plans to give FILE STATUS."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (goto-char (point-min))
+    (re-search-forward "^status: \\(todo\\|done\\)")
+    (list :file file :start (1- (match-beginning 1)) :end (1- (match-end 1))
+          :text status :before (secure-hash 'sha256 (current-buffer)))))
+
+(defconst portal-tasks-test--refresh '("{\"type\":\"refresh\"}")
+  "The bridge message that refreshes a task page in place.")
+
+(ert-deftest portal-tasks-status-edits-save-only-the-planned-bytes ()
+  (portal-tasks-test--environment
+    (setq host portal-tasks-test--host)
+    (let* ((root (directory-file-name directory))
+           (file (expand-file-name "fix search é/content.md" root))
+           (text (encode-coding-string
+                  "\uFEFF---\r\ntitle: Café\r\nstatus: todo # keep\r\n---\r\n# Fix\r\nstatus: todo\r\n"
+                  'utf-8)))
+      (make-directory (file-name-directory file))
+      (let ((coding-system-for-write 'no-conversion))
+        (write-region text nil file))
+      (let ((visiting (find-file-noselect file))
+            (target (progn (portal-tasks root) (portal-view-target))))
+        (setq portal-fake-native-log nil)
+        (should (equal (portal-tasks--status-action (portal-tasks-test--plan file "done"))
+                       (list :file file)))
+        ;; The BOM, CRLF line ends, comment and body keep their bytes.
+        (should (equal (portal-tasks-test--bytes file)
+                       (string-replace "todo # keep" "done # keep" text)))
+        ;; A buffer visiting the file unmodified shows what was saved.
+        (with-current-buffer visiting
+          (should-not (buffer-modified-p))
+          (should (string-search "status: done # keep" (buffer-string))))
+        ;; The page refreshes in place, and loads no other page.
+        (should (equal (portal-fake-native-calls 'portal--web-send)
+                       (list (cons target portal-tasks-test--refresh))))
+        (should-not (portal-fake-native-calls 'portal--web-load))
+        (kill-buffer visiting)))))
+
+(ert-deftest portal-tasks-status-edits-refuse-unsaved-changed-and-unwritable-files ()
+  (portal-tasks-test--environment
+    (setq host portal-tasks-test--host)
+    (let* ((root (directory-file-name directory))
+           (file (expand-file-name "task.md" root))
+           (text "---\nstatus: todo\n---\n# Task\n")
+           (changed (concat text "Saved elsewhere.\n"))
+           (outside (make-temp-file "portal-outside-" nil ".md" text)))
+      (unwind-protect
+          (progn
+            (with-temp-file file (insert text))
+            (let ((plan (portal-tasks-test--plan file "done"))
+                  (visiting (find-file-noselect file)))
+              (portal-tasks root)
+              ;; Unsaved changes stay unsaved, and nothing is written.
+              (with-current-buffer visiting
+                (goto-char (point-max))
+                (insert "Unsaved.\n"))
+              (should (string-search "unsaved changes"
+                                     (cadr (should-error (portal-tasks--status-action plan)
+                                                         :type 'user-error))))
+              (should (equal (portal-tasks-test--bytes file) text))
+              (should (buffer-modified-p visiting))
+              (should (string-search "Unsaved." (with-current-buffer visiting (buffer-string))))
+              (kill-buffer visiting)
+              ;; A file that changed since the plan is left as it is.
+              (with-temp-file file (insert changed))
+              (should (string-search "changed on disk"
+                                     (cadr (should-error (portal-tasks--status-action plan)
+                                                         :type 'user-error))))
+              (should (equal (portal-tasks-test--bytes file) changed))
+              ;; A read-only file is left alone, and a failed save is an
+              ;; error that changes nothing, leaving no other file behind.
+              (setq plan (portal-tasks-test--plan file "done"))
+              (set-file-modes file #o444)
+              (unwind-protect
+                  (should (string-search "read-only"
+                                         (cadr (should-error (portal-tasks--status-action plan)
+                                                             :type 'user-error))))
+                (set-file-modes file #o640))
+              (set-file-modes root #o555)
+              (unwind-protect
+                  (should-error (portal-tasks--status-action plan) :type 'file-error)
+                (set-file-modes root #o755))
+              (should (equal (portal-tasks-test--bytes file) changed))
+              (should (equal (directory-files root nil "\\`[^.]\\|\\`\\.portal") '("task.md")))
+              ;; A save elsewhere while the new file is written is kept.
+              (let ((write (symbol-function 'write-region))
+                    (concurrent (concat changed "Saved concurrently.\n")))
+                (cl-letf (((symbol-function 'write-region)
+                           (lambda (start end name &rest rest)
+                             (prog1 (apply write start end name rest)
+                               (when (string-prefix-p ".portal-" (file-name-nondirectory name))
+                                 (funcall write concurrent nil file nil 'silent))))))
+                  (should (string-search "changed on disk"
+                                         (cadr (should-error (portal-tasks--status-action plan)
+                                                             :type 'user-error)))))
+                (should (equal (portal-tasks-test--bytes file) concurrent))
+                (should (equal (directory-files root nil "\\`[^.]\\|\\`\\.portal") '("task.md"))))
+              (with-temp-file file (insert changed))
+              ;; Only a file in the view's root is written.
+              (should-error (portal-tasks--status-action
+                             (plist-put (portal-tasks-test--plan outside "done") :file outside))
+                            :type 'user-error)
+              (should (equal (portal-tasks-test--bytes outside) text))
+              (should (portal-tasks--status-action plan))
+              (should (equal (portal-tasks-test--bytes file)
+                             (string-replace "todo" "done" changed)))
+              ;; The saved file keeps its modes.
+              (should (= (file-modes file) #o640))))
+        (delete-file outside)))))
+
+(ert-deftest portal-tasks-edit-opens-the-source-in-another-pane ()
+  (portal-tasks-test--environment
+    (setq host portal-tasks-test--host)
+    (let* ((display-buffer-alist nil)
+           (root (directory-file-name directory))
+           (file (expand-file-name "task.md" root)))
+      (with-temp-file file (insert "---\nstatus: todo\n---\n# Task\n"))
+      (let ((visiting (find-file-noselect file)))
+        (with-current-buffer visiting
+          (goto-char (point-max))
+          (insert "Draft.\n"))
+        (let* ((tasks (portal-tasks root))
+               (target (portal-view-target))
+               (origin (selected-window)))
+          (portal-view-sync)
+          (portal-input-focus)
+          (should (plist-get (portal--inspect target) :focused))
+          (setq portal-fake-native-log nil)
+          (should (equal (portal-tasks--edit-action (list :file file)) (list :file file)))
+          ;; The buffer is reused with its unsaved text, and Emacs has the keyboard.
+          (should (eq (current-buffer) visiting))
+          (should (buffer-modified-p))
+          (should (string-search "Draft." (buffer-string)))
+          (should-not (eq (selected-window) origin))
+          (should (eq (window-buffer origin) tasks))
+          (should-not (plist-get (portal--inspect target) :focused))
+          ;; The task page and its history stay as they were.
+          (should-not (portal-fake-native-calls 'portal--web-load))
+          (portal-preview-return)
+          (should (eq (current-buffer) tasks))
+          (should-error (portal-tasks--edit-action (list :file "/etc/hosts")) :type 'user-error)
+          (with-current-buffer visiting (set-buffer-modified-p nil)))))))
+
+(defun portal-tasks-test--save (file)
+  "Change FILE in a buffer and save it, as a user would."
+  (make-directory (file-name-directory file) t)
+  (with-current-buffer (find-file-noselect file)
+    (insert "Saved.\n")
+    (save-buffer)
+    (kill-buffer)))
+
+(ert-deftest portal-tasks-saving-in-a-root-refreshes-its-loaded-view ()
+  (portal-tasks-test--environment
+    (let* ((one (expand-file-name "one" directory))
+           (two (expand-file-name "two" directory)))
+      (make-directory one)
+      (make-directory two)
+      (let ((target (progn (portal-tasks one) (portal-view-target))))
+        (portal-tasks two)
+        ;; A view still waiting for the app host will load saved files anyway.
+        (portal-tasks-test--save (expand-file-name "task.md" one))
+        (should-not (portal-fake-native-calls 'portal--web-send))
+        (setq host portal-tasks-test--host)
+        (run-hooks 'portal-server-ready-hook)
+        (setq portal-fake-native-log nil)
+        ;; Only the view of the root holding the file refreshes, at any depth.
+        (portal-tasks-test--save (expand-file-name "group/task.md" one))
+        (portal-tasks-test--save (expand-file-name "notes.md" directory))
+        (should (equal (portal-fake-native-calls 'portal--web-send)
+                       (list (cons target portal-tasks-test--refresh))))
+        (should-not (portal-fake-native-calls 'portal--web-load))))))
+
 (defun portal-tasks-test--wait (predicate)
   "Allow asynchronous process work until PREDICATE succeeds."
   (let ((deadline (+ (float-time) 5)))
