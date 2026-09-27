@@ -170,7 +170,9 @@ ownership, trusted provenance, and navigation generations in the interface.
     posting frame: main frame or not, and its document URL. It must be the
     URL Emacs loaded last. A page's own claims never count.
   - **URL spelling.** Lisp keeps URLs as the user typed them, while WebKit
-    reports them parsed: percent-encoded, with Unicode hosts in punycode.
+    reports them parsed: percent-encoded, with hosts and ports as parsed
+    (Unicode hosts in punycode, `%65xample.com` as `example.com`, port
+    `080` as `80`).
     The core stores each loaded URL in the platform's spelling,
     `portal_web_parse_url`, and compares URLs byte for byte, for reloads,
     senders and origins. The core never reimplements a URL parser or IDNA.
@@ -199,7 +201,7 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
 - `build/check-focus` and `build/check-toolbar` passed with real WKWebViews:
   hosted storage, main-frame provenance, reserved types, external and local
   links, a link longer than a record, reload and history, a hosted app loaded
-  from a raw URL with spaces, bridge readiness on
+  from a raw URL with spaces or with an encoded host or a zero-padded port, bridge readiness on
   first load and reload, a failed delivery, the TOC and count scripts, and
   Open in Emacs sending `prefix`, `escape` and `bridge` in order.
 - The graphical Excalidraw suite passed 7 of 7: open, edit, hide and reopen,

@@ -134,8 +134,9 @@ bool portal_view_describe(portal_view *view, portal_text *state, portal_text *er
 bool portal_web_load(portal_view *web, portal_string url, portal_text *error);
 /* Parse URL as this platform's web views do, and return in *PARSED how the
    platform spells the result, as it spells the URLs it reports to the core:
-   characters such as spaces percent-encoded, and a Unicode host in
-   punycode, for example.  The core keeps and compares URLs only in this
+   characters such as spaces percent-encoded, and the host and port as
+   parsed, such as a Unicode host in punycode, example.com for %65xample.com
+   and 80 for 080.  The core keeps and compares URLs only in this
    spelling, so one parser, the platform's, decides when two are the same.
    Fails for a URL the platform cannot parse. */
 bool portal_web_parse_url(portal_string url, portal_text *parsed, portal_text *error);

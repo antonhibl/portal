@@ -206,6 +206,16 @@ struct CheckFocus {
         }
         check(opened == [require(URL(string: "https://example.com/"))], "The link did not open in the browser")
         check(web.url?.scheme == "data" && web.title == "App", "The hosted app left its page")
+        // WebKit reports a URL with its host and port as parsed, which is the
+        // app's own origin however Emacs spelled it. Nothing listens on port 9,
+        // so each load fails, but none may go to the browser.
+        for spelling in ["http://%31%32%37.0.0.1:9/app", "http://127.0.0.1:09/app"] {
+            opened = []
+            try Views.load(target, spelling)
+            let deadline = Date(timeIntervalSinceNow: 1)
+            while Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+            check(opened.isEmpty, "Loading \(spelling) sent the app to the browser")
+        }
         try Views.close(target)
         print("Hosted apps keep no data, and open other sites in the browser")
     }

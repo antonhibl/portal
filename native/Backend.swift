@@ -131,14 +131,23 @@ public func portalViewDescribe(_ view: OpaquePointer, _ state: UnsafeMutablePoin
     }
 }
 
-/// Foundation's parser, which `WebSession.load` uses too, and the spelling
-/// WebKit reports URLs in: percent-encoded, with Unicode hosts in punycode.
+/// Foundation's parser, which `WebSession.load` uses too, in the spelling
+/// WebKit reports URLs in: percent-encoded, with its host as parsed, such as
+/// `example.com` for `%65xample.com` and punycode for a Unicode host, and its
+/// port as a number, such as 80 for `080`. `absoluteString` alone keeps the
+/// host and port as written.
 @_cdecl("portal_web_parse_url")
 public func portalWebParseURL(_ url: portal_string, _ parsed: UnsafeMutablePointer<portal_text>,
                               _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let url = String(copying: url)
     return perform(error, into: parsed) {
         guard let parsed = URL(string: url) else { throw NativeError.message("WebKit cannot parse the URL \(url)") }
+        // An IPv6 host cannot be set this way; its brackets keep it as written.
+        if var components = URLComponents(url: parsed, resolvingAgainstBaseURL: false), components.host != nil {
+            components.host = parsed.host(percentEncoded: false)
+            components.port = parsed.port
+            if let spelled = components.url { return spelled.absoluteString }
+        }
         return parsed.absoluteString
     }
 }
