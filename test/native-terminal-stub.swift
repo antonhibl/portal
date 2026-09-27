@@ -7,7 +7,7 @@ final class TerminalSession: PortalView {
     init(target: String, options: ViewOptions, parking: NativeHost) throws {
         throw NativeError.message("The standalone checks have no terminals")
     }
-    var input: NativeInput { fatalError("The standalone checks have no terminals") }
+    var input: NativeInput { fail("The standalone checks have no terminals") }
     var toolbar: ToolbarModel? { nil }
     func place(in host: NativeHost, rectangle: CGRect) throws {}
     func hide(in parking: NativeHost) {}
