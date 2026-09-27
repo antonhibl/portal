@@ -602,12 +602,55 @@ closed or not a YAML mapping, an invalid status or title, and unreadable files
 are listed under **Problems** with their paths, and the other tasks still show.
 
 A task's title is its front matter `title`, or else its first level-one
-heading outside code fences, or else its ID. The ID is the file name without
-`.md`, or the folder name, so moving `fix-search.md` to
-`fix-search/content.md` keeps the task's ID and address. Renaming it changes
-both. If both forms exist, neither is listed: **Problems** names both files,
-and the task's page shows the conflict until one is removed. The list is
-ordered by ID.
+heading outside code fences, or else its ID. The ID is the front matter `id`
+or, without one, the file name without `.md`, or the folder name. Moving
+`fix-search.md` to `fix-search/content.md` keeps the task's ID and address.
+Without an `id`, renaming the file changes both; with one, the task keeps its
+ID and address wherever it moves. An `id` is lowercase letters and digits in
+words joined by single hyphens, such as `extract-c-interface`. Before moving a
+task that others depend on, give it an `id`; its current name keeps their
+references working when it fits that form.
+
+IDs are unique in the task root, whether written or taken from a name, and one
+location holds one task. If two tasks share an ID, or `fix-search.md` and
+`fix-search/content.md` both exist, neither is listed: **Problems** names the
+files, and each task's page shows the conflict until it is resolved.
+
+#### Dependencies and order
+
+`depends_on` lists the IDs of the tasks that must be done first:
+
+```markdown
+---
+id: implement-c-adapter
+status: todo
+depends_on:
+  - extract-c-interface
+---
+
+# Implement the C adapter
+```
+
+A todo task is **Ready** when every task it depends on is done, and otherwise
+**Blocked** by them. Status stays exactly what you saved: nothing is marked
+done for you. Only `depends_on` makes a dependency; links and a `Blocked by`
+section in the body are for readers. IDs in `depends_on` are compared exactly
+and never read as paths.
+
+The list shows unfinished tasks in an order they could be completed: each
+after what it depends on, and otherwise by ID. A number is a position in that
+order, not permission to start; only **Ready** tasks can start now. A done
+task satisfies the tasks that depend on it, whatever its own dependencies.
+Tasks that cannot be ordered, and the unfinished tasks waiting on them, are
+listed by ID under **Blocked by dependency problems**: a `depends_on` that is
+not a list of IDs, a missing, invalid, or conflicting task, or a cycle among
+unfinished tasks. **Problems** names each file and ID, including for completed
+tasks. **Show completed** adds a separate **Completed** section and changes no
+position.
+
+A task's page shows its ID, the tasks it depends on and the tasks it blocks,
+each with its status, and whether it is ready. Links to completed tasks work
+with either filter.
 
 To complete a task, edit `status: todo` to `status: done` in Emacs, save, and
 press `g` in the task view. `g` rereads the page on screen from the saved files,
@@ -785,6 +828,9 @@ Forward restore the filter and reading positions, `g` rereads the saved file,
 and `g` loads the page on screen after an app host restart. They also check
 task links, inline images in both layouts, and one-click handoff of
 attachments, with mock-up HTML opening as source.
+They also check readiness labels, links to prerequisites and the tasks they
+block, including completed ones, the filter across those links, and a
+dependent becoming ready after its prerequisite is saved as done.
 The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
 shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up

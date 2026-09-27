@@ -1,5 +1,7 @@
 ---
 status: todo
+depends_on:
+  - task-dependencies
 ---
 
 # Discover nested tasks and browse their folder tree
@@ -193,5 +195,4 @@ helpers during implementation while retaining these contracts.
 
 - [Add stable task IDs, dependencies, and execution order](task-dependencies.md)
   supplies the ID/source separation, dependency graph, readiness, and execution
-  view. Use this body link while the repository still runs the original format;
-  add `depends_on: [task-dependencies]` when that metadata is implemented.
+  view; `depends_on` records it for the dashboard.

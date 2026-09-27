@@ -113,7 +113,8 @@ the resolved title; when the first heading supplies it, reuse that heading
 rather than displaying the same title twice. Preserve the rest of the body.
 
 There are no required IDs, timestamps, labels, priorities, ordering fields, or
-attachment manifests in the document.
+attachment manifests in the document. Optional `id` and `depends_on` fields,
+added later, are described below.
 
 ## Identity and conversion
 
@@ -136,6 +137,49 @@ Neither wins: omit that ID from the ordinary task rows and show a conflict on
 its detail page until resolved. Detect duplicates before filtering completed
 tasks. Changing a title or status preserves identity; renaming the file stem or
 folder changes identity and may break references. No redirect registry is added.
+
+### Explicit IDs
+
+Added by [task dependencies](../tasks/task-dependencies.md). An optional
+front matter `id`, a string matching `^[a-z0-9]+(?:-[a-z0-9]+)*$`, becomes the
+task's effective ID in place of its file stem or folder name, which remains
+its location. Renaming or converting such a task keeps its ID, detail URL,
+image requests, and the dependencies on it. Explicit and name-derived IDs share
+one namespace: any duplicate effective ID, and two documents at one location
+even with different IDs, is a conflict naming every source, and every involved
+detail URL reports it. Detail and image requests resolve the effective ID
+through the per-request index; links to a task's source resolve through the
+same index. An invalid `id` is a diagnostic, like an invalid status.
+
+## Dependencies and execution order
+
+`depends_on` is an optional YAML list of nonempty effective IDs, compared
+after NFC normalization, case-sensitively, and deduplicated. Anything else
+leaves the task and its body visible, marked with a dependency problem. Body
+links and `Blocked by` prose create no dependency.
+
+Status is still only `todo` or `done`. A todo task is ready when its metadata
+is valid and every prerequisite resolves uniquely to a done task; otherwise it
+is blocked, with reasons. A missing, invalid, or conflicting prerequisite is
+unresolved, never satisfied.
+
+The execution graph holds unfinished tasks, with edges from prerequisite to
+dependent. Done prerequisites satisfy their dependents and leave the graph with
+their own dependencies. A stable topological sort ranks the rest, choosing the
+smallest ID by code unit when several are eligible. Tasks with invalid
+metadata, unresolved prerequisites, or in a cycle of unfinished tasks
+(including a self-dependency), and every unfinished task depending on them,
+have no rank: they follow under **Blocked by dependency problems**, by ID.
+**Problems** reports each dependency problem with source paths and IDs,
+including historical ones on done tasks, whatever the filter.
+
+The list is this execution view: position, title, status, and readiness.
+**Show completed** adds a separate completed section by ID without changing any
+rank. A detail page shows the effective ID, a **Depends on** list with linked
+titles, IDs, and statuses (explaining unresolved references inline), and the
+reverse **Blocks** list. A done task shows its dependencies but no readiness.
+Each request builds one index and graph and uses it for resolution, links, and
+rendering.
 
 ## Project and root selection
 
@@ -177,6 +221,7 @@ encoded, including paths, spaces, non-ASCII characters, and task IDs.
 
 - Show each task's resolved title and status, ordered by task ID using a
   deterministic, case-sensitive comparison. There is no persisted sort order.
+  (Dependencies replace this with the execution order described above.)
 - The “Show completed” toggle switches between `todo` only and both statuses.
   A done task remains accessible through its detail URL with either filter.
 - Clicking a row opens its complete Markdown body in the same view. A “Tasks”
