@@ -201,7 +201,8 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
 - `build/check-focus` and `build/check-toolbar` passed with real WKWebViews:
   hosted storage, main-frame provenance, reserved types, external and local
   links, a link longer than a record, reload and history, a hosted app loaded
-  from a raw URL with spaces or with an encoded host or a zero-padded port, bridge readiness on
+  from a raw URL with spaces, an encoded host, or a zero-padded port on an
+  IPv4 or IPv6 host, bridge readiness on
   first load and reload, a failed delivery, the TOC and count scripts, and
   Open in Emacs sending `prefix`, `escape` and `bridge` in order.
 - The graphical Excalidraw suite passed 7 of 7: open, edit, hide and reopen,

@@ -142,11 +142,12 @@ public func portalWebParseURL(_ url: portal_string, _ parsed: UnsafeMutablePoint
     let url = String(copying: url)
     return perform(error, into: parsed) {
         guard let parsed = URL(string: url) else { throw NativeError.message("WebKit cannot parse the URL \(url)") }
-        // An IPv6 host cannot be set this way; its brackets keep it as written.
         if var components = URLComponents(url: parsed, resolvingAgainstBaseURL: false), components.host != nil {
-            components.host = parsed.host(percentEncoded: false)
             components.port = parsed.port
-            if let spelled = components.url { return spelled.absoluteString }
+            // An IPv6 host cannot be set unbracketed, so it stays as written.
+            var host = components
+            host.host = parsed.host(percentEncoded: false)
+            if let spelled = host.url ?? components.url { return spelled.absoluteString }
         }
         return parsed.absoluteString
     }

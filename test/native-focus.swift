@@ -209,7 +209,7 @@ struct CheckFocus {
         // WebKit reports a URL with its host and port as parsed, which is the
         // app's own origin however Emacs spelled it. Nothing listens on port 9,
         // so each load fails, but none may go to the browser.
-        for spelling in ["http://%31%32%37.0.0.1:9/app", "http://127.0.0.1:09/app"] {
+        for spelling in ["http://%31%32%37.0.0.1:9/app", "http://127.0.0.1:09/app", "http://[::1]:09/app"] {
             opened = []
             try Views.load(target, spelling)
             let deadline = Date(timeIntervalSinceNow: 1)
