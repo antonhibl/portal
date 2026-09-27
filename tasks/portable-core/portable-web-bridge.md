@@ -96,7 +96,7 @@ ownership, trusted provenance, and navigation generations in the interface.
 - [x] Hosted application source does not reference WebKit transport globals;
   only platform bootstrap glue does. Shared helpers are installed with the same
   privilege and isolation as before.
-- [ ] Real WKWebView checks verify hosted storage, main-frame provenance,
+- [x] Real WKWebView checks verify hosted storage, main-frame provenance,
   external and local links, long link payloads, reload and history, and script
   readiness. Excalidraw open, edit, save and revert, and Markdown and task
   handoff still pass.
@@ -192,8 +192,8 @@ ownership, trusted provenance, and navigation generations in the interface.
 Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
 
 - `./build.sh` built the module and app host. `ctest --test-dir build
-  --output-on-failure` passed all 16 tests, including the new `web-core`
-  test. `bun run --cwd host check` and `bun run --cwd host typecheck` passed.
+  --output-on-failure` passed all 18 tests after rebasing onto the input
+  and terminal core, including the new `web-core` test. `bun run --cwd host check` and `bun run --cwd host typecheck` passed.
 - Mutations of `web.c` (stale-token guard, reserved types, the escape before
   a handoff, the about:blank rule, sender URL matching, restoring the address,
   and comparing Lisp's spelling instead of the platform's) each failed
@@ -202,15 +202,13 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
   hosted storage, main-frame provenance, reserved types, external and local
   links, a link longer than a record, reload and history, a hosted app loaded
   from a raw URL with spaces, an encoded host, or a zero-padded port on an
-  IPv4 or IPv6 host, bridge readiness on
-  first load and reload, a failed delivery, the TOC and count scripts, and
+  IPv4 or IPv6 host, bridge readiness on first load and reload, a failed
+  delivery, the TOC and count scripts, and
   Open in Emacs sending `prefix`, `escape` and `bridge` in order.
-- The graphical Excalidraw suite passed 7 of 7: open, edit, hide and reopen,
-  images, save, and revert. In the combined graphical suite, the tests that
-  inject keys or clicks failed because Emacs could not become active while
-  another app was in front. Unmodified `main` failed the same tests in the
-  same session (28 there, 27 here; the extra one is a flaky Markdown back and
-  forward test). Tests that inject nothing passed, including Markdown Open in
-  Emacs and back and forward, task dependencies and reloads, toolbar and web
-  loading. The Markdown and task-browser link handoffs still need a run with
-  Emacs in front.
+- The combined graphical suite (README, Verification) passed 52 of 52 with
+  Emacs in front, on 2026-09-28 after the rebase: Excalidraw open, edit,
+  save and revert, the Markdown and task-browser link handoffs, including a
+  link click that ends a pending prefix, and the input, terminal and toolbar
+  suites. Of two earlier runs in the same session, one failed that link click
+  test and one three terminal prefix tests; each passed on rerun, and the
+  link click test passed three runs of the Markdown suite alone.
