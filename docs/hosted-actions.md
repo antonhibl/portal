@@ -115,9 +115,10 @@ task file and never move the keyboard unless asked to:
 - `task.status` with `file`, `start`, `end`, `text` and `before`: replace bytes
   `start` to `end` of `file` with `text`, if `file` still has the SHA-256
   `before`. The app host resolved the task and planned the edit; Emacs refuses
-  a buffer with unsaved changes, a file locked by another Emacs, a changed
-  file, or a file outside the view's root, then writes the bytes and reverts an
-  unmodified visiting buffer. The page keeps the keyboard.
+  a buffer with unsaved changes, a file locked by another Emacs, a read-only,
+  changed or replaced file, or a file outside the view's root, then replaces
+  the file whole and reverts an unmodified visiting buffer. The page keeps the
+  keyboard.
 - `task.edit` with `file`: visit it in another pane with the local-file
   handoff, which gives Emacs the keyboard.
 

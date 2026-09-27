@@ -189,6 +189,22 @@ export function frontMatter(text: string): {
 	return { data: data as Record<string, unknown>, body: text.slice(span.body) };
 }
 
+/** The edit that gives TASK STATUS, planned from BYTES read from its source
+ * after discovery found it there; or null when it has STATUS already. Throws
+ * when BYTES are no longer that task, such as after another replaced it. */
+export function statusChange(
+	task: Candidate & { id: string },
+	bytes: Buffer,
+	status: Status,
+): { start: number; end: number; text: string } | null {
+	const reading = classify(task, bytes.toString("utf8"));
+	if (reading.kind !== "task" || reading.task.id !== task.id)
+		throw new Error(
+			"The task file changed while the action ran. Reload the page and try again.",
+		);
+	return reading.task.status === status ? null : statusEdit(bytes, status);
+}
+
 /** A `status` key and its todo or done value, plain or quoted, in block or
  * flow style: the only form the status edit changes. */
 const statusEntry =
@@ -1517,11 +1533,12 @@ export class TaskActions {
 	 * has them. */
 	private async change(listing: Listing, id: string, status: Status) {
 		const task = await this.locate(listing, id);
-		if (task.status === status) return;
 		const bytes = await readFile(task.source);
+		const edit = statusChange(task, bytes, status);
+		if (!edit) return;
 		await this.host.request(listing.context ?? "", "task.status", {
 			file: task.source,
-			...statusEdit(bytes, status),
+			...edit,
 			before: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
 		});
 	}

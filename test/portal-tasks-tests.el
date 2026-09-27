@@ -312,13 +312,21 @@ makes the app host ready."
                                      (cadr (should-error (portal-tasks--status-action plan)
                                                          :type 'user-error))))
               (should (equal (portal-tasks-test--bytes file) changed))
-              ;; A failed save is an error, and changes nothing.
+              ;; A read-only file is left alone, and a failed save is an
+              ;; error that changes nothing, leaving no other file behind.
               (setq plan (portal-tasks-test--plan file "done"))
               (set-file-modes file #o444)
               (unwind-protect
+                  (should (string-search "read-only"
+                                         (cadr (should-error (portal-tasks--status-action plan)
+                                                             :type 'user-error))))
+                (set-file-modes file #o640))
+              (set-file-modes root #o555)
+              (unwind-protect
                   (should-error (portal-tasks--status-action plan) :type 'file-error)
-                (set-file-modes file #o644))
+                (set-file-modes root #o755))
               (should (equal (portal-tasks-test--bytes file) changed))
+              (should (equal (directory-files root nil "\\`[^.]\\|\\`\\.portal") '("task.md")))
               ;; Only a file in the view's root is written.
               (should-error (portal-tasks--status-action
                              (plist-put (portal-tasks-test--plan outside "done") :file outside))
@@ -326,7 +334,9 @@ makes the app host ready."
               (should (equal (portal-tasks-test--bytes outside) text))
               (should (portal-tasks--status-action plan))
               (should (equal (portal-tasks-test--bytes file)
-                             (string-replace "todo" "done" changed)))))
+                             (string-replace "todo" "done" changed)))
+              ;; The saved file keeps its modes.
+              (should (= (file-modes file) #o640))))
         (delete-file outside)))))
 
 (ert-deftest portal-tasks-edit-opens-the-source-in-another-pane ()

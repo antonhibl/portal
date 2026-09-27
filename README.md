@@ -556,9 +556,10 @@ link: click one, or Tab to it and press Return or Space.
 comments, quoting, a byte order mark and CRLF line ends all stay as they were.
 A status written some other way, such as with a YAML tag, an anchor or in more
 than one place, is left alone, and the page asks you to edit it in Emacs. So
-are a task with unsaved changes in an Emacs buffer (save it first), a file
-that changes while the action runs, and a failed save; each reports why and
-changes nothing. An unmodified buffer visiting the task shows the saved file.
+are a task with unsaved changes in an Emacs buffer (save it first), a
+read-only file, a file that changes while the action runs, and a failed save;
+each reports why and changes nothing, since the file is replaced whole. An
+unmodified buffer visiting the task shows the saved file.
 Each button sets the status it names, so pressing it again, or twice, leaves
 the task as it asked. The page shows what is happening, and reports success
 only once the file is saved. The file is saved in the viewed task folder
@@ -934,16 +935,16 @@ Batch task browser tests run with `ctest --test-dir build -R tasks`. They cover
 project-relative, absolute and directory-local task roots, auxiliary buffers,
 explicit and prompted roots, remote roots, one buffer per root, `g` and restart
 recovery of the page on screen, and attachment handoff. Status edits keep a BOM,
-CRLF line ends and every other byte, and refuse buffers with unsaved changes,
-files changed since the edit was planned, failed saves and files outside the
-root. Edit in Emacs reuses a modified buffer beside the page, and saving a file
+CRLF line ends, file modes and every other byte, and refuse buffers with
+unsaved changes, read-only files, files changed since the edit was planned,
+failed saves (leaving no temporary file) and files outside the root. Edit in Emacs reuses a modified buffer beside the page, and saving a file
 refreshes only the loaded views of its root. One test runs the real app host,
 and `ctest -R actions` sends status changes, a repeated change, a refusal and
 Edit in Emacs from the compiled host through Emacs's command loop.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise
-unsafe entries are refused; and that the action route resolves moved IDs,
+unsafe entries are refused, as are bytes that are no longer the task; and that the action route resolves moved IDs,
 serializes repeated requests, rejects other origins, contexts and roots, and
 that task pages run only their own hashed script.
 

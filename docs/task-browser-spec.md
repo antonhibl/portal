@@ -270,16 +270,20 @@ Only the value changes, keeping its quotes. The edited text must read back as
 the same body and the same front matter with only `status` changed; anything
 else, such as a tag, an anchor, an explicit key, a duplicated key, or a
 lookalike inside another value, is refused with an explanation, and the
-document is left for Emacs. Discovery still reads every valid form.
+document is left for Emacs. Discovery still reads every valid form. The bytes
+planned from must still classify as the requested task, so a file that another
+task replaced since discovery is refused.
 
 **Applying.** Emacs receives the byte range, its replacement, and the SHA-256
 of the bytes the plan was made from. It refuses a file with unsaved changes in
-a visiting buffer, one another Emacs has locked, or one whose bytes changed
-since the plan, and otherwise replaces those bytes and writes the file as it
-was read, with no conversion, backup or save hooks. An unmodified visiting
-buffer is then reverted. A failed write is reported and changes nothing. Only
-a file inside the view's root is written; nothing is committed, moved or
-renamed, and each checkout's copy stays independent.
+a visiting buffer, one another Emacs has locked, a read-only one, or one whose
+bytes changed since the plan. Otherwise it replaces those bytes and writes the
+result, with no conversion, backup or save hooks, to a new file beside the task
+that is flushed to disk, given the task's modes and extended attributes, and
+renamed over it, as `file-precious-flag` saves do. A failed write is reported
+and leaves the task as it was. An unmodified visiting buffer is then reverted.
+Only a file inside the view's root is written; nothing is committed or moved,
+and each checkout's copy stays independent.
 
 **Edit in Emacs** visits the resolved source with the local-file handoff:
 another pane, an existing buffer reused as it is, Emacs given the keyboard, and

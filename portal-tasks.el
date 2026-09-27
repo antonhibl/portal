@@ -112,8 +112,9 @@ A buffer already visiting it is reused as it is, unsaved changes and all."
   "Save the status edit the app host planned in ARGUMENTS.
 Bytes START to END of FILE become TEXT, provided FILE still has the SHA-256
 BEFORE the plan was made from, so no other text changes.  Nothing is written
-while a buffer has unsaved changes to FILE, and a buffer visiting it
-unmodified is reverted to the saved file."
+while a buffer has unsaved changes to FILE or FILE is read-only.  FILE is
+replaced whole, so a failed write leaves it as it was, and a buffer visiting
+it unmodified is reverted to the saved file."
   (let* ((file (portal-tasks--source (plist-get arguments :file)))
          (start (plist-get arguments :start))
          (end (plist-get arguments :end))
@@ -127,6 +128,8 @@ unmodified is reverted to the saved file."
                   (buffer-name buffer)))
     (when (stringp lock)
       (user-error "%s is being edited by %s" (file-name-nondirectory file) lock))
+    (unless (file-writable-p file)
+      (user-error "%s is read-only" (file-name-nondirectory file)))
     (with-temp-buffer
       (set-buffer-multibyte nil)
       (insert-file-contents-literally file)
@@ -136,14 +139,29 @@ unmodified is reverted to the saved file."
       (delete-region (1+ start) (1+ end))
       (goto-char (1+ start))
       (insert (encode-coding-string text 'utf-8))
-      (let ((coding-system-for-write 'no-conversion))
-        (write-region nil nil file nil 'silent)))
+      (portal-tasks--replace file))
     (when buffer
       (with-current-buffer buffer
         (with-demoted-errors "Could not revert the task buffer: %S"
           (revert-buffer t t t))))
     (portal-tasks--refresh file)
     (list :file file)))
+
+(defun portal-tasks--replace (file)
+  "Replace FILE with the current buffer's bytes, all at once.
+The bytes go to a new file beside FILE and reach the disk, and then it takes
+FILE's modes, extended attributes and name, as `file-precious-flag' saves
+do.  A failed write leaves FILE as it was."
+  (let ((temp (make-temp-file (expand-file-name ".portal-" (file-name-directory file)))))
+    (unwind-protect
+        (let ((coding-system-for-write 'no-conversion)
+              (write-region-inhibit-fsync nil))
+          (write-region nil nil temp nil 'silent)
+          (set-file-modes temp (file-modes file))
+          (ignore-errors
+            (set-file-extended-attributes temp (file-extended-attributes file)))
+          (rename-file temp file t))
+      (when (file-exists-p temp) (delete-file temp)))))
 
 (defun portal-tasks--refresh (file)
   "Have each task view whose root holds FILE refresh its page from saved files.

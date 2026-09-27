@@ -12,7 +12,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostActions } from "./actions";
-import { classify, statusEdit, TaskActions, tasks } from "./tasks";
+import {
+	classify,
+	statusChange,
+	statusEdit,
+	TaskActions,
+	tasks,
+} from "./tasks";
 
 /** BYTES with EDIT applied, as Emacs applies it. */
 function apply(
@@ -99,6 +105,31 @@ test("an edited document reads back as the same task, with the other status", ()
 	if (before.kind !== "task" || after.kind !== "task")
 		throw new Error("no task");
 	expect(after.task).toEqual({ ...before.task, status: "done" });
+});
+
+test("a status change is planned only from bytes that are still the task", () => {
+	const task = {
+		id: "fix-search",
+		location: "fix-search",
+		source: "/t/fix-search.md",
+		folder: false,
+	};
+	const bytes = (text: string) => Buffer.from(text);
+	expect(statusChange(task, bytes("---\nstatus: todo\n---\n"), "done")).toEqual(
+		statusEdit(bytes("---\nstatus: todo\n---\n"), "done"),
+	);
+	expect(
+		statusChange(task, bytes("---\nstatus: done\n---\n"), "done"),
+	).toBeNull();
+	// Another task, or no task, has taken the file since discovery.
+	for (const text of [
+		"---\nid: other-task\nstatus: todo\n---\n",
+		"# Notes\n",
+		"---\nstatus: later\n---\n",
+	])
+		expect(() => statusChange(task, bytes(text), "done")).toThrow(
+			"changed while the action ran",
+		);
 });
 
 const directories: string[] = [];
