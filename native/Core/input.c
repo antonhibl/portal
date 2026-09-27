@@ -204,6 +204,19 @@ void portal_input_focus(portal_string target, bool focused)
         abandon(view);
 }
 
+void portal_input_escape(portal_string target)
+{
+    struct portal_input *view = portal_views_input(target);
+    if (!view)
+        return;
+    view->passthrough = false;
+    abandon(view);
+    portal_text error = {0};
+    input.requests++;
+    ignore(portal_view_unfocus(view->view, &error), &error);
+    input.requests--;
+}
+
 portal_owner portal_input_owner(portal_string target)
 {
     const struct portal_input *view = portal_views_input(target);

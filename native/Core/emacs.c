@@ -3,10 +3,11 @@
    converts arguments and results, and signals errors.  Each Lisp function
    copies its arguments, calls the core, and converts and frees what it
    returns.  The lifecycle functions call views.h, portal--channel
-   channel.h, the input functions input.h, and the terminal functions
-   terminals.h.  The others find their target's view through views.h, which
-   checks its kind, and pass it to one platform operation from portal.h.  No
-   Emacs environment or value outlives the module call that received it. */
+   channel.h, the input functions input.h, the terminal functions
+   terminals.h, and the web functions web.h.  The others find their target's
+   view through views.h, which checks its kind, and pass it to one platform
+   operation from portal.h.  No Emacs environment or value outlives the
+   module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -18,6 +19,7 @@
 #include "portal.h"
 #include "terminals.h"
 #include "views.h"
+#include "web.h"
 
 int plugin_is_GPL_compatible;
 
@@ -301,9 +303,9 @@ LISP_FUNCTION(Fstrings)
 STRINGS(hide, portal_views_hide(a[0], error))
 STRINGS(close_view, portal_views_close(a[0], error))
 STRINGS(inspect, portal_views_inspect(a[0], result, error))
-STRINGS(web_load, VIEW(PORTAL_WEB) && portal_web_load(view, a[1], error))
-STRINGS(web_send, VIEW(PORTAL_WEB) && portal_web_send(view, a[1], error))
-STRINGS(web_receive, VIEW(PORTAL_WEB) && portal_web_receive(view, result, error))
+STRINGS(web_load, portal_web_views_load(a[0], a[1], error))
+STRINGS(web_send, portal_web_views_send(a[0], a[1], error))
+STRINGS(web_receive, portal_web_views_receive(a[0], result, error))
 STRINGS(terminal_themes, portal_terminals_themes(result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_theme, portal_toolbar_theme(a[0], error))

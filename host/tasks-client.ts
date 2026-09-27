@@ -177,13 +177,10 @@ export function client() {
 		if (button.getAttribute("aria-disabled") !== "true") void operate(button);
 	});
 	// Emacs asks for a refresh after saving a file in this task root.
-	Object.assign(window, {
-		portalBridge: {
-			receive: async (message: { type?: unknown }) => {
-				if (message?.type === "refresh") await refresh().catch(report);
-			},
-		},
-	});
+	if (window.portalBridge)
+		window.portalBridge.receive = async (message: { type?: unknown }) => {
+			if (message?.type === "refresh") await refresh().catch(report);
+		};
 	// History can show a page kept from before a change; check it again.
 	window.addEventListener("pageshow", (event) => {
 		if (event.persisted) refresh().catch(report);

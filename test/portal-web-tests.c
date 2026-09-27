@@ -1,0 +1,486 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Web views' rules and the bridge, native/Core/web.c, with the fake
+   platform.  The tests call the core as emacs.c does for Lisp, and as a
+   platform does for what its pages do: post messages, navigate, commit and
+   fail.  Records go to a real pipe, which the tests read as Emacs would. */
+#define _POSIX_C_SOURCE 200809L
+
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <unistd.h>
+
+#include "channel.h"
+#include "input.h"
+#include "portal-core-tests.h"
+#include "web.h"
+
+static int records = -1; /* The pipe's read end. */
+
+/* Everything the pipe holds now, valid until the next call. */
+static const char *drain(void)
+{
+    static char buffer[8192];
+    ssize_t count = read(records, buffer, sizeof buffer - 1);
+    buffer[count > 0 ? count : 0] = '\0';
+    return buffer;
+}
+
+/* Whether the pipe holds exactly the records FORMAT describes, with each %s
+   the target TARGET. */
+static bool sent(const char *target, const char *format)
+{
+    char expected[512];
+    snprintf(expected, sizeof expected, format, target, target, target);
+    const char *got = drain();
+    if (strcmp(got, expected))
+        fprintf(stderr, "Expected records \"%s\", got \"%s\"\n", expected, got);
+    return !strcmp(got, expected);
+}
+
+/* Open a web view, hosted when HOSTED; return its target to free. */
+static char *open_web(bool hosted)
+{
+    portal_option option = {.name = text("hosted"), .flag = true};
+    portal_text target = {0}, error = {0};
+    if (!portal_views_open(text("web"), &option, hosted, &target, &error))
+        abort();
+    return target.data;
+}
+
+static bool load(const char *target, const char *url, portal_text *error)
+{
+    return portal_web_views_load(text(target), text(url), error);
+}
+
+/* TARGET's waiting messages, received, as a string to free. */
+static char *receive(const char *target)
+{
+    portal_text json = {0}, error = {0};
+    if (!portal_web_views_receive(text(target), &json, &error)) {
+        fprintf(stderr, "Receiving failed: %s\n", error.data);
+        free(error.data);
+        return strdup("(failed)");
+    }
+    return json.data;
+}
+
+/* Whether receiving TARGET's messages returns EXPECTED. */
+static bool receives(const char *target, const char *expected)
+{
+    char *json = receive(target);
+    bool same = !strcmp(json, expected);
+    if (!same)
+        fprintf(stderr, "Expected messages %s, got %s\n", expected, json);
+    free(json);
+    return same;
+}
+
+/* The page in TARGET posts JSON of TYPE from its main frame, or another
+   frame, showing URL. */
+static void post(const char *target, bool main_frame, const char *url, const char *type,
+                 const char *json)
+{
+    portal_web_posted(text(target), (portal_sender) {main_frame, text(url)}, text(type),
+                      text(json));
+}
+
+static const char *const app = "http://127.0.0.1:8080/0123/app?context=1";
+
+/* A hosted app that Emacs loaded at APP and that committed it; its page
+   message is received. */
+static char *open_app(void)
+{
+    portal_text error = {0};
+    char *target = open_web(true);
+    CHECK(load(target, app, &error));
+    portal_web_committed(text(target), text(app));
+    drain();
+    free(receive(target));
+    return target;
+}
+
+static void test_loading(void)
+{
+    portal_text error = {0};
+    char *web = open_web(false);
+    struct portal_fake_calls before = portal_fake_calls();
+    const char *const invalid[] = {"", "example.com", "http:example.com", "https:///path",
+                                   "ftp://example.com/", "javascript:alert(1)", "1http://a/"};
+    for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
+        CHECK(!load(web, invalid[i], &error));
+        CHECK(says(&error, "Expected an absolute http, https, file, data or about URL"));
+    }
+    /* A new view is blank already: loading about:blank would add it to the
+       history. */
+    CHECK(load(web, "about:blank", &error));
+    CHECK(portal_fake_calls().loaded == before.loaded);
+    CHECK(load(web, "HTTPS://example.com/page#top", &error));
+    CHECK(portal_fake_calls().loaded == before.loaded + 1);
+    CHECK(shows(web, "\"url\":\"HTTPS://example.com/page#top\"", NULL));
+    portal_web_committed(text(web), text("HTTPS://example.com/page#top"));
+    /* The document on screen, whatever its fragment, reloads. */
+    CHECK(load(web, "HTTPS://example.com/page#bottom", &error));
+    CHECK(load(web, "HTTPS://example.com/page", &error));
+    CHECK(portal_fake_calls().loaded == before.loaded + 1);
+    CHECK(portal_fake_calls().went == before.went + 2);
+    CHECK(shows(web, "\"history\":\"reload reload\"", NULL));
+    /* Any other document loads, including about:blank once a page has shown. */
+    const char *const others[] = {"HTTPS://example.com/other", "file:///tmp/a%20b.html",
+                                  "data:text/html,<p>#1</p>", "about:blank"};
+    for (size_t i = 0; i < sizeof others / sizeof *others; i++)
+        CHECK(load(web, others[i], &error));
+    CHECK(portal_fake_calls().loaded == before.loaded + 5);
+    /* A platform that cannot load leaves the view as it was. */
+    portal_fake_refuse(true);
+    CHECK(!load(web, "https://example.org/", &error));
+    CHECK(says(&error, "The fake refuses to run view primitives"));
+    CHECK(!load(web, "HTTPS://example.com/page", &error));
+    CHECK(says(&error, "The fake refuses to run view primitives"));
+    portal_fake_refuse(false);
+    CHECK(shows(web, "\"url\":\"about:blank\"", NULL));
+    close_view(web);
+
+    /* Loading checks the kind of view. */
+    char *terminal = open_view("terminal", &error, "directory", "/tmp", NULL);
+    CHECK(terminal != NULL);
+    char message[64];
+    snprintf(message, sizeof message, "No Portal view %s", terminal);
+    CHECK(!load(terminal, "about:blank", &error));
+    CHECK(says(&error, message));
+    close_view(terminal);
+}
+
+static void test_the_address_survives_a_failed_load(void)
+{
+    portal_text error = {0};
+    char *web = open_app();
+    portal_fake_refuse(true);
+    CHECK(!load(web, "http://127.0.0.1:9090/0123/app", &error));
+    CHECK(says(&error, "The fake refuses to run view primitives"));
+    portal_fake_refuse(false);
+    /* The app still posts from the address it had, and still stays on its
+       origin. */
+    post(web, true, "http://127.0.0.1:9090/0123/app", "moved", "{\"type\":\"moved\"}");
+    post(web, true, app, "stayed", "{\"type\":\"stayed\"}");
+    CHECK(receives(web, "[{\"type\":\"stayed\"}]"));
+    CHECK(portal_web_navigating(text(web), text("http://127.0.0.1:9090/"), true)
+          == PORTAL_NAVIGATION_EXTERNAL);
+    close_view(web);
+}
+
+static void test_messages_keep_their_order_under_one_record(void)
+{
+    char *web = open_app();
+    CHECK(receives(web, "[]"));
+    post(web, true, app, "first", "{\"type\":\"first\"}");
+    CHECK(sent(web, "bridge %s\n"));
+    post(web, true, app, "change", "{\"type\":\"change\",\"n\":1}");
+    post(web, true, app, "", "{\"n\":2}");
+    post(web, true, app, "dirty", "{\"type\":\"dirty\"}");
+    /* A newer change replaces one Emacs has not received, at the end. */
+    post(web, true, app, "change", "{\"type\":\"change\",\"n\":3}");
+    post(web, true, app, "last", "{\"type\":\"last\",\"text\":\"\\u2713\"}");
+    CHECK(sent(web, ""));
+    CHECK(receives(web, "[{\"type\":\"first\"},{\"n\":2},{\"type\":\"dirty\"},"
+                        "{\"type\":\"change\",\"n\":3},{\"type\":\"last\",\"text\":\"\\u2713\"}]"));
+    /* Receiving drains the bridge and lets the next message send a record. */
+    CHECK(receives(web, "[]"));
+    post(web, true, app, "change", "{\"type\":\"change\",\"n\":4}");
+    post(web, true, app, "change", "{\"type\":\"change\",\"n\":5}");
+    CHECK(sent(web, "bridge %s\n"));
+    CHECK(receives(web, "[{\"type\":\"change\",\"n\":5}]"));
+    /* A large payload stays out of the pipe. */
+    size_t size = 4 * PIPE_BUF;
+    char *large = malloc(size + 32);
+    int length = snprintf(large, 32, "{\"type\":\"change\",\"json\":\"");
+    memset(large + length, 'x', size);
+    strcpy(large + length + size, "\"}");
+    post(web, true, app, "change", large);
+    CHECK(sent(web, "bridge %s\n"));
+    char *json = receive(web);
+    CHECK(strlen(json) == strlen(large) + 2 && !strncmp(json + 1, large, strlen(large)));
+    free(json);
+    free(large);
+    close_view(web);
+}
+
+static void test_only_the_apps_main_frame_may_post(void)
+{
+    portal_text error = {0};
+    char *web = open_web(true);
+    /* Nothing loaded yet: no page is the app. */
+    post(web, true, "about:blank", "early", "{\"type\":\"early\"}");
+    CHECK(load(web, app, &error));
+    post(web, false, app, "frame", "{\"type\":\"frame\"}");
+    /* A sender is judged by the URL the platform saw, not by what the page
+       claims, and only the address matches exactly. */
+    post(web, true, "http://127.0.0.1:8080/0123/app?context=2", "other",
+         "{\"type\":\"other\",\"origin\":\"http://127.0.0.1:8080\"}");
+    post(web, true, "http://127.0.0.1:8080/0123/app?context=1#x", "fragment",
+         "{\"type\":\"fragment\"}");
+    /* The core's own types are reserved. */
+    const char *const reserved[] = {"page", "follow", "edit"};
+    for (size_t i = 0; i < sizeof reserved / sizeof *reserved; i++)
+        post(web, true, app, reserved[i], "{\"type\":\"page\",\"url\":\"file:///etc/passwd\"}");
+    CHECK(sent(web, ""));
+    /* An app may report its own errors, as the core does. */
+    post(web, true, app, "error", "{\"type\":\"error\",\"message\":\"app\"}");
+    CHECK(sent(web, "bridge %s\n"));
+    CHECK(receives(web, "[{\"type\":\"error\",\"message\":\"app\"}]"));
+    close_view(web);
+}
+
+static void test_the_core_reports_pages_and_failures(void)
+{
+    portal_text error = {0};
+    char *web = open_web(true);
+    CHECK(load(web, app, &error));
+    portal_web_failed(text(web), 0, text("Could not \"connect\"\n\x01"));
+    CHECK(sent(web, "bridge %s\n"));
+    portal_web_committed(text(web), text(app));
+    portal_web_committed(text(web), text("http://127.0.0.1:8080/0123/app?path=r%C3%A9sum%C3%A9"));
+    portal_web_failed(text(web), 0, text("The page's web process stopped."));
+    CHECK(sent(web, ""));
+    CHECK(receives(web,
+                   "[{\"type\":\"error\",\"message\":\"Could not \\\"connect\\\"\\u000a\\u0001\"},"
+                   "{\"type\":\"page\",\"url\":\"http://127.0.0.1:8080/0123/app?context=1\"},"
+                   "{\"type\":\"page\",\"url\":\"http://127.0.0.1:8080/0123/app?path=r%C3%A9sum%C3%A9\"},"
+                   "{\"type\":\"error\",\"message\":\"The page's web process stopped.\"}]"));
+    close_view(web);
+}
+
+static void test_ordinary_pages_have_no_bridge(void)
+{
+    portal_text error = {0};
+    char *web = open_web(false);
+    CHECK(load(web, "https://example.com/", &error));
+    struct portal_fake_calls before = portal_fake_calls();
+    portal_web_committed(text(web), text("https://example.com/"));
+    post(web, true, "https://example.com/", "hello", "{\"type\":\"hello\"}");
+    portal_web_failed(text(web), 0, text("Failed"));
+    portal_web_edit(text(web));
+    CHECK(portal_web_navigating(text(web), text("file:///etc/passwd"), true)
+          == PORTAL_NAVIGATION_ALLOW);
+    CHECK(portal_web_navigating(text(web), text("https://elsewhere.example/"), true)
+          == PORTAL_NAVIGATION_ALLOW);
+    CHECK(sent(web, ""));
+    char message[128];
+    snprintf(message, sizeof message, "Web view %s is not a hosted app, so it has no bridge", web);
+    portal_text json = {0};
+    CHECK(!portal_web_views_send(text(web), text("{}"), &error));
+    CHECK(says(&error, message));
+    CHECK(!portal_web_views_receive(text(web), &json, &error));
+    CHECK(says(&error, message));
+    CHECK(!json.data);
+    CHECK(portal_fake_calls().posted == before.posted);
+    close_view(web);
+    CHECK(!portal_web_views_send(text("web:0"), text("{}"), &error));
+    CHECK(says(&error, "No Portal view web:0"));
+    CHECK(!portal_web_views_receive(text("web:0"), &json, &error));
+    CHECK(says(&error, "No Portal view web:0"));
+}
+
+static void test_navigation_decisions(void)
+{
+    char *web = open_app();
+    const struct {
+        const char *url;
+        bool main_frame;
+        portal_navigation decision;
+    } cases[] = {
+        {"http://127.0.0.1:8080/0123/markdown?path=a.md", true, PORTAL_NAVIGATION_ALLOW},
+        {"HTTP://127.0.0.1:8080/other#x", true, PORTAL_NAVIGATION_ALLOW},
+        {"http://user@127.0.0.1:8080/", true, PORTAL_NAVIGATION_ALLOW},
+        {"about:blank", true, PORTAL_NAVIGATION_ALLOW},
+        {"about:srcdoc", true, PORTAL_NAVIGATION_ALLOW},
+        {"https://example.com/", false, PORTAL_NAVIGATION_ALLOW},
+        {"file:///etc/passwd", false, PORTAL_NAVIGATION_ALLOW},
+        {"https://example.com/", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"http://127.0.0.1:8081/0123/app", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"http://127.0.0.1/0123/app", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"https://127.0.0.1:8080/0123/app", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"http://127.0.0.1:8080@evil.example/", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"http://[::1]:8080/", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"mailto:someone@example.com", true, PORTAL_NAVIGATION_EXTERNAL},
+        {"data:text/html,hi", true, PORTAL_NAVIGATION_EXTERNAL},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+        portal_navigation decision =
+            portal_web_navigating(text(web), text(cases[i].url), cases[i].main_frame);
+        if (decision != cases[i].decision)
+            fprintf(stderr, "Navigating to %s: expected %d, got %d\n", cases[i].url,
+                    cases[i].decision, decision);
+        CHECK(decision == cases[i].decision);
+    }
+    CHECK(sent(web, ""));
+    CHECK(receives(web, "[]"));
+    /* A closed or unknown view's pages go nowhere special. */
+    CHECK(portal_web_navigating(text("web:0"), text("file:///etc/passwd"), true)
+          == PORTAL_NAVIGATION_ALLOW);
+    close_view(web);
+}
+
+/* Emacs gets the keyboard, ending any prefix it is reading, before the
+   bridge record that hands it a local link or an edit. */
+static void test_local_links_and_edits_go_to_emacs(void)
+{
+    portal_text error = {0};
+    bool focused = false;
+    char *web = open_app();
+    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 100, 100}, text("frame"), &error));
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
+    /* Longer than a record could hold. */
+    char url[PIPE_BUF + 64] = "file:///tmp/";
+    while (strlen(url) < PIPE_BUF)
+        strcat(url, "r%C3%A9sum%C3%A9%20");
+    strcat(url, "notes.ts#L4");
+    /* Emacs gets the keyboard with the link. */
+    CHECK(portal_web_navigating(text(web), text(url), true) == PORTAL_NAVIGATION_EMACS);
+    CHECK(sent(web, "bridge %s\n"));
+    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_EMACS);
+    /* During a handoff, Emacs stops reading its key sequence first. */
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
+    portal_fake_press((portal_chord) {'b', PORTAL_CONTROL}, false);
+    int64_t serial = 0;
+    char prefix[64];
+    snprintf(prefix, sizeof prefix, "prefix %s %%" SCNd64 " 0\n", web);
+    CHECK(sscanf(drain(), prefix, &serial) == 1 && serial > 0);
+    portal_web_edit(text(web));
+    char escape[64];
+    snprintf(escape, sizeof escape, "escape %%s %" PRId64 " 0\n", serial);
+    CHECK(sent(web, escape));
+    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_EMACS);
+    char expected[PIPE_BUF + 128];
+    snprintf(expected, sizeof expected, "[{\"type\":\"follow\",\"url\":\"%s\"},{\"type\":\"edit\"}]",
+             url);
+    CHECK(receives(web, expected));
+    /* A local file loaded as the app itself stays. */
+    char *local = open_web(true);
+    CHECK(load(local, "file:///tmp/app/index.html", &error));
+    CHECK(portal_web_navigating(text(local), text("file:///tmp/app/other.html"), true)
+          == PORTAL_NAVIGATION_ALLOW);
+    CHECK(sent(local, ""));
+    close_view(local);
+    close_view(web);
+}
+
+static void test_messages_to_the_app_and_stale_completions(void)
+{
+    portal_text error = {0};
+    char *web = open_app();
+    struct portal_fake_calls before = portal_fake_calls();
+    CHECK(portal_web_views_send(text(web), text("{\"type\":\"load\",\"json\":\"{}\"}"), &error));
+    CHECK(portal_web_views_send(text(web), text("{\"type\":\"saved\"}"), &error));
+    CHECK(portal_fake_calls().posted == before.posted + 2);
+    CHECK(shows(web, "\"posts\":\"{\\\"type\\\":\\\"load\\\",\\\"json\\\":\\\"{}\\\"},"
+                     "{\\\"type\\\":\\\"saved\\\"}\"", NULL));
+    CHECK(!portal_web_views_send(text(web), text("[]"), &error));
+    CHECK(says(&error, "A bridge message must be a JSON object"));
+    CHECK(portal_fake_calls().posted == before.posted + 2);
+    /* The token is the page the message went to.  A failure to deliver it
+       reaches Emacs while that page is on screen. */
+    CHECK(shows(web, "\"token\":2", NULL));
+    portal_web_failed(text(web), 2, text("No receive function"));
+    CHECK(sent(web, "bridge %s\n"));
+    CHECK(receives(web, "[{\"type\":\"error\",\"message\":\"No receive function\"}]"));
+    /* Once the page has gone, a late failure from it is ignored, and new
+       messages carry the new page's token. */
+    portal_web_committed(text(web), text(app));
+    CHECK(receives(web, "[{\"type\":\"page\",\"url\":\"http://127.0.0.1:8080/0123/app?context=1\"}]"));
+    drain();
+    portal_web_failed(text(web), 2, text("Stale"));
+    portal_web_failed(text(web), 1, text("Staler"));
+    CHECK(sent(web, ""));
+    CHECK(receives(web, "[]"));
+    CHECK(portal_web_views_send(text(web), text("{}"), &error));
+    CHECK(shows(web, "\"token\":3", NULL));
+    close_view(web);
+}
+
+static void test_a_closed_view_hears_nothing(void)
+{
+    char *web = open_app();
+    char *target = strdup(web);
+    post(web, true, app, "waiting", "{\"type\":\"waiting\"}");
+    CHECK(sent(web, "bridge %s\n"));
+    struct portal_fake_calls before = portal_fake_calls();
+    close_view(web);
+    /* Late calls from the platform, such as a completion finishing after
+       close, reach neither Emacs nor the platform. */
+    post(target, true, app, "late", "{\"type\":\"late\"}");
+    portal_web_committed(text(target), text(app));
+    portal_web_failed(text(target), 0, text("Late"));
+    portal_web_failed(text(target), 2, text("Late"));
+    portal_web_edit(text(target));
+    CHECK(portal_web_navigating(text(target), text("file:///etc/passwd"), true)
+          == PORTAL_NAVIGATION_ALLOW);
+    CHECK(sent(target, ""));
+    CHECK(portal_fake_calls().destroyed == before.destroyed + 1);
+    before.destroyed++;
+    struct portal_fake_calls after = portal_fake_calls();
+    CHECK(!memcmp(&before, &after, sizeof before));
+    char message[64];
+    snprintf(message, sizeof message, "No Portal view %s", target);
+    portal_text json = {0}, error = {0};
+    CHECK(!portal_web_views_receive(text(target), &json, &error));
+    CHECK(says(&error, message));
+    free(target);
+}
+
+/* A web view whose app echoes what Emacs sends, as the Lisp module tests use. */
+static void test_an_echoing_app(void)
+{
+    portal_option options[] = {{.name = text("hosted"), .flag = true},
+                               {.name = text("echo"), .flag = true}};
+    portal_text target = {0}, error = {0};
+    CHECK(portal_views_open(text("web"), options, 2, &target, &error));
+    CHECK(load(target.data, app, &error));
+    CHECK(portal_web_views_send(text(target.data), text("{\"a\":1}"), &error));
+    CHECK(sent(target.data, "bridge %s\n"));
+    CHECK(receives(target.data, "[{\"a\":1}]"));
+    close_view(target.data);
+}
+
+static void test_the_shared_scripts(void)
+{
+    portal_script scripts[] = {PORTAL_SCRIPT_LINKS, PORTAL_SCRIPT_CONTENTS};
+    for (size_t i = 0; i < 2; i++) {
+        portal_string source = portal_web_script(scripts[i]);
+        CHECK(source.length > 100 && strlen(source.data) == source.length);
+        CHECK(!strncmp(source.data, "// SPDX-License-Identifier", 26));
+        CHECK(strstr(source.data, "\n(report) => {\n") && !strstr(source.data, "webkit"));
+    }
+    CHECK(strstr(portal_web_script(PORTAL_SCRIPT_LINKS).data, "file:"));
+    CHECK(strstr(portal_web_script(PORTAL_SCRIPT_CONTENTS).data, "globalThis.portalToolbar"));
+}
+
+int main(void)
+{
+    int fds[2];
+    if (pipe(fds) || fcntl(fds[0], F_SETFL, O_NONBLOCK) == -1)
+        abort();
+    records = fds[0];
+    CHECK(portal_channel_connect(fds[1]));
+    test_loading();
+    test_the_address_survives_a_failed_load();
+    test_messages_keep_their_order_under_one_record();
+    test_only_the_apps_main_frame_may_post();
+    test_the_core_reports_pages_and_failures();
+    test_ordinary_pages_have_no_bridge();
+    test_navigation_decisions();
+    test_local_links_and_edits_go_to_emacs();
+    test_messages_to_the_app_and_stale_completions();
+    test_a_closed_view_hears_nothing();
+    test_an_echoing_app();
+    test_the_shared_scripts();
+    CHECK(!portal_fake_calls().misused);
+    portal_channel_connect(-1);
+    close(records);
+    if (failures) {
+        fprintf(stderr, "%d checks failed\n", failures);
+        return 1;
+    }
+    puts("Web views' rules and the bridge passed");
+    return 0;
+}

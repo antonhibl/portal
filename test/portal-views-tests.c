@@ -333,12 +333,11 @@ static void test_closing_ends_the_view_once(void)
     CHECK(portal_channel_connect(fds[1]));
     portal_text error = {0}, state = {0};
     char *web = open_view("web", &error, "hosted", "yes", NULL);
-    portal_view *handle = portal_views_find(text(web), PORTAL_WEB, NULL);
     CHECK(place(web, (portal_edges) {0, 0, 100, 100}, "one", &error));
     /* The platform's records reach Emacs while the view is open. */
-    CHECK(portal_web_send(handle, text("{}"), &error));
+    CHECK(portal_notify(text("select"), text(web), NULL, 0));
     char record[64];
-    snprintf(record, sizeof record, "bridge %s\n", web);
+    snprintf(record, sizeof record, "select %s\n", web);
     CHECK(!strcmp(drain(fds[0]), record));
 
     struct portal_fake_calls before = portal_fake_calls();
@@ -365,7 +364,7 @@ static void test_closing_ends_the_view_once(void)
     /* A late record from the platform, for the closed view, never reaches
        Emacs; it could not reach another view either, since no target is
        reused. */
-    CHECK(!portal_notify(text("bridge"), text(target), NULL, 0));
+    CHECK(!portal_notify(text("select"), text(target), NULL, 0));
     CHECK(!strcmp(drain(fds[0]), ""));
     CHECK(!portal_fake_calls().misused);
     free(target);

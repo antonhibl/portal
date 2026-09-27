@@ -1,6 +1,6 @@
 ---
 id: portable-web-bridge
-status: todo
+status: done
 depends_on:
   - portable-view-lifecycle
   - portable-notification-channel
@@ -87,23 +87,23 @@ ownership, trusted provenance, and navigation generations in the interface.
 
 ## Acceptance criteria and verification
 
-- [ ] `portal.h` no longer declares the removed operations. Its web part is the
+- [x] `portal.h` no longer declares the removed operations. Its web part is the
   primitives and calls into the core above.
-- [ ] C tests with a fake web platform exercise the real core. They cover
+- [x] C tests with a fake web platform exercise the real core. They cover
   message order and coalescing, drain and re-arm, invalid senders and types,
   rejection on ordinary pages, navigation decisions, close, and stale
   completions.
-- [ ] Hosted application source does not reference WebKit transport globals;
+- [x] Hosted application source does not reference WebKit transport globals;
   only platform bootstrap glue does. Shared helpers are installed with the same
   privilege and isolation as before.
 - [ ] Real WKWebView checks verify hosted storage, main-frame provenance,
   external and local links, long link payloads, reload and history, and script
   readiness. Excalidraw open, edit, save and revert, and Markdown and task
   handoff still pass.
-- [ ] `./build.sh`, `ctest --test-dir build --output-on-failure`,
+- [x] `./build.sh`, `ctest --test-dir build --output-on-failure`,
   `bun run --cwd host check` and `bun run --cwd host typecheck` pass, along with
   the affected native and graphical web, input and Excalidraw suites.
-- [ ] Update `docs/editor-bridge.md` and the README architecture, record
+- [x] Update `docs/editor-bridge.md` and the README architecture, record
   verification, and mark this task done. Follow `AGENTS.md` for the
   implementation worktree and PR.
 
@@ -114,3 +114,93 @@ ownership, trusted provenance, and navigation generations in the interface.
 - [Own ordered native notifications in the C core](portable-notification-channel.md)
   supplies bridge announcements, their order relative to input records, and the
   convention for platform calls into the core.
+
+## Outcome
+
+- `native/Core/web.c` owns web views' rules and the bridge. Each web view's
+  state hangs off its registry entry in `views.c` and is freed on close. The
+  core validates the URLs Lisp loads, reloads the document on screen instead
+  of adding a history entry, skips about:blank in a view that has shown
+  nothing, and keeps the view's address across a failed load. It answers
+  every navigation a hosted page asks for, owns the bridge's queue, `change`
+  coalescing, the reserved `page`, `follow` and `edit` types and the single
+  outstanding `bridge TARGET` record, and answers `portal--web-receive`
+  itself. `emacs.c` calls `portal_views_web_load`, `_send` and `_receive`.
+- `portal.h` no longer declares `portal_web_send` or `portal_web_receive`.
+  Its web primitives are `portal_web_load(view, url)`, `portal_web_go(view,
+  step)` and `portal_web_post(view, json, token)`. Platform calls into the
+  core are `portal_web_posted(target, sender, type, json)`,
+  `portal_web_navigating(target, url, main_frame)`, `portal_web_committed`,
+  `portal_web_failed(target, token, message)` and `portal_web_edit`, plus
+  `portal_web_script`, which hands out the shared scripts.
+- Swift keeps WebKit: delegates, the non-persistent data store for hosted
+  apps, `loadFileURL`, content worlds and script installation, the file
+  picker and `NSWorkspace`. `WebBridge` and `WebLinks` are gone; one
+  `PageMessages` handler forwards what WebKit observed.
+- C input policy merged first (portable-input-policy), so a `follow` or
+  `edit` gives Emacs the keyboard through the input core:
+  `portal_input_escape` in `native/Core/input.c` does what the platform's
+  Command-Escape report does, ending any handoff with its `escape` record
+  before the `bridge` record, then returning the keyboard. It adds an entry
+  to the input state machine, not a copy of it.
+- Hosted apps post with `window.portalBridge.postMessage` and set
+  `portalBridge.receive` (`host/bridge.d.ts`). Only the platform glue in
+  `WebView.swift` and `CoreCalls.swift` names `window.webkit`.
+- The links script and the toolbar's contents and count script are
+  `native/Core/scripts/links.js` and `contents.js`. They keep their worlds,
+  injection times and main-frame limits.
+- Decisions:
+  - **JSON.** Validated JSON bytes with typed metadata. The platform checks
+    that a message is a JSON object, as it must parse one to deliver it
+    anyway, and passes its `type`. The core only writes JSON, for its own
+    messages and the received array, and never parses it. No JSON library.
+  - **History.** `portal_history` is an enum, `PORTAL_BACK`,
+    `PORTAL_FORWARD` or `PORTAL_RELOAD`. The core uses reload now; back and
+    forward stay with the toolbar until the toolbar task moves them.
+  - **Scripts.** Packaged in the core, embedded with `#embed` (a C23
+    feature that Clang, and GCC 15, accept in C11, with one warning
+    silenced), so no platform needs bundle resources or the app host. Each is
+    a function expression taking a report function. The platform starts it
+    as `(SOURCE)(REPORT)` in its own isolated world, with REPORT posting to a
+    handler in that world. Arguments to a script's functions, and messages
+    to the page, cross as `callAsyncJavaScript` arguments, never as script
+    text.
+  - **Provenance.** A `portal_sender` is what WebKit reports about the
+    posting frame: main frame or not, and its document URL. It must equal,
+    byte for byte, the URL Emacs loaded last. A page's own claims never
+    count.
+  - **Ownership and generations.** Platform calls name the view by target,
+    so a late call after close finds nothing. Each commit starts a new
+    generation, and a post's token is the generation it went to, so a failed
+    delivery reported after the page changed is dropped. Token 0 reports a
+    failure of the page itself.
+  - **Current page.** The core compares loads with the URL committed last.
+    Swift compared with `WKWebView.url`, which also follows
+    `history.pushState`, so for an ordinary page that has pushed a URL, `g`
+    now reloads it rather than loading the original URL. No hosted app uses
+    `pushState`.
+
+## Verification
+
+Run on macOS 27.0 with Swift 6.4, Emacs 31.1 and Bun 1.3.14 on 2026-09-28:
+
+- `./build.sh` built the module and app host. `ctest --test-dir build
+  --output-on-failure` passed all 16 tests, including the new `web-core`
+  test. `bun run --cwd host check` and `bun run --cwd host typecheck` passed.
+- Mutations of `web.c` (stale-token guard, reserved types, the escape before
+  a handoff, the about:blank rule, sender URL matching and restoring the
+  address) each failed `portal-web-tests`.
+- `build/check-focus` and `build/check-toolbar` passed with real WKWebViews:
+  hosted storage, main-frame provenance, reserved types, external and local
+  links, a link longer than a record, reload and history, bridge readiness on
+  first load and reload, a failed delivery, the TOC and count scripts, and
+  Open in Emacs sending `prefix`, `escape` and `bridge` in order.
+- The graphical Excalidraw suite passed 7 of 7: open, edit, hide and reopen,
+  images, save, and revert. In the combined graphical suite, the tests that
+  inject keys or clicks failed because Emacs could not become active while
+  another app was in front. Unmodified `main` failed the same tests in the
+  same session (28 there, 27 here; the extra one is a flaky Markdown back and
+  forward test). Tests that inject nothing passed, including Markdown Open in
+  Emacs and back and forward, task dependencies and reloads, toolbar and web
+  loading. The Markdown and task-browser link handoffs still need a run with
+  Emacs in front.

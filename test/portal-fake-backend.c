@@ -15,6 +15,8 @@
    each Enter, and its "theme" the last one applied, false for the default.
    The engine's themes are those in `themes' below, listed out of order.
 
+   A web view's primitives are described below, at portal_web_load.
+
    Failures on demand: creating a view with the option :fail fails, with that
    option's string as the message; attaching to a frame whose title starts
    with "deleted" fails, as the frame is gone; every terminal primitive on a
@@ -406,52 +408,48 @@ void portal_fake_fire_timers(void)
         portal_timer_fired(fired[i]);
 }
 
+/* A web view records the "url" it loaded last, and the "history" steps it
+   took, such as "reload".  Its page does nothing by itself: tests report
+   what pages do by calling the core as the platform does. */
 bool portal_web_load(portal_view *web, portal_string url, portal_text *error)
 {
-    if (!usable(web, PORTAL_WEB, error))
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
         return false;
+    calls.loaded++;
     set_string(web, "url", url.data, url.length);
     return true;
 }
 
-/* Whether WEB is a hosted web view. */
-static bool hosted(struct portal_view *web, portal_text *error)
+bool portal_web_go(portal_view *web, portal_history step, portal_text *error)
 {
-    if (!usable(web, PORTAL_WEB, error))
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
         return false;
-    const struct property *option = get(web, "hosted");
-    if (option && (option->kind == STRING || option->flag))
-        return true;
-    return fail(error, "Web view %s is not a hosted app, so it has no bridge", web->target);
-}
-
-/* The fake app echoes what Emacs sends it.  Like the real bridge, one record
-   announces its messages until Emacs receives them. */
-bool portal_web_send(portal_view *web, portal_string json, portal_text *error)
-{
-    if (!hosted(web, error))
-        return false;
-    const struct property *messages = get(web, "messages");
-    bool announced = messages && messages->string.length;
-    portal_string target = {web->target, strlen(web->target)};
-    if (!announced && !portal_notify((portal_string) {"bridge", 6}, target, NULL, 0))
-        return fail(error, "The bridge record was refused");
-    append(web, "messages", ",", json.data, json.length);
+    calls.went++;
+    const char *name = step == PORTAL_BACK ? "back" : step == PORTAL_FORWARD ? "forward" : "reload";
+    append(web, "history", " ", name, strlen(name));
     return true;
 }
 
-bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error)
+/* The page receives each message: they collect, in order, in "posts", and
+   the last token in "token".  A view created with the option :echo is an app
+   that posts each message back at once, from its main frame at the URL it
+   loaded last, with no type. */
+bool portal_web_post(portal_view *web, portal_string json, uint64_t token, portal_text *error)
 {
-    if (!hosted(web, error))
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
         return false;
-    const struct property *messages = get(web, "messages");
-    portal_text sent = messages ? messages->string : (portal_text) {"", 0};
-    char *bytes = malloc(sent.length + 3);
-    bytes[0] = '[';
-    memcpy(bytes + 1, sent.data, sent.length);
-    memcpy(bytes + 1 + sent.length, "]", 2);
-    *json = (portal_text) {bytes, sent.length + 2};
-    set_string(web, "messages", "", 0);
+    if (!json.length || json.data[0] != '{')
+        return fail(error, "A bridge message must be a JSON object");
+    calls.posted++;
+    append(web, "posts", ",", json.data, json.length);
+    set_integer(web, "token", (int64_t) token);
+    const struct property *echo = get(web, "echo"), *url = get(web, "url");
+    if (echo && (echo->kind == STRING || echo->flag)) {
+        portal_sender sender = {true, url ? (portal_string) {url->string.data, url->string.length}
+                                          : (portal_string) {"", 0}};
+        portal_web_posted((portal_string) {web->target, strlen(web->target)}, sender,
+                          (portal_string) {"", 0}, json);
+    }
     return true;
 }
 

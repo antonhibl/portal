@@ -5,3 +5,4 @@
 #include "../native/Core/channel.h"
 #include "../native/Core/input.h"
 #include "../native/Core/views.h"
+#include "../native/Core/web.h"

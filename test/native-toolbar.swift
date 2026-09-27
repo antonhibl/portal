@@ -32,7 +32,7 @@ struct CheckToolbar {
         window.makeFirstResponder(editor)
         let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("contents")]))
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        try Views.view(target, as: WebSession.self).load("data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>")
+        try Views.load(target, "data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>")
         var container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         let web = require(container.content as? WKWebView)
         let model = container.model
@@ -44,7 +44,7 @@ struct CheckToolbar {
         // Previews go back and forward like pages; only Markdown ones open in Emacs.
         check(!button("Back").isHidden && !button("Back").isEnabled && !button("Forward").isEnabled)
         check(button("Open in Emacs").isHidden)
-        try Views.view(target, as: WebSession.self).load("data:text/html,<title>Second page</title>")
+        try Views.load(target, "data:text/html,<title>Second page</title>")
         wait("second page did not load") { web.title == "Second page" && button("Back").isEnabled }
         button("Back").performClick(nil)
         wait("back did not return") { web.title == "Toolbar test" && !web.isLoading && model.hasHeadings }
@@ -167,7 +167,7 @@ struct CheckToolbar {
         let kinds = records.split(separator: "\n").map { $0.split(separator: " ").prefix(2).joined(separator: " ") }
         check(kinds == ["prefix \(target)", "escape \(target)", "bridge \(target)"],
                      "Open in Emacs did not end the prefix and notify Emacs: \(records)")
-        let messages = try Views.view(target, as: WebSession.self).receive()
+        let messages = try Views.receive(target)
         check(messages == #"[{"type":"edit"}]"#, "Open in Emacs did not ask Emacs to edit")
         check(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")
         try Views.close(target)

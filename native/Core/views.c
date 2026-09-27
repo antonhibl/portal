@@ -16,11 +16,13 @@
 #include "core.h"
 #include "terminals.h"
 #include "views.h"
+#include "web.h"
 
 struct view {
     struct view *next;
     portal_view *native;
     portal_kind kind;
+    struct portal_web_state *web; /* A web view's pages and bridge (web.c). */
     uint64_t id;
     bool attached;
     portal_edges edges; /* Where it is attached, while ATTACHED. */
@@ -59,6 +61,16 @@ struct portal_input *portal_views_input(portal_string target)
     return view ? &view->input : NULL;
 }
 
+portal_view *portal_views_find_web(portal_string target, struct portal_web_state **web,
+                                   portal_text *error)
+{
+    struct view *view = find(target, PORTAL_WEB, error);
+    if (!view)
+        return NULL;
+    *web = view->web;
+    return view->native;
+}
+
 bool portal_views_open(portal_string kind_name, const portal_option *options, size_t count,
                        portal_text *target, portal_text *error)
 {
@@ -80,18 +92,21 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
        nothing but the platform can fail. */
     struct view *view = malloc(sizeof *view + length + 1);
     char *copy = malloc(length + 1);
-    if (!view || !copy) {
+    struct portal_web_state *web = kind == PORTAL_WEB ? portal_web_state_new(options, count) : NULL;
+    if (!view || !copy || (kind == PORTAL_WEB && !web)) {
         free(view);
         free(copy);
+        portal_web_state_free(web);
         return fail_with(error, "Portal is out of memory");
     }
-    *view = (struct view) {.kind = kind, .id = id, .length = length};
+    *view = (struct view) {.kind = kind, .web = web, .id = id, .length = length};
     memcpy(view->target, name, length + 1);
     memcpy(copy, name, length + 1);
     if (!portal_view_create(kind, (portal_string) {view->target, length}, options, count,
                             &view->native, error)) {
         free(view);
         free(copy);
+        portal_web_state_free(web);
         return false;
     }
     portal_input_open(&view->input, view->native, (portal_string) {view->target, length},
@@ -163,6 +178,7 @@ bool portal_views_close(portal_string target, portal_text *error)
             views.last = view;
         return false;
     }
+    portal_web_state_free(view->web);
     free(view);
     return true;
 }

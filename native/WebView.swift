@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
+import PortalCore
 import WebKit
 
+/// One WebKit page. It loads what the core decides and reports what the page
+/// does: its navigations, commits and failures, and a hosted app's messages.
 @MainActor
 private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, NativeSurface {
     var nativeView: NSView { self }
@@ -21,64 +24,73 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     }
 
     var loadError: String?
-    /// Whether this page shows a hosted app, which never leaves the app host.
-    private let hosted: Bool
-    /// The URL Emacs loaded last. A hosted app's app host is its origin.
-    private(set) var address: URL?
-    /// A hosted app's bridge, which hears about failures the app cannot report,
-    /// the pages it commits, and the local links the user follows.
-    weak var bridge: WebBridge?
+    /// The view's target, which names it in every call to the core.
+    let target: String
 
-    init(toolbar: ToolbarModel.Kind?, hosted: Bool) {
-        self.hosted = hosted
+    init(target: String, toolbar: ToolbarModel.Kind?, hosted: Bool) {
+        self.target = target
         let configuration = WKWebViewConfiguration()
         if hosted { configuration.websiteDataStore = .nonPersistent() }
         super.init(frame: .zero, configuration: configuration)
         if let toolbar { controls = WebToolbar(web: self, kind: toolbar) }
-        if hosted { WebLinks.install(in: self) }
+        if hosted { PageMessages.install(in: self) }
         navigationDelegate = self
         uiDelegate = self
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func navigate(to url: URL) {
+    /// Load URL as a new document; a local file may read its directory.
+    func open(_ url: URL) {
         loadError = nil
-        address = url
-        // A new page is blank already. Loading about:blank would put a blank
-        // page in its history, before the first page Back could return to.
-        if url.absoluteString == "about:blank" && backForwardList.currentItem == nil { return }
-        // Loading the page on screen again rereads it, without a new history entry.
-        if let current = self.url, Self.document(current) == Self.document(url) {
-            reload()
-        } else if url.isFileURL {
+        if url.isFileURL {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             load(URLRequest(url: url))
         }
     }
 
-    /// URL without its fragment.
-    private static func document(_ url: URL) -> URL? {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.fragment = nil
-        return components?.url
+    func go(_ step: portal_history) {
+        switch step {
+        case PORTAL_BACK: goBack()
+        case PORTAL_FORWARD: goForward()
+        default:
+            loadError = nil
+            reload()
+        }
     }
 
-    private static func origin(_ url: URL) -> String {
-        "\(url.scheme?.lowercased() ?? "")://\(url.host?.lowercased() ?? ""):\(url.port ?? -1)"
+    /// Pass MESSAGE, a JSON object, to the page's `portalBridge.receive` as
+    /// data. A failure reaches the core with TOKEN, which tells it apart from
+    /// failures on a later page.
+    func post(_ json: String, token: UInt64) throws {
+        guard let message = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+            throw NativeError.message("A bridge message must be a JSON object")
+        }
+        callAsyncJavaScript("return await window.portalBridge.receive(message)",
+                            arguments: ["message": message], in: nil, in: .page) { [target] result in
+            if case .failure(let error) = result {
+                Core.failed(target, token: token, message: error.localizedDescription)
+            }
+        }
     }
 
-    /// A hosted app's main frame stays on the app host: any other page opens in
-    /// the default browser instead.
+    /// Ask the core whether the page may go to URL, and act on its answer:
+    /// true to go on. It hands local files to Emacs itself.
+    func mayNavigate(to url: URL, mainFrame: Bool) -> Bool {
+        switch Core.navigating(target, url: url.absoluteString, mainFrame: mainFrame) {
+        case .allow: return true
+        case .external: WebSession.openInBrowser(url)
+        case .emacs: break
+        }
+        return false
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        guard hosted, action.targetFrame?.isMainFrame ?? true, let url = action.request.url,
-              url.scheme?.lowercased() != "about", Self.origin(url) != address.map(Self.origin) else {
-            return decisionHandler(.allow)
-        }
-        decisionHandler(.cancel)
-        WebSession.openInBrowser(url)
+        guard let url = action.request.url else { return decisionHandler(.allow) }
+        // A request for a new window counts as the main frame.
+        decisionHandler(mayNavigate(to: url, mainFrame: action.targetFrame?.isMainFrame ?? true) ? .allow : .cancel)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -96,31 +108,15 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
         record(error)
     }
 
-    /// Emacs tracks which page a hosted app shows, including after back and forward.
+    /// Every page the view commits, including after back and forward.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if let url { bridge?.emit(["type": "page", "url": url.absoluteString]) }
+        if let url { Core.committed(target, url: url.absoluteString) }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { controls?.loaded() }
 
-    /// Emacs visits a local file that a hosted app's page links to, in another
-    /// pane. The URL goes over the bridge: a long path would not fit in a record.
-    /// Escaping first ends any prefix Emacs is reading; records keep their order,
-    /// so Emacs gets the escape before the bridge record.
-    func follow(_ url: URL) {
-        input?.escape()
-        bridge?.emit(["type": "follow", "url": url.absoluteString])
-    }
-
-    /// Emacs opens the Markdown file on screen, from the toolbar, as `follow`
-    /// visits a link.
-    func edit() {
-        input?.escape()
-        bridge?.emit(["type": "edit"])
-    }
-
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        bridge?.emit(["type": "error", "message": "The page's web process stopped."])
+        Core.failed(target, token: 0, message: "The page's web process stopped.")
     }
 
     // File inputs, such as inserting an image, use the native file picker.
@@ -136,152 +132,86 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     private func record(_ error: Error) {
         if (error as NSError).code != NSURLErrorCancelled {
             loadError = error.localizedDescription
-            bridge?.emit(["type": "error", "message": error.localizedDescription])
+            Core.failed(target, token: 0, message: error.localizedDescription)
         }
     }
 }
 
-/// A hosted app's links to local files. WebKit never lets a page on the app
-/// host navigate to a file: URL, and does not ask the navigation delegate
-/// either, so a script out of the page's reach catches the user's clicks.
+/// A hosted app's two script message handlers. The page's world gets the
+/// bridge: bootstrap glue defines `portalBridge.postMessage`, the one place
+/// a hosted app's messages meet WebKit's transport. An isolated world, out
+/// of the page's reach, runs the core's shared links script, which reports
+/// clicks on links to local files: WebKit never lets a page on the app host
+/// navigate to a file: URL, and does not ask the navigation delegate either.
+/// The core judges both by what WebKit says about the sending frame.
 @MainActor
-private final class WebLinks: NSObject, WKScriptMessageHandler {
-    private static let world = WKContentWorld.world(name: "Portal links")
-    private static let script = """
-        document.addEventListener('click', event => {
-          const link = event.target instanceof Element && event.target.closest('a[href]');
-          if (!event.isTrusted || event.button !== 0 || !link || link.protocol !== 'file:') return;
-          event.preventDefault();
-          window.webkit.messageHandlers.follow.postMessage(link.href);
-        }, true);
+private final class PageMessages: NSObject, WKScriptMessageHandler {
+    private static let links = WKContentWorld.world(name: "Portal links")
+    private static let bridge = """
+        window.portalBridge = {
+          postMessage: (message) => window.webkit.messageHandlers.portal.postMessage(message),
+        };
         """
     private weak var page: WebPage?
 
     static func install(in page: WebPage) {
-        let links = WebLinks()
-        links.page = page
+        let messages = PageMessages()
+        messages.page = page
         let controller = page.configuration.userContentController
-        controller.add(links, contentWorld: world, name: "follow")
-        controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart,
-                                              forMainFrameOnly: true, in: world))
+        controller.add(messages, contentWorld: .page, name: "portal")
+        controller.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: .page))
+        controller.add(messages, contentWorld: links, name: "follow")
+        controller.addUserScript(WKUserScript(source: Core.script(PORTAL_SCRIPT_LINKS, handler: "follow"),
+                                              injectionTime: .atDocumentStart, forMainFrameOnly: true,
+                                              in: links))
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let text = message.body as? String,
-              let url = URL(string: text), url.isFileURL else { return }
-        page?.follow(url)
-    }
-}
-
-/// The message channel between a hosted app and its buffer. The app posts
-/// JSON objects to `window.webkit.messageHandlers.portal`, and Emacs's messages
-/// arrive through `window.portalBridge.receive`. Messages wait here, outside the
-/// notification pipe, until Emacs receives them all; one `bridge TARGET` record
-/// announces them, and no other goes out until Emacs has received them.
-@MainActor
-private final class WebBridge: NSObject, WKScriptMessageHandler {
-    private let target: String
-    private weak var page: WebPage?
-    private var messages: [[String: Any]] = []
-    private var notified = false
-    private var closed = false
-
-    init(target: String, page: WebPage) {
-        self.target = target
-        self.page = page
-        super.init()
-        page.configuration.userContentController.add(self, name: "portal")
-        page.bridge = self
-    }
-
-    /// Message types only the view itself sends; an app cannot post them.
-    static let reserved: Set<String> = ["page", "follow", "edit"]
-
-    /// Only the main frame, at the app-host URL Emacs loaded, may post.
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let address = page?.address,
-              message.frameInfo.request.url == address,
-              let body = message.body as? [String: Any], JSONSerialization.isValidJSONObject(body),
-              !Self.reserved.contains(body["type"] as? String ?? "") else { return }
-        emit(body)
-    }
-
-    func emit(_ message: [String: Any]) {
-        guard !closed else { return }
-        // Large payloads, such as Excalidraw scenes, stay out of the pipe. A
-        // newer change supersedes one not yet received; all else keeps its order.
-        if message["type"] as? String == "change" {
-            messages.removeAll { $0["type"] as? String == "change" }
+        guard let page else { return }
+        let mainFrame = message.frameInfo.isMainFrame
+        if message.name == "follow" {
+            guard let text = message.body as? String, let url = URL(string: text) else { return }
+            // The script cancelled the click, so an allowed link loads here.
+            if page.mayNavigate(to: url, mainFrame: mainFrame) { page.open(url) }
+        } else if let body = message.body as? [String: Any], JSONSerialization.isValidJSONObject(body),
+                  let json = try? JSONSerialization.data(withJSONObject: body) {
+            Core.posted(page.target, mainFrame: mainFrame,
+                        url: message.frameInfo.request.url?.absoluteString ?? "",
+                        type: body["type"] as? String ?? "", json: String(decoding: json, as: UTF8.self))
         }
-        messages.append(message)
-        signal()
-    }
-
-    /// Announce the waiting messages with one record. The core delivers it in
-    /// order with other records, waiting while the pipe is full.
-    private func signal() {
-        guard !notified, !closed, !messages.isEmpty else { return }
-        notified = Core.notify("bridge", target: target)
-    }
-
-    /// Return every queued message as a JSON array, and allow the next record.
-    func receive() throws -> String {
-        let data = try JSONSerialization.data(withJSONObject: messages)
-        messages.removeAll(keepingCapacity: true)
-        notified = false
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    func send(_ json: String) throws {
-        guard let message = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
-            throw NativeError.message("A bridge message must be a JSON object")
-        }
-        page?.callAsyncJavaScript("return await window.portalBridge.receive(message)",
-                                  arguments: ["message": message], in: nil, in: .page) { [weak self] result in
-            if case .failure(let error) = result {
-                self?.emit(["type": "error", "message": error.localizedDescription])
-            }
-        }
-    }
-
-    func close() {
-        closed = true
-        page?.configuration.userContentController.removeScriptMessageHandler(forName: "portal")
     }
 }
 
 /// The web view kind: one WebKit page with its own browsing state. The page
-/// stays loaded while the view is hidden, and its toolbar is fixed when it opens.
-/// Only a hosted app has a bridge.
+/// stays loaded while the view is hidden, and its toolbar is fixed when it
+/// opens. The core decides what it loads and where it may go, and keeps a
+/// hosted app's bridge (native/Core/web.c).
 @MainActor
 final class WebSession: PortalView {
     /// Where a hosted app's links to other sites go. Checks replace it.
     static var openInBrowser: (URL) -> Void = { NSWorkspace.shared.open($0) }
     private static let toolbars: [String: ToolbarModel.Kind?] = [
         "navigation": .web, "contents": .preview, "markdown": .preview, "none": nil]
-    private let target: String
     private let toolbarName: String
     private let page: WebPage
-    private let bridge: WebBridge?
     var surface: any NativeSurface { page }
     let input: NativeInput
     var toolbar: ToolbarModel? { page.toolbarModel }
 
     /// `:toolbar` is "navigation", "contents", "markdown" or "none"; "markdown"
     /// is "contents" with Open in Emacs when `:hosted`. With `:hosted`, the page
-    /// keeps no data between sessions, never leaves the app host, and has a bridge.
+    /// keeps no data between sessions and gets the bridge's scripts.
     init(target: String, options: ViewOptions) throws {
         guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
             throw NativeError.message(
                 "A web view's :toolbar must be \"navigation\", \"contents\", \"markdown\" or \"none\"")
         }
-        self.target = target
         toolbarName = name
         let hosted = options.flag("hosted")
-        let page = WebPage(toolbar: kind, hosted: hosted)
+        let page = WebPage(target: target, toolbar: kind, hosted: hosted)
         self.page = page
-        bridge = hosted ? WebBridge(target: target, page: page) : nil
-        if hosted && name == "markdown" { page.toolbarModel?.edit = { [weak page] in page?.edit() } }
+        if hosted && name == "markdown" { page.toolbarModel?.edit = { Core.edit(target) } }
         input = NativeInput(target: target, view: page, host: NativeView.parking) { [weak page] in
             guard let page, !page.isHidden else { return false }
             return page.window?.makeFirstResponder(page) ?? false
@@ -290,27 +220,18 @@ final class WebSession: PortalView {
     }
 
     func close() {
-        bridge?.close()
+        page.configuration.userContentController.removeAllScriptMessageHandlers()
         page.stopLoading()
     }
 
     func load(_ address: String) throws {
-        guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
-              ["http", "https", "file", "data", "about"].contains(scheme),
-              !["http", "https"].contains(scheme) || !(url.host ?? "").isEmpty else {
-            throw NativeError.message("Expected an absolute http, https, file, data or about URL")
-        }
-        page.navigate(to: url)
+        guard let url = URL(string: address) else { throw NativeError.message("WebKit cannot parse the URL \(address)") }
+        page.open(url)
     }
 
-    func send(_ json: String) throws { try hostedBridge().send(json) }
+    func go(_ step: portal_history) { page.go(step) }
 
-    func receive() throws -> String { try hostedBridge().receive() }
-
-    private func hostedBridge() throws -> WebBridge {
-        guard let bridge else { throw NativeError.message("Web view \(target) is not a hosted app, so it has no bridge") }
-        return bridge
-    }
+    func post(_ json: String, token: UInt64) throws { try page.post(json, token: token) }
 
     func describe() -> [(String, ViewValue)] {
         var state: [(String, ViewValue)] = [

@@ -45,6 +45,23 @@ enum Views {
         try with(target) { target in try call { portal_views_close(target, $0) } }
     }
 
+    /// Load URL in web view TARGET, as `portal--web-load` does.
+    static func load(_ target: String, _ url: String) throws {
+        try with(target) { target in try with(url) { url in try call { portal_web_views_load(target, url, $0) } } }
+    }
+
+    /// Send JSON to hosted web view TARGET's app, as `portal--web-send` does.
+    static func send(_ target: String, _ json: String) throws {
+        try with(target) { target in try with(json) { json in try call { portal_web_views_send(target, json, $0) } } }
+    }
+
+    /// Receive hosted web view TARGET's waiting messages, as `portal--web-receive` does.
+    static func receive(_ target: String) throws -> String {
+        var json = portal_text()
+        try with(target) { target in try call { portal_web_views_receive(target, &json, $0) } }
+        return take(&json)
+    }
+
     /// TARGET's session, which must be of KIND.
     static func view<Kind: PortalView>(_ target: String, as kind: Kind.Type) throws -> Kind {
         guard let session = try native(target).kind as? Kind else {
