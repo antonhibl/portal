@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 depends_on:
   - task-dependencies
 ---
@@ -14,8 +14,7 @@ folders without hiding its work from the dashboard.
 
 Discover tasks recursively, derive their hierarchy from folders, and show a
 tree alongside the execution view introduced by the prerequisite. Preserve
-stable identity independently of location. This document specifies future
-behavior; keep this task at the current shallow root until it is implemented.
+stable identity independently of location.
 
 ## Storage and discovery decision
 
@@ -165,31 +164,55 @@ helpers during implementation while retaining these contracts.
 
 ## Acceptance criteria and verification
 
-- [ ] The exact example above appears as one group with two task children,
+- [x] The exact example above appears as one group with two task children,
   with no extra `content` row. Three or more levels, mixed file/folder tasks,
   optional parent documents, empty groups, and supporting documents work.
-- [ ] Real-filesystem/HTTP tests cover repeated basenames, spaces, non-ASCII
+- [x] Real-filesystem/HTTP tests cover repeated basenames, spaces, non-ASCII
   names/NFC, encoded IDs, both duplicate rules, unreadable branches, symlink
   entries, and attempted path escapes without losing unrelated tasks.
-- [ ] Moving a task with an explicit ID between groups preserves its URL and
+- [x] Moving a task with an explicit ID between groups preserves its URL and
   dependencies; converting either storage form preserves its logical location.
   Legacy top-level IDs, including root `content.md`, remain compatible.
-- [ ] Parent dependencies/status do not cascade. Done or invalid parents do
+- [x] Parent dependencies/status do not cascade. Done or invalid parents do
   not hide unfinished children; completion filtering prunes empty groups and
   never changes the shared dependency graph or unfinished execution ranks.
-- [ ] Cross-folder dependencies and the interleaving example above display a
+- [x] Cross-folder dependencies and the interleaving example above display a
   faithful tree and a correct global execution list. Cycles, missing targets,
   and downstream blocked tasks behave identically in both views.
-- [ ] Nested source links, attachment images, and ordinary-file Emacs handoff
+- [x] Nested source links, attachment images, and ordinary-file Emacs handoff
   resolve against the right directory and retain existing containment rules.
-- [ ] Graphical tests in `test/portal-tasks-gui-tests.el` verify indentation,
+- [x] Graphical tests in `test/portal-tasks-gui-tests.el` verify indentation,
   disclosure keyboard behavior, view/filter preservation, contextual done
   parents, dependency navigation, Back/Forward, and reload after saved moves.
   Extend `test/portal-server-tests.el` and affected batch task tests as needed.
-- [ ] `bun run --cwd host check`, `bun run --cwd host typecheck`, `./build.sh`,
+- [x] `bun run --cwd host check`, `bun run --cwd host typecheck`, `./build.sh`,
   and `ctest --test-dir build --output-on-failure` pass. Record GUI verification,
   update authoring documentation, and mark this task done only after
   implementation. Follow `AGENTS.md` for its worktree and PR.
+
+## Outcome
+
+`host/tasks.ts` walks the root with a bounded job queue (16 folder or file reads
+at once), keys each task by its NFC logical path, and records unreadable
+folders as problems. The list builds the folder tree from the usable tasks,
+prunes it for the completion filter, and orders siblings by the smallest
+execution rank in their shown subtree. Groups and parent tasks use `<details>`
+disclosures beside, not around, task links; no script is needed. Every link
+carries `view=execution` when that view is selected and `show=all` when
+completed tasks are shown. Emacs needed no change: the route it tracks already
+carries both parameters.
+
+Verification (27 September 2026, macOS 27.0, Emacs 31.1):
+
+- `bun run --cwd host check`, `bun run --cwd host typecheck`, `./build.sh`,
+  and `ctest --test-dir build --output-on-failure` (9 of 9) pass.
+- `test/portal-server-tests.el` has 16 task tests against real folders and
+  HTTP, including six new ones for the tree, parent semantics, identity and
+  moves, unreadable folders and symlinks, nested links, and cross-folder order.
+- The graphical suite `test/portal-tasks-gui-tests.el` passes 5 of 5 in real
+  WebKit, including the new nested-tree test. Return toggles a focused
+  disclosure; an injected Space's key-up only reaches WebKit with the next
+  native event, so the test uses Return and Tab. Folds survive Back.
 
 ## Blocked by
 

@@ -566,7 +566,7 @@ folder with no tasks shows "No tasks", and one with only completed tasks offers
 ### Writing tasks
 
 A task is a single Markdown file, or a folder holding its document and
-attachments. Both work the same:
+attachments. Both work the same, at any depth, and folders group tasks:
 
 ```text
 tasks/
@@ -575,15 +575,20 @@ tasks/
     content.md
     mockup.png
     implementation-notes.md     # a supporting document, not a task
+  big refactor/                 # a group: a folder with no task of its own
+    extract something in c.md   # a task in the group
+    implement something/
+      content.md                # a task in the group, with attachments
   assets/
     search.png                  # an attachment of fix-search.md
   README.md                     # a document, since it has no status
 ```
 
-Only `.md` files directly in the task root, and a file named exactly
-`content.md` directly in one of its folders, can be tasks. Deeper folders,
-other files and symbolic links are supporting material. A document is a task
-when its YAML front matter has a `status`:
+Every `.md` file under the task root, at any depth, can be a task. A file named
+exactly `content.md` is its folder's own task, except directly in the root,
+where it is a task named `content`. Other files are supporting material, and
+symbolic links are never followed. A document is a task when its YAML front
+matter has a `status`:
 
 ```markdown
 ---
@@ -599,22 +604,45 @@ Searching with spaces returns no results.
 turn on **Show completed**, and their pages stay reachable. Documents without
 front matter, or without a `status`, are not listed. Front matter that is not
 closed or not a YAML mapping, an invalid status or title, and unreadable files
-are listed under **Problems** with their paths, and the other tasks still show.
+and folders are listed under **Problems** with their paths, and the other tasks
+still show.
+
+Supporting Markdown inside a task folder is a task too once it has a `status`:
+before nested folders were discovered, it was ignored. Remove `status` from a
+supporting document that should stay a document.
 
 A task's title is its front matter `title`, or else its first level-one
 heading outside code fences, or else its ID. The ID is the front matter `id`
-or, without one, the file name without `.md`, or the folder name. Moving
-`fix-search.md` to `fix-search/content.md` keeps the task's ID and address.
-Without an `id`, renaming the file changes both; with one, the task keeps its
-ID and address wherever it moves. An `id` is lowercase letters and digits in
-words joined by single hyphens, such as `extract-c-interface`. Before moving a
-task that others depend on, give it an `id`; its current name keeps their
-references working when it fits that form.
+or, without one, the task's path in the root: `big refactor/extract something in c`
+for `big refactor/extract something in c.md`, and `big refactor/implement something`
+for its `content.md`. Moving `fix-search.md` to `fix-search/content.md` keeps
+the task's ID and address. Without an `id`, renaming or moving the file changes
+both; with one, the task keeps its ID and address wherever it moves, including
+into another folder. An `id` is lowercase letters and digits in words joined by
+single hyphens, such as `extract-c-interface`. Before moving a task that others
+depend on, give it an `id`; its current name keeps their references working
+when it fits that form.
 
-IDs are unique in the task root, whether written or taken from a name, and one
+IDs are unique in the task root, whether written or taken from a path, and one
 location holds one task. If two tasks share an ID, or `fix-search.md` and
 `fix-search/content.md` both exist, neither is listed: **Problems** names the
-files, and each task's page shows the conflict until it is resolved.
+files, and each task's page shows the conflict until it is resolved. The same
+file name in two folders, such as `a/fix.md` and `b/fix.md`, is two tasks.
+
+#### Folders
+
+A folder without a task of its own is a group, named after the folder. It has
+no status or ID, and it cannot be a dependency. A folder with a task
+`content.md` is a parent task, shown with its title, and it can hold more tasks
+and folders. When a folder's `content.md` has no `status`, it is a document and
+the folder is a group; when it is invalid or conflicting, **Problems** shows it
+and the folder is a group, so its tasks stay reachable. `a/fix.md` beside a
+folder `a/fix/` with no task of its own shows as a task and a separate group.
+
+Folders only organize work. A parent's `status` and `depends_on` are its own:
+nothing is inherited, completing the tasks in a folder completes nothing else,
+and depending on a parent waits for that parent's own status. To make a parent
+wait for its tasks, list their IDs in its `depends_on`.
 
 #### Dependencies and order
 
@@ -637,24 +665,46 @@ done for you. Only `depends_on` makes a dependency; links and a `Blocked by`
 section in the body are for readers. IDs in `depends_on` are compared exactly
 and never read as paths.
 
-The list shows unfinished tasks in an order they could be completed: each
-after what it depends on, and otherwise by ID. A number is a position in that
-order, not permission to start. A blocked task is dimmed and names the
-positions it waits for, nearest first, such as `after 7, 6`; past three it adds
-a count, such as `+2`. Everything shown at full strength can start now.
-Positions are renumbered as work is done, so they refer only to the list on
-screen. A done task satisfies the tasks that depend on it, whatever its own
-dependencies. Tasks that cannot be ordered, and the unfinished tasks waiting on
-them, are listed by ID under **Blocked by dependency problems**: a `depends_on`
-that is not a list of IDs, a missing, invalid, or conflicting task, or a cycle
-among unfinished tasks. Their rows name the problem, or the task they wait for
-by ID when it has no position. **Problems** names each file and ID, including for completed
-tasks. **Show completed** adds a separate **Completed** section and changes no
-position.
+Unfinished tasks are numbered in an order they could be completed: each
+after what it depends on, and otherwise by ID, across every folder. A number
+is a position in that order, not permission to start. A blocked task is dimmed
+and names the positions it waits for, nearest first, such as `after 7, 6`; past
+three it adds a count, such as `+2`. Everything shown at full strength can
+start now. Positions are renumbered as work is done, so they refer only to the
+list on screen. A done task satisfies the tasks that depend on it, whatever its
+own dependencies. Tasks that cannot be ordered, and the unfinished tasks
+waiting on them, have no number: a `depends_on` that is not a list of IDs, a
+missing, invalid, or conflicting task, or a cycle among unfinished tasks. Their
+rows name the problem, or the task they wait for by ID when it has no position.
+**Problems** names each file and ID, including for completed tasks, in either
+view.
+
+#### Tree and execution views
+
+The list has two views, switched with **Tree** and **Execution** at its top.
+Both show the same numbers, what blocked tasks wait for, and problems.
+
+- **Tree**, the default, shows each task once in its folders. Press a group's
+  row, or the arrow beside a parent task, to fold what it holds; the arrows
+  are keyboard controls, apart from the task links. Folders and tasks at one
+  level follow their earliest numbered task, then their paths. This is for
+  browsing: a folder's tasks can be interleaved with other folders' work.
+  Completed tasks are marked **done**.
+- **Execution** lists unfinished tasks in order across all folders, each with
+  the folders holding it. Tasks that cannot be ordered follow under **Blocked
+  by dependency problems**, by ID.
+
+Completed tasks are hidden until **Show completed**, except a completed parent
+task whose folder still holds unfinished work. A group with nothing to show is
+hidden. **Show completed** shows the whole tree, or in the execution view adds
+a separate **Completed** section; it changes no number. The view and filter
+are part of the page address, so links, Back and Forward, `g`, and an app host
+restart keep them. `g` unfolds the tree again.
 
 A task's page shows its ID, the tasks it depends on and the tasks it blocks,
 each with its status, and whether it is ready. Links to completed tasks work
-with either filter.
+with either filter. Its folders, above the page, lead back to the list or to
+a parent task's page.
 
 To complete a task, edit `status: todo` to `status: done` in Emacs, save, and
 press `g` in the task view. `g` rereads the page on screen from the saved files,
@@ -663,12 +713,14 @@ including after an app host restart. There is no automatic refresh.
 ### Links and attachments
 
 Relative links and images in a task resolve from its attachment folder: the
-task root for a single-file task, or the task's own folder.
+folder holding a single-file task, such as the task root for `fix-search.md`
+or `big refactor/` for a task file in that group, or the task's own folder.
+Moving a task can break its relative links and images, even when its ID stays.
 
 | Link | Where it goes |
 | --- | --- |
 | `#anchor` | Scrolls within the page |
-| Another task's file, such as `../fix-search.md#notes` | That task's page in the same view, keeping the filter |
+| Another task's file anywhere in the task root, such as `../fix-search.md#notes` | That task's page in the same view, keeping the view and filter |
 | An inline image, such as `![Search](assets/search.png)` | Shown in the page |
 | Any other file in the attachment folder | Opens in Emacs in another pane, as from a Markdown preview; `#L42` goes to line 42 |
 | A missing file, or one outside the attachment folder | Crossed out, with the reason as its tooltip |
@@ -833,9 +885,11 @@ and `g` loads the page on screen after an app host restart. They also check
 task links, inline images in both layouts, and one-click handoff of
 attachments, with mock-up HTML opening as source.
 They also check dimmed blocked rows and what they wait for, links to
-prerequisites and the tasks they block, including completed ones, the filter
-across those links, and a dependent becoming ready after its prerequisite is
-saved as done.
+prerequisites and the tasks they block, including completed ones, the view and
+filter across those links, and a dependent becoming ready after its
+prerequisite is saved as done. For nested folders they check indentation,
+folding groups and parent tasks with real keys, folds kept by Back, completed
+parents above unfinished work, folder links, and reloading after a saved move.
 The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
 shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
@@ -902,10 +956,13 @@ shared startup, graceful shutdown, restart, crash recovery, startup timeout,
 and partial or incompatible readiness messages.
 They also check Markdown output, local link rewriting, rereading saved changes,
 invalid paths, access-token and Host validation, and non-executable raw HTML.
-Task browser tests use real folders: shallow discovery of both layouts,
-symbolic links, status and title rules, problems and duplicates, filtering,
-ID-preserving conversion, reloads after edits, link rewriting, missing and
-invalid roots, and image reads kept inside the attachment folder.
+Task browser tests use real folders: recursive discovery of both layouts,
+groups and parent tasks, repeated names, Unicode names and encoded IDs,
+unreadable folders, symbolic links, status and title rules, problems and
+duplicates, filtering, the tree and execution views of one dependency graph,
+ID-preserving moves and conversion, reloads after edits, link rewriting from
+nested folders, missing and invalid roots, and image reads kept inside the
+attachment folder.
 
 ## Scope
 

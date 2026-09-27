@@ -177,7 +177,7 @@ makes the app host ready."
            (buffer (portal-tasks root))
            (target (portal-view-target))
            (list (portal-tasks-test--path root))
-           (detail (concat list "&task=fix%20search%20%C3%A9&show=all")))
+           (detail (concat list "&task=epic%2Ffix%20search%20%C3%A9&view=execution&show=all")))
       ;; Following a link, or going back or forward, commits another page.
       (portal-tasks-test--page target (concat detail "#notes"))
       (should (equal portal-web--hosted-path detail))
@@ -273,7 +273,7 @@ makes the app host ready."
             (call-interactively (key-binding "g"))
             (let ((page (funcall fetch)))
               (should-not (string-match-p "Fix search</span>" page))
-              (should (string-match-p "<li><a [^>]*><span class=\"rank\">1</span><span class=\"title\">Follow up</span></a>" page)))
+              (should (string-match-p "<li[^>]*><a [^>]*><span class=\"rank\">1</span><span class=\"title\">Follow up</span></a>" page)))
             (with-temp-file (expand-file-name "follow-up.md" tasks)
               (insert "---\nstatus: done\n---\n# Follow up\n"))
             (call-interactively (key-binding "g"))

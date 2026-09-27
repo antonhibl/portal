@@ -59,6 +59,7 @@ Inspect only these candidate documents:
 
 Discovery is shallow, uses these case-sensitive names, and does not follow
 symlink entries. Other files and deeper directories are supporting material.
+(Nested folders replace shallow discovery with recursion; see below.)
 A child directory without `content.md` is not a task or an error. A root-level
 `content.md` follows the ordinary standalone-file rule.
 
@@ -189,6 +190,52 @@ reverse **Blocks** list. A done task shows its dependencies but no readiness.
 Each request builds one index and graph and uses it for resolution, links, and
 rendering.
 
+## Nested folders
+
+Added by [nested tasks](../tasks/nested-tasks.md). Discovery inspects regular
+`.md` files at every depth, with bounded read concurrency, never following
+symlink entries. A directory's exact `content.md` is that directory's own
+task; any other Markdown file is a task in its directory. The root-level
+`content.md` keeps its standalone `content` identity. Supporting Markdown with
+a valid `status` is now a task, a compatibility change from shallow discovery.
+An unreadable directory below the root is a diagnostic naming its path; its
+siblings still load.
+
+A task's location, and its fallback ID, is its NFC root-relative path with `/`
+separators, without the final `.md` or `/content.md`; its source path is kept
+separately. Explicit IDs keep URLs and dependencies across moves between
+folders. `a/fix.md` and `a/fix/content.md` share a location and conflict;
+`a/fix.md` and `b/fix.md` do not. Detail and image requests accept IDs of
+`/`-separated segments without empty, `.` or `..` segments, and resolve them
+only through the per-request index.
+
+A directory without a usable task document is a group named after its folder:
+no ID, status, or dependency edges, and shown only around visible tasks. A
+directory with one is a parent task. A `content.md` without status leaves the
+directory a group; an invalid or conflicting one is reported and the directory
+is a group. A task file beside a same-named group directory shows as a
+separate leaf. Hierarchy never implies dependency, inheritance, or completion.
+
+Attachments and ordinary links resolve from the source document's directory,
+so a nested task file's attachment base is its own folder. Links to any task
+source in the root become task links through the shared source-to-ID index.
+
+The list has a tree view (the default) and the execution view above, chosen by
+`view=tree` or `view=execution`; a missing value is the tree. Every list, task,
+dependency and breadcrumb link keeps the root, view, and filter. The tree uses
+nested lists and `<details>` disclosures, initially open, separate from task
+links. Siblings are ordered by the smallest execution rank in their visible
+subtree, unranked nodes last, then by location, placing a group before a leaf
+at the same location. Groups show no status or rank. Because the tree mixes
+statuses, its done rows carry a done badge; rows otherwise match the execution
+view, including the dimmed `after` summary of blocked tasks. With the completed
+filter off, a done parent stays as a contextual row above visible unfinished
+tasks. The execution view adds each task's folder breadcrumb. Both views use
+one dependency graph built over all tasks before filtering. Detail pages show
+folder breadcrumbs: a parent task links to its page, a group to its place in
+the tree. Back/Forward keeps disclosure state with WebKit's page history; `g`
+reopens it.
+
 ## Project and root selection
 
 Add `M-x portal-tasks` and a `portal-tasks-directory` option defaulting to
@@ -225,6 +272,7 @@ encoded, including paths, spaces, non-ASCII characters, and task IDs.
 /tasks?root=ROOT&show=all              # all tasks
 /tasks?root=ROOT&task=ID               # detail
 /tasks?root=ROOT&task=ID&show=all       # detail reached from all tasks
+/tasks?root=ROOT&view=execution         # execution view (nested folders)
 ```
 
 - Show each task's resolved title and status, ordered by task ID using a

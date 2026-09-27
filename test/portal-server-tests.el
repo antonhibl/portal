@@ -230,7 +230,7 @@
 (defun portal-server-test--rows (page)
   "Return the (TITLE HREF) of each task row in PAGE, in order."
   (let ((start 0) rows)
-    (while (string-match "<li\\(?: class=\"blocked\"\\)?><a href=\"\\([^\"]*\\)\">\\(?:<span class=\"rank\">[0-9]+</span>\\)?<span class=\"title\">\\([^<]*\\)</span>"
+    (while (string-match "<a class=\"row\\(?: blocked\\)?\" href=\"\\([^\"]*\\)\">\\(?:<span class=\"rank\">[0-9]+</span>\\)?\\(?:<span class=\"status status-done\">done</span>\\)?<span class=\"title\">\\([^<]*\\)</span>"
                          page start)
       (push (list (match-string 2 page) (match-string 1 page)) rows)
       (setq start (match-end 0)))
@@ -240,6 +240,33 @@
   "Return the text of PAGE between OPEN and the next CLOSE, or nil."
   (when (string-match (concat (regexp-quote open) "\\(\\(?:.\\|\n\\)*?\\)" (regexp-quote close)) page)
     (match-string 1 page)))
+
+(defun portal-server-test--tree (page)
+  "Return PAGE's tree view as an outline, one line per row.
+A group is its name and a slash; a task is its title, then its rank as
+#N when it has one, and (done) when it is done.  Rows it holds follow,
+indented by two spaces."
+  (let ((start (string-search "<ul class=\"tree\">" page))
+        (depth -1)
+        lines)
+    (while (and start
+                (string-match (concat "\\(<ul class=\"tree\">\\)\\|\\(</ul>\\)"
+                                      "\\|<span class=\"name\">\\([^<]*\\)</span>"
+                                      "\\|<a class=\"row[^\"]*\"[^>]*>\\(?:<span class=\"rank\">\\([0-9]+\\)</span>\\)?"
+                                      "\\(?:<span class=\"status status-\\([a-z]+\\)\">[a-z]+</span>\\)?"
+                                      "<span class=\"title\">\\([^<]*\\)</span>")
+                              page start))
+      (setq start (match-end 0))
+      (let ((indent (make-string (* 2 (max depth 0)) ?\s)))
+        (cond ((match-beginning 1) (setq depth (1+ depth)))
+              ((match-beginning 2) (setq depth (1- depth))
+               (when (< depth 0) (setq start nil)))
+              ((match-beginning 3) (push (concat indent (match-string 3 page) "/") lines))
+              (t (push (concat indent (match-string 6 page)
+                               (if (match-beginning 4) (concat " #" (match-string 4 page)) "")
+                               (if (equal (match-string 5 page) "done") " (done)" ""))
+                       lines)))))
+    (nreverse lines)))
 
 (defun portal-server-test--order (page)
   "Return the titles of PAGE's ordered unfinished tasks, in order."
@@ -259,7 +286,8 @@
 (defun portal-server-test--waits (page title)
   "Return what the row titled TITLE in PAGE waits for, \"\" when ready, or nil."
   (when (string-match (concat "<span class=\"title\">" (regexp-quote title)
-                              "</span>\\(?:<span class=\"waits[^\"]*\">\\([^<]*\\)</span>\\)?</a>")
+                              "</span>\\(?:<span class=\"folder\">[^<]*</span>\\)?"
+                              "\\(?:<span class=\"waits[^\"]*\">\\([^<]*\\)</span>\\)?</a>")
                       page)
     (or (match-string 1 page) "")))
 
@@ -276,7 +304,7 @@
            ,@body)
        (delete-directory directory t))))
 
-(ert-deftest portal-server-tasks-discover-a-mixed-root-shallowly ()
+(ert-deftest portal-server-tasks-discover-a-mixed-root-recursively ()
   (portal-server-test--with-tasks
     (let ((hex (url-hexify-string root)))
       (portal-server-test--write root "fix-search.md" "---\nstatus: todo\n---\n\n# Fix *search* & <more>\n")
@@ -300,19 +328,29 @@
         (should (string-match-p "HTTP/1.1 200" page))
         (let ((case-fold-search t))
           (should (string-match-p "cache-control: no-store" page)))
-        (should (equal (portal-server-test--rows page)
+        ;; Supporting Markdown with a status is a task at any depth.
+        (should (equal (portal-server-test--tree page)
+                       '("From front matter #1"
+                         "Content-case/" "  Case #2"
+                         "Root content #3"
+                         "Setext title #4"
+                         "Fix search &amp; &lt;more&gt; #5"
+                         "Navigation (done)" "  Deeper #6" "  Supporting #7"
+                         "no-content/" "  Other #8"
+                         "no-heading #9")))
+        (should (equal (cl-subseq (portal-server-test--rows page) 0 2)
                        `(("From front matter" ,(concat "tasks?root=" hex "&amp;task=B-upper"))
-                         ("Root content" ,(concat "tasks?root=" hex "&amp;task=content"))
-                         ("Setext title" ,(concat "tasks?root=" hex "&amp;task=fenced"))
-                         ("Fix search &amp; &lt;more&gt;" ,(concat "tasks?root=" hex "&amp;task=fix-search"))
-                         ("no-heading" ,(concat "tasks?root=" hex "&amp;task=no-heading")))))
+                         ("Case" ,(concat "tasks?root=" hex "&amp;task=Content-case%2FContent")))))
         (should (string-match-p (regexp-quote (concat "tasks?root=" hex "&amp;show=all\">Show completed")) page))
+        (should (string-match-p (regexp-quote (concat "<span aria-current=\"page\">Tree</span><a href=\"tasks?root="
+                                                      hex "&amp;view=execution\">Execution</a>"))
+                                page))
         (should-not (string-match-p "<h2>Problems" page)))
       ;; Completed tasks follow the unfinished ones, in their own section.
-      (let ((page (portal-server-test--tasks root "&show=all")))
+      (let ((page (portal-server-test--tasks root "&view=execution&show=all")))
         (should (equal (portal-server-test--order page)
-                       '("From front matter" "Root content" "Setext title" "Fix search &amp; &lt;more&gt;"
-                         "no-heading")))
+                       '("From front matter" "Case" "Root content" "Setext title" "Fix search &amp; &lt;more&gt;"
+                         "Deeper" "Supporting" "Other" "no-heading")))
         (should (equal (portal-server-test--completed page) '("Windows" "Navigation"))))
       (should (string-match-p "Hide completed" (portal-server-test--tasks root "&show=all"))))))
 
@@ -420,7 +458,7 @@
       (portal-server-test--write directory "outside.txt" "outside\n")
       (let ((page (portal-server-test--tasks root "&task=fix-search")))
         (should (string-match-p "HTTP/1.1 200" page))
-        (should (string-match-p (regexp-quote (format "<a href=\"tasks?root=%s\">Tasks</a><span class=\"task-state\"><span class=\"status status-todo\">todo</span><span class=\"readiness readiness-ready\">ready</span>" hex)) page))
+        (should (string-match-p (regexp-quote (format "<span class=\"breadcrumbs\"><a href=\"tasks?root=%s\">Tasks</a></span><span class=\"task-state\"><span class=\"status status-todo\">todo</span><span class=\"readiness readiness-ready\">ready</span>" hex)) page))
         ;; The heading supplies the title once, and front matter is gone.
         (should (= (length (split-string page "<h1")) 2))
         (should (string-match-p "<h1 id=\"fix-search\">Fix search</h1>" page))
@@ -462,9 +500,11 @@
       (let ((page (portal-server-test--tasks root "&task=done")))
         (should (string-match-p "HTTP/1.1 200" page))
         (should (string-match-p "<h1>done</h1>" page)))
-      (dolist (id '("" "." ".." "../fix-search" "a/b"))
-        (should (string-match-p "HTTP/1.1 400"
-                                (portal-server-test--tasks root (concat "&task=" (url-hexify-string id)))))))))
+      (dolist (id '("" "." ".." "../fix-search" "/fix-search" "a/" "a//b" "a/./b" "a/../fix-search"))
+        (ert-info (id)
+          (should (string-match-p "HTTP/1.1 400"
+                                  (portal-server-test--tasks root (concat "&task=" (url-hexify-string id)))))))
+      (should (string-match-p "HTTP/1.1 404" (portal-server-test--tasks root "&task=a%2Fb"))))))
 
 (ert-deftest portal-server-tasks-serve-only-images-in-the-attachment-folder ()
   (portal-server-test--with-tasks
@@ -560,7 +600,7 @@ Its title is then its ID."
       ;; One location is one task, even under two IDs.
       (funcall task "place.md" "id: place-one" "status: todo")
       (funcall task "place/content.md" "id: place-two" "status: done")
-      (let ((page (portal-server-test--tasks root)))
+      (let ((page (portal-server-test--tasks root "&view=execution")))
         (should (equal (portal-server-test--order page) '("Implement the C adapter")))
         (should (equal (portal-server-test--waits page "Implement the C adapter") ""))
         (should (equal (portal-server-test--stuck page)
@@ -640,13 +680,13 @@ Its title is then its ID."
       ;; A done prerequisite counts, whatever its own history.
       (funcall task "old.md" "status: done" "depends_on: [ghost-old, c3]")
       (funcall task "uses-old.md" "status: todo" "depends_on: [old]")
-      (let* ((page (portal-server-test--tasks root))
+      (let* ((page (portal-server-test--tasks root "&view=execution"))
              (order '("b-free" "c1" "c2" "c3" "d-top" "d-left" "d-right" "d-bottom" "uses-old" "wide"
                      "z-free")))
         (should (equal (portal-server-test--order page) order))
         (should (string-match-p "<li><a [^>]*><span class=\"rank\">1</span><span class=\"title\">b-free</span></a>" page))
         ;; A blocked row is dimmed and names earlier rows by rank, nearest first.
-        (should (string-match-p "<li class=\"blocked\"><a [^>]*><span class=\"rank\">3</span><span class=\"title\">c2</span><span class=\"waits\">after 2</span>" page))
+        (should (string-match-p "<li><a class=\"row blocked\" [^>]*><span class=\"rank\">3</span><span class=\"title\">c2</span><span class=\"waits\">after 2</span>" page))
         (should (equal (portal-server-test--stuck page)
                        '("after-loop" "bad-list" "downstream" "loop-a" "loop-b" "loop-c" "missing" "self"
                          "to-invalid" "to-twice")))
@@ -679,7 +719,7 @@ Its title is then its ID."
                                 page))
         (should-not (string-match-p "No tasks\\|No unfinished" page))
         ;; Showing completed work adds a section and changes no rank.
-        (let ((all (portal-server-test--tasks root "&show=all")))
+        (let ((all (portal-server-test--tasks root "&view=execution&show=all")))
           (should (equal (portal-server-test--order all) order))
           (should (equal (portal-server-test--completed all) '("old")))))
       ;; Detail pages show the ID, prerequisites, and what the task blocks.
@@ -714,12 +754,12 @@ Its title is then its ID."
         (should (string-match-p "<dt>Cycle</dt><dd class=\"dependency-problem\">It depends on itself through <a [^>]*>loop-a</a> and <a [^>]*>loop-c</a>" page)))
       ;; Completing and reopening work shows on reload.
       (funcall task "c1.md" "status: done")
-      (let ((page (portal-server-test--tasks root)))
+      (let ((page (portal-server-test--tasks root "&view=execution")))
         (should (equal (car (portal-server-test--order page)) "b-free"))
         (should-not (member "c1" (portal-server-test--order page)))
         (should (equal (portal-server-test--waits page "c2") "")))
       (funcall task "old.md" "status: todo" "depends_on: [ghost-old, c3]")
-      (let ((page (portal-server-test--tasks root)))
+      (let ((page (portal-server-test--tasks root "&view=execution")))
         (should-not (member "uses-old" (portal-server-test--order page)))
         (should (member "uses-old" (portal-server-test--stuck page)))
         (should (equal (portal-server-test--waits page "uses-old") "after old"))))))
@@ -728,7 +768,7 @@ Its title is then its ID."
   (portal-server-test--with-tasks
     (portal-server-test--task root "one.md" "status: todo" "depends_on: [two]")
     (portal-server-test--task root "two.md" "status: todo" "depends_on: [one]")
-    (let ((page (portal-server-test--tasks root)))
+    (let ((page (portal-server-test--tasks root "&view=execution")))
       (should-not (string-match-p "No tasks\\|No unfinished" page))
       (should (string-match-p "No task can be ordered until its dependency problems are fixed" page))
       (should (equal (portal-server-test--stuck page) '("one" "two"))))))
@@ -776,6 +816,301 @@ Its title is then its ID."
         (should (string-match-p "task=moving&amp;show=all\">Moving</a>" page))
         (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page "folder"))
                        (concat "tasks?root=" hex "&task=moving&show=all")))))))
+
+(ert-deftest portal-server-tasks-show-nested-folders-as-a-tree ()
+  (portal-server-test--with-tasks
+    (let ((hex (url-hexify-string root)))
+      ;; A grouping folder holding a task file and a task folder.
+      (portal-server-test--write root "big refactor/extract something in c.md"
+                                 "---\nstatus: todo\n---\n# extract something in c\n")
+      (portal-server-test--write root "big refactor/implement something/content.md"
+                                 "---\nstatus: todo\n---\n# implement something\n")
+      (portal-server-test--write root "big refactor/implement something/notes.md" "# Notes\n")
+      (portal-server-test--write root "big refactor/implement something/mockup.png" "png")
+      (let ((page (portal-server-test--tasks root)))
+        (should (equal (portal-server-test--tree page)
+                       '("big refactor/" "  extract something in c #1" "  implement something #2")))
+        (should (string-match-p "Browsing by folder" page))
+        (should (string-search (concat "<a class=\"row\" href=\"tasks?root=" hex
+                                       "&amp;task=big%20refactor%2Fimplement%20something\">")
+                               page)))
+      ;; Deeper levels, a parent task, a content.md without status, and
+      ;; folders of attachments and documents, which show no rows.
+      (portal-server-test--write root "one/content.md" "---\nstatus: todo\n---\n# One\n")
+      (portal-server-test--write root "one/two/content.md" "# Just notes\n")
+      (portal-server-test--write root "one/two/three/leaf.md" "---\nstatus: todo\n---\n# Leaf\n")
+      (portal-server-test--write root "one/two/three/deeper/content.md" "---\nstatus: todo\n---\n# Deeper\n")
+      (portal-server-test--write root "one/assets/pic.png" "png")
+      (portal-server-test--write root "one/assets/read-me.md" "# Read me\n")
+      (make-directory (expand-file-name "empty/nothing" root) t)
+      (let ((page (portal-server-test--tasks root)))
+        (should (equal (portal-server-test--tree page)
+                       '("big refactor/" "  extract something in c #1" "  implement something #2"
+                         "One #3" "  two/" "    three/" "      Deeper #4" "      Leaf #5")))
+        (should-not (string-match-p "<h2>Problems\\|Just notes\\|Read me\\|>assets<\\|>empty<" page)))
+      ;; A task's page leads back through its folders.
+      (let ((page (portal-server-test--tasks root "&task=one%2Ftwo%2Fthree%2Fleaf&view=execution")))
+        (should (string-search
+                 (format (concat "<span class=\"breadcrumbs\"><a href=\"tasks?root=%s&amp;view=execution\">Tasks</a>"
+                                 " › <a href=\"tasks?root=%s&amp;task=one&amp;view=execution\">One</a>"
+                                 " › <a href=\"tasks?root=%s&amp;view=execution#folder-one%%2Ftwo\">two</a>"
+                                 " › <a href=\"tasks?root=%s&amp;view=execution#folder-one%%2Ftwo%%2Fthree\">three</a></span>")
+                         hex hex hex hex)
+                 page))
+        (should (string-match-p "<dt>ID</dt><dd><code>one/two/three/leaf</code>" page)))
+      ;; The tree marks each folder for those links.
+      (should (string-search "<li class=\"group\" id=\"folder-one%2Ftwo\">"
+                             (portal-server-test--tasks root)))
+      ;; The execution view shows the folders holding each task.
+      (let ((page (portal-server-test--tasks root "&view=execution")))
+        (should (equal (portal-server-test--order page)
+                       '("extract something in c" "implement something" "One" "Deeper" "Leaf")))
+        (should (string-search "<span class=\"title\">Deeper</span><span class=\"folder\">One › two › three</span>" page))
+        (should (string-search "<span class=\"title\">One</span></a>" page))))))
+
+(ert-deftest portal-server-tasks-keep-parents-and-children-independent ()
+  (portal-server-test--with-tasks
+    (let ((task (lambda (name title &rest lines)
+                  (portal-server-test--write root name "---\n" (mapconcat (lambda (line) (concat line "\n")) lines "")
+                                             "---\n# " title "\n"))))
+      ;; A completed parent keeps its unfinished tasks in view.
+      (funcall task "p/content.md" "P" "status: done")
+      (funcall task "p/child.md" "Child" "status: todo")
+      ;; A parent's dependencies and status are its own.
+      (funcall task "q/content.md" "Q" "status: todo" "depends_on: [ghost]")
+      (funcall task "q/kid.md" "Kid" "status: todo")
+      (funcall task "waits-on-q.md" "Waits on q" "status: todo" "depends_on: [q]")
+      (funcall task "r/content.md" "R" "status: todo")
+      (funcall task "r/done-kid.md" "Done kid" "status: done")
+      (funcall task "waits-on-r.md" "Waits on r" "status: todo" "depends_on: [r]")
+      (funcall task "s/content.md" "S" "status: done")
+      (funcall task "s/todo-kid.md" "Todo kid" "status: todo")
+      (funcall task "waits-on-s.md" "Waits on s" "status: todo" "depends_on: [s]")
+      ;; An invalid parent is a problem, and its folder still holds its tasks.
+      (funcall task "bad/content.md" "Bad" "status: Todo")
+      (funcall task "bad/ok.md" "Ok" "status: todo")
+      ;; A grouping folder is no task to depend on.
+      (funcall task "grp/x.md" "X" "status: todo")
+      (funcall task "waits-on-group.md" "Waits on group" "status: todo" "depends_on: [grp]")
+      ;; A folder of completed work shows only with them.
+      (funcall task "finished/a.md" "A" "status: done")
+      (funcall task "finished/b/content.md" "B" "status: done")
+      (let ((page (portal-server-test--tasks root))
+            (ranked '("Ok #1" "X #2" "Child #3" "Kid #4" "R #5" "Todo kid #6" "Waits on r #7" "Waits on s #8")))
+        (should (equal (portal-server-test--tree page)
+                       '("bad/" "  Ok #1" "grp/" "  X #2" "P (done)" "  Child #3" "Q" "  Kid #4" "R #5"
+                         "S (done)" "  Todo kid #6" "Waits on r #7" "Waits on s #8" "Waits on group" "Waits on q")))
+        (dolist (expected '(("Kid" . "") ("Child" . "") ("Ok" . "")
+                            ("Q" . "ghost (does not exist)")
+                            ("Waits on q" . "after q")
+                            ("Waits on r" . "after 5")
+                            ("Waits on s" . "")
+                            ("Waits on group" . "grp (does not exist)")))
+          (ert-info ((car expected))
+            (should (equal (portal-server-test--waits page (car expected)) (cdr expected)))))
+        (should (string-match-p (concat (regexp-quote (expand-file-name "bad/content.md" root))
+                                        "</code>: Invalid status")
+                                page))
+        (should-not (string-match-p "No unfinished" page))
+        ;; Showing completed tasks reveals the whole tree and moves no rank.
+        (let ((all (portal-server-test--tasks root "&show=all")))
+          (should (equal (portal-server-test--tree all)
+                         '("bad/" "  Ok #1" "grp/" "  X #2" "P (done)" "  Child #3" "Q" "  Kid #4"
+                           "R #5" "  Done kid (done)" "S (done)" "  Todo kid #6" "Waits on r #7" "Waits on s #8"
+                           "finished/" "  A (done)" "  B (done)" "Waits on group" "Waits on q")))
+          (should (equal (seq-filter (lambda (line) (string-match-p "#" line))
+                                     (mapcar #'string-trim (portal-server-test--tree all)))
+                         (seq-filter (lambda (line) (string-match-p "#" line))
+                                     (mapcar #'string-trim (portal-server-test--tree page)))))
+          (should (equal (sort (seq-filter (lambda (line) (string-match-p "#" line))
+                                           (mapcar #'string-trim (portal-server-test--tree all)))
+                               (lambda (a b) (< (string-to-number (substring a (1+ (string-search "#" a))))
+                                                (string-to-number (substring b (1+ (string-search "#" b)))))))
+                         ranked))))
+      ;; The contextual parent's page is its own.
+      (should (string-match-p "HTTP/1.1 200" (portal-server-test--tasks root "&task=p")))
+      ;; Finishing a parent's tasks finishes nothing else.
+      (funcall task "q/kid.md" "Kid" "status: done")
+      (let ((page (portal-server-test--tasks root)))
+        (should (member "Q" (portal-server-test--tree page)))
+        (should (equal (portal-server-test--waits page "Waits on q") "after q"))))))
+
+(ert-deftest portal-server-tasks-identify-nested-tasks-by-path-or-id ()
+  (portal-server-test--with-tasks
+    (let ((hex (url-hexify-string root)))
+      ;; One name in two folders is two tasks.
+      (portal-server-test--task root "a/fix.md" "status: todo")
+      (portal-server-test--task root "b/fix.md" "status: todo")
+      ;; Names are NFC, however they are saved, and IDs are URL-encoded.
+      (portal-server-test--task root "é folder/new task.md" "status: todo")
+      ;; A task file and a grouping folder of the same name are both shown.
+      (portal-server-test--task root "g/fix.md" "status: done")
+      (portal-server-test--task root "g/fix/sub.md" "status: done")
+      (let ((page (portal-server-test--tasks root)))
+        (should (equal (portal-server-test--tree page)
+                       '("a/" "  a/fix #1" "b/" "  b/fix #2" "é folder/" "  é folder/new task #3")))
+        (should (string-search (concat "href=\"tasks?root=" hex "&amp;task=%C3%A9%20folder%2Fnew%20task\"") page)))
+      (dolist (id '("é folder/new task" "é folder/new task"))
+        (should (string-match-p "HTTP/1.1 200" (portal-server-test--tasks root (concat "&task=" (url-hexify-string id))))))
+      (should (equal (portal-server-test--tree (portal-server-test--tasks root "&show=all"))
+                     '("a/" "  a/fix #1" "b/" "  b/fix #2" "é folder/" "  é folder/new task #3"
+                       "g/" "  fix/" "    g/fix/sub (done)" "  g/fix (done)")))
+      ;; A task file and its folder's content.md are one location, whatever their IDs.
+      (portal-server-test--task root "dup/fix.md" "id: one" "status: todo")
+      (portal-server-test--task root "dup/fix/content.md" "id: two" "status: todo")
+      ;; Explicit IDs are unique in the whole root.
+      (portal-server-test--task root "x/a.md" "id: same" "status: todo")
+      (portal-server-test--task root "y/b.md" "id: same" "status: done")
+      (let ((page (portal-server-test--tasks root "&show=all")))
+        (should (string-match-p (concat "one</a> and <a [^>]*>two</a> conflict: <code>"
+                                        (regexp-quote (expand-file-name "dup/fix.md" root)) "</code> and <code>"
+                                        (regexp-quote (expand-file-name "dup/fix/content.md" root)))
+                                page))
+        (should (string-match-p (concat "same</a> is defined more than once: <code>"
+                                        (regexp-quote (expand-file-name "x/a.md" root)))
+                                page))
+        (should-not (cl-intersection (mapcar #'car (portal-server-test--rows page)) '("one" "two" "same")
+                                     :test #'equal))
+        ;; The folder whose task conflicts is a group, like any other.
+        (should-not (string-match-p "id=\"folder-dup%2Ffix\"" page)))
+      (should (string-match-p "HTTP/1.1 409" (portal-server-test--tasks root "&task=two")))
+      ;; An explicit ID keeps its URL and dependencies across groups.
+      (portal-server-test--task root "first group/mover.md" "id: mover" "status: todo")
+      (portal-server-test--task root "waiter.md" "status: todo" "depends_on: [mover, a/fix]")
+      (let ((before (portal-server-test--waits (portal-server-test--tasks root) "waiter")))
+        (make-directory (expand-file-name "second group/deeper" root) t)
+        (rename-file (expand-file-name "first group/mover.md" root)
+                     (expand-file-name "second group/deeper/mover.md" root))
+        (let ((page (portal-server-test--tasks root)))
+          (should (equal before "after 3, 1"))
+          (should (equal (portal-server-test--waits page "waiter") before))
+          (should (member "second group/" (portal-server-test--tree page)))
+          (should-not (member "first group/" (portal-server-test--tree page))))
+        (should (string-match-p "<dt>Depends on</dt><dd><ul class=\"references\"><li><a [^>]*task=mover\">mover</a>"
+                                (portal-server-test--tasks root "&task=waiter"))))
+      ;; Converting a fallback ID's storage form keeps its location and URL.
+      (make-directory (expand-file-name "a/fix" root))
+      (rename-file (expand-file-name "a/fix.md" root) (expand-file-name "a/fix/content.md" root))
+      (should (string-match-p "HTTP/1.1 200" (portal-server-test--tasks root "&task=a%2Ffix")))
+      (should (string-match-p "task=a%2Ffix\">a/fix</a> <code>a/fix</code>"
+                              (portal-server-test--tasks root "&task=waiter"))))))
+
+(ert-deftest portal-server-tasks-survive-unreadable-folders-symlinks-and-escapes ()
+  (portal-server-test--with-tasks
+    (let ((outside (expand-file-name "outside" directory))
+          (png "\211PNG\r\n\032\n"))
+      (portal-server-test--task root "kept/one.md" "status: todo")
+      (portal-server-test--task root "locked/hidden.md" "status: todo")
+      (portal-server-test--task root "locked-sibling/two.md" "status: todo")
+      (portal-server-test--task outside "elsewhere.md" "status: todo")
+      (portal-server-test--write outside "outside.png" png)
+      (portal-server-test--write root "kept/pic.png" png)
+      ;; Symbolic links are never followed, in or out of the root.
+      (make-symbolic-link outside (expand-file-name "kept/out-link" root))
+      (make-symbolic-link (expand-file-name "locked-sibling" root) (expand-file-name "kept/in-link" root))
+      (make-symbolic-link (expand-file-name "kept/one.md" root) (expand-file-name "kept/alias.md" root))
+      (make-symbolic-link (expand-file-name "outside.png" outside) (expand-file-name "kept/escape.png" root))
+      (set-file-modes (expand-file-name "locked" root) 0)
+      (unwind-protect
+          (let ((page (portal-server-test--tasks root)))
+            (should (equal (portal-server-test--tree page)
+                           '("kept/" "  kept/one #1" "locked-sibling/" "  locked-sibling/two #2")))
+            (should (string-match-p (concat (regexp-quote (expand-file-name "locked" root))
+                                            "</code>: The folder could not be read (EACCES)")
+                                    page))
+            (should-not (string-match-p "elsewhere\\|alias" page))
+            (dolist (id '("kept/../locked-sibling/two" "../outside/elsewhere" "kept/out-link/elsewhere"))
+              (ert-info (id)
+                (should (string-match-p "HTTP/1.1 \\(400\\|404\\)"
+                                        (portal-server-test--tasks root (concat "&task=" (url-hexify-string id)))))))
+            (let ((file (lambda (path)
+                          (portal-server-test--get
+                           (format "/tasks/file?root=%s&task=kept%%2Fone&path=%s" (url-hexify-string root)
+                                   (url-hexify-string (expand-file-name path root)))))))
+              (should (string-match-p "HTTP/1.1 200" (funcall file "kept/pic.png")))
+              (dolist (path '("kept/escape.png" "kept/../../outside/outside.png" "kept/out-link/outside.png"))
+                (ert-info (path)
+                  (should (string-match-p "HTTP/1.1 403" (funcall file path)))))))
+        (set-file-modes (expand-file-name "locked" root) #o700)))))
+
+(ert-deftest portal-server-tasks-resolve-nested-links-from-their-folder ()
+  (portal-server-test--with-tasks
+    (let* ((hex (url-hexify-string root))
+           (png "\211PNG\r\n\032\n")
+           (visit (lambda (path) (concat "file://" (url-hexify-string (expand-file-name path root)
+                                                                     (cons ?/ url-unreserved-chars))))))
+      (portal-server-test--write root "g/content.md" "---\nstatus: todo\n---\n# G\n\n"
+                                 "[kid](sub/task.md#part) [kid notes](sub/notes.txt)\n")
+      (portal-server-test--write root "g/sub/task.md" "---\nstatus: todo\n---\n# Sub task\n\n"
+                                 "[sibling](sibling.md) [parent](../content.md) [old](../../old.md#x) "
+                                 "[notes](notes.txt) [uncle](../other.txt) [root file](../../README.md)\n\n"
+                                 "![pic](pic.png) ![root pic](../../assets/root.png)\n")
+      (portal-server-test--write root "g/sub/sibling.md" "---\nstatus: todo\n---\n# Sibling\n")
+      (portal-server-test--write root "g/sub/notes.txt" "notes\n")
+      (portal-server-test--write root "g/sub/pic.png" png)
+      (portal-server-test--write root "g/other.txt" "other\n")
+      (portal-server-test--write root "old.md" "---\nstatus: done\n---\n# Old\n")
+      (portal-server-test--write root "README.md" "# Read me\n")
+      (portal-server-test--write root "assets/root.png" png)
+      ;; A nested task file's attachments are in its own folder.
+      (let ((page (portal-server-test--tasks root "&task=g%2Fsub%2Ftask&view=execution&show=all")))
+        (dolist (link `(("sibling" . ,(concat "tasks?root=" hex "&task=g%2Fsub%2Fsibling&view=execution&show=all"))
+                        ("parent" . ,(concat "tasks?root=" hex "&task=g&view=execution&show=all"))
+                        ("old" . ,(concat "tasks?root=" hex "&task=old&view=execution&show=all#x"))
+                        ("notes" . ,(funcall visit "g/sub/notes.txt"))))
+          (ert-info ((car link))
+            (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page (car link)))
+                           (cdr link)))))
+        (dolist (broken '("uncle" "root file"))
+          (should (string-match-p (format "class=\"broken-link\"[^>]*>%s</a>" broken) page)))
+        (should (string-search (format "src=\"tasks/file?root=%s&amp;task=g%%2Fsub%%2Ftask&amp;path=%s\""
+                                       hex (url-hexify-string (expand-file-name "g/sub/pic.png" root)))
+                               page))
+        (should (string-search (format "<a href=\"tasks?root=%s&amp;task=g&amp;view=execution&amp;show=all\">G</a> › <a href=\"tasks?root=%s&amp;view=execution&amp;show=all#folder-g%%2Fsub\">sub</a>"
+                                       hex hex)
+                               page)))
+      (let ((file (lambda (path)
+                    (portal-server-test--get
+                     (format "/tasks/file?root=%s&task=g%%2Fsub%%2Ftask&path=%s" (url-hexify-string root)
+                             (url-hexify-string (expand-file-name path root)))))))
+        (should (string-match-p "HTTP/1.1 200" (funcall file "g/sub/pic.png")))
+        (should (string-match-p "HTTP/1.1 403" (funcall file "assets/root.png"))))
+      ;; A folder task's attachments include its subfolders.
+      (let ((page (portal-server-test--tasks root "&task=g")))
+        (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page "kid"))
+                       (concat "tasks?root=" hex "&task=g%2Fsub%2Ftask#part")))
+        (should (equal (portal-server-test--href page "kid notes") (funcall visit "g/sub/notes.txt")))))))
+
+(ert-deftest portal-server-tasks-order-across-folders-in-both-views ()
+  (portal-server-test--with-tasks
+    (let ((task (lambda (name &rest lines) (apply #'portal-server-test--task root name lines))))
+      ;; Execution must leave folder a and come back to it.
+      (funcall task "a/first.md" "status: todo")
+      (funcall task "b/middle.md" "status: todo" "depends_on: [a/first]")
+      (funcall task "a/last.md" "status: todo" "depends_on: [b/middle]")
+      (funcall task "c/loop-1.md" "status: todo" "depends_on: [c/loop-2]")
+      (funcall task "c/loop-2.md" "status: todo" "depends_on: [c/loop-1]")
+      (funcall task "d/missing.md" "status: todo" "depends_on: [ghost]")
+      (funcall task "d/after.md" "status: todo" "depends_on: [d/missing]")
+      (let ((tree (portal-server-test--tasks root))
+            (execution (portal-server-test--tasks root "&view=execution")))
+        (should (equal (portal-server-test--tree tree)
+                       '("a/" "  a/first #1" "  a/last #3" "b/" "  b/middle #2"
+                         "c/" "  c/loop-1" "  c/loop-2" "d/" "  d/after" "  d/missing")))
+        (should (equal (portal-server-test--order execution) '("a/first" "b/middle" "a/last")))
+        (should (equal (portal-server-test--stuck execution) '("c/loop-1" "c/loop-2" "d/after" "d/missing")))
+        (should (string-search "<span class=\"title\">a/last</span><span class=\"folder\">a</span>" execution))
+        ;; Both views share one graph: the same waits and problems.
+        (dolist (title '("a/first" "b/middle" "a/last" "c/loop-1" "c/loop-2" "d/after" "d/missing"))
+          (ert-info (title)
+            (should (portal-server-test--waits tree title))
+            (should (equal (portal-server-test--waits tree title)
+                           (portal-server-test--waits execution title)))))
+        (should (equal (portal-server-test--waits tree "c/loop-1") "a cycle with c/loop-2"))
+        (should (equal (portal-server-test--waits tree "d/after") "after d/missing"))
+        (should (equal (portal-server-test--part tree "<section class=\"problems\">" "</section>")
+                       (string-replace "&amp;view=execution" ""
+                                       (portal-server-test--part execution "<section class=\"problems\">" "</section>"))))))))
 
 (ert-deftest portal-server-startup-timeout-cleans-up ()
   (let ((portal-server-program "/bin/cat")
