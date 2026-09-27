@@ -118,31 +118,18 @@ execute_process(
 add_custom_target(portal ALL
     COMMAND "${CMAKE_COMMAND}" -E env "EMACS_INCLUDE=${EMACS_INCLUDE}"
         xcrun swift build --package-path "${native_package}"
-        --scratch-path "${native_scratch}" -c release
+        --scratch-path "${native_scratch}" -c release --product portal
         --force-resolved-versions
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${native_bundle}/MacOS" "${native_bundle}/Resources"
     COMMAND "${CMAKE_COMMAND}" -E copy "${native_package}/Info.plist" "${native_bundle}/Info.plist"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${native_bin}/GhosttyKit_GhosttyTerminal.bundle"
         "${native_bundle}/Resources/GhosttyKit_GhosttyTerminal.bundle"
-    COMMAND "${CMAKE_COMMAND}" -E copy
-        "${native_bin}/portal-terminal-launcher" "${native_bundle}/MacOS/.portal-terminal-launcher"
-    COMMAND "${CMAKE_COMMAND}" -E rename
-        "${native_bundle}/MacOS/.portal-terminal-launcher" "${native_bundle}/MacOS/portal-terminal-launcher"
     # Publish atomically: never overwrite a library already mapped by Emacs.
     COMMAND "${CMAKE_COMMAND}" -E copy
         "${native_bin}/libportal.dylib" "${native_bundle}/MacOS/.portal.dylib"
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${native_bundle}/MacOS/.portal.dylib" "${native_bundle}/MacOS/portal.dylib"
-    BYPRODUCTS "${native_bundle}/MacOS/portal.dylib" "${native_bundle}/MacOS/portal-terminal-launcher"
+    BYPRODUCTS "${native_bundle}/MacOS/portal.dylib"
     COMMENT "Building the Portal native module"
     VERBATIM)
-
-if(BUILD_TESTING)
-    add_test(NAME terminal-launcher
-        COMMAND "${CMAKE_COMMAND}" -E env
-            "PORTAL_TEST_LAUNCHER=${native_bundle}/MacOS/portal-terminal-launcher"
-            "${EMACS}" --batch -Q -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-launcher-tests.el"
-            -f ert-run-tests-batch-and-exit)
-    set_tests_properties(terminal-launcher PROPERTIES TIMEOUT 30)
-endif()

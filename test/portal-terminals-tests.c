@@ -58,7 +58,6 @@ static void test_options_are_checked_before_creation(void)
         {{flag_option("directory", true)}, 1, "Option :directory must be a string"},
         {{directory, flag_option("command", true)}, 2, "Option :command must be a string"},
         {{directory, flag_option("argv", true)}, 2, "Option :argv must be a string"},
-        {{directory, flag_option("environment", true)}, 2, "Option :environment must be a string"},
         {{directory, string_option("command", "ls"), string_option("argv", "[]")},
          3, "A terminal view accepts either :command or :argv"},
         {{directory, flag_option("theme", true)}, 2, "Option :theme must be a string"},
@@ -86,13 +85,12 @@ static void test_options_are_checked_before_creation(void)
     const portal_option valid[] = {
         flag_option("directory", true), directory, string_option("command", "ls -l"),
         flag_option("theme", false), flag_option("quick", true), string_option("name", "x"),
-        string_option("environment", "{}"),
     };
     struct portal_fake_calls before = portal_fake_calls();
     char *target = open_terminal(valid, sizeof valid / sizeof *valid, &error);
     CHECK(target != NULL);
     CHECK(shows(target, "\"directory\":\"/tmp\"", "\"command\":\"ls -l\"", "\"theme\":false",
-                "\"quick\":true", "\"name\":\"x\"", "\"environment\":\"{}\"", NULL));
+                "\"quick\":true", "\"name\":\"x\"", NULL));
     /* Without a theme there is nothing to look up. */
     CHECK(portal_fake_calls().listed == before.listed);
     close_view(target);

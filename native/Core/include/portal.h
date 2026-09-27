@@ -128,12 +128,12 @@ bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error)
    portal_terminal_list_themes before applying it to any terminal.  A
    terminal's options, passed to portal_view_create, are :directory, the
    working directory, a string; :command, a shell command line to run instead
-   of the login shell, a string or false; :argv, a JSON array containing an
-   absolute program path and literal arguments, a string or false, mutually
-   exclusive with :command; :environment, a JSON object of exported
-   environment overrides (string values, or null to remove a variable), a
-   string or false, with removals requiring :argv; :theme, a name the
-   platform lists, or false for the default; and :quick, a flag.
+   of the login shell, a string or false; :argv, a JSON array containing a
+   program name or path and literal arguments to run through the user's
+   interactive login shell, a string or false, mutually exclusive with
+   :command; :theme, a name the platform lists, or false for the default;
+   and :quick, a flag. The shell loads startup files and resolves the program;
+   no Lisp environment snapshot is passed to the platform.
 
    A terminal describes itself with "ready", whether its engine can draw and
    take input; "title", which the running program may set; "columns" and

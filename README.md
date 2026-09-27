@@ -356,9 +356,6 @@ continuity, shell termination, and editing/saving a file in Vim. They also exerc
 rapid native prefix sequences, multiple sessions and splits, live prefix/map
 customization, runtime binding registration/unbinding, quick-only shortcuts,
 shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
-The launch tests also check Emacs's PATH, literal arguments, explicit environment
-removals, and zsh startup. The inherited `PORTAL_TEST_NATIVE_ENV` below lets the
-removal test distinguish Lisp's environment from the native process environment.
 Batch binding tests run with `ctest --test-dir build -R terminal-bindings`, and
 batch tests of the view lifecycle (opening, splits, selection, `quit-window`,
 showing the buffer elsewhere, moving between frames, deleting a frame and
@@ -372,11 +369,17 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
   -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
   -framework AppKit -framework WebKit \
   -o build/test-terminal-input.dylib
-PORTAL_TEST_NATIVE_ENV=from-native emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
+emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-terminal-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-terminal-")'
 ```
+
+To check program launches with a controlled shell environment, run
+`sh test/terminal-shell-startup.sh` after building. It starts a disposable graphical
+Emacs with a minimal PATH and temporary zsh dotfiles, then verifies shell-side
+program lookup, login and interactive startup, literal arguments, terminal
+metadata, and missing-program errors. Set `EMACS` to choose its executable.
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,
 configure once before opening native source files; this generates editor metadata
@@ -602,16 +605,16 @@ browsable but cannot launch Claude.
 
 Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` before
 opening a task view to choose the executable or adjust its arguments. The
-executable defaults to Claude on Emacs's PATH, falling back to
-`~/.local/bin/claude`; arguments default to `("--dangerously-skip-permissions")`.
-The launched program receives Emacs's current exported environment, including
-its `PATH` and any shell environment imported into Emacs. Explicitly unset
-variables stay absent, and empty values stay empty. Programs start
-directly; they do not source your interactive shell configuration. For a
-GUI-launched Emacs, import your shell environment into Emacs first (for example,
-with `exec-path-from-shell`). Ghostty supplies the terminal-specific variables.
-Claude's first-run login or setup can still appear in the terminal. The view
-keeps running when hidden, and killing its terminal buffer ends it.
+program defaults to `claude`; arguments default to
+`("--dangerously-skip-permissions")`. The terminal starts your interactive login
+shell, loads its startup files, and resolves `claude` on that shell's PATH.
+Programs such as `gh` therefore use your shell setup even when GUI-launched
+Emacs cannot find them. No Emacs environment-import package is required for
+Portal terminals. Lisp-side `setenv` and `exec-path` changes do not configure
+these programs; use your shell dotfiles or an explicit executable path.
+A missing program's error appears inside the terminal. Claude's first-run login
+or setup can still appear there. The view keeps running when hidden, and
+killing its terminal buffer ends it.
 
 See [hosted app actions](docs/hosted-actions.md) for the reusable instance/action
 interface and its process protocol. Restart Emacs after rebuilding the native
@@ -952,10 +955,10 @@ The core also owns Portal's terminal rules, in `native/Core/terminals.c`, and as
 the platform for six primitives on one terminal, or on the engine: list the theme
 names, apply a named theme or the default, paste text, press Enter, read all text, and
 set the font size. Before the platform creates a terminal, the core checks its
-options: `:directory` must be a string; `:command`, `:argv`, `:environment` and
+options: `:directory` must be a string; `:command`, `:argv` and
 `:theme` a string or nil; `:command` and `:argv` mutually exclusive; and `:theme`
 a name the platform lists. The adapter decodes literal arguments from `:argv`
-and string overrides or null removals from `:environment`. The core checks a
+and starts the user's interactive login shell to execute them. The core checks a
 theme's name the same way before applying it to every open terminal, oldest
 first, so an unknown name changes none. If
 one terminal rejects a theme, the error is that terminal's: those before it keep the
@@ -1074,7 +1077,7 @@ graphical Emacs. Batch Emacs has no native window and
 cannot exercise these behaviours:
 
 ```sh
-PORTAL_TEST_NATIVE_ENV=from-native emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
+emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-tests.el" \
   -l "$PWD/test/portal-terminal-tests.el" \

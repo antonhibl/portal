@@ -1,78 +1,44 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
+import Darwin
 import GhosttyTerminal
 import GhosttyTheme
 
-/// Ghostty accepts only string environment overrides. A null removal needs
-/// the bundled child launcher, which unsets it immediately before exec.
-@MainActor
-private struct TerminalLaunch {
-    var command: String?
-    var environment: [String: String] = [:]
-    var shellIntegration: String?
-
-    init(options: ViewOptions) throws {
-        command = try options.string("command")
-        var arguments: [String]?
-        if let json = try options.string("argv") {
-            guard command == nil,
-                  let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String],
-                  let program = values.first, program.hasPrefix("/"),
-                  values.allSatisfy({ !$0.contains("\0") }) else {
-                throw NativeError.message("Terminal :argv must be an absolute program and literal arguments, without :command")
-            }
-            arguments = values
-            command = values.map(Self.quote).joined(separator: " ")
-        }
-        var removals: [String] = []
-        if let json = try options.string("environment") {
-            guard let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
-                throw NativeError.message("Terminal :environment must be a JSON object")
-            }
-            for (name, value) in values {
-                guard !name.isEmpty && !name.contains("=") && !name.contains("\0") else {
-                    throw NativeError.message("Invalid terminal environment name")
-                }
-                if value is NSNull {
-                    removals.append(name)
-                } else if let value = value as? String, !value.contains("\0") {
-                    environment[name] = value
-                } else {
-                    throw NativeError.message("Terminal environment values must be strings or null")
-                }
-            }
-        }
-        guard !removals.isEmpty else { return }
-        guard let arguments else {
-            throw NativeError.message("Terminal environment removals require :argv")
-        }
-        let program = arguments[0]
-        guard let launcher = Bundle(for: HostedTerminal.self).executableURL?
-            .deletingLastPathComponent().appendingPathComponent("portal-terminal-launcher"),
-              FileManager.default.isExecutableFile(atPath: launcher.path) else {
-            throw NativeError.message("Rebuild Portal to install its terminal launcher")
-        }
-        // The command still has exactly the target's arguments, so Ghostty
-        // can prepare shell integration (including Bash/Nushell flag edits).
-        // Only argv[0] changes; the launcher forwards the resulting arguments.
-        let shell = URL(fileURLWithPath: program).lastPathComponent
-        shellIntegration = program == "/bin/bash" ? "none"
-            : ["bash": "bash", "zsh": "zsh", "fish": "fish", "elvish": "elvish", "nu": "nushell"][shell] ?? "none"
-        command = ([launcher.path] + arguments.dropFirst()).map(Self.quote).joined(separator: " ")
-        let transport = "PORTAL_TERMINAL_LAUNCH"
-        var request: [String: Any] = ["program": program, "unset": removals.sorted()]
-        // Preserve a caller's variable even if it shares the transport name.
-        if let original = environment[transport] ?? ProcessInfo.processInfo.environment[transport] {
-            request["restore"] = original
-        } else {
-            request["restore"] = NSNull()
-        }
-        environment[transport] = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+/// Start programs through the same kind of shell as an ordinary terminal.
+/// The shell owns startup files, PATH and executable lookup; Lisp supplies argv.
+private func terminalCommand(_ options: ViewOptions, directory: String) throws -> String? {
+    let command = try options.string("command")
+    guard let json = try options.string("argv") else { return command }
+    guard command == nil,
+          let argv = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String],
+          let program = argv.first, !program.isEmpty,
+          argv.allSatisfy({ !$0.contains("\0") }) else {
+        throw NativeError.message("Terminal :argv must contain a program and literal arguments, without :command")
     }
-
-    private static func quote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    // Match Ghostty's default shell lookup: native SHELL, then the user record.
+    // This never consults Emacs's Lisp environment or exec-path.
+    let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? getpwuid(getuid()).flatMap { $0.pointee.pw_shell.map { String(cString: $0) } }
+        ?? "/bin/sh"
+    let name = URL(fileURLWithPath: shell).lastPathComponent
+    guard ["sh", "bash", "zsh", "dash", "ksh", "fish"].contains(name) else {
+        throw NativeError.message("Program launches need a POSIX-compatible shell or fish; found \(shell)")
     }
+    // Startup files may cd elsewhere; hosted actions still target this project.
+    let script = "cd " + terminalQuote(directory) + " && exec " + argv.map(terminalQuote).joined(separator: " ")
+    return [shell, "-l", "-i", "-c", script].map(terminalQuote).joined(separator: " ")
+}
+
+/// Single-quoted literals for POSIX shells and fish. Backslashes stay outside
+/// quotes because fish interprets them inside single quotes, unlike POSIX sh.
+private func terminalQuote(_ value: String) -> String {
+    "'" + value.map { character in
+        switch character {
+        case "'": return "'\\''"
+        case "\\": return "'\\\\'"
+        default: return String(character)
+        }
+    }.joined() + "'"
 }
 
 @MainActor
@@ -91,18 +57,17 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     /// The process has ended. The view stays, showing its last output.
     var exited = false
 
-    init(directory: String, launch: TerminalLaunch, theme: TerminalTheme) {
+    init(directory: String, command: String?, theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: launch.environment.merging(["INSIDE_EMACS": "portal-ghostty"]) { _, value in value },
-            command: launch.command,
+            envVars: ["INSIDE_EMACS": "portal-ghostty"],
+            command: command,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
             builder.withFontSize(Float(Self.defaultFontSize))
-            if let shell = launch.shellIntegration { builder.withCustom("shell-integration", shell) }
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
             builder.withCustom("keybind", "super+t=unbind")
@@ -151,7 +116,7 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         quick = options.flag("quick")
-        let terminal = HostedTerminal(directory: directory, launch: try TerminalLaunch(options: options),
+        let terminal = HostedTerminal(directory: directory, command: try terminalCommand(options, directory: directory),
                                       theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal

@@ -129,11 +129,11 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Dismiss the quick terminal before opening an ordinary terminal"))
   (portal-terminal--new))
 
-(defun portal-terminal--new (&optional quick-root command name elsewhere environment argv)
+(defun portal-terminal--new (&optional quick-root command name elsewhere argv)
   "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
 NAME names its buffer.  ELSEWHERE displays it in another pane.
-ENVIRONMENT is a JSON object of string values or null removals.
-ARGV is a JSON array of literal program arguments, instead of COMMAND."
+ARGV is a JSON array of a program and literal arguments to run through
+the user's shell, instead of COMMAND."
   (when (file-remote-p default-directory)
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
@@ -167,7 +167,6 @@ ARGV is a JSON array of literal program arguments, instead of COMMAND."
             (portal-view-open 'terminal (list :directory directory
                                               :command command
                                               :argv argv
-                                              :environment environment
                                               :theme portal-terminal-theme
                                               :quick (and quick-root t)))
             (portal-terminal-focus))
@@ -175,53 +174,25 @@ ARGV is a JSON array of literal program arguments, instead of COMMAND."
       (unless ready (kill-buffer buffer)))
     buffer))
 
-(defun portal-terminal--command-environment (program)
-  "Encode the current buffer's exported environment for PROGRAM.
-Ghostty owns terminal metadata and shell integration.  Other values come
-from `process-environment', including changes made by `setenv'."
-  (let ((values (make-hash-table :test #'equal))
-        (seen (make-hash-table :test #'equal)))
-    (dolist (entry process-environment)
-      (let* ((entry (if (multibyte-string-p entry) entry
-                      (decode-coding-string entry locale-coding-system)))
-             (separator (string-search "=" entry))
-             (name (if separator (substring entry 0 separator) entry)))
-        ;; Like getenv, the first entry wins, including an unset entry.
-        (unless (gethash name seen)
-          (puthash name t seen)
-          (when (and (not (member name '("TERM" "TERMINFO" "TERMINFO_DIRS" "COLORTERM"
-                                         "TERM_PROGRAM" "TERM_PROGRAM_VERSION" "INSIDE_EMACS"
-                                         "PWD" "COLUMNS" "LINES" "VTE_VERSION")))
-                     (not (string-prefix-p "GHOSTTY_" name)))
-            ;; Ghostty injects ZDOTDIR before applying these overrides.  Its
-            ;; zsh bootstrap must restore our value rather than be bypassed.
-            (puthash (if (and (equal name "ZDOTDIR")
-                             (equal (file-name-nondirectory program) "zsh"))
-                         "GHOSTTY_ZSH_ZDOTDIR" name)
-                     (if separator (substring entry (1+ separator)) :null) values)))))
-    (json-serialize values)))
-
 (defun portal-terminal-start (directory program arguments &optional name)
   "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
 Return its buffer.  NAME optionally names the buffer.  Arguments are literal
-strings passed to the native launcher without shell expansion.
-The calling buffer's `process-environment' supplies exported values and
-explicit removals; Ghostty supplies terminal metadata."
+strings.  The native terminal starts the user's interactive login shell,
+which loads its startup files and resolves PROGRAM on its PATH.
+Lisp-side `process-environment' changes are not exported to the terminal.
+A missing program is reported by the shell inside the terminal."
   (unless (and (stringp directory) (file-name-absolute-p directory)
                (not (file-remote-p directory)) (file-directory-p directory))
     (user-error "Choose an existing local terminal directory"))
-  (unless (and (stringp program) (sequencep arguments)
+  (unless (and (stringp program) (> (length program) 0) (sequencep arguments)
                (seq-every-p (lambda (s) (and (stringp s) (not (string-search "\0" s)))) arguments)
                (not (string-search "\0" program)))
     (user-error "Terminal program and arguments must be strings without NUL"))
   (let* ((default-directory (file-name-as-directory directory))
-         (executable (executable-find program))
          (configuration (current-window-configuration)))
-    (unless executable (user-error "Cannot find terminal program: %s" program))
     (condition-case err
         (portal-terminal--new
-         nil nil name t (portal-terminal--command-environment executable)
-         (json-serialize (vconcat (list executable) arguments)))
+         nil nil name t (json-serialize (vconcat (list program) arguments)))
       (error (set-window-configuration configuration)
              (portal-view-sync)
              (signal (car err) (cdr err))))))

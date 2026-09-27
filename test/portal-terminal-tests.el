@@ -66,144 +66,54 @@
                   (let ((portal-terminal-test--target (portal-view-target))) ,@body))
          (portal-terminal-close-all)))))
 
-(ert-deftest portal-terminal-start-inherits-emacs-environment ()
+(ert-deftest portal-terminal-start-uses-shell-startup ()
   (skip-unless (eq window-system 'ns))
-  (let* ((directory (file-truename (make-temp-file "portal-launch-env-" t)))
-         (program (expand-file-name "portal-env-cli" directory))
-         (receipt (expand-file-name "receipt" directory))
+  ;; test/terminal-shell-startup.sh launches a fresh native process with these
+  ;; dotfiles. Lisp-side setenv cannot change the native parent's environment.
+  (skip-unless (getenv "PORTAL_TEST_SHELL_DIRECTORY"))
+  (let* ((directory (file-truename (make-temp-file "portal-shell-launch-" t)))
+         (receipt (expand-file-name "receipt.json" directory))
          (process-environment (copy-sequence process-environment))
-         (value "from Emacs: 'quoted' = é\nsecond line"))
+         (exec-path '("/usr/bin" "/bin"))
+         (arguments '("implement @tasks/space ' é.md" "$(touch SHOULD_NOT_EXIST)" "`pwd`"
+                      "" "a\\b" "line\nnext")))
     (unwind-protect
         (save-window-excursion
-          (with-temp-file program (insert "#!/bin/sh\nprintf 'cli-found\\n'\n"))
-          (set-file-modes program #o700)
-          ;; Lisp's environment differs from the native process's environment,
-          ;; as with exec-path-from-shell or a GUI-launched Emacs.
-          (setenv "PATH" (concat directory ":/usr/bin:/bin"))
-          (setenv "PORTAL_TEST_LAUNCH_ENV" value)
-          (setenv "TERM" "dumb")
-          (setenv "TERM_PROGRAM" "parent-terminal")
-          (dotimes (index 2)
-            ;; Changes after the first Ghostty controller loads must also work.
-            (setenv "PORTAL_TEST_LAUNCH_INDEX" (number-to-string index))
-            (let ((buffer
-                   (portal-terminal-start
-                    directory "/bin/sh"
-                    (list "-c"
-                          (concat "{ portal-env-cli; printf '%s\\n%s\\n%s\\n%s\\n%s' "
-                                  "\"$PORTAL_TEST_LAUNCH_INDEX\" \"$TERM\" \"$TERM_PROGRAM\" "
-                                  "\"$INSIDE_EMACS\" \"$PORTAL_TEST_LAUNCH_ENV\"; } > "
-                                  (shell-quote-argument (concat receipt ".tmp"))
-                                  " && /bin/mv " (shell-quote-argument (concat receipt ".tmp"))
-                                  " " (shell-quote-argument receipt))))))
+          (setenv "PATH" "/usr/bin:/bin")
+          (setenv "PORTAL_LISP_ONLY" "must-not-be-exported")
+          (setenv "PORTAL_SHELL_PROFILE" "wrong")
+          (setenv "PORTAL_SHELL_RC" "wrong")
+          (should-not (executable-find "portal-startup-cli"))
+          (dolist (program (list "portal-startup-cli"
+                                 (expand-file-name "tools/portal ' é\\tool" (getenv "PORTAL_TEST_SHELL_DIRECTORY"))))
+            (let ((buffer (portal-terminal-start directory program (cons receipt arguments))))
               (unwind-protect
                   (progn
                     (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-                    (should
-                     (equal (with-temp-buffer (insert-file-contents receipt) (buffer-string))
-                            (format "cli-found\n%d\nxterm-ghostty\nghostty\nportal-ghostty\n%s"
-                                    index value))))
+                    (let ((result (with-temp-buffer
+                                    (insert-file-contents receipt)
+                                    (json-parse-buffer :object-type 'plist :array-type 'list :null-object nil))))
+                      (should (equal (plist-get result :args) arguments))
+                      (should (equal (plist-get result :cwd) directory))
+                      (should (equal (plist-get result :profile) "login-loaded"))
+                      (should (equal (plist-get result :rc) "interactive-loaded"))
+                      (should-not (plist-get result :lisp))
+                      (should (equal (plist-get result :term) "xterm-ghostty"))
+                      (should (equal (plist-get result :inside) "portal-ghostty")))
+                    (should-not (file-exists-p (expand-file-name "SHOULD_NOT_EXIST" directory))))
                 (kill-buffer buffer)
-                (delete-file receipt)))))
+                (when (file-exists-p receipt) (delete-file receipt))))))
       (delete-directory directory t))))
 
-(ert-deftest portal-terminal-start-removes-inherited-environment-values ()
+(ert-deftest portal-terminal-start-missing-program-is-reported-in-terminal ()
   (skip-unless (eq window-system 'ns))
-  ;; Launch the test Emacs with PORTAL_TEST_NATIVE_ENV=from-native so the
-  ;; variable exists in Ghostty's native fallback, not just Lisp's environment.
-  (skip-unless (equal (let ((process-environment initial-environment))
-                       (getenv "PORTAL_TEST_NATIVE_ENV")) "from-native"))
-  (let* ((directory (file-truename (make-temp-file "portal-unset-" t)))
-         (receipt (expand-file-name "receipt" directory)))
-    (unwind-protect
-        (save-window-excursion
-          (dolist (mode '(bare unset empty unchanged))
-            (let ((process-environment (copy-sequence process-environment))
-                  (command "printf '%s:%s' \"${PORTAL_TEST_NATIVE_ENV+present}\" \"${PORTAL_TEST_NATIVE_ENV-absent}\""))
-              (pcase mode
-                ('bare (push "PORTAL_TEST_NATIVE_ENV" process-environment))
-                ('unset (setenv "PORTAL_TEST_NATIVE_ENV" nil))
-                ('empty (setenv "PORTAL_TEST_NATIVE_ENV" "")))
-              (let ((expected (with-temp-buffer
-                                (should (= 0 (call-process "/bin/sh" nil t nil "-c" command)))
-                                (buffer-string)))
-                    (buffer (portal-terminal-start
-                             directory "/bin/sh"
-                             (list "-c" (concat command " > " (shell-quote-argument (concat receipt ".tmp"))
-                                                " && /bin/mv " (shell-quote-argument (concat receipt ".tmp"))
-                                                " " (shell-quote-argument receipt))))))
-                (unwind-protect
-                    (progn
-                      (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-                      (should (equal (with-temp-buffer (insert-file-contents receipt) (buffer-string))
-                                     expected)))
-                  (kill-buffer buffer)
-                  (delete-file receipt))))))
-      (delete-directory directory t))))
-
-(ert-deftest portal-terminal-start-preserves-literal-native-arguments ()
-  (skip-unless (eq window-system 'ns))
-  (let* ((directory (file-truename (make-temp-file "portal-literal-" t)))
-         (program (expand-file-name "tool ' é" directory))
-         (receipt (expand-file-name "receipt.json" directory))
-         (arguments '("space ' é" "$(touch SHOULD_NOT_EXIST)" "`pwd`" "")))
-    (unwind-protect
-        (save-window-excursion
-          (with-temp-file program
-            (insert "#!/usr/bin/python3\nimport json, os, sys\n"
-                    "with open(sys.argv[1] + '.tmp', 'w') as f:\n"
-                    "    json.dump([sys.argv[2:], os.getcwd(), os.environ.get('PORTAL_TERMINAL_LAUNCH')], f)\n"
-                    "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"))
-          (set-file-modes program #o700)
-          ;; Exercise both direct Ghostty quoting and the removal launcher.
-          (dolist (remove '(nil t))
-            (let ((process-environment (copy-sequence process-environment)))
-              (setenv "PORTAL_TERMINAL_LAUNCH" "caller ' é")
-              (when remove (setenv "PORTAL_TEST_NATIVE_ENV" nil))
-              (let ((buffer (portal-terminal-start directory program (cons receipt arguments))))
-                (unwind-protect
-                    (progn
-                      (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-                      (should (equal (with-temp-buffer
-                                       (insert-file-contents receipt)
-                                       (json-parse-buffer :array-type 'list))
-                                     (list arguments directory "caller ' é")))
-                      (should-not (file-exists-p (expand-file-name "SHOULD_NOT_EXIST" directory))))
-                  (kill-buffer buffer)
-                  (when (file-exists-p receipt) (delete-file receipt)))))))
-      (delete-directory directory t))))
-
-(ert-deftest portal-terminal-start-preserves-zsh-startup-and-integration ()
-  (skip-unless (eq window-system 'ns))
-  (let* ((directory (file-truename (make-temp-file "portal-zdotdir-" t)))
-         (receipt (expand-file-name "receipt" directory))
-         (process-environment (copy-sequence process-environment)))
-    (unwind-protect
-        (save-window-excursion
-          (with-temp-file (expand-file-name ".zshenv" directory)
-            (insert "export PORTAL_TEST_ZSH_STARTUP=loaded\n"))
-          (with-temp-file (expand-file-name ".zprofile" directory)
-            (insert "export PORTAL_TEST_ZSH_LOGIN=loaded\n"))
-          (setenv "ZDOTDIR" directory)
-          ;; Force the child launcher while retaining Ghostty's zsh bootstrap.
-          (setenv "PORTAL_TEST_NATIVE_ENV" nil)
-          (let ((buffer
-                 (portal-terminal-start
-                  directory "/bin/zsh"
-                  (list "-ic"
-                        (concat "[[ -n $GHOSTTY_ZSH_INTEGRATION_DIR ]] && "
-                                "printf '%s:%s' \"$PORTAL_TEST_ZSH_STARTUP\" \"$PORTAL_TEST_ZSH_LOGIN\" > "
-                                (shell-quote-argument (concat receipt ".tmp"))
-                                " && /bin/mv " (shell-quote-argument (concat receipt ".tmp"))
-                                " " (shell-quote-argument receipt))))))
-            (unwind-protect
-                (progn
-                  (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-                  (should (equal (with-temp-buffer (insert-file-contents receipt) (buffer-string))
-                                 "loaded:loaded")))
-              (kill-buffer buffer)
-              (when (file-exists-p receipt) (delete-file receipt)))))
-      (delete-directory directory t))))
+  (save-window-excursion
+    (let* ((buffer (portal-terminal-start temporary-file-directory "portal-no-such-program-4817" nil))
+           (target (buffer-local-value 'portal-view--target buffer)))
+      (unwind-protect
+          (portal-terminal-test--wait
+           (lambda () (string-search "portal-no-such-program-4817" (portal--terminal-text target))))
+        (kill-buffer buffer)))))
 
 (ert-deftest portal-terminal-theme-live-and-new-sessions ()
   (skip-unless (eq window-system 'ns))

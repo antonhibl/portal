@@ -13,10 +13,11 @@
 (require 'portal-web)
 (require 'portal-terminal)
 
-(defcustom portal-tasks-claude-program
-  (or (executable-find "claude") (expand-file-name "~/.local/bin/claude"))
-  "Claude Code executable used by the task detail's Implement button."
-  :type 'file :group 'portal)
+(defcustom portal-tasks-claude-program "claude"
+  "Claude Code program used by the task detail's Implement button.
+The terminal's initialized shell resolves the name on its PATH.
+An explicit executable path is also accepted."
+  :type 'string :group 'portal)
 
 (defcustom portal-tasks-claude-arguments '("--dangerously-skip-permissions")
   "Arguments for task implementation, before the project-relative initial prompt."

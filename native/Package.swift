@@ -14,14 +14,11 @@ guard let emacsInclude = ProcessInfo.processInfo.environment["EMACS_INCLUDE"]
 let package = Package(
     name: "Portal",
     platforms: [.macOS(.v13)],
-    products: [.library(name: "portal", type: .dynamic, targets: ["Portal"]),
-               .executable(name: "portal-terminal-launcher", targets: ["PortalTerminalLauncher"])],
+    products: [.library(name: "portal", type: .dynamic, targets: ["Portal"])],
     dependencies: [
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909")
     ],
     targets: [
-        .executableTarget(name: "PortalTerminalLauncher", path: "Launcher",
-                          swiftSettings: [.unsafeFlags(["-warnings-as-errors"])]),
         // The C core: the Emacs bindings, the notification pipe, and portal.h, the
         // interface the Swift backend implements. Core/CMakeLists.txt compiles the
         // same sources into the fake-backend tests.
@@ -31,7 +28,7 @@ let package = Package(
         .target(name: "Portal", dependencies: [
             "PortalCore", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "GhosttyTheme", package: "libghostty-spm")
-        ], path: ".", exclude: ["Core", "Info.plist", "Launcher"],
+        ], path: ".", exclude: ["Core", "Info.plist"],
            sources: ["Backend.swift", "CoreCalls.swift", "NativeHost.swift", "NativeInput.swift",
                      "Views.swift", "WebView.swift", "Terminal.swift", "Toolbar.swift",
                      "WebToolbar.swift"],
