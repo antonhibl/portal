@@ -94,7 +94,7 @@ and do not design for hypothetical Linux rendering.
 - [x] Tests prove that hide keeps a session and its size, and that placing it
   elsewhere keeps the same platform handle. The tests do not duplicate native
   attachment policy.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
+- [x] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
   graphical web, terminal and combined integration suites keep splitting,
   hiding, frame movement and deletion, hidden-terminal output, and cleanup
   working. Run the native focus and toolbar checks after adapting their entry
@@ -199,3 +199,6 @@ Run on macOS 27.0 with Swift 6.4, Emacs 31.1, and CMake 4.4.3 on 2026-09-27:
   only the Excalidraw save test. That suite alone passed 26 of 26, as it did
   with the `main` module. The suite covers splitting, hiding, frame movement and
   deletion, hidden-terminal output, and cleanup.
+- On 2026-09-28, the combined graphical suite passed 52 of 52 on `main` at
+  526ae93, after the input and terminal tasks merged, including the web,
+  terminal, integration and Excalidraw suites.

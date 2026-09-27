@@ -1,6 +1,6 @@
 ---
 id: portable-input-policy
-status: todo
+status: done
 depends_on:
   - portable-view-lifecycle
   - portable-notification-channel
@@ -99,14 +99,14 @@ timeouts or watchdogs.
 - [x] Rebinding stays atomic, and a collision leaves the previous working
   configuration intact. No shared declaration or Lisp payload uses AppKit
   modifier bit values.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
+- [x] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
   graphical input and terminal suites and the native focus checks verify real
   replay, key-up handling, minibuffer commands, and focus changes for both view
   kinds.
 - [x] Ordinary Escape and C-g still reach the view while it owns input. C-b
   remains the default prefix, Command-Escape returns to Emacs, and no global
   physical shortcut is introduced.
-- [ ] Record verification and mark this task done using the author-tasks skill;
+- [x] Record verification and mark this task done using the author-tasks skill;
   follow `AGENTS.md` for the implementation worktree and PR.
 
 ## Decisions
@@ -157,12 +157,16 @@ timeouts or watchdogs.
   They cover guest Escape and C-g, Command-Escape, hiding, click-to-select,
   link handoff, the owner dot, Command-F in passthrough, and Open in Emacs
   ending a pending prefix (records `prefix`, `escape`, `bridge`).
-- Graphical suites: **not yet verified.** They ran while the screen was
-  locked (`loginwindow` in front), so no key or click injection could reach
-  Emacs: 25 of 52 passed and 27 failed. Unchanged `main` fails the same 27
-  under the same conditions, and every test that injects nothing passes. Rerun
-  them with Emacs in front (README, Verification) before marking this task
-  done.
+- Graphical suites: the first run was while the screen was locked
+  (`loginwindow` in front), so no key or click injection could reach Emacs:
+  25 of 52 passed and 27 failed. Unchanged `main` failed the same 27 under
+  the same conditions.
+- After merging, on merged `main` at 526ae93 (which also includes
+  [the terminal task](portable-terminal-adapter.md)), the combined graphical
+  suite passed 52 of 52 with Emacs able to take the keyboard, including all 6
+  input, 19 terminal and 2 integration tests. `./build.sh`, `ctest` (17 of
+  17, including `input-core`), `check-focus` and `check-toolbar` passed on the
+  same commit.
 
 ## Blocked by
 
