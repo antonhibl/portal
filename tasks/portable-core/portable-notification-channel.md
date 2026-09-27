@@ -49,7 +49,7 @@ new channel, even when their callers have not yet moved from Swift.
 
 ## Starting points
 
-Read `native/NativeEventChannel.swift`, `native/Module.swift`'s channel binding,
+Read `native/NativeEventChannel.swift`, `native/Core/emacs.c`'s channel binding,
 `native/Views.swift`, `native/NativeInput.swift`, `native/WebView.swift`'s
 `WebBridge`, and `portal-view.el`'s pipe/filter code. Read
 `test/native-focus.swift`'s full-pipe and reconnect checks and

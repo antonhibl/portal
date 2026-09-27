@@ -1,7 +1,7 @@
 # Portal: native views in Emacs
 
 Native WebKit pages and Ghostty terminals inside macOS Emacs panes, backed by
-one Swift dynamic module. A bundled Bun server hosts Hello World, local
+one native dynamic module: C Emacs bindings over a Swift backend. A bundled Bun server hosts Hello World, local
 Markdown previews, a task browser and an offline Excalidraw editor. Each buffer has one native view,
 which follows its buffer across splits, resizing and frames; hidden pages and
 terminal sessions keep running.
@@ -385,12 +385,13 @@ cmake --build --preset dev
 ```
 
 CMake locates Emacs, builds the Bun host, and invokes the native Swift package.
-`native/Package.swift` defines one Swift target containing the host, web, terminal,
-and Emacs bridge code, plus the small required C entry point. There are no separate
-feature libraries or plugin builds. Configuration writes the discovered header
+`native/Package.swift` defines two targets linked into the one module: `PortalCore`,
+the C Emacs bindings in `native/Core`, and `Portal`, the Swift backend containing the
+host, web, terminal, input and toolbar code. There are no separate feature libraries
+or plugin builds. Configuration writes the discovered header
 path to `build/emacs-include.txt`, which the package also reads for editor support.
 
-Use SourceKit-LSP with Eglot for Swift and the C bridge, with `native/` as its
+Use SourceKit-LSP with Eglot for Swift and the C bindings, with `native/` as its
 SwiftPM project root. Xcode provides the server. Reconnect Eglot after switching
 from the former CMake compilation database. No project-specific header paths
 belong in your Emacs configuration. Reconfigure after changing Emacs or SDKs.
@@ -829,7 +830,9 @@ the app sends, in order. Other web views have no bridge.
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
-| `native/Module.swift` | Emacs function registration, argument conversion, and errors |
+| `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
+| `native/Core/include/portal.h` | The typed C operations behind each Lisp function, with their ownership and thread rules |
+| `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
@@ -838,7 +841,6 @@ the app sends, in order. Other web views have no bridge.
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
 | `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
 | `native/WebToolbar.swift` | Web zoom, find, navigation, and isolated page TOC support |
-| `native/Emacs/` | Required C entry point, Emacs header import, and ABI size checks |
 | `native/Package.swift` | One native library and pinned Ghostty dependency |
 
 These are ordinary source boundaries within one native module. A small
@@ -849,8 +851,16 @@ route keys to the focused surface or a pending Portal command. A key released
 after focus changes is not delivered to the newly focused feature.
 
 Features own their state and cleanup. Closing a web view does not destroy a
-terminal, and closing a terminal does not remove web views. The Emacs bridge
-converts arguments and registers every API.
+terminal, and closing a terminal does not remove web views.
+
+The C bindings register every Lisp function and convert its arguments and results.
+Each function calls one named operation in `portal.h`, such as `portal_web_load`,
+which `native/Backend.swift` implements with the Swift features. The operations use
+plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
+`malloc` that the bindings free, and an explicit error result that becomes a Lisp
+`error`. The bindings check that argument strings are valid UTF-8, since Emacs copies
+a unibyte string's raw bytes unchanged. A later backend can replace any operation
+without changing its Lisp callers.
 
 Terminal and web views run on the shared Portal view lifecycle
 ([ADR 0002](docs/adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
@@ -872,9 +882,9 @@ mode closes the view. Operations that belong to one kind have their own exports,
 such as `portal--web-load TARGET URL`. Batch
 tests replace the native module with `test/portal-fake-native.el`.
 
-The frame-title trick and the geometry cache mean there is no polling timer, and
-Swift never retains an Emacs value or environment pointer after a module call
-returns. Native navigation callbacks only update Swift state; they never call
+The frame-title trick and the geometry cache mean there is no polling timer. No
+native code retains an Emacs value or environment pointer after a module call
+returns: the C bindings copy each argument, and the backend sees only those copies. Native navigation callbacks only update Swift state; they never call
 back into Lisp.
 
 ## Verification
@@ -987,6 +997,25 @@ Verify the failure reporter without opening windows:
 ```sh
 python3 -B -m unittest discover -s test -p 'test_native_checks.py'
 ```
+
+The C Emacs bindings have their own tests. They load the real bindings, compiled
+with `test/portal-fake-backend.c` in place of the Swift backend, into batch Emacs
+with `--module-assertions`. They need only CMake, a C compiler and Emacs; they do not
+use Swift, Apple frameworks, Bun or Ghostty. The application itself still requires
+macOS.
+
+```sh
+cmake -S native/Core -B build/core
+cmake --build build/core
+ctest --test-dir build/core --output-on-failure
+```
+
+The full build runs the same tests as `ctest --test-dir build -R module`. They check
+the 19 functions and their arities, and the conversion of options, edges, and strings,
+including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,
+raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
+without calling the backend. A signal raised while converting an argument reaches
+Lisp unchanged, and a backend error becomes a Lisp `error` with its message.
 
 The compiled-host integration tests run without a graphical display:
 

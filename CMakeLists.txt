@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.29)
 
-# CMake orchestrates the native Swift package, Bun host and integration tests.
+# CMake orchestrates the native module, Bun host and integration tests.
 project(portal LANGUAGES NONE)
 
 if(NOT APPLE)
     message(FATAL_ERROR "Portal requires macOS with AppKit and WebKit")
 endif()
+
+include(CTest)
+# The C Emacs bindings and their fake-backend tests. This locates Emacs and
+# emacs-module.h for the rest of the build.
+add_subdirectory(native/Core)
 
 find_program(BUN NAMES bun HINTS "$ENV{HOME}/.bun/bin" REQUIRED)
 execute_process(COMMAND "${BUN}" -e
@@ -36,11 +41,6 @@ add_custom_command(
     VERBATIM)
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
-if(DEFINED ENV{EMACS} AND NOT DEFINED EMACS)
-    set(EMACS "$ENV{EMACS}" CACHE FILEPATH "Emacs executable")
-endif()
-find_program(EMACS NAMES emacs REQUIRED)
-include(CTest)
 if(BUILD_TESTING)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
     add_test(NAME actions
@@ -102,20 +102,7 @@ if(BUILD_TESTING)
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(excalidraw PROPERTIES TIMEOUT 30)
 endif()
-set(EMACS_INCLUDE "$ENV{EMACS_INCLUDE}" CACHE PATH "Directory containing emacs-module.h")
-if(NOT EMACS_INCLUDE)
-    execute_process(COMMAND "${EMACS}" --batch -Q --eval
-        "(princ (expand-file-name \"../include\" data-directory))"
-        OUTPUT_VARIABLE emacs_include OUTPUT_STRIP_TRAILING_WHITESPACE
-        COMMAND_ERROR_IS_FATAL ANY)
-    unset(EMACS_INCLUDE CACHE)
-    find_path(EMACS_INCLUDE emacs-module.h HINTS "${emacs_include}")
-endif()
-if(NOT EXISTS "${EMACS_INCLUDE}/emacs-module.h")
-    message(FATAL_ERROR "Set -DEMACS_INCLUDE=/path/to/include containing emacs-module.h")
-endif()
-
-# SwiftPM builds the one native module, including its small C entry point.
+# SwiftPM builds the one native module: the C bindings and the Swift backend.
 # Keep the bundle intact: Ghostty locates terminfo and shell integration here.
 file(WRITE "${CMAKE_BINARY_DIR}/emacs-include.txt" "${EMACS_INCLUDE}\n")
 set(native_package "${CMAKE_SOURCE_DIR}/native")

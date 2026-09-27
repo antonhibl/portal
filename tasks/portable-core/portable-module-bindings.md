@@ -1,6 +1,6 @@
 ---
 id: portable-module-bindings
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -70,21 +70,71 @@ required. Avoid speculative Linux declarations.
 
 ## Acceptance criteria and verification
 
-- [ ] The production module registers its Lisp interface through C; there is
+- [x] The production module registers its Lisp interface through C; there is
   no second Swift registration/conversion implementation left behind.
-- [ ] Tests load the real C module with a fake backend and exercise successful
+- [x] Tests load the real C module with a fake backend and exercise successful
   calls, malformed strings/vectors/plists, optional arguments, backend errors,
   and pending Lisp non-local exits without crashing or invoking invalid work.
-- [ ] The common test command runs on macOS without Apple framework dependencies;
+- [x] The common test command runs on macOS without Apple framework dependencies;
   common headers expose neither Emacs values to native callbacks nor native UI
   types to the shared implementation.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass.
+- [x] `./build.sh` and `ctest --test-dir build --output-on-failure` pass.
   Run the README's disposable graphical Emacs smoke checks for opening a web
   view and a terminal, placing/hiding them, focus, and cleanup through the real
   module; use `--module-assertions`.
-- [ ] Record commands and results, then mark this task done using the
+- [x] Record commands and results, then mark this task done using the
   author-tasks skill. Follow `AGENTS.md` for the implementation worktree and PR.
 
 ## Blocked by
 
 None; this is the first refactor task.
+
+## Outcome
+
+- `native/Core/emacs.c` is the Emacs module: `emacs_module_init`, the 19
+  registrations with their arities and docstrings, argument and result
+  conversion, and error signalling. `native/Module.swift` and `native/Emacs/`
+  are gone.
+- `native/Core/include/portal.h` declares one named operation per Lisp function
+  and records the conventions: borrowed `portal_string` arguments (UTF-8,
+  explicit length, valid only during the call), `malloc`ed results that the
+  bindings free, `false` plus an owned message on failure, synchronous calls on
+  the module call's thread, and no callbacks. No opaque handles were needed yet,
+  since targets remain strings. The header includes no Emacs, Swift, Foundation
+  or AppKit declarations.
+- `native/Backend.swift` implements `portal.h` with the existing Swift code and
+  keeps the main-thread check and `MainActor` dispatch.
+- The bindings reject strings that are not valid UTF-8 with
+  `wrong-type-argument`, because Emacs copies unibyte raw bytes and surrogates
+  unchanged. `portal--input` now treats an explicit nil SERIAL as absent, like
+  ENTER in `portal--terminal-paste`. A failed `portal_channel` closes the
+  descriptor instead of leaking it.
+- SwiftPM builds `native/Core` as the `PortalCore` target of the production
+  module. `native/Core/CMakeLists.txt` compiles the same `emacs.c` with
+  `test/portal-fake-backend.c` into `portal-test-module.so`, used only by
+  `test/portal-module-tests.el`. The top-level CMake project includes it, and
+  it now locates Emacs and `emacs-module.h` for the whole build. The bundle
+  layout and load path are unchanged.
+
+## Verification
+
+Run on macOS 27.0 with Swift 6.4, Emacs 31.1, and CMake 4.4.3 on 2026-09-27:
+
+- `cmake -S native/Core -B build/core && cmake --build build/core && ctest
+  --test-dir build/core --output-on-failure` passed (11 ERT tests under
+  `--module-assertions`). `otool -L` shows the test module links only
+  `libSystem`. Disabling the UTF-8 check, or reading ENTER without checking
+  NARGS, makes the suite fail.
+- `./build.sh` built without warnings; `nm` shows all 19 `portal_*` operations
+  defined in `portal.dylib`, and none undefined.
+- `ctest --test-dir build --output-on-failure` passed 12 of 12, including
+  `module`.
+- The README's combined graphical suite, run through the real module with
+  `--module-assertions`, passed 50 of 50 twice. It covers opening web views and
+  terminals, placing, hiding, focus, and cleanup. A third run had one
+  input-injection failure. The injected-key tests
+  `portal-input-gui-native-escape-invalidates-unacknowledged-prefix`,
+  `portal-integration-focus-and-cleanup-in-either-startup-order` and
+  `portal-input-gui-prefix-key-inside-emacs-gateway-is-not-literal` fail
+  intermittently with the same messages on both builds. In interleaved reruns,
+  `main` was clean in 12 of 17 runs and this branch in 12 of 20.
