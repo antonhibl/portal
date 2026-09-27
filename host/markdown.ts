@@ -4,13 +4,17 @@ import { basename, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import styles from "./markdown.css" with { type: "text" };
 
+/** A page of Markdown styles and BODY. A document runs no code. An app page,
+ * with SCRIPT, runs only that script, which may post to the app host. */
 export function page(
 	title: string,
 	body: string,
 	status = 200,
-	css = "",
-	forms = false,
+	{ css = "", script }: { css?: string; script?: string } = {},
 ): Response {
+	const policy = script
+		? `script-src 'sha256-${new Bun.CryptoHasher("sha256").update(script).digest("base64")}'; connect-src 'self'; form-action 'self'`
+		: "form-action 'none'";
 	return new Response(
 		`<!doctype html>
 <html lang="en">
@@ -18,7 +22,7 @@ export function page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${Bun.escapeHTML(title)}</title>
-  <style>${styles}${css}</style>
+  <style>${styles}${css}</style>${script ? `\n  <script>${script}</script>` : ""}
 </head>
 <body><main>${body}</main></body>
 </html>`,
@@ -26,11 +30,10 @@ export function page(
 			status,
 			headers: {
 				"Content-Type": "text/html; charset=utf-8",
-				// A no-referrer form POST has an opaque Origin in WebKit. Keep
-				// its origin for same-origin actions, without sending paths outside.
-				"Referrer-Policy": forms ? "same-origin" : "no-referrer",
-				// Markdown is a document, not executable application code.
-				"Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; base-uri 'none'; form-action ${forms ? "'self'" : "'none'"}; frame-ancestors 'none'`,
+				// A no-referrer POST has an opaque Origin in WebKit. Keep its
+				// origin for same-origin actions, without sending paths outside.
+				"Referrer-Policy": script ? "same-origin" : "no-referrer",
+				"Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; ${policy}; base-uri 'none'; frame-ancestors 'none'`,
 			},
 		},
 	);

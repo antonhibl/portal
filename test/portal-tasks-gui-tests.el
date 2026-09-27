@@ -307,14 +307,16 @@ The root is `portal-markdown-gui--directory'."
                    "done"))
     (should-not (portal-tasks-gui--shown "Shipped"))
     (should-not (portal-tasks-gui--shown "Notes"))
-    ;; A parent task's link and its disclosure are separate keyboard stops.
+    ;; A parent task's link, its buttons and its disclosure are separate
+    ;; keyboard stops.
     (portal-input-focus)
     (portal-excalidraw-gui--js
      (format "%s.querySelector('a.row').focus(); return true;" (portal-tasks-gui--node "Epic")))
-    (should (portal-test-native-key 48 0 "\t"))
-    (portal-terminal-test--wait
-     (lambda () (equal (portal-excalidraw-gui--js "return document.activeElement.getAttribute('aria-label');")
-                       "Tasks in Epic")))
+    (dolist (label '("Reopen Epic" "Edit Epic in Emacs" "Tasks in Epic"))
+      (should (portal-test-native-key 48 0 "\t"))
+      (portal-terminal-test--wait
+       (lambda () (equal (portal-excalidraw-gui--js "return document.activeElement.getAttribute('aria-label');")
+                         label))))
     (portal-test-native-key 53 (ash 1 20) "\e")
     (portal-integration-test--emacs-input)
     ;; Real keys operate the disclosures of groups and parent tasks.
@@ -399,6 +401,170 @@ The root is `portal-markdown-gui--directory'."
     (should (equal (portal-tasks-gui--waits "Implement") "after 2"))
     (should (portal-tasks-gui--shown "Shipped"))))
 
+
+;; Operations.
+
+(defun portal-tasks-gui--run (type)
+  "Wait for a queued event of TYPE, then run the queued events up to it, in order.
+The test holds the command loop, which would otherwise run them, and then
+make the selected pane's buffer current."
+  (condition-case err
+      (portal-terminal-test--wait
+       (lambda () (seq-find (lambda (event) (eq (car-safe event) type)) unread-command-events)))
+    (error (message "No %s event; queued %S; page notice %S" type unread-command-events
+                    (portal-tasks-gui--notice))
+           (signal (car err) (cdr err))))
+  ;; Other input, such as keys, stays queued.
+  (let (event)
+    (while (not (eq (car-safe event) type))
+      (setq event (seq-find (lambda (event) (memq (car-safe event) (list type 'portal-input-select)))
+                            unread-command-events))
+      (setq unread-command-events (delq event unread-command-events))
+      (funcall (lookup-key global-map (vector (car event))) event)))
+  (set-buffer (window-buffer (selected-window))))
+
+(defun portal-tasks-gui--button (task op)
+  "Return JavaScript for TASK's OP button, status or edit."
+  (format "document.querySelector('button[data-op=%S][data-task=%S]')" op task))
+
+(defun portal-tasks-gui--click (task op)
+  "Click TASK's OP button with the real mouse, scrolling it into view first."
+  (let ((point (portal-excalidraw-gui--js
+                (format "const b = %s; b.scrollIntoView({block: 'center'}); const r = b.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];"
+                        (portal-tasks-gui--button task op)))))
+    (should (portal-test-native-click (aref point 0) (aref point 1)))))
+
+(defun portal-tasks-gui--focused ()
+  "Return a description of the page's focused element."
+  (portal-excalidraw-gui--js
+   "const e = document.activeElement; return e.dataset.op ? e.dataset.op + ' ' + e.dataset.task + ' ' + e.textContent : (e.querySelector('.title')?.textContent ?? e.tagName);"))
+
+(defun portal-tasks-gui--notice ()
+  "Return the page's notice of what the last action did, or \"\"."
+  (portal-excalidraw-gui--js "return document.querySelector('.task-notice')?.textContent ?? '';"))
+
+(defun portal-tasks-gui--status (name)
+  "Return the saved status of task file NAME in the test root."
+  (with-temp-buffer
+    (insert-file-contents (portal-markdown-gui--file name))
+    (and (re-search-forward "^status: \\([a-z]+\\)" nil t) (match-string 1))))
+
+(ert-deftest portal-tasks-gui-complete-and-reopen-in-place-by-mouse-and-keyboard ()
+  (portal-tasks-gui--root
+    (let ((target (portal-view-target))
+          (path portal-web--hosted-path)
+          (history (portal-excalidraw-gui--js "return history.length;")))
+      ;; A real click completes a row; the page refreshes in place, and the
+      ;; filter hides the row, leaving focus on the row that took its place.
+      (portal-tasks-gui--click "task-10" "status")
+      (let ((scroll (portal-markdown-gui--scroll)))
+        (should (> scroll 0))
+        (portal-tasks-gui--run 'portal-action)
+        (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Task 10"))))
+        (should (equal (portal-tasks-gui--status "task-10.md") "done"))
+        (should (= (portal-markdown-gui--scroll) scroll)))
+      (portal-terminal-test--wait
+       (lambda () (string-search "Completed “Task 10”." (portal-tasks-gui--notice))))
+      (should (equal (portal-tasks-gui--focused) "Task 11"))
+      (should (portal-input--action "focused" target))
+      (should (equal portal-web--hosted-path path))
+      (should (equal (portal-excalidraw-gui--js "return history.length;") history))
+      ;; Tab reaches the row's buttons, and Return runs one without opening the task.
+      (should (portal-test-native-key 48 0 "\t"))
+      (portal-terminal-test--wait
+       (lambda () (equal (portal-tasks-gui--focused) "status task-11 Complete")))
+      (should (portal-test-native-key 36 0 "\r"))
+      (portal-tasks-gui--run 'portal-action)
+      (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Task 11"))))
+      (should (equal (portal-tasks-gui--status "task-11.md") "done"))
+      (should (equal (portal-tasks-gui--focused) "Task 12"))
+      (should (equal portal-web--hosted-path path))
+      ;; A completed task's page reopens it in place, keeping focus on its button.
+      (portal-tasks-gui--link "Show completed")
+      (portal-test--wait-for-page "Tasks")
+      (portal-tasks-gui--link "Task 10")
+      (portal-test--wait-for-page "Task 10")
+      (setq history (portal-excalidraw-gui--js "return history.length;"))
+      (should (equal (portal-excalidraw-gui--js "return document.querySelector('.task-state .status').textContent;") "done"))
+      (portal-excalidraw-gui--js (format "%s.focus(); return true;" (portal-tasks-gui--button "task-10" "status")))
+      (should (equal (portal-tasks-gui--focused) "status task-10 Reopen"))
+      (should (portal-test-native-key 36 0 "\r"))
+      (portal-tasks-gui--run 'portal-action)
+      (portal-terminal-test--wait
+       (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector('.task-state .status').textContent;") "todo")))
+      (should (equal (portal-tasks-gui--status "task-10.md") "todo"))
+      (should (equal (portal-tasks-gui--focused) "status task-10 Complete"))
+      (should (string-search "Reopened “Task 10”." (portal-tasks-gui--notice)))
+      (should (equal (portal-excalidraw-gui--js "return history.length;") history))
+      (should (portal-input--action "focused" target))
+      (portal-test-native-key 53 (ash 1 20) "\e")
+      (portal-integration-test--emacs-input))))
+
+(ert-deftest portal-tasks-gui-edit-save-refresh-and-revalidate-history ()
+  (portal-tasks-gui--root
+    (let ((tasks (current-buffer))
+          (target (portal-view-target))
+          (origin (selected-window))
+          (source (portal-markdown-gui--file "fix-search.md")))
+      ;; Edit in Emacs opens the source beside the page, with the keyboard.
+      (portal-input-focus)
+      (portal-tasks-gui--click "fix-search" "edit")
+      (portal-tasks-gui--run 'portal-action)
+      (should (equal buffer-file-name source))
+      (should-not (eq (selected-window) origin))
+      (should (eq (window-buffer origin) tasks))
+      (should-not (portal-input--action "focused" target))
+      (portal-integration-test--emacs-input)
+      ;; Saving it refreshes the page in place; Emacs keeps the keyboard.
+      (goto-char (point-min))
+      (re-search-forward "^# Fix search$")
+      (insert " soon")
+      (save-buffer)
+      (portal-terminal-test--wait
+       (lambda () (with-selected-window origin (portal-tasks-gui--shown "Fix search soon"))))
+      (should (equal buffer-file-name source))
+      (should-not (portal-input--action "focused" target))
+      (portal-integration-test--emacs-input)
+      (should-not (alist-get 'back (with-selected-window origin (portal-markdown-gui--state))))
+      ;; A hidden page shows saved changes once it is shown again.
+      (with-selected-window origin (switch-to-buffer "*scratch*"))
+      (with-current-buffer (find-file-noselect (portal-markdown-gui--file "task-05.md"))
+        (goto-char (point-max))
+        (insert "# Task 5 renamed\n")
+        (goto-char (point-min))
+        (flush-lines "^# Task 5$")
+        (save-buffer)
+        (kill-buffer))
+      (with-selected-window origin (switch-to-buffer tasks))
+      (portal-terminal-test--wait
+       (lambda () (with-selected-window origin (portal-tasks-gui--shown "Task 5 renamed"))))
+      (portal-preview-return)
+      (should (eq (current-buffer) tasks))
+      ;; Completing a task on its page leaves no stale list behind Back.
+      (portal-tasks-gui--link "Fix search soon")
+      (portal-test--wait-for-page "Fix search soon")
+      (portal-excalidraw-gui--js (format "%s.click(); return true;" (portal-tasks-gui--button "fix-search" "status")))
+      (portal-tasks-gui--run 'portal-action)
+      (portal-terminal-test--wait
+       (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector('.task-state .status').textContent;") "done")))
+      (portal-web-back)
+      (portal-test--wait-for-page "Tasks")
+      (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Fix search soon"))))
+      ;; Unsaved changes in Emacs stop an action, which says why.
+      (portal-web-forward)
+      (portal-test--wait-for-page "Fix search soon")
+      (with-current-buffer (get-file-buffer source)
+        (goto-char (point-max))
+        (insert "Unsaved.\n"))
+      (portal-excalidraw-gui--js (format "%s.click(); return true;" (portal-tasks-gui--button "fix-search" "status")))
+      (portal-tasks-gui--run 'portal-action)
+      (portal-terminal-test--wait
+       (lambda () (string-search "unsaved changes" (portal-tasks-gui--notice))))
+      (should (equal (portal-excalidraw-gui--js "return document.querySelector('.task-notice').classList.contains('action-error') && document.querySelector('.task-state .status').textContent;") "done"))
+      (should (equal (portal-tasks-gui--status "fix-search.md") "done"))
+      (with-current-buffer (get-file-buffer source)
+        (should (buffer-modified-p))
+        (set-buffer-modified-p nil)))))
 
 (ert-deftest portal-tasks-gui-implement-post-starts-a-native-terminal ()
   (portal-test--with-web

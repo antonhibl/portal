@@ -539,11 +539,44 @@ here with the Bun version listed above.
 saved Markdown tasks in a web view with the navigation toolbar. The view opens
 at once and loads the list when the app host is ready, starting the host first
 if needed. Click a task to read it in the same view; the **Tasks** link returns
-to the list. Emacs stays the editor: the task browser reads files and never
-writes, moves or deletes them.
+to the list. Emacs stays the editor: the page shows saved files, and every
+change to a task is saved by Emacs. Nothing moves or deletes task files.
 
 This repository keeps its tasks in `tasks/`, using the default root; browse them
 in the dashboard. Agents use the [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
+
+### Completing and editing tasks
+
+Each list row and task page has **Complete**, or **Reopen** for a completed
+task, and **Edit in Emacs**. They are ordinary buttons, apart from the task
+link: click one, or Tab to it and press Return or Space.
+
+**Complete** and **Reopen** save the task with `status: done` or
+`status: todo`. They change only that value: the body, other front matter,
+comments, quoting, a byte order mark and CRLF line ends all stay as they were.
+A status written some other way, such as with a YAML tag, an anchor or in more
+than one place, is left alone, and the page asks you to edit it in Emacs. So
+are a task with unsaved changes in an Emacs buffer (save it first), a file
+that changes while the action runs, and a failed save; each reports why and
+changes nothing. An unmodified buffer visiting the task shows the saved file.
+Each button sets the status it names, so pressing it again, or twice, leaves
+the task as it asked. The page shows what is happening, and reports success
+only once the file is saved. The file is saved in the viewed task folder
+alone: no commit, branch or other checkout changes, and a worktree's copy of
+a task is independent of the main checkout's.
+
+**Edit in Emacs** opens the task's current source in another pane, reusing a
+buffer that visits it, unsaved changes and all, and gives Emacs the keyboard.
+The task page and its history stay; `M-x portal-preview-return` comes back.
+
+Saving any file in the task folder in Emacs refreshes the task views of that
+folder in place, from the saved files: the address, history, view, filter,
+folds, reading position and keyboard focus stay, and Emacs keeps the keyboard.
+A hidden view refreshes once it is shown again, and a page that Back or Forward
+shows again is checked the same way. Completing a row that the filter hides
+moves focus to the row that takes its place. A deleted, invalid or conflicting
+task shows its problem, with a link back to the list. `g` still reloads the
+page, which picks up changes made outside Emacs.
 
 ### Implementing a task
 
@@ -737,9 +770,10 @@ each with its status, and whether it is ready. Links to completed tasks work
 with either filter. Its folders, above the page, lead back to the list or to
 a parent task's page.
 
-To complete a task, edit `status: todo` to `status: done` in Emacs, save, and
-press `g` in the task view. `g` rereads the page on screen from the saved files,
-including after an app host restart. There is no automatic refresh.
+To complete a task, press **Complete** on its row or page, or edit
+`status: todo` to `status: done` in Emacs and save. Either way the task view
+refreshes; `g` rereads the page on screen from the saved files, including
+after an app host restart.
 
 ### Links and attachments
 
@@ -899,8 +933,19 @@ stays as it is while the host stops and restarts, and that `g` reloads it.
 Batch task browser tests run with `ctest --test-dir build -R tasks`. They cover
 project-relative, absolute and directory-local task roots, auxiliary buffers,
 explicit and prompted roots, remote roots, one buffer per root, `g` and restart
-recovery of the page on screen, and attachment handoff. One test runs the real
-app host.
+recovery of the page on screen, and attachment handoff. Status edits keep a BOM,
+CRLF line ends and every other byte, and refuse buffers with unsaved changes,
+files changed since the edit was planned, failed saves and files outside the
+root. Edit in Emacs reuses a modified buffer beside the page, and saving a file
+refreshes only the loaded views of its root. One test runs the real app host,
+and `ctest -R actions` sends status changes, a repeated change, a refusal and
+Edit in Emacs from the compiled host through Emacs's command loop.
+`bun test host` checks that status edits change only the status value, in
+block and flow YAML, with quoted keys and values, comments, unknown fields, a
+BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise
+unsafe entries are refused; and that the action route resolves moved IDs,
+serializes repeated requests, rejects other origins, contexts and roots, and
+that task pages run only their own hashed script.
 
 The graphical web tests wait for real WebKit page loads. They verify JavaScript
 execution, relative local assets, a page staying loaded while hidden, repeated
@@ -921,6 +966,14 @@ filter across those links, and a dependent becoming ready after its
 prerequisite is saved as done. For nested folders they check indentation,
 folding groups and parent tasks with real keys, folds kept by Back, completed
 parents above unfinished work, folder links, and reloading after a saved move.
+Task operations are checked with real clicks and keys: completing a row in
+place, with the filter hiding it and focus on the next row, at the same
+scroll position and without a new history entry; Tab and Return on a row's
+button without opening the task; reopening from a task page, keeping focus on
+its button; Edit in Emacs handing the keyboard to the source pane; a save
+refreshing the page while Emacs keeps the keyboard, including a hidden page
+once it is shown; Back showing the list without a task completed on its page;
+and an action refused over unsaved changes.
 The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
 shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up

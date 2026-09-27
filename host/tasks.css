@@ -55,7 +55,25 @@ ul.tasks,
 .tree li {
 	margin: 0;
 }
+/* A row's buttons follow its link, outside it, so neither triggers the other. */
+.tasks li,
+.tree li.task {
+	display: flex;
+	flex-wrap: wrap;
+}
+.tree li.task > details {
+	flex-basis: 100%;
+}
+.row-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	border-bottom: 1px solid var(--border);
+	padding: 0 0.25rem;
+}
 .row {
+	flex: 1;
+	min-width: 0;
 	display: flex;
 	align-items: baseline;
 	gap: 0.75rem;
@@ -229,9 +247,20 @@ a.row:focus-visible .title {
 	cursor: help;
 }
 
+.task-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 1rem 0;
+}
 .task-action {
 	margin: 1rem 0;
 }
+.task-controls .task-action {
+	margin: 0;
+}
+.task-op,
 .task-action button {
 	font: inherit;
 	color: inherit;
@@ -241,16 +270,54 @@ a.row:focus-visible .title {
 	padding: 0.4rem 0.8rem;
 	cursor: pointer;
 }
+.task-op:hover,
 .task-action button:hover {
 	background: light-dark(#eee, #333);
 }
+.task-op:focus-visible,
 .task-action button:focus-visible {
 	outline: 2px solid currentColor;
 	outline-offset: 3px;
 }
+.task-op[aria-disabled="true"] {
+	cursor: progress;
+	opacity: 0.7;
+}
+.row-actions .task-op {
+	border-color: var(--border);
+	padding: 0.05rem 0.5rem;
+	color: var(--muted);
+	font-size: 0.8em;
+}
+.row-actions .task-op:hover,
+.row-actions .task-op:focus-visible {
+	border-color: currentColor;
+	color: inherit;
+}
+
 .action-note {
 	font-size: 0.9rem;
 }
 .action-error {
 	color: light-dark(#a32626, #ffaaaa);
+}
+/* What the last action did, kept in view while the page scrolls. */
+.task-notice {
+	position: fixed;
+	bottom: 1rem;
+	left: 50%;
+	transform: translateX(-50%);
+	max-width: min(40rem, calc(100vw - 2rem));
+	margin: 0;
+	border: 1px solid var(--border);
+	border-radius: 0.4rem;
+	padding: 0.5rem 1rem;
+	background: light-dark(#ffffff, #15191f);
+	box-shadow: 0 0.25rem 1rem light-dark(#0002, #0008);
+	font-size: 0.9rem;
+}
+.task-notice:empty {
+	border: 0;
+	padding: 0;
+	box-shadow: none;
 }

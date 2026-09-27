@@ -7,6 +7,7 @@ Portal presents the current project's saved Markdown tasks as a list and detail
 pages in a hosted app. A task can be a single file or a folder containing its
 document and attachments. Both forms have the same metadata and UI behavior.
 Emacs remains the editor: v1 reads files and never writes task content or status.
+[Task operations](#task-operations), added later, let Emacs save a status change.
 
 ## Entry point and launch flow
 
@@ -236,6 +237,67 @@ folder breadcrumbs: a parent task links to its page, and a group to the list,
 at its row when that list is the tree. Back/Forward keeps disclosure state with WebKit's page history; `g`
 reopens it.
 
+## Task operations
+
+Added by [task browser operations](../tasks/task-browser-operations.md). List
+rows and detail pages have **Complete** (todo) or **Reopen** (done) and **Edit in
+Emacs** buttons, shown only to the Portal view registered for the page's root.
+A row's buttons follow its link, outside it, so activating one never follows
+the link. Status stays exactly `todo` or `done`.
+
+**Page script and policy.** Task pages carry one inline script, the page script
+in `host/tasks-client.ts`, allowed by its SHA-256 in the page's CSP along with
+`connect-src 'self'`. Task content still runs nothing: raw HTML stays text, and
+no other script source is allowed. Task pages use `Referrer-Policy: same-origin`
+so their POSTs carry a verifiable Origin.
+
+**Commands.** A button posts JSON `{root, context, task, action, status}` to
+`/tasks/action`. The app host admits it as it does the Implement form: same
+origin, bounded body, and a context registered for that root. It resolves the
+ID through the per-request index, so both storage forms and moved tasks work,
+then asks Emacs through the [hosted action](hosted-actions.md) pipe to run
+`task.status` or `task.edit`. Actions run one at a time, and the request names
+the target status, so a repeated or duplicated request finds the task already
+there and changes nothing. The reply is `{}` once Emacs has saved the file, or
+`{error}` to show.
+
+**Patch planning.** The app host plans a status edit from the file's bytes,
+with the reader's own front matter parser. The file must be valid UTF-8 (a BOM
+is kept). Its front matter must hold exactly one entry of the form
+`status: todo`, in block or flow style, with the key and value plain,
+single- or double-quoted, followed by a comment, a comma, `}` or the line end.
+Only the value changes, keeping its quotes. The edited text must read back as
+the same body and the same front matter with only `status` changed; anything
+else, such as a tag, an anchor, an explicit key, a duplicated key, or a
+lookalike inside another value, is refused with an explanation, and the
+document is left for Emacs. Discovery still reads every valid form.
+
+**Applying.** Emacs receives the byte range, its replacement, and the SHA-256
+of the bytes the plan was made from. It refuses a file with unsaved changes in
+a visiting buffer, one another Emacs has locked, or one whose bytes changed
+since the plan, and otherwise replaces those bytes and writes the file as it
+was read, with no conversion, backup or save hooks. An unmodified visiting
+buffer is then reverted. A failed write is reported and changes nothing. Only
+a file inside the view's root is written; nothing is committed, moved or
+renamed, and each checkout's copy stays independent.
+
+**Edit in Emacs** visits the resolved source with the local-file handoff:
+another pane, an existing buffer reused as it is, Emacs given the keyboard, and
+`portal-preview-return` coming back. It visits source even if Markdown later
+opens elsewhere by default.
+
+**Refresh.** After any save in Emacs of a file inside a task root, and after a
+status edit, Emacs sends `{"type": "refresh"}` over the bridge to that root's
+loaded view. The page fetches its own URL and replaces its `<main>`, keeping
+its URL and history, `<details>` states by row ID, scroll position, and focus
+by button, link or disclosure, and only moving focus while the page has it.
+A hidden page defers the refresh until it is visible, and a page that Back or
+Forward restores from the page cache refreshes the same way. After an action,
+a row the filter now hides passes focus to the row that took its place. An
+error page (missing, invalid or conflicting task) keeps its diagnostics and
+its link to the list. `g` stays the full reload, including for changes made
+outside Emacs.
+
 ## Project and root selection
 
 Add `M-x portal-tasks` and a `portal-tasks-directory` option defaulting to
@@ -295,6 +357,8 @@ Read saved files on each request and apply the existing no-store response
 policy. A reload reflects changes to content, status, discovery, and attachments.
 Back/Forward may restore an already loaded page; reload is the explicit freshness
 boundary. No watcher, polling loop, or rendering of unsaved buffers is required.
+(Task operations add an in-place refresh when Emacs saves, and revalidate pages
+that history shows again.)
 
 ## Attachments and links
 
@@ -377,7 +441,8 @@ required. Bun 1.3.14 was checked to provide `Bun.YAML.parse`.
 V1 has one list, a completion filter, and task details. Web editing, web status
 buttons, automatic refresh, comments, executable mock-up previews, cross-project
 aggregation, cross-branch reconciliation, and migration of existing documents
-are outside this implementation. The repository tasks were subsequently migrated
+are outside this implementation; [task operations](#task-operations) later
+added status buttons and refresh. The repository tasks were subsequently migrated
 to the default `tasks/` root with status front matter; browse them with `M-x portal-tasks`.
 
 ## Research basis

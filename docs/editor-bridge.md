@@ -46,6 +46,12 @@ bridge function; an app cannot post them itself. URLs travel this way, not in
 records, because a long path would not fit in one. No asynchronous AppKit or WebKit callback
 keeps an `emacs_env` or calls Lisp.
 
+The task browser uses the bridge in one direction: after Emacs saves a file in
+a task root, it sends `{"type": "refresh"}` to that root's view, and the page
+refreshes itself in place. Its operations reach Emacs through
+[hosted actions](hosted-actions.md#task-operations) instead, so they can wait
+for Emacs's reply.
+
 Hosted pages keep no cookies or storage between sessions, and never leave the
 app host. The Excalidraw page's CSP allows its local scripts, fonts and
 embedded images, and blocks external network requests. File inputs, such as

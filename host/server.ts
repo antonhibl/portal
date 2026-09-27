@@ -37,18 +37,21 @@ async function respond(request: Request): Promise<Response> {
 		route !== "/tasks" &&
 		route !== "/tasks/file" &&
 		route !== "/tasks/implement" &&
+		route !== "/tasks/action" &&
 		route !== "/excalidraw/" &&
 		!asset
 	) {
 		return new Response("Not found", { status: 404 });
 	}
-	if (route === "/tasks/implement") {
+	if (route === "/tasks/implement" || route === "/tasks/action") {
 		if (request.method !== "POST")
 			return new Response("Method not allowed", {
 				status: 405,
 				headers: { Allow: "POST" },
 			});
-		return taskActions.implement(request);
+		return route === "/tasks/action"
+			? taskActions.act(request)
+			: taskActions.implement(request);
 	}
 	if (request.method !== "GET" && request.method !== "HEAD") {
 		return new Response("Method not allowed", {

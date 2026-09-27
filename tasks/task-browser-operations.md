@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 
 # Complete and edit tasks from the task browser
@@ -97,6 +97,23 @@ Read `portal-tasks.el`, `portal-web.el`, `host/tasks.ts`, `host/tasks.css`,
 
 ## Decisions to settle before implementation
 
+Settled; "Task operations" in `docs/task-browser-spec.md` records them in full.
+
+- **Patch strategy.** The app host plans the edit from the file's bytes with
+  the reader's own front matter parser: exactly one `status: todo|done` entry,
+  block or flow style, plain or quoted, whose value alone changes, and the
+  result must read back as the same body and front matter apart from `status`.
+  Tags, anchors, explicit keys, duplicates and lookalikes in other values are
+  refused with an explanation. Emacs applies the byte range only if the file
+  still has the SHA-256 the plan was made from, so it needs no YAML at all.
+- **Commands, freshness and refresh.** Buttons post JSON to `/tasks/action`;
+  the app host resolves the ID and asks Emacs through the existing hosted
+  action pipe (`task.status`, `task.edit`), one at a time, with an explicit
+  target status. Emacs sends one bridge message, `refresh`, to a root's view
+  after saving a file in it; the page replaces its `<main>` from a fetch of its
+  own URL, keeping history, folds, scroll and focus, and also revalidates
+  pages restored by Back/Forward and hidden pages once shown. No polling.
+
 - Choose a format-preserving YAML patch strategy, including explicit behavior
   for valid structures that cannot be safely edited. Preserve the existing read
   format; do not quietly narrow discovery to accommodate the writer.
@@ -114,28 +131,44 @@ Worktree discovery and association are also deferred. A future deterministic
 task-to-worktree association may display its name/path as a factual reference.
 It must not imply activity, ownership, completion, or any automatic status change.
 
+## Outcome
+
+List rows and task pages have **Complete**/**Reopen** and **Edit in Emacs**
+buttons, run by an inline page script allowed by its hash in the task pages'
+CSP. Emacs saves every status change and refreshes the root's task view after
+any save in it. Hosted action dispatch no longer takes the keyboard from the
+page; `terminal.open` and `task.edit` move it themselves.
+
 ## Acceptance criteria and verification
 
-- [ ] List and detail controls complete and reopen both task storage forms,
+- [x] List and detail controls complete and reopen both task storage forms,
   persist only `todo`/`done`, and work by mouse and keyboard.
-- [ ] Status edits preserve unrelated document text and metadata; malformed,
+- [x] Status edits preserve unrelated document text and metadata; malformed,
   duplicate, missing, stale, or unsafe targets produce explicit errors without
   unintended writes. Repeated requests do not reverse a successful operation.
-- [ ] Tests cover modified source buffers, external changes, failed saves,
+- [x] Tests cover modified source buffers, external changes, failed saves,
   quoted/flow YAML, comments, unknown fields, and BOM/CRLF documents.
-- [ ] Edit in Emacs reuses the source buffer in another pane, preserves its
+- [x] Edit in Emacs reuses the source buffer in another pane, preserves its
   contents, hands off keyboard focus, and supports returning to the task view.
-- [ ] Saving a task updates list/detail content and completion filtering while
+- [x] Saving a task updates list/detail content and completion filtering while
   preserving navigation and reading context; hidden views and Back/Forward
   do not silently retain an obsolete status after revalidation.
-- [ ] Separate roots/checkouts remain independent. Changing a worktree's task
+- [x] Separate roots/checkouts remain independent. Changing a worktree's task
   does not mutate or derive a new status for the main checkout's copy.
-- [ ] Existing discovery, duplicate diagnostics, attachments, local-file
+- [x] Existing discovery, duplicate diagnostics, attachments, local-file
   handoff, and app-host restart recovery continue to work.
-- [ ] `./build.sh`, `ctest --test-dir build --output-on-failure`,
+- [x] `./build.sh`, `ctest --test-dir build --output-on-failure`,
   `bun run --cwd host check`, and `bun run --cwd host typecheck` pass. Extend and
   run the affected graphical task tests for real WebKit controls, focus,
   refresh, and history behavior.
-- [ ] Update README and relevant task-browser/bridge documentation for the new
+- [x] Update README and relevant task-browser/bridge documentation for the new
   operations and save/refresh workflow, then record verification and mark this
   task done. Follow `AGENTS.md` for the implementation worktree and PR.
+
+Verified on 2026-09-27 in the implementation worktree: `./build.sh`,
+`ctest --test-dir build --output-on-failure` (12 of 12, including the new
+`host-tasks` Bun tests and the compiled-host → Emacs action test),
+`bun run --cwd host check` and `bun run --cwd host typecheck` pass. The whole
+graphical suite (`^portal-`, 52 tests) passes in a disposable graphical Emacs,
+including the two new task-operation tests and the nested-tree test, whose Tab
+order now includes the row buttons.

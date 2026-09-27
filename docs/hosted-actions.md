@@ -2,7 +2,9 @@
 
 Server-rendered hosted apps can invoke native operations through the app host.
 A task detail's **Implement with Claude** button is the first user. It submits
-an ordinary HTML form; task content still cannot execute scripts.
+an ordinary HTML form; task content still cannot execute scripts. The task
+browser's **Complete**, **Reopen** and **Edit in Emacs** buttons use the same
+path from the task page script (see [task operations](#task-operations)).
 
 ```text
 Task form POST → Bun task handler → process stdout → Emacs command loop
@@ -56,9 +58,11 @@ absolute `deadline` in milliseconds. Requests time out after 15 seconds.
 
 The process filter parses and queues requests as `portal-action` input events.
 Only the Emacs command loop invokes handlers. It verifies the original app host
-process, deadline, live source view, and registered operation, then hands off
-input from the source. A request from a replaced process cannot affect the new
-host. Repeated request IDs are ignored within one host lifetime.
+process, deadline, live source view, and registered operation, then runs the
+handler in the source's buffer with its pane selected. The source keeps the
+keyboard unless the handler moves it, as `terminal.open` and `task.edit` do.
+A request from a replaced process cannot affect the new host. Repeated request
+IDs are ignored within one host lifetime.
 
 Success means the native operation returned successfully. In particular,
 `terminal.open` returns a terminal target; it does not prove Claude has logged
@@ -103,12 +107,42 @@ preserved. This form-only flow navigates the page and may reset its reading
 position; a future fetch enhancement can preserve it without changing the
 native operation or process protocol.
 
+## Task operations
+
+A task view registers two more operations, which change nothing but the one
+task file and never move the keyboard unless asked to:
+
+- `task.status` with `file`, `start`, `end`, `text` and `before`: replace bytes
+  `start` to `end` of `file` with `text`, if `file` still has the SHA-256
+  `before`. The app host resolved the task and planned the edit; Emacs refuses
+  a buffer with unsaved changes, a file locked by another Emacs, a changed
+  file, or a file outside the view's root, then writes the bytes and reverts an
+  unmodified visiting buffer. The page keeps the keyboard.
+- `task.edit` with `file`: visit it in another pane with the local-file
+  handoff, which gives Emacs the keyboard.
+
+The page posts JSON to `/tasks/action` with its `root`, `context`, task ID,
+`action` (`status` or `edit`), and for a status change the target `status`. The
+route admits requests as the form does (same origin, bounded body, registered
+context and root), runs them one at a time, and answers `{}` after Emacs has
+finished, or `{error}` with a message to show. A status change to the status a
+task already has succeeds without asking Emacs, so a repeated or duplicate
+request never toggles a task back. After saving, Emacs asks the root's view to
+refresh over the [bridge](editor-bridge.md). The
+[task browser specification](task-browser-spec.md#task-operations) has the
+patch rules and refresh behavior.
+
 ## Verification
 
 `ctest --test-dir build --output-on-failure` includes app-host form/action tests
 and the compiled-host → Emacs → fake-native launch flow. They cover ID-preserving
 moves, duplicate delivery, errors, closed/expired sources, foreign origins,
 root mismatch, reload/restart, literal shell arguments, and failed creation.
+
+The same run sends task status changes, a repeated change, a refusal over
+unsaved changes, and Edit in Emacs from the compiled host through the command
+loop. `bun test host` covers the task action route and its status planning, and
+the task browser's graphical tests click and key the task buttons in WebKit.
 
 `portal-tasks-gui-implement-post-starts-a-native-terminal` exercises a real
 WebKit form click, the process pipe, command-loop handoff, and Ghostty PTY. A
