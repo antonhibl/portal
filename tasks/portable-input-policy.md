@@ -1,5 +1,9 @@
 ---
+id: portable-input-policy
 status: todo
+depends_on:
+  - portable-view-lifecycle
+  - portable-notification-channel
 ---
 
 # Run Portal input handoff policy in C

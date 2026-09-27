@@ -1,5 +1,8 @@
 ---
+id: portable-notification-channel
 status: todo
+depends_on:
+  - portable-module-bindings
 ---
 
 # Share ordered native notifications through a C POSIX channel

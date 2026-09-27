@@ -1,5 +1,9 @@
 ---
+id: portable-web-bridge
 status: todo
+depends_on:
+  - portable-view-lifecycle
+  - portable-notification-channel
 ---
 
 # Separate shared web behavior from WKWebView
