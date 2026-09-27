@@ -96,6 +96,8 @@ struct CheckToolbar {
         try model.perform("close-find")
         _ = try NativeInput.perform(target, action: "passthrough")
         precondition(model.input?.ownership == .passthrough)
+        app.sendEvent(commandF)
+        precondition(!model.finding && model.input?.ownership == .passthrough, "Passthrough must pass Command-F")
         model.input?.toggleOwnership()
         precondition(model.input?.ownership == .emacs)
         NativeToolbar.configure(false)
