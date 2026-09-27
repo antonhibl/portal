@@ -896,8 +896,8 @@ Features own their state and cleanup. Closing a web view does not destroy a
 terminal, and closing a terminal does not remove web views.
 
 The C bindings register every Lisp function and convert its arguments and results.
-Lifecycle functions call the core's view registry, and terminal functions the core's
-terminal rules. The others look up their target's
+Lifecycle functions call the core's view registry, input functions its input handoff,
+and terminal functions its terminal rules. The others look up their target's
 view in the registry, which checks its kind, and pass it to one named operation in
 `portal.h`, such as `portal_web_load`, which `native/Backend.swift` implements with
 the Swift features. The operations use
