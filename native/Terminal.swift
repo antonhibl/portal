@@ -1,7 +1,45 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
+import Darwin
 import GhosttyTerminal
 import GhosttyTheme
+
+/// Start programs through the same kind of shell as an ordinary terminal.
+/// The shell owns startup files, PATH and executable lookup; Lisp supplies argv.
+private func terminalCommand(_ options: ViewOptions, directory: String) throws -> String? {
+    let command = try options.string("command")
+    guard let json = try options.string("argv") else { return command }
+    guard command == nil,
+          let argv = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String],
+          let program = argv.first, !program.isEmpty,
+          argv.allSatisfy({ !$0.contains("\0") }) else {
+        throw NativeError.message("Terminal :argv must contain a program and literal arguments, without :command")
+    }
+    // Match Ghostty's default shell lookup: native SHELL, then the user record.
+    // This never consults Emacs's Lisp environment or exec-path.
+    let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? getpwuid(getuid()).flatMap { $0.pointee.pw_shell.map { String(cString: $0) } }
+        ?? "/bin/sh"
+    let name = URL(fileURLWithPath: shell).lastPathComponent
+    guard ["sh", "bash", "zsh", "dash", "ksh", "fish"].contains(name) else {
+        throw NativeError.message("Program launches need a POSIX-compatible shell or fish; found \(shell)")
+    }
+    // Startup files may cd elsewhere; hosted actions still target this project.
+    let script = "cd " + terminalQuote(directory) + " && exec " + argv.map(terminalQuote).joined(separator: " ")
+    return [shell, "-l", "-i", "-c", script].map(terminalQuote).joined(separator: " ")
+}
+
+/// Single-quoted literals for POSIX shells and fish. Backslashes stay outside
+/// quotes because fish interprets them inside single quotes, unlike POSIX sh.
+private func terminalQuote(_ value: String) -> String {
+    "'" + value.map { character in
+        switch character {
+        case "'": return "'\\''"
+        case "\\": return "'\\\\'"
+        default: return String(character)
+        }
+    }.joined() + "'"
+}
 
 @MainActor
 private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
@@ -78,7 +116,7 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         quick = options.flag("quick")
-        let terminal = HostedTerminal(directory: directory, command: try options.string("command"),
+        let terminal = HostedTerminal(directory: directory, command: try terminalCommand(options, directory: directory),
                                       theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal

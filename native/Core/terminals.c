@@ -56,7 +56,7 @@ static bool known(portal_string name, portal_text *error)
 
 bool portal_terminals_check(const portal_option *options, size_t count, portal_text *error)
 {
-    const char *const strings[] = {"directory", "command", "theme"};
+    const char *const strings[] = {"directory", "command", "argv", "theme"};
     for (size_t i = 0; i < sizeof strings / sizeof *strings; i++) {
         const portal_option *value = option(options, count, strings[i]);
         if (value && !value->is_string && value->flag) {
@@ -68,6 +68,10 @@ bool portal_terminals_check(const portal_option *options, size_t count, portal_t
     const portal_option *directory = option(options, count, "directory");
     if (!directory || !directory->is_string)
         return fail_with(error, "A terminal view needs a :directory");
+    const portal_option *command = option(options, count, "command");
+    const portal_option *argv = option(options, count, "argv");
+    if (command && command->is_string && argv && argv->is_string)
+        return fail_with(error, "A terminal view accepts either :command or :argv");
     const portal_option *theme = option(options, count, "theme");
     return !theme || !theme->is_string || known(theme->string, error);
 }

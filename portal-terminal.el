@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'cl-lib)
+(require 'json)
 (require 'seq)
 (require 'windmove)
 
@@ -128,9 +129,11 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Dismiss the quick terminal before opening an ordinary terminal"))
   (portal-terminal--new))
 
-(defun portal-terminal--new (&optional quick-root command name elsewhere)
+(defun portal-terminal--new (&optional quick-root command name elsewhere argv)
   "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
-NAME names its buffer.  ELSEWHERE displays it in another pane."
+NAME names its buffer.  ELSEWHERE displays it in another pane.
+ARGV is a JSON array of a program and literal arguments to run through
+the user's shell, instead of COMMAND."
   (when (file-remote-p default-directory)
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
@@ -163,6 +166,7 @@ NAME names its buffer.  ELSEWHERE displays it in another pane."
           (with-current-buffer buffer
             (portal-view-open 'terminal (list :directory directory
                                               :command command
+                                              :argv argv
                                               :theme portal-terminal-theme
                                               :quick (and quick-root t)))
             (portal-terminal-focus))
@@ -173,26 +177,22 @@ NAME names its buffer.  ELSEWHERE displays it in another pane."
 (defun portal-terminal-start (directory program arguments &optional name)
   "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
 Return its buffer.  NAME optionally names the buffer.  Arguments are literal
-strings, quoted once for Ghostty's POSIX shell command interface."
+strings.  The native terminal starts the user's interactive login shell,
+which loads its startup files and resolves PROGRAM on its PATH.
+Lisp-side `process-environment' changes are not exported to the terminal.
+A missing program is reported by the shell inside the terminal."
   (unless (and (stringp directory) (file-name-absolute-p directory)
                (not (file-remote-p directory)) (file-directory-p directory))
     (user-error "Choose an existing local terminal directory"))
-  (unless (and (stringp program) (sequencep arguments)
+  (unless (and (stringp program) (> (length program) 0) (sequencep arguments)
                (seq-every-p (lambda (s) (and (stringp s) (not (string-search "\0" s)))) arguments)
                (not (string-search "\0" program)))
     (user-error "Terminal program and arguments must be strings without NUL"))
   (let* ((default-directory (file-name-as-directory directory))
-         (executable (executable-find program))
-         (shell-file-name "/bin/sh")
          (configuration (current-window-configuration)))
-    (unless executable (user-error "Cannot find terminal program: %s" program))
     (condition-case err
-        ;; Ghostty's macOS wrapper supplies exec itself. Supply the program
-        ;; and literal arguments, without an extra shell builtin in front.
         (portal-terminal--new
-         nil (mapconcat #'shell-quote-argument
-                        (cons executable (append arguments nil)) " ")
-         name t)
+         nil nil name t (json-serialize (vconcat (list program) arguments)))
       (error (set-window-configuration configuration)
              (portal-view-sync)
              (signal (car err) (cdr err))))))

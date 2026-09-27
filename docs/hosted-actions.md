@@ -93,13 +93,30 @@ root, including `../` for a configured task folder outside it. Whitespace in
 references is quoted inside the prompt. Native command quoting is independent.
 No worktree is created and no task status is changed by launching.
 
-`portal-terminal-start` accepts directory, executable, literal arguments, and
-an optional buffer name. It resolves the executable, quotes the arguments once
-for Ghostty's POSIX shell command interface, and opens a dedicated terminal in
-another pane using Emacs display rules. Swift passes the startup command to
-`TerminalSurfaceOptions` before creating the surface. There is no delayed paste
-or simulated typing. Hidden terminals continue running; closing their buffers
-ends their sessions. Closing the task view does not close a launched terminal.
+`portal-terminal-start` accepts directory, program, literal arguments, and an
+optional buffer name. It sends a JSON `:argv` array to the native adapter and
+opens a dedicated terminal in another pane using Emacs display rules. The
+adapter starts the user's interactive login shell, lets it load its startup
+files, restores the requested working directory, then uses `exec` to run the
+requested program. Program names are resolved
+on the shell's PATH; Emacs does not need to find them. Arguments are quoted as
+literal values, including spaces, quotes, Unicode and shell metacharacters.
+
+The native adapter chooses the shell from the native `SHELL` environment or the
+user's login-shell record, as Ghostty does for an ordinary terminal. Program
+launches support POSIX-compatible shells (`sh`, `bash`, `zsh`, `dash`, `ksh`) and
+fish. The shell owns its environment; Lisp-side `setenv`, buffer-local
+`process-environment`, and `exec-path` do not affect the launched program.
+Ghostty supplies terminal metadata and shell integration. Portal continues to
+supply its own terminal appearance and bindings; it does not import the
+standalone Ghostty app's configuration file.
+
+The command is supplied at surface creation, with no delayed paste or simulated
+typing. Missing programs are reported by the shell inside the terminal, whose
+last output stays visible after exit. Hidden terminals continue running;
+closing their buffers ends their sessions. Closing the task view does not close
+a launched terminal. The raw native `:command` option remains available for
+callers that intentionally replace the normal shell.
 
 The POST redirects back to the task detail with a receipt showing success or an
 escaped error message. Filter, execution/tree mode, and source context are

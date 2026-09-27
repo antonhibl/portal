@@ -375,6 +375,12 @@ emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   --eval '(ert-run-tests-interactively "^portal-terminal-")'
 ```
 
+To check program launches with a controlled shell environment, run
+`sh test/terminal-shell-startup.sh` after building. It starts a disposable graphical
+Emacs with a minimal PATH and temporary zsh dotfiles, then verifies shell-side
+program lookup, login and interactive startup, literal arguments, terminal
+metadata, and missing-program errors. Set `EMACS` to choose its executable.
+
 `./build.sh` runs the `dev` CMake configure and build presets. For development,
 configure once before opening native source files; this generates editor metadata
 without compiling the module:
@@ -599,10 +605,16 @@ browsable but cannot launch Claude.
 
 Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` before
 opening a task view to choose the executable or adjust its arguments. The
-executable defaults to Claude on Emacs's PATH, falling back to
-`~/.local/bin/claude`; arguments default to `("--dangerously-skip-permissions")`.
-Claude's first-run login or setup can still appear in the terminal. The view
-keeps running when hidden, and killing its terminal buffer ends it.
+program defaults to `claude`; arguments default to
+`("--dangerously-skip-permissions")`. The terminal starts your interactive login
+shell, loads its startup files, and resolves `claude` on that shell's PATH.
+Programs such as `gh` therefore use your shell setup even when GUI-launched
+Emacs cannot find them. No Emacs environment-import package is required for
+Portal terminals. Lisp-side `setenv` and `exec-path` changes do not configure
+these programs; use your shell dotfiles or an explicit executable path.
+A missing program's error appears inside the terminal. Claude's first-run login
+or setup can still appear there. The view keeps running when hidden, and
+killing its terminal buffer ends it.
 
 See [hosted app actions](docs/hosted-actions.md) for the reusable instance/action
 interface and its process protocol. Restart Emacs after rebuilding the native
@@ -946,9 +958,12 @@ The core also owns Portal's terminal rules, in `native/Core/terminals.c`, and as
 the platform for six primitives on one terminal, or on the engine: list the theme
 names, apply a named theme or the default, paste text, press Enter, read all text, and
 set the font size. Before the platform creates a terminal, the core checks its
-options: `:directory` must be a string, `:command` and `:theme` a string or nil, and
-`:theme` a name the platform lists. It checks a theme's name the same way before
-applying it to every open terminal, oldest first, so an unknown name changes none. If
+options: `:directory` must be a string; `:command`, `:argv` and
+`:theme` a string or nil; `:command` and `:argv` mutually exclusive; and `:theme`
+a name the platform lists. The adapter decodes literal arguments from `:argv`
+and starts the user's interactive login shell to execute them. The core checks a
+theme's name the same way before applying it to every open terminal, oldest
+first, so an unknown name changes none. If
 one terminal rejects a theme, the error is that terminal's: those before it keep the
 new theme, and it and those after it keep their old one. `portal--terminal-themes`
 returns the platform's names sorted by code point. `portal--terminal-paste` pastes,

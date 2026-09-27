@@ -57,6 +57,9 @@ static void test_options_are_checked_before_creation(void)
         {{string_option("command", "ls")}, 1, "A terminal view needs a :directory"},
         {{flag_option("directory", true)}, 1, "Option :directory must be a string"},
         {{directory, flag_option("command", true)}, 2, "Option :command must be a string"},
+        {{directory, flag_option("argv", true)}, 2, "Option :argv must be a string"},
+        {{directory, string_option("command", "ls"), string_option("argv", "[]")},
+         3, "A terminal view accepts either :command or :argv"},
         {{directory, flag_option("theme", true)}, 2, "Option :theme must be a string"},
         {{directory, string_option("theme", "Gamma")}, 2, "Unknown terminal theme: Gamma"},
         /* Names are exact. */
@@ -90,6 +93,11 @@ static void test_options_are_checked_before_creation(void)
                 "\"quick\":true", "\"name\":\"x\"", NULL));
     /* Without a theme there is nothing to look up. */
     CHECK(portal_fake_calls().listed == before.listed);
+    close_view(target);
+
+    const portal_option argv[] = {directory, string_option("argv", "[\"/bin/ls\",\"-l\"]")};
+    target = open_terminal(argv, 2, &error);
+    CHECK(target && shows(target, "\"argv\":\"[\\\"/bin/ls\\\",\\\"-l\\\"]\"", NULL));
     close_view(target);
 
     const portal_option themed[] = {directory, string_option("theme", "Ωmega")};
