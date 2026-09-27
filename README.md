@@ -867,22 +867,25 @@ the app sends, in order. Other web views have no bridge.
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
+| `host/bridge.d.ts` | The `portalBridge` interface hosted apps use |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
 | `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
 | `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
 | `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, and reading text |
+| `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, and the bridge's queue, senders and records |
+| `native/Core/scripts/` | Browser scripts every platform's web views share, embedded in the core: local links, and the toolbar's contents and find count |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
-| `native/Core/include/portal.h` | The platform interface: the view, input and terminal primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
+| `native/Core/include/portal.h` | The platform interface: the view, input, terminal and web primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
-| `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record, and the timer primitive |
+| `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record or reporting what a page did, the shared scripts' glue, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
-| `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
+| `native/WebView.swift` | The web view kind: WebKit pages, storage, loading, what pages report to the core, and the bridge's WebKit glue |
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
 | `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions, the terminal primitives, the theme catalog, and terminal input |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
 | `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
-| `native/WebToolbar.swift` | Web zoom, find, navigation, and isolated page TOC support |
+| `native/WebToolbar.swift` | Web zoom, find and navigation, running the shared contents script in an isolated world |
 | `native/Package.swift` | One native library and pinned Ghostty dependency |
 
 These are ordinary source boundaries within one native module. A small
@@ -897,10 +900,10 @@ terminal, and closing a terminal does not remove web views.
 
 The C bindings register every Lisp function and convert its arguments and results.
 Lifecycle functions call the core's view registry, input functions its input handoff,
-and terminal functions its terminal rules. The others look up their target's
-view in the registry, which checks its kind, and pass it to one named operation in
-`portal.h`, such as `portal_web_load`, which `native/Backend.swift` implements with
-the Swift features. The operations use
+terminal functions its terminal rules, and web functions its web rules. The others
+look up their target's view in the registry, which checks its kind, and pass it to one
+named operation in `portal.h`, such as `portal_toolbar_action`, which
+`native/Backend.swift` implements with the Swift features. The operations use
 plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
 `malloc` that the bindings free, and an explicit error result that becomes a Lisp
 `error`. Structured results, such as `portal--inspect`'s state, cross as JSON, which
@@ -910,7 +913,7 @@ provide ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)). The bindin
 a unibyte string's raw bytes unchanged. A later backend can replace any operation
 without changing its Lisp callers.
 
-The notification pipe is the first of Portal's rules in the core,
+The notification pipe was the first of Portal's rules in the core,
 `native/Core/channel.c`. `portal--channel` hands it the pipe's descriptor, and
 platform code sends records by calling `portal_notify`, which the core
 implements ([details](docs/terminal-input-bridge.md#the-notification-pipe)). The
@@ -965,6 +968,29 @@ The core does not react to an exit, so the platform calls nothing new. As for ev
 kind, the core never passes a closed terminal to the platform: a stale target fails
 with "No Portal view TARGET", and a theme reaches only open terminals.
 
+Web views' rules live in the core too, in `native/Core/web.c`
+([details](docs/editor-bridge.md#transport)). It checks each URL Lisp loads,
+and either asks the platform to load it or, for the document already on screen,
+to reload it. It answers every navigation a hosted app's page asks for: allow it on
+the app host's origin, open another site in the default browser, or hand a local
+file to Emacs. It owns the bridge's queue and its one outstanding `bridge` record,
+and decides which posted messages to keep from what the platform observed about
+the sender, never from what a page claims. The platform supplies four primitives
+for web views: parse a URL, returning its own spelling of it, and, on one view, load
+a URL, step through history (back, forward or reload, as an enum), and post a
+message to the page. The core keeps every URL in the platform's spelling, the one
+WebKit reports pages in, with spaces percent-encoded and Unicode hosts in punycode,
+so it compares URLs byte for byte and one parser decides when two are the same. It reports what pages do by
+calling the core: a message was posted, a navigation is wanted, a page was
+committed, something failed, or the toolbar asked to edit in Emacs. Those calls name
+the view by target, so a completion that finishes after the view closed reaches
+nothing. The browser scripts every platform shares, for local links and the
+toolbar's contents, are JavaScript in `native/Core/scripts`, which the core embeds
+with `#embed` when it is compiled, so no platform needs files or the app host at run
+time. Each is a function the platform starts in an isolated world with its own
+transport; only platform glue names WebKit. Hosted apps see one interface,
+`window.portalBridge`, with `postMessage` and `receive`.
+
 Rectangles are in Emacs's frame pixels, from the top left of the frame's content
 area, as `window-inside-pixel-edges` reports them. On macOS these are AppKit points,
 so the platform only flips the y axis. On each window change, `portal-view.el` picks one window per view,
@@ -984,7 +1010,7 @@ tests replace the native module with `test/portal-fake-native.el`.
 
 The frame-title trick and the geometry cache mean there is no polling timer. No
 native code retains an Emacs value or environment pointer after a module call
-returns: the C bindings copy each argument, and the backend sees only those copies. Native navigation callbacks only update Swift state; they never call
+returns: the C bindings copy each argument, and the backend sees only those copies. Native navigation callbacks report to the core; they never call
 back into Lisp.
 
 ## Verification
@@ -1080,7 +1106,7 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-for core in channel views input terminals; do
+for core in channel views input terminals web; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
@@ -1090,6 +1116,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
+  build/web.o \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -1098,15 +1125,17 @@ The checks open web views through the core's registry and the macOS primitives,
 as Emacs does, with `test/native-views.swift` in place of the Emacs bindings. They also
 check that a hosted web view keeps no data between sessions, that a page
 outside the app host goes to the default browser while the app stays, that
-only a hosted app's main frame can use the bridge, and that a hosted app
-reports each committed page over it. A click on it sends `select`, and a click
+only a hosted app's main frame can use the bridge, that `portalBridge` is ready
+before the page's scripts on first load and on reload, that a failed delivery
+reaches Emacs, and that a hosted app reports each committed page over it.
+Loading the page on screen again reloads it without a new history entry. A click on it sends `select`, and a click
 on a local link, even one longer than a record, returns the keyboard to Emacs
 and sends `follow` over the bridge. A full notification pipe delays records without losing or
 reordering them, retried on the Swift timer, and records still waiting when
 Emacs replaces the pipe go to the new one; a closed view's records never go.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
-without Ghostty, and they link the core's registry, input handoff and pipe
-without the Emacs bindings.
+without Ghostty, and they link the core's registry, input handoff, web rules and
+pipe without the Emacs bindings.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
@@ -1173,6 +1202,17 @@ unknown and closed targets reach no platform view; that platform errors and refu
 reach Lisp; and that a terminal whose process exited stays open and describable until
 closed.
 
+`ctest -R web-core` runs `test/portal-web-tests.c`, which drives web views' rules and
+the bridge as Lisp and a platform would, with records going to a real pipe. It checks
+which URLs load, that about:blank in a new view and the document on screen do not add
+history entries, and that a failed load keeps the view's address. On the bridge, it
+checks message order, `change` coalescing, one record until Emacs receives, draining
+and re-arming, and payloads larger than a record. It rejects frames, other pages and
+the core's own types, and ordinary pages get no bridge. It checks every navigation
+decision, including claimed origins in user names; that a local link or an edit sends
+`escape` before `bridge`, even with a URL longer than a record; that a delivery failure
+from a page that has gone is ignored; and that a closed view hears nothing.
+
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
 the 19 functions and their arities, the input functions' conversion of chords and
 binding JSON, and the conversion of options, edges, and strings,
@@ -1180,8 +1220,8 @@ including NUL bytes and non-ASCII text. They also check that malformed strings (
 raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
 without calling the backend. A signal raised while converting an argument reaches
 Lisp unchanged, and a backend error becomes a Lisp `error` with its message. A
-record the fake platform sends reaches a connected pipe, waits while none is, and
-survives its reader being deleted.
+bridge record for the fake platform's echoing app reaches a connected pipe, waits while
+none is, and survives its reader being deleted.
 
 `ctest -R channel` runs `test/portal-channel-tests.c`, a C program that drives the
 pipe with real POSIX pipes, firing the fake platform's timers by hand. It fills a

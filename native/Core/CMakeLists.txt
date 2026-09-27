@@ -2,10 +2,10 @@
 cmake_minimum_required(VERSION 3.29)
 
 # Portal's C core, tested against a fake backend: the Emacs bindings, the view
-# registry, input handoff, terminal views and the notification pipe. This needs
-# only a C compiler and Emacs: no Swift, Apple frameworks, Bun or Ghostty. The
-# top-level project includes it, and it can be configured alone to run just these
-# tests. SwiftPM compiles the same sources
+# registry, input handoff, terminal views, web views' rules and bridge, and the
+# notification pipe. This needs only a C compiler and Emacs: no Swift, Apple
+# frameworks, Bun or Ghostty. The top-level project includes it, and it can be
+# configured alone to run just these tests. SwiftPM compiles the same sources
 # into the production module.
 project(portal-core LANGUAGES C)
 set(portal_root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -32,7 +32,8 @@ if(BUILD_TESTING)
     set(fake_backend "${portal_root}/test/portal-fake-backend.c")
     # The core's registry and pipe and the fake backend compile without
     # emacs-module.h, so nothing the platform calls can reach Emacs.
-    add_library(portal-test-core OBJECT views.c input.c terminals.c channel.c "${fake_backend}")
+    add_library(portal-test-core OBJECT views.c input.c terminals.c web.c channel.c
+        "${fake_backend}")
     target_include_directories(portal-test-core PUBLIC include . "${portal_root}/test")
     set_target_properties(portal-test-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
     # The real bindings with the fake backend in place of native/Backend.swift.
@@ -47,8 +48,10 @@ if(BUILD_TESTING)
     target_link_libraries(portal-input-tests PRIVATE portal-test-core)
     add_executable(portal-terminals-tests "${portal_root}/test/portal-terminals-tests.c")
     target_link_libraries(portal-terminals-tests PRIVATE portal-test-core)
+    add_executable(portal-web-tests "${portal_root}/test/portal-web-tests.c")
+    target_link_libraries(portal-web-tests PRIVATE portal-test-core)
     foreach(target portal-test-core portal-test-module portal-channel-tests portal-views-tests
-            portal-input-tests portal-terminals-tests)
+            portal-input-tests portal-terminals-tests portal-web-tests)
         target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
         set_target_properties(${target} PROPERTIES
             C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
@@ -62,6 +65,8 @@ if(BUILD_TESTING)
     set_tests_properties(input-core PROPERTIES TIMEOUT 30)
     add_test(NAME terminals COMMAND portal-terminals-tests)
     set_tests_properties(terminals PROPERTIES TIMEOUT 30)
+    add_test(NAME web-core COMMAND portal-web-tests)
+    set_tests_properties(web-core PROPERTIES TIMEOUT 30)
     add_test(NAME module
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
             "${EMACS}" --batch -Q --module-assertions

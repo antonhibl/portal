@@ -75,6 +75,13 @@ bool portal_input_bindings(const portal_binding *regular, size_t regular_count,
 bool portal_input_perform(portal_string target, portal_string action, int64_t serial,
                           bool *result, portal_text *error);
 
+/* The user handed something in TARGET's view to Emacs, such as a hosted app's
+   link to a local file: return the keyboard to Emacs, as the platform's own
+   way back does (portal_input_focus).  A handoff ends with its "escape"
+   record first, so Emacs stops reading its key sequence before any record
+   the caller sends next.  A TARGET that names no open view does nothing. */
+void portal_input_escape(portal_string target);
+
 /* Emacs calls the module, from true until false; calls nest.  A focus change
    the platform reports meanwhile is Emacs's doing, not the user's, so it
    never abandons a handoff. */

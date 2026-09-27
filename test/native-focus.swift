@@ -23,7 +23,7 @@ struct CheckFocus {
         window.makeFirstResponder(editor)
         let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("navigation")]))
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        try Views.view(target, as: WebSession.self).load("data:text/html,<input autofocus><title>Focus</title>")
+        try Views.load(target, "data:text/html,<input autofocus><title>Focus</title>")
         let web = require(require(window.contentView).subviews.compactMap { ($0 as? NativeContainer)?.content as? WKWebView }.first)
         // A responder nested below the webview exercises the same ancestry test
         // as WebKit's internal text input views.
@@ -130,7 +130,6 @@ struct CheckFocus {
         let target = try Views.open(kind: "web", options: ViewOptions(values: [
             "toolbar": .string("none"), "hosted": .flag(true)]))
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
-        let session = try Views.view(target, as: WebSession.self)
         var received = ""
         /// Wait for RECORD, then return the bridge's messages as [type, url] pairs.
         func wait(for record: String) -> [[String]] {
@@ -141,7 +140,7 @@ struct CheckFocus {
             }
             check(received.contains(record), "Expected \(record), got \(received)")
             received = ""
-            let messages = require(try JSONSerialization.jsonObject(with: Data(session.receive().utf8)) as? [[String: Any]])
+            let messages = require(try JSONSerialization.jsonObject(with: Data(Views.receive(target).utf8)) as? [[String: Any]])
             return messages.map { [require($0["type"] as? String), $0["url"] as? String ?? ""] }
         }
         let file = "file:///tmp/" + String(repeating: "r%C3%A9sum%C3%A9%20", count: 40) + "notes.ts#L4"
@@ -150,14 +149,19 @@ struct CheckFocus {
         let first = "data:text/html,%3Ctitle%3EFirst%3C/title%3E"
         let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
         // Every committed page is reported, including after going back.
-        try session.load(first)
+        try Views.load(target, first)
         check(wait(for: "bridge \(target)\n") == [["page", first]])
-        try session.load(app)
+        try Views.load(target, app)
         check(wait(for: "bridge \(target)\n") == [["page", app]])
         web.goBack()
         check(wait(for: "bridge \(target)\n") == [["page", first]])
         web.goForward()
         check(wait(for: "bridge \(target)\n") == [["page", app]])
+        // Loading the page on screen again reloads it, without a new history entry.
+        try Views.load(target, app + "#top")
+        check(wait(for: "bridge \(target)\n") == [["page", app]])
+        check(web.backForwardList.backList.count == 1 && web.backForwardList.forwardList.isEmpty,
+              "Loading the page on screen again changed the history")
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
         check(window.makeFirstResponder(editor))
         func mouse(_ type: NSEvent.EventType) -> NSEvent {
@@ -193,7 +197,7 @@ struct CheckFocus {
             "toolbar": .string("none"), "hosted": .flag(true)]))
         try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
         let app = "data:text/html,<title>App</title><script>onload=()=>location.href='https://example.com/'</script>"
-        try Views.view(target, as: WebSession.self).load(app)
+        try Views.load(target, app)
         let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
         check(!web.configuration.websiteDataStore.isPersistent, "A hosted app keeps its data")
         let deadline = Date(timeIntervalSinceNow: 10)
@@ -202,6 +206,16 @@ struct CheckFocus {
         }
         check(opened == [require(URL(string: "https://example.com/"))], "The link did not open in the browser")
         check(web.url?.scheme == "data" && web.title == "App", "The hosted app left its page")
+        // WebKit reports a URL with its host and port as parsed, which is the
+        // app's own origin however Emacs spelled it. Nothing listens on port 9,
+        // so each load fails, but none may go to the browser.
+        for spelling in ["http://%31%32%37.0.0.1:9/app", "http://127.0.0.1:09/app", "http://[::1]:09/app"] {
+            opened = []
+            try Views.load(target, spelling)
+            let deadline = Date(timeIntervalSinceNow: 1)
+            while Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+            check(opened.isEmpty, "Loading \(spelling) sent the app to the browser")
+        }
         try Views.close(target)
         print("Hosted apps keep no data, and open other sites in the browser")
     }
@@ -224,48 +238,84 @@ struct CheckFocus {
             let deadline = Date(timeIntervalSinceNow: 10)
             while !done() && Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
         }
-        func types(_ web: WebSession) -> [String] {
-            let messages = require(try JSONSerialization.jsonObject(with: Data(web.receive().utf8)) as? [[String: Any]])
+        func types(_ target: String) -> [String] {
+            let messages = require(try JSONSerialization.jsonObject(with: Data(Views.receive(target).utf8)) as? [[String: Any]])
             return messages.map { require($0["type"] as? String) }
         }
 
+        // A frame reaches WebKit's handler, but the core hears it came from a
+        // frame. The app cannot post the core's own types.
         let page = """
             <iframe srcdoc="<script>webkit.messageHandlers.portal.postMessage({type:'frame'})</script>"
-              onload="webkit.messageHandlers.portal.postMessage({type:'second'})"></iframe>
+              onload="portalBridge.postMessage({type:'second'})"></iframe>
             <script>
-            window.portalBridge = {receive: async (m) => webkit.messageHandlers.portal.postMessage({type: 'echo-' + m.type})};
-            webkit.messageHandlers.portal.postMessage({type: 'follow', url: 'file:///etc/passwd'});
-            webkit.messageHandlers.portal.postMessage({type: 'first'});
+            portalBridge.receive = async (m) => portalBridge.postMessage({type: 'echo-' + m.type});
+            portalBridge.postMessage({type: 'follow', url: 'file:///etc/passwd'});
+            portalBridge.postMessage({type: 'first'});
             </script>
             """
         let app = "data:text/html;base64," + Data(page.utf8).base64EncodedString()
         let hosted = try Views.open(kind: "web", options: ViewOptions(values: [
             "toolbar": .string("none"), "hosted": .flag(true)]))
         try Views.place(hosted, edges: [0, 0, 640, 480], title: window.title)
-        let web = try Views.view(hosted, as: WebSession.self)
-        try web.load(app)
+        try Views.load(hosted, app)
         var received = ""
         wait { received += records(); return received.contains("\n") }
         check(received == "bridge \(hosted)\n", "Expected one bridge record, got \(received)")
         // Let the frame load and post too.
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
         check(records().isEmpty, "A second record went out before Emacs received the first")
-        check(types(web) == ["page", "first", "second"], "The bridge lost, reordered or accepted a frame's or reserved message")
-        check(types(web).isEmpty, "Receiving did not drain the bridge")
-        try web.send(#"{"type":"ping"}"#)
+        check(types(hosted) == ["page", "first", "second"], "The bridge lost, reordered or accepted a frame's or reserved message")
+        check(types(hosted).isEmpty, "Receiving did not drain the bridge")
+        try Views.send(hosted, #"{"type":"ping"}"#)
         received = ""
         wait { received += records(); return received.contains("\n") }
         check(received == "bridge \(hosted)\n", "Receiving did not re-arm the bridge record")
-        check(types(web) == ["echo-ping"], "The app did not receive Emacs's message")
+        check(types(hosted) == ["echo-ping"], "The app did not receive Emacs's message")
+        // A reload runs the bridge's script again before the page's own.
+        try Views.load(hosted, app)
+        received = ""
+        wait { received += records(); return received.contains("\n") }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
+        check(types(hosted) == ["page", "first", "second"], "The reloaded app could not use the bridge")
+        // A page that cannot receive reports that to Emacs.
+        let deaf = "data:text/html,%3Ctitle%3EDeaf%3C/title%3E"
+        try Views.load(hosted, deaf)
+        received = ""
+        wait { received += records(); return received.contains("\n") }
+        check(types(hosted) == ["page"])
+        try Views.send(hosted, #"{"type":"ping"}"#)
+        received = ""
+        wait { received += records(); return received.contains("\n") }
+        check(types(hosted) == ["error"], "A failed delivery did not reach Emacs")
+        // A URL spelled raw, as a user may type it, is still the app's own page
+        // once WebKit has parsed it: the app can post, and loading it again
+        // reloads it.
+        let spaced = "data:text/html,<title>A b</title><script>portalBridge.postMessage({type: 'spaced'})</script>"
+        let hostedPage = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        var history: [Int] = []
+        for _ in 0..<2 {
+            try Views.load(hosted, spaced)
+            received = ""
+            wait { received += records(); return received.contains("\n") }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+            check(types(hosted) == ["page", "spaced"], "A raw URL's app could not post")
+            history.append(hostedPage.backForwardList.backList.count)
+        }
+        check(history[0] == history[1], "Loading a raw URL again added a history entry")
         try Views.close(hosted)
 
         let plain = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
         try Views.place(plain, edges: [0, 0, 640, 480], title: window.title)
-        try Views.view(plain, as: WebSession.self).load(app)
+        try Views.load(plain, app)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
         check(records().isEmpty, "A page that is not a hosted app reached the bridge")
-        for use in [{ try Views.view(plain, as: WebSession.self).send("{}") },
-                    { _ = try Views.view(plain, as: WebSession.self).receive() }] {
+        let web = require(require(window.contentView).subviews.compactMap { $0 as? WKWebView }.first)
+        var bridgeType = ""
+        web.evaluateJavaScript("typeof portalBridge") { value, _ in bridgeType = value as? String ?? "" }
+        wait { !bridgeType.isEmpty }
+        check(bridgeType == "undefined", "A page that is not a hosted app has portalBridge")
+        for use in [{ try Views.send(plain, "{}") }, { _ = try Views.receive(plain) }] {
             do { try use(); fail("A page that is not a hosted app has a bridge") } catch {}
         }
         try Views.close(plain)

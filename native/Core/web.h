@@ -1,0 +1,43 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Web views, as the Emacs bindings and the view registry use them.  web.c
+   implements these and, for the platform, the web calls into the core in
+   portal.h.  Only the core, tests and the standalone checks include this
+   header.
+
+   A TARGET that names no open web view fails with "No Portal view TARGET",
+   as in views.h, and reaches no platform view. */
+#ifndef PORTAL_WEB_H
+#define PORTAL_WEB_H
+
+#include "portal.h"
+
+/* Load URL in web view TARGET: reload its page if URL names the document on
+   screen, ignoring fragments, and otherwise load a new document, except
+   about:blank in a view that has shown nothing yet.  URL must be an absolute
+   http, https, file, data or about URL.  On failure the view keeps the
+   address it had. */
+bool portal_web_views_load(portal_string target, portal_string url, portal_text *error);
+/* Pass the JSON object JSON to hosted web view TARGET's app over its bridge. */
+bool portal_web_views_send(portal_string target, portal_string json, portal_text *error);
+/* Return, as a JSON array, the messages waiting on hosted web view TARGET's
+   bridge, oldest first; the next message sends a new bridge record. */
+bool portal_web_views_receive(portal_string target, portal_text *json, portal_text *error);
+
+/* For the view registry, views.c: what the core keeps for one web view, its
+   bridge and its pages. */
+struct portal_web_state;
+
+/* The state of a new web view opened with OPTIONS, which is hosted when its
+   :hosted option is a string or t; NULL when out of memory. */
+struct portal_web_state *portal_web_state_new(const portal_option *options, size_t count);
+/* Free STATE and any messages still waiting in it. */
+void portal_web_state_free(struct portal_web_state *state);
+
+/* For web.c, from views.c: TARGET's platform view, and its state in *STATE,
+   if TARGET names an open web view.  Otherwise return NULL and, unless ERROR
+   is NULL, set it to "No Portal view TARGET".  Both are valid until the next
+   lifecycle call. */
+portal_view *portal_views_find_web(portal_string target, struct portal_web_state **state,
+                                   portal_text *error);
+
+#endif

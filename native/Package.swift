@@ -19,10 +19,11 @@ let package = Package(
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909")
     ],
     targets: [
-        // The C core: the Emacs bindings, the notification pipe, and portal.h, the
-        // interface the Swift backend implements. Core/CMakeLists.txt compiles the
+        // The C core: the Emacs bindings, the view registry, web views' rules, the
+        // notification pipe, and portal.h, the interface the Swift backend
+        // implements. web.c embeds the shared browser scripts in scripts/. Core/CMakeLists.txt compiles the
         // same sources into the fake-backend tests.
-        .target(name: "PortalCore", path: "Core", exclude: ["CMakeLists.txt"],
+        .target(name: "PortalCore", path: "Core", exclude: ["CMakeLists.txt", "scripts"],
                 cSettings: [.unsafeFlags(["-I", emacsInclude, "-Wall", "-Wextra", "-Werror"])]),
         // The macOS backend; all Swift features share one target.
         .target(name: "Portal", dependencies: [

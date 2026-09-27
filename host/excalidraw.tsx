@@ -24,14 +24,6 @@ type Message = {
 	name?: string;
 	message?: string;
 };
-declare global {
-	interface Window {
-		webkit?: {
-			messageHandlers: { portal: { postMessage(message: object): void } };
-		};
-		portalBridge: { receive(message: Message): Promise<void> };
-	}
-}
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing editor root element");
@@ -52,8 +44,7 @@ let contentKey = "";
 let previousFiles: BinaryFiles | undefined;
 let changeTimer: ReturnType<typeof setTimeout> | undefined;
 let setStatus: (value: string) => void = () => {};
-const post = (message: object) =>
-	window.webkit?.messageHandlers.portal.postMessage(message);
+const post = (message: object) => window.portalBridge?.postMessage(message);
 
 function currentJSON() {
 	if (!api || !initialized) throw new Error("The drawing is still loading");
@@ -175,46 +166,46 @@ function Editor({
 	);
 }
 
-window.portalBridge = {
-	async receive(message) {
-		try {
-			if (message.type === "load") {
-				if (api) throw new Error("This editor already has a document");
-				const scene = await loadFromBlob(
-					new Blob([message.json ?? ""]),
-					null,
-					null,
-				);
-				root.render(
-					<Editor
-						initialData={{ ...scene, scrollToContent: true }}
-						name={message.name ?? "Drawing"}
-					/>,
-				);
-			} else if (message.type === "snapshot") {
-				// Commit an active text editor before serializing. A timeout also works
-				// while the webview is hidden, where animation frames can be suspended.
-				(document.activeElement as HTMLElement | null)?.blur();
-				await new Promise((resolve) => setTimeout(resolve, 0));
-				const json = currentJSON();
-				publish(json);
-				post({ type: "snapshot", request: message.request, json });
-			} else if (message.type === "saved") {
-				savedJSON = message.json?.trim() ?? "";
-				setStatus(currentJSON() === savedJSON ? "Saved" : "Modified");
-			} else if (message.type === "error") {
-				setStatus(message.message ?? "Save failed");
-			}
-		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			if (!api)
-				root.render(
-					<div className="portal-error">Unable to open drawing: {text}</div>,
-				);
-			post({ type: "error", message: text, request: message.request });
+async function receive(message: Message) {
+	try {
+		if (message.type === "load") {
+			if (api) throw new Error("This editor already has a document");
+			const scene = await loadFromBlob(
+				new Blob([message.json ?? ""]),
+				null,
+				null,
+			);
+			root.render(
+				<Editor
+					initialData={{ ...scene, scrollToContent: true }}
+					name={message.name ?? "Drawing"}
+				/>,
+			);
+		} else if (message.type === "snapshot") {
+			// Commit an active text editor before serializing. A timeout also works
+			// while the webview is hidden, where animation frames can be suspended.
+			(document.activeElement as HTMLElement | null)?.blur();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const json = currentJSON();
+			publish(json);
+			post({ type: "snapshot", request: message.request, json });
+		} else if (message.type === "saved") {
+			savedJSON = message.json?.trim() ?? "";
+			setStatus(currentJSON() === savedJSON ? "Saved" : "Modified");
+		} else if (message.type === "error") {
+			setStatus(message.message ?? "Save failed");
 		}
-	},
-};
+	} catch (error) {
+		const text = error instanceof Error ? error.message : String(error);
+		if (!api)
+			root.render(
+				<div className="portal-error">Unable to open drawing: {text}</div>,
+			);
+		post({ type: "error", message: text, request: message.request });
+	}
+}
+
+if (window.portalBridge) window.portalBridge.receive = receive;
 
 document.addEventListener(
 	"keydown",

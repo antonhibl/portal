@@ -9,12 +9,6 @@ import PortalCore
 // create to destroy. Nothing here sees an Emacs value or environment. The
 // timer primitive is in CoreCalls.swift, which the standalone checks share.
 
-private extension String {
-    init(copying string: portal_string) {
-        self.init(decoding: UnsafeRawBufferPointer(start: string.data, count: string.length), as: UTF8.self)
-    }
-}
-
 /// Uninitialized memory for COUNT values, allocated for the bindings to free.
 private func allocate<T>(_ type: T.Type, _ count: Int) -> UnsafeMutablePointer<T> {
     malloc(max(count, 1) * MemoryLayout<T>.stride)!.bindMemory(to: type, capacity: max(count, 1))
@@ -137,6 +131,28 @@ public func portalViewDescribe(_ view: OpaquePointer, _ state: UnsafeMutablePoin
     }
 }
 
+/// Foundation's parser, which `WebSession.load` uses too, in the spelling
+/// WebKit reports URLs in: percent-encoded, with its host as parsed, such as
+/// `example.com` for `%65xample.com` and punycode for a Unicode host, and its
+/// port as a number, such as 80 for `080`. `absoluteString` alone keeps the
+/// host and port as written.
+@_cdecl("portal_web_parse_url")
+public func portalWebParseURL(_ url: portal_string, _ parsed: UnsafeMutablePointer<portal_text>,
+                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let url = String(copying: url)
+    return perform(error, into: parsed) {
+        guard let parsed = URL(string: url) else { throw NativeError.message("WebKit cannot parse the URL \(url)") }
+        if var components = URLComponents(url: parsed, resolvingAgainstBaseURL: false), components.host != nil {
+            components.port = parsed.port
+            // An IPv6 host cannot be set unbracketed, so it stays as written.
+            var host = components
+            host.host = parsed.host(percentEncoded: false)
+            if let spelled = host.url ?? components.url { return spelled.absoluteString }
+        }
+        return parsed.absoluteString
+    }
+}
+
 @_cdecl("portal_web_load")
 public func portalWebLoad(_ web: OpaquePointer, _ url: portal_string,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {
@@ -144,18 +160,18 @@ public func portalWebLoad(_ web: OpaquePointer, _ url: portal_string,
     return perform(error) { try session(web, as: WebSession.self).load(url) } != nil
 }
 
-@_cdecl("portal_web_send")
-public func portalWebSend(_ web: OpaquePointer, _ json: portal_string,
-                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let web = native(web), json = String(copying: json)
-    return perform(error) { try session(web, as: WebSession.self).send(json) } != nil
+@_cdecl("portal_web_go")
+public func portalWebGo(_ web: OpaquePointer, _ step: portal_history,
+                        _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web)
+    return perform(error) { try session(web, as: WebSession.self).go(step) } != nil
 }
 
-@_cdecl("portal_web_receive")
-public func portalWebReceive(_ web: OpaquePointer, _ json: UnsafeMutablePointer<portal_text>,
-                             _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let web = native(web)
-    return perform(error, into: json) { try session(web, as: WebSession.self).receive() }
+@_cdecl("portal_web_post")
+public func portalWebPost(_ web: OpaquePointer, _ json: portal_string, _ token: UInt64,
+                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web), json = String(copying: json)
+    return perform(error) { try session(web, as: WebSession.self).post(json, token: token) } != nil
 }
 
 @_cdecl("portal_terminal_list_themes")

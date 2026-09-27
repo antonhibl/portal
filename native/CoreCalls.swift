@@ -3,8 +3,29 @@ import AppKit
 import PortalCore
 
 // Calls between Swift and the C core outside the Lisp operations: the core's
-// notification pipe, input, and the timer primitive, all in
-// native/Core/include/portal.h. The standalone checks compile this file too.
+// notification pipe, input, what web pages do, the shared browser scripts,
+// and the timer primitive, all in native/Core/include/portal.h. The standalone
+// checks compile this file too.
+
+extension String {
+    /// A copy of borrowed UTF-8 from the core.
+    init(copying string: portal_string) {
+        self.init(decoding: UnsafeRawBufferPointer(start: string.data, count: string.length), as: UTF8.self)
+    }
+}
+
+/// Call BODY with each of STRINGS borrowed as a `portal_string`.
+private func borrowing<T>(_ strings: [String], _ body: ([portal_string]) -> T) -> T {
+    var bytes: [CChar] = []
+    var spans: [(start: Int, length: Int)] = []
+    for string in strings {
+        spans.append((bytes.count, string.utf8.count))
+        bytes += string.utf8CString
+    }
+    return bytes.withUnsafeBufferPointer { bytes in
+        body(spans.map { portal_string(data: bytes.baseAddress! + $0.start, length: $0.length) })
+    }
+}
 
 /// The C core, as Swift features call it.
 @MainActor
@@ -14,18 +35,19 @@ enum Core {
     /// disconnected. Returns false only for a record that can never be sent.
     @discardableResult
     static func notify(_ type: String, target: String, fields: [String] = []) -> Bool {
-        var bytes: [CChar] = []
-        var spans: [(start: Int, length: Int)] = []
-        for word in [type, target] + fields {
-            spans.append((bytes.count, word.utf8.count))
-            bytes += word.utf8CString
+        borrowing([type, target] + fields) { words in
+            words.withUnsafeBufferPointer { portal_notify($0[0], $0[1], $0.baseAddress! + 2, fields.count) }
         }
-        return bytes.withUnsafeBufferPointer { bytes in
-            let base = bytes.baseAddress!
-            let words = spans.map { portal_string(data: base + $0.start, length: $0.length) }
-            return words.withUnsafeBufferPointer {
-                portal_notify($0[0], $0[1], $0.baseAddress! + 2, fields.count)
-            }
+    }
+
+    /// What the core answers when a page asks to navigate.
+    enum Navigation { case allow, external, emacs }
+
+    /// The page in TARGET posted JSON, a JSON object whose "type" is TYPE,
+    /// from its main frame or another, showing URL, as WebKit reports them.
+    static func posted(_ target: String, mainFrame: Bool, url: String, type: String, json: String) {
+        borrowing([target, url, type, json]) {
+            portal_web_posted($0[0], portal_sender(main_frame: mainFrame, url: $0[1]), $0[2], $0[3])
         }
     }
 
@@ -47,6 +69,32 @@ enum Core {
 
     private static func borrow<T>(_ text: String, _ body: (portal_string) -> T) -> T {
         text.withCString { body(portal_string(data: $0, length: text.utf8.count)) }
+    }
+
+    static func navigating(_ target: String, url: String, mainFrame: Bool) -> Navigation {
+        let decision = borrowing([target, url]) { portal_web_navigating($0[0], $0[1], mainFrame) }
+        return decision == PORTAL_NAVIGATION_EXTERNAL ? .external
+            : decision == PORTAL_NAVIGATION_EMACS ? .emacs : .allow
+    }
+
+    static func committed(_ target: String, url: String) {
+        borrowing([target, url]) { portal_web_committed($0[0], $0[1]) }
+    }
+
+    /// TOKEN is 0 for a failure of the page itself, or a post's token.
+    static func failed(_ target: String, token: UInt64, message: String) {
+        borrowing([target, message]) { portal_web_failed($0[0], token, $0[1]) }
+    }
+
+    static func edit(_ target: String) {
+        borrowing([target]) { portal_web_edit($0[0]) }
+    }
+
+    /// The shared browser script SCRIPT, started in its world with a report
+    /// function that posts to that world's script message HANDLER. This glue
+    /// is the only part that names WebKit's transport.
+    static func script(_ script: portal_script, handler: String) -> String {
+        "(\n\(String(copying: portal_web_script(script)))\n)((value) => window.webkit.messageHandlers.\(handler).postMessage(value));\n"
     }
 }
 

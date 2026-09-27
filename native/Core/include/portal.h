@@ -5,15 +5,15 @@
    registers the Lisp interface (docs/adr/0002), converts arguments and
    results, and signals errors.  views.c owns every Portal view's identity
    and lifecycle, input.c decides who gets each key press, terminals.c keeps
-   the rules of terminal views, and channel.c owns the pipe that carries
-   records to Emacs.
+   the rules of terminal views, web.c those of web views and the bridge, and
+   channel.c owns the pipe that carries records to Emacs.
    The platform implements the operations below: the production module links
    the macOS backend, native/Backend.swift, and the core's tests link
    test/portal-fake-backend.c.  Nothing here knows about Emacs values or a UI
    toolkit.
 
    These operations are becoming the primitives of docs/adr/0003.  The view
-   lifecycle, input and terminal operations already are; the web and toolbar
+   lifecycle, input, terminal and web operations already are; the toolbar
    operations still mirror their Lisp functions, until their rules move into
    the core.
 
@@ -38,7 +38,11 @@
    and native notifications reach Emacs as records through the core's pipe, so
    no native code retains an Emacs environment or value.  The platform may
    call the core's functions at the end of this file whenever it runs on the
-   module thread, with borrowed arguments; they never reach Emacs. */
+   module thread, with borrowed arguments, even from inside an operation the
+   core called, except where a function says otherwise; they never reach
+   Emacs.  The core in turn may call operations from inside those calls: a
+   hosted app's link to a local file, for example, first gives Emacs the
+   keyboard with portal_view_unfocus. */
 #ifndef PORTAL_H
 #define PORTAL_H
 
@@ -117,10 +121,37 @@ bool portal_view_detach(portal_view *view, portal_text *error);
    "edges", so the platform never reports those. */
 bool portal_view_describe(portal_view *view, portal_text *state, portal_text *error);
 
-/* Web views.  JSON is a JSON array of the messages received. */
+/* Web views.  The core decides what a web view loads and how, where its page
+   may navigate, and which messages cross the bridge (native/Core/web.c); the
+   platform loads pages, delivers messages, and reports what pages do through
+   the calls into the core below.  A page's URL, title, loading state and
+   errors come from portal_view_describe.
+
+   Load URL in WEB as a new document, adding it to WEB's history.  The core
+   has checked that URL is an absolute http, https, file, data or about URL,
+   and passes it as portal_web_parse_url spelled it.  A file URL may read the
+   other files in its directory. */
 bool portal_web_load(portal_view *web, portal_string url, portal_text *error);
-bool portal_web_send(portal_view *web, portal_string json, portal_text *error);
-bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error);
+/* Parse URL as this platform's web views do, and return in *PARSED how the
+   platform spells the result, as it spells the URLs it reports to the core:
+   characters such as spaces percent-encoded, and the host and port as
+   parsed, such as a Unicode host in punycode, example.com for %65xample.com
+   and 80 for 080.  The core keeps and compares URLs only in this
+   spelling, so one parser, the platform's, decides when two are the same.
+   Fails for a URL the platform cannot parse. */
+bool portal_web_parse_url(portal_string url, portal_text *parsed, portal_text *error);
+/* A step through a web view's history. */
+typedef enum portal_history { PORTAL_BACK, PORTAL_FORWARD, PORTAL_RELOAD } portal_history;
+/* Go back or forward in WEB's history, doing nothing where there is no page
+   to go to, or load its page again without a new history entry. */
+bool portal_web_go(portal_view *web, portal_history step, portal_text *error);
+/* Pass JSON, which must be a JSON object, to the page in WEB, as the argument
+   of its portalBridge.receive (docs/editor-bridge.md).  The argument crosses
+   as data, never as script text.  Delivery finishes after this call returns;
+   if it fails, such as when the page defines no receive function, call
+   portal_web_failed with TOKEN.  Fails at once, changing nothing, for JSON
+   that is not an object. */
+bool portal_web_post(portal_view *web, portal_string json, uint64_t token, portal_text *error);
 
 /* Terminal views.  The core implements the terminal Lisp functions with
    these primitives, each on one terminal, and keeps Portal's rules: it checks
@@ -263,5 +294,70 @@ typedef enum portal_owner {
     PORTAL_OWNER_PASSTHROUGH,
 } portal_owner;
 portal_owner portal_input_owner(portal_string target);
+
+/* Web views call these for what their pages do.  TARGET is the view's
+   target, as portal_view_create received it; the core ignores a call for a
+   target that names no open web view, such as one Lisp has closed, so an
+   asynchronous completion can never reach a closed or newer view.
+
+   What the platform observed natively about the frame that posted a message:
+   whether it is the page's main frame, and the URL of the document in it.  A
+   page's own claims, such as an origin it puts in a message, are not
+   evidence. */
+typedef struct portal_sender {
+    bool main_frame;
+    portal_string url;
+} portal_sender;
+/* The page in TARGET posted JSON, a JSON object the platform has checked,
+   whose "type" member is TYPE, or "" when it has none or it is not a string.
+   The core keeps it for Emacs only from a hosted app's main frame, showing
+   the URL Emacs loaded last, spelled as portal_web_parse_url spells it,
+   and never with a type the core itself sends. */
+void portal_web_posted(portal_string target, portal_sender sender, portal_string type,
+                       portal_string json);
+/* What a web view does with a navigation its page asks for. */
+typedef enum portal_navigation {
+    PORTAL_NAVIGATION_ALLOW,    /* Load URL in the view. */
+    PORTAL_NAVIGATION_EXTERNAL, /* Cancel, and open URL in the default browser. */
+    PORTAL_NAVIGATION_EMACS,    /* Cancel: the core has handed URL to Emacs. */
+} portal_navigation;
+/* The page in TARGET asks to navigate to URL, in its main frame or, when
+   MAIN_FRAME is false, in another frame.  A request for a new window counts
+   as the main frame.  Call it for each navigation the platform can refuse,
+   and for each click on a link that the platform cannot follow at all, such
+   as a hosted app's links to local files, which the shared links script
+   reports (portal_web_script); for those, allow means load URL. */
+portal_navigation portal_web_navigating(portal_string target, portal_string url,
+                                        bool main_frame);
+/* The page in TARGET committed URL: a new document, or one from its history. */
+void portal_web_committed(portal_string target, portal_string url);
+/* Something failed that the page cannot report: a load of TARGET's page, its
+   web process, or, when TOKEN is not 0, the delivery of the message that
+   portal_web_post sent with TOKEN.  MESSAGE says what, for the app's buffer;
+   a delivery to a page that has since gone is ignored. */
+void portal_web_failed(portal_string target, uint64_t token, portal_string message);
+/* The user asked, from TARGET's toolbar, to edit the document it shows in
+   Emacs.  This moves with the toolbar's rules into the core later. */
+void portal_web_edit(portal_string target);
+
+/* Browser scripts that every platform's web views share.  The core owns
+   their source, embedded when it is compiled from native/Core/scripts, so
+   a platform needs no files at run time and no app host.  Each is one
+   JavaScript function expression taking REPORT, a function it calls with a
+   value for the platform.  The platform starts it in its own isolated world,
+   out of the page's reach, as "(SOURCE)(REPORT)" with REPORT its transport to
+   a native handler.  Anything the platform later passes to a script's
+   functions crosses as data, as portal_web_post's argument does.
+
+   Links: in a hosted app's main frame from the start of each document,
+   reports the URL of each link to a local file the user clicks, which a page
+   from the app host could not follow.  Treat each as portal_web_navigating
+   asks.  Contents: in a toolbar's page from the end of each document,
+   defines portalToolbar.toc(open), which shows or hides a table of contents
+   and returns the number of headings, and portalToolbar.count(query), which
+   counts the query's case-insensitive matches in the page's text; and
+   reports the number of headings whenever it changes. */
+typedef enum portal_script { PORTAL_SCRIPT_LINKS, PORTAL_SCRIPT_CONTENTS } portal_script;
+portal_string portal_web_script(portal_script script);
 
 #endif

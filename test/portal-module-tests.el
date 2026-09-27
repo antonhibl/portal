@@ -113,8 +113,8 @@
                       'wrong-type-argument)))))
     (should-not (plist-get (portal--inspect target) :url))
     ;; ASCII unibyte strings are fine.
-    (should (eq (portal--web-load target (string-to-unibyte "about:blank")) t))
-    (should (equal (plist-get (portal--inspect target) :url) "about:blank"))
+    (should (eq (portal--web-load target (string-to-unibyte "data:,ok")) t))
+    (should (equal (plist-get (portal--inspect target) :url) "data:,ok"))
     (portal--close target)))
 
 (ert-deftest portal-module-rejects-malformed-edges ()
@@ -208,8 +208,10 @@
   (should (eq (portal--toolbar 'yes) t))
   (should (eq (plist-get (portal-module-tests--settings) :toolbar) t))
   (should (eq (portal--toolbar-theme "{\"background\":[0,0,0]}") t))
-  (let ((web (portal--open "web" '(:hosted t))))
+  ;; The fake app echoes what Emacs sends it, from the page Emacs loaded.
+  (let ((web (portal--open "web" '(:hosted t :echo t))))
     (should (equal (portal--toolbar-action web "zoom-in") "{\"action\":\"zoom-in\"}"))
+    (should (eq (portal--web-load web "http://127.0.0.1:1/app") t))
     (should (equal (portal--web-receive web) "[]"))
     (should (eq (portal--web-send web "{\"a\":1}") t))
     (should (eq (portal--web-send web "{\"b\":\"✓\"}") t))
@@ -302,13 +304,14 @@
   (process-get process :received))
 
 (ert-deftest portal-module-connects-the-channel ()
-  ;; The fake app announces its messages with a bridge record, which the
-  ;; platform sends through the core's pipe.
+  ;; The fake app echoes what Emacs sends it, and the core announces the
+  ;; echo with a bridge record through its pipe.
   (let ((first (portal-module-tests--pipe "portal-module-first"))
         (second (portal-module-tests--pipe "portal-module-second"))
-        (web (portal--open "web" '(:hosted t))))
+        (web (portal--open "web" '(:hosted t :echo t))))
     (unwind-protect
         (let ((record (format "bridge %s\n" web)))
+          (portal--web-load web "http://127.0.0.1:1/app")
           (should (eq (portal--channel first) t))
           (should (eq (portal--web-send web "{}") t))
           (let ((received (portal-module-tests--await first record)))
