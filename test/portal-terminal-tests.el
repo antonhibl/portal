@@ -632,7 +632,7 @@
       ;; Bad JSON or either bad profile cannot partially replace live bindings.
       (should-error (portal--terminal-bindings "{"))
       (should-error (portal--terminal-bindings
-                     "{\"regular\":[],\"quick\":[{\"character\":\"x\",\"flags\":0,\"event\":120}]}"))
+                     "{\"regular\":[],\"quick\":[{\"character\":\"x\",\"modifiers\":0,\"event\":120}]}"))
       (setq portal-terminal-test--answer nil)
       (portal-terminal-test--native-binding
        (list 38 (ash 1 20) "j" t) '(0 0 "a") '(36 0 "\r"))

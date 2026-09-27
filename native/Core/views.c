@@ -3,6 +3,7 @@
    every kind shares.  A view is registered here from a successful create
    until close, and the platform view it holds is never used outside that
    span.  The platform renders views; Lisp chooses where (portal-view.el).
+   Each view keeps its input here too, which input.c manages.
 
    The registry is a list in creation order.  Emacs has few views at once,
    so finding a target walks the list. */
@@ -21,6 +22,7 @@ struct view {
     uint64_t id;
     bool attached;
     portal_edges edges; /* Where it is attached, while ATTACHED. */
+    struct portal_input input;
     size_t length;
     char target[]; /* LENGTH bytes, NUL-terminated, such as "web:3". */
 };
@@ -74,6 +76,12 @@ portal_view *portal_views_find(portal_string target, int kind, portal_text *erro
     return view ? view->native : NULL;
 }
 
+struct portal_input *portal_views_input(portal_string target)
+{
+    struct view *view = find(target, PORTAL_ANY_KIND, NULL);
+    return view ? &view->input : NULL;
+}
+
 bool portal_views_open(portal_string kind_name, const portal_option *options, size_t count,
                        portal_text *target, portal_text *error)
 {
@@ -106,6 +114,8 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
         free(copy);
         return false;
     }
+    portal_input_open(&view->input, view->native, (portal_string) {view->target, length},
+                      kind, options, count);
     if (views.last)
         views.last->next = view;
     else
@@ -147,7 +157,7 @@ bool portal_views_place(portal_string target, portal_edges edges, portal_string 
 bool portal_views_hide(portal_string target, portal_text *error)
 {
     struct view *view = find(target, PORTAL_ANY_KIND, error);
-    if (!view)
+    if (!view || !portal_input_close(&view->input, error))
         return false;
     if (view->attached && !portal_view_detach(view->native, error))
         return false;
@@ -158,7 +168,7 @@ bool portal_views_hide(portal_string target, portal_text *error)
 bool portal_views_close(portal_string target, portal_text *error)
 {
     struct view *view = find(target, PORTAL_ANY_KIND, error), *previous = NULL;
-    if (!view)
+    if (!view || !portal_input_close(&view->input, error))
         return false;
     for (struct view *other = views.first; other != view; other = other->next)
         previous = other;

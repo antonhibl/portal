@@ -191,27 +191,29 @@ public func portalTerminalText(_ terminal: OpaquePointer, _ text: UnsafeMutableP
     return perform(error, into: text) { try Terminals.text(session(terminal, as: TerminalSession.self)) }
 }
 
-@_cdecl("portal_terminal_bindings")
-public func portalTerminalBindings(_ json: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let json = String(copying: json)
-    return perform(error) { try NativeInput.configureBindings(json) } != nil
+@_cdecl("portal_view_focus")
+public func portalViewFocus(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { view.kind.input.focus() } != nil
 }
 
-@_cdecl("portal_input_prefix")
-public func portalInputPrefix(_ character: portal_string, _ flags: Int64,
-                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let character = String(copying: character)
-    return perform(error) { try NativeInput.configurePrefix(character, flags: Int(flags)) } != nil
+@_cdecl("portal_view_unfocus")
+public func portalViewUnfocus(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { view.kind.input.unfocus() } != nil
 }
 
-@_cdecl("portal_input")
-public func portalInput(_ view: OpaquePointer, _ action: portal_string, _ serial: Int64,
-                        _ result: UnsafeMutablePointer<Bool>, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let view = native(view), action = String(copying: action)
-    guard let performed = perform(error, { try view.kind.input.perform(action, serial: Int(serial)) })
-    else { return false }
-    result.pointee = performed
-    return true
+@_cdecl("portal_view_replay")
+public func portalViewReplay(_ view: OpaquePointer, _ replay: Bool,
+                             _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { replay ? view.kind.input.replay() : view.kind.input.discard() } != nil
+}
+
+@_cdecl("portal_view_literal")
+public func portalViewLiteral(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { try view.kind.input.literal() } != nil
 }
 
 @_cdecl("portal_toolbar")

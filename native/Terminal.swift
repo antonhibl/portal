@@ -77,8 +77,7 @@ final class TerminalSession: PortalView {
                                       theme: try Terminals.resolveTheme(options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
-        input = NativeInput(target: target, view: terminal, host: NativeView.parking,
-                            profile: quick ? "quick" : "regular") { [weak terminal] in
+        input = NativeInput(target: target, view: terminal, host: NativeView.parking) { [weak terminal] in
             guard let terminal, !terminal.isHidden else { return false }
             return terminal.acquireProgrammaticFocus()
         }

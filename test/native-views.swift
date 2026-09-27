@@ -55,7 +55,11 @@ enum Views {
 
     /// Perform input ACTION on TARGET, as `portal--input` does without a serial.
     static func input(_ target: String, action: String) throws -> Bool {
-        try native(target).kind.input.perform(action, serial: 0)
+        var performed = false
+        try with(target) { target in
+            try with(action) { action in try call { portal_input_perform(target, action, 0, &performed, $0) } }
+        }
+        return performed
     }
 
     private static func native(_ target: String) throws -> NativeView {

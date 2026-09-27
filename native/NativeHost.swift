@@ -3,7 +3,7 @@ import AppKit
 
 enum NativeError: Error { case message(String) }
 
-/// A temporary input owner (for example, a terminal prefix awaiting Lisp).
+/// Where a key event goes: a view, or the view whose handoff Emacs is handling.
 @MainActor
 protocol NativeInputHandler: AnyObject {
     func handleKeyEvent(_ event: NSEvent) -> Bool
@@ -45,7 +45,6 @@ final class NativeHost: NSObject {
 
     weak var view: NSView?
     private weak var editor: NSResponder?
-    private weak var inputCapture: (any NativeInputHandler)?
     private var containers: [ObjectIdentifier: NativeContainer] = [:]
     private var surfaces: [ObjectIdentifier: WeakSurface] = [:]
 
@@ -74,9 +73,16 @@ final class NativeHost: NSObject {
         surfaces.values.compactMap(\.value).first { ownsFocus($0.nativeView) }
     }
 
+    /// The view whose handoff Emacs is handling: key events in this window are its own.
+    private var inputCapture: NativeInput? {
+        surfaces.values.compactMap(\.value?.input).first { $0.trigger != nil }
+    }
+
     @objc private func windowUpdated() { refreshOwnership() }
 
+    /// Tell the core which views gained or lost the keyboard, then show it.
     func refreshOwnership() {
+        for surface in surfaces.values.compactMap(\.value) { surface.input?.observe() }
         for container in containers.values { container.toolbar?.refresh() }
     }
 
@@ -97,12 +103,6 @@ final class NativeHost: NSObject {
     func returnFocus(from surface: NSView) {
         if ownsFocus(surface) { view?.window?.makeFirstResponder(editor) }
         refreshOwnership()
-    }
-
-    func captureInput(_ handler: any NativeInputHandler) { inputCapture = handler }
-
-    func releaseInput(_ handler: any NativeInputHandler) {
-        if inputCapture === handler { inputCapture = nil }
     }
 
     /// Show SURFACE at RECTANGLE, in Emacs's frame pixels from the top left.
@@ -134,14 +134,12 @@ final class NativeHost: NSObject {
 
     /// Hiding deliberately retains the view. Features decide whether to remove it.
     func hide(_ surface: any NativeSurface) {
-        surface.input?.cancel()
         returnFocus(from: surface.nativeView)
         surface.nativeView.isHidden = true
         containers[ObjectIdentifier(surface)]?.isHidden = true
     }
 
     func remove(_ surface: any NativeSurface) {
-        surface.input?.cancel()
         returnFocus(from: surface.nativeView)
         surfaces[ObjectIdentifier(surface)] = nil
         surface.nativeView.removeFromSuperview()
@@ -171,8 +169,8 @@ final class NativeHost: NSObject {
             guard view.window === window, !view.isHiddenOrHasHiddenAncestor,
                   view.bounds.contains(view.convert(event.locationInWindow, from: nil)) else { continue }
             if !host.ownsFocus(view), let input = surface.input {
-                // A click abandons a prefix Emacs is still reading.
-                if input.ownership == .pending { input.escape() }
+                // First, as it abandons a handoff whose keys Emacs may be reading.
+                input.claim()
                 Core.notify("select", target: input.target)
             }
             break

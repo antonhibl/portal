@@ -3,4 +3,5 @@
    emacs.c uses in the module, so the checks drive views and the pipe as
    Emacs does. */
 #include "../native/Core/channel.h"
+#include "../native/Core/input.h"
 #include "../native/Core/views.h"

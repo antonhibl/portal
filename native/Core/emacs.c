@@ -2,10 +2,11 @@
 /* Portal's Emacs module: registers the Lisp interface of docs/adr/0002,
    converts arguments and results, and signals errors.  Each Lisp function
    copies its arguments, calls the core, and converts and frees what it
-   returns.  The lifecycle functions call views.h, and portal--channel
-   channel.h.  The others find their target's view through views.h, which
-   checks its kind, and pass it to one platform operation from portal.h.  No
-   Emacs environment or value outlives the module call that received it. */
+   returns.  The lifecycle functions call views.h, portal--channel
+   channel.h, and the input functions input.h.  The others find their
+   target's view through views.h, which checks its kind, and pass it to one
+   platform operation from portal.h.  No Emacs environment or value outlives
+   the module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 
 #include "channel.h"
+#include "input.h"
 #include "portal.h"
 #include "views.h"
 
@@ -303,7 +305,6 @@ STRINGS(web_send, VIEW(PORTAL_WEB) && portal_web_send(view, a[1], error))
 STRINGS(web_receive, VIEW(PORTAL_WEB) && portal_web_receive(view, result, error))
 STRINGS(terminal_themes, portal_terminal_themes(result, error))
 STRINGS(terminal_text, VIEW(PORTAL_TERMINAL) && portal_terminal_text(view, result, error))
-STRINGS(terminal_bindings, portal_terminal_bindings(a[0], error))
 STRINGS(toolbar_theme, portal_toolbar_theme(a[0], error))
 STRINGS(toolbar_action,
         VIEW(PORTAL_ANY_KIND) && portal_toolbar_action(view, a[1], result, error))
@@ -382,16 +383,119 @@ LISP_FUNCTION(Fterminal_paste)
     return result;
 }
 
+/* The code point of the one-character Lisp string VALUE, or 0 if it has
+   another length. */
+static bool read_character(emacs_env *env, emacs_value value, uint32_t *character)
+{
+    portal_text text = {0};
+    if (!read_text(env, value, &text))
+        return false;
+    const unsigned char *bytes = (const unsigned char *) text.data;
+    size_t extra = !text.length ? 0 : bytes[0] < 0x80 ? 0 : bytes[0] < 0xe0 ? 1 : bytes[0] < 0xf0 ? 2 : 3;
+    *character = 0;
+    if (text.length && text.length == extra + 1) {
+        *character = extra ? bytes[0] & (0x3f >> extra) : bytes[0];
+        for (size_t i = 1; i <= extra; i++)
+            *character = *character << 6 | (bytes[i] & 0x3f);
+    }
+    free(text.data);
+    return true;
+}
+
+/* Read a chord: CHARACTER, a string, and MODIFIERS, an integer.  The core
+   rejects any that is not one character, or has modifiers it does not know. */
+static bool read_chord(emacs_env *env, emacs_value character, emacs_value modifiers,
+                       portal_chord *chord)
+{
+    if (!read_character(env, character, &chord->character))
+        return false;
+    intmax_t bits = env->extract_integer(env, modifiers);
+    chord->modifiers = bits < 0 || bits > UINT32_MAX ? UINT32_MAX : (uint32_t) bits;
+    return returning(env);
+}
+
 LISP_FUNCTION(Finput_prefix)
 {
-    portal_text character = {0}, error = {0};
-    emacs_value result = NULL;
-    if (read_text(env, args[0], &character)) {
-        int64_t flags = env->extract_integer(env, args[1]);
-        if (returning(env))
-            result = done(env, portal_input_prefix(borrow(character), flags, &error), &error);
+    portal_text error = {0};
+    portal_chord prefix;
+    if (!read_chord(env, args[0], args[1], &prefix))
+        return NULL;
+    return done(env, portal_input_prefix(prefix, &error), &error);
+}
+
+/* Whether VALUE's `type-of' is TYPE. */
+static bool of_type(emacs_env *env, emacs_value value, const char *type)
+{
+    return env->eq(env, env->type_of(env, value), symbol(env, type));
+}
+
+/* (alist-get KEY ALIST), for a symbol KEY. */
+static emacs_value get(emacs_env *env, emacs_value alist, const char *key)
+{
+    emacs_value arguments[] = {symbol(env, key), alist};
+    return env->funcall(env, symbol(env, "alist-get"), 2, arguments);
+}
+
+/* Read ENTRY, an alist of a "character", "modifiers" and "event", into
+   *BINDING.  An entry of another shape stays an invalid binding, for the core
+   to reject. */
+static bool read_binding(emacs_env *env, emacs_value entry, portal_binding *binding)
+{
+    *binding = (portal_binding) {{0, 0}, 0};
+    if (!of_type(env, entry, "cons"))
+        return true;
+    emacs_value character = get(env, entry, "character"),
+                modifiers = get(env, entry, "modifiers"), event = get(env, entry, "event");
+    if (!returning(env))
+        return false;
+    if (!of_type(env, character, "string") || !of_type(env, modifiers, "integer")
+        || !of_type(env, event, "integer"))
+        return true;
+    if (!read_chord(env, character, modifiers, &binding->chord))
+        return false;
+    binding->event = env->extract_integer(env, event);
+    return returning(env);
+}
+
+/* JSON is {"regular": BINDINGS, "quick": BINDINGS}, each an array of
+   bindings. */
+LISP_FUNCTION(Fterminal_bindings)
+{
+    emacs_value arguments[] = {args[0], symbol(env, ":object-type"), symbol(env, "alist"),
+                               symbol(env, ":array-type"), symbol(env, "array")};
+    emacs_value json = env->funcall(env, symbol(env, "json-parse-string"), 5, arguments);
+    if (!returning(env))
+        return NULL;
+    portal_binding *profiles[2] = {NULL, NULL};
+    size_t counts[2] = {0, 0};
+    const char *names[] = {"regular", "quick"};
+    bool read = true;
+    for (size_t p = 0; read && p < 2; p++) {
+        emacs_value vector = of_type(env, json, "cons") ? get(env, json, names[p]) : NULL;
+        if (!returning(env) || !vector || !of_type(env, vector, "vector")) {
+            signal_error(env, "Invalid native terminal binding", NULL);
+            read = false;
+            break;
+        }
+        counts[p] = (size_t) env->vec_size(env, vector);
+        profiles[p] = calloc(counts[p] + 1, sizeof *profiles[p]);
+        if (!profiles[p]) {
+            out_of_memory(env);
+            read = false;
+        }
+        for (size_t i = 0; read && i < counts[p]; i++)
+            read = read_binding(env, env->vec_get(env, vector, (ptrdiff_t) i), &profiles[p][i]);
     }
-    free(character.data);
+    emacs_value result = NULL;
+    if (read) {
+        portal_text error = {0};
+        result = done(env,
+                      portal_input_bindings(profiles[0], counts[0], profiles[1], counts[1],
+                                            &error),
+                      &error);
+    }
+    free(profiles[0]);
+    free(profiles[1]);
     return result;
 }
 
@@ -402,11 +506,9 @@ LISP_FUNCTION(Finput)
     if (read_text(env, args[0], &target) && read_text(env, args[1], &action)) {
         int64_t serial =
             nargs > 2 && env->is_not_nil(env, args[2]) ? env->extract_integer(env, args[2]) : 0;
-        /* An unknown target performs nothing. */
-        portal_view *view = portal_views_find(borrow(target), PORTAL_ANY_KIND, NULL);
         bool performed = false;
         if (returning(env)) {
-            if (!view || portal_input(view, borrow(action), serial, &performed, &error))
+            if (portal_input_perform(borrow(target), borrow(action), serial, &performed, &error))
                 result = boolean(env, performed);
             else
                 fail(env, &error);
@@ -430,7 +532,7 @@ LISP_FUNCTION(Ftoolbar)
 #define STRINGS_FUNCTION(name, result) \
     Fstrings, &(const struct strings_function) {name, result}
 
-static const struct {
+static const struct export {
     const char *name;
     ptrdiff_t minimum, maximum;
     emacs_function function;
@@ -466,10 +568,10 @@ static const struct {
     {"portal--terminal-text", 1, 1, STRINGS_FUNCTION(terminal_text, RESULT_STRING),
      "Select all of TARGET's scrollback and return its text. Leaves the native selection "
      "active."},
-    {"portal--terminal-bindings", 1, 1, STRINGS_FUNCTION(terminal_bindings, RESULT_T),
+    {"portal--terminal-bindings", 1, 1, Fterminal_bindings, NULL,
      "Atomically replace runtime binding profiles from JSON."},
     {"portal--input-prefix", 2, 2, Finput_prefix, NULL,
-     "Set the native prefix CHARACTER and AppKit modifier FLAGS."},
+     "Set the native prefix CHARACTER and MODIFIERS: 1 Shift, 2 Control, 4 Meta, 8 Super."},
     {"portal--input", 2, 3, Finput, NULL,
      "Perform ACTION on native TARGET, optionally validating its handoff SERIAL."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
@@ -478,6 +580,16 @@ static const struct {
     {"portal--toolbar-action", 2, 2, STRINGS_FUNCTION(toolbar_action, RESULT_STRING),
      "Perform ACTION on TARGET and return its native state as JSON."},
 };
+
+/* Run the Lisp function DATA, an export, at Emacs's request (input.h). */
+static emacs_value Frequest(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    const struct export *export = data;
+    portal_input_request(true);
+    emacs_value result = export->function(env, nargs, args, (void *) export->data);
+    portal_input_request(false);
+    return result;
+}
 
 int emacs_module_init(struct emacs_runtime *runtime)
 {
@@ -489,8 +601,8 @@ int emacs_module_init(struct emacs_runtime *runtime)
     for (size_t i = 0; i < sizeof exports / sizeof *exports; i++) {
         emacs_value arguments[] = {
             symbol(env, exports[i].name),
-            env->make_function(env, exports[i].minimum, exports[i].maximum, exports[i].function,
-                               exports[i].documentation, (void *) exports[i].data)};
+            env->make_function(env, exports[i].minimum, exports[i].maximum, Frequest,
+                               exports[i].documentation, (void *) &exports[i])};
         env->funcall(env, symbol(env, "fset"), 2, arguments);
         if (!returning(env))
             return 1;

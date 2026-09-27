@@ -1,7 +1,7 @@
 # Terminal input bridge
 
-Bindings are runtime Elisp configuration. Swift recognizes registered first
-chords; Emacs owns commands and the rest of each key sequence. Once this native
+Bindings are runtime Elisp configuration. The module's C core recognizes
+registered first chords; Emacs owns commands and the rest of each key sequence. Once this native
 bridge is built and loaded, changing bindings requires no rebuild or restart.
 
 ## Configure
@@ -35,21 +35,42 @@ The native input machinery is shared by terminal and web views.
 their scope and registration API.
 
 1. Registration validates and snapshots the terminal maps as before. Only first
-   chords cross into Swift; command maps remain in Lisp.
-2. `NativeHost` routes input to the focused surface's `NativeInput`. A reserved
-   chord returns focus to Emacs, sends a record with the view's target and a
-   handoff serial through the notification pipe, and buffers fast follow-up
-   input until Lisp acknowledges.
-3. `portal-input--dispatch` selects the originating native view's Emacs window.
-   Lisp reads prefix tails using `read-key-sequence-vector`, applies normal
-   command remapping, and executes the command outside the process filter.
-4. Completion releases capture and normally focuses the selected Portal view.
-   Explicit unfocus, errors, ordinary buffers, or an invalidated handoff keep
-   Emacs in control. Command-Escape can invalidate a handoff before acknowledgement.
+   chords cross into the module, each as a character and Portal's modifier
+   values (Shift 1, Control 2, Meta 4, Super 8), never a platform's key flags;
+   command maps remain in Lisp. The C core checks them again, and replaces
+   the prefix or both binding profiles only when nothing collides.
+2. The platform captures each key press in a view and asks the C core
+   (`native/Core/input.c`) what to do with it, as a normalized chord: a
+   character and those modifiers. On macOS, Option is Meta and Command is
+   Super. The core answers pass it on, take it, or hold it. For the prefix or
+   a registered first chord it starts a handoff: it returns the keyboard to
+   Emacs and sends a record with the view's target and a new handoff serial
+   through the notification pipe. The platform holds that key, the trigger,
+   and every key event after it until Lisp acknowledges.
+3. `portal-input--dispatch` selects the originating native view's Emacs window
+   and acknowledges; the platform then replays the held events, in order,
+   with their repeats, releases and modifier changes. Lisp reads prefix tails
+   using `read-key-sequence-vector`, applies normal command remapping, and
+   executes the command outside the process filter.
+4. Completion releases the held trigger and normally focuses the selected
+   Portal view. Explicit unfocus, errors, ordinary buffers, or an invalidated
+   handoff keep Emacs in control.
+
+Each view's handoff is in one state: idle, awaiting acknowledgement, reading a
+command, or executing it. Whether the view has the keyboard, which the platform
+reports, and passthrough are kept apart from it. Every Lisp action names its
+handoff's serial, and does nothing unless that handoff is still going, so a late
+acknowledgement or completion never affects another handoff or view. Hiding or
+closing a view, or Emacs's `unfocus`, ends its handoff silently. The user ending
+one, with Command-Escape or a click in the view, sends an `escape` record
+first. A focus change that Emacs's own call makes, such as `C-b s-f` opening the
+find field, never ends a handoff. Command-Escape stays in the platform, so it
+works immediately, without a round trip through Lisp or JavaScript.
 
 Repeating the first chord sends its captured native key-down/key-up pair to the
-app. Once a sequence has begun, that same key remains available inside nested
-Emacs bindings, such as `C-b C-x C-b`. WebKit's asynchronous retries of unhandled
+app, as a real native event rather than a synthetic JavaScript one. Once a
+sequence has begun, that same key remains available inside nested Emacs
+bindings, such as `C-b C-x C-b`. WebKit's asynchronous retries of unhandled
 keys are consumed after their first delivery, preventing input intended for a
 page from later becoming Emacs commands.
 
@@ -58,8 +79,9 @@ page from later becoming Emacs commands.
 Every notification from the native module reaches Emacs on one pipe.
 `portal-view.el` owns its reading end: it creates the pipe process with the
 first view and passes it to `portal--channel`. The module's C core owns the
-writing end (`native/Core/channel.c`). Platform code, such as Swift's input and
-bridge, sends a record by calling the core's `portal_notify`.
+writing end (`native/Core/channel.c`). The core's input handoff sends its
+records directly; platform code, such as a hosted app's bridge or a click's
+`select`, sends a record by calling the core's `portal_notify`.
 
 Each record is one line, `TYPE TARGET FIELD...`, of printable ASCII words
 separated by spaces and at most `PIPE_BUF` bytes long, so every write is
@@ -105,6 +127,10 @@ remains the fixed escape hatch. System-wide shortcut interception still happens
 before Portal receives an event.
 
 Verified with [registration tests](../test/portal-terminal-bindings-tests.el),
+[core input tests](../test/portal-input-tests.c), which press keys through a fake
+platform (delayed acknowledgement, rapid tails, repeated prefixes, literal
+delivery, cancellation, stale serials, passthrough, and hiding or closing
+during a handoff),
 batch [record dispatch tests](../test/portal-view-tests.el) (split, batched and
 unknown-target records), [pipe tests](../test/portal-channel-tests.c) (a full
 pipe, reconnects, malformed records and a closed reader),

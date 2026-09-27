@@ -329,7 +329,7 @@ or call `portal-terminal-refresh-bindings` after direct keymap edits. These maps
 start empty and do not install global shortcuts. First chords use the same
 modified ASCII syntax as the leader; prefix tails use normal Emacs keys.
 
-Native code catches registered first chords and notifies Emacs through the
+The module's C core catches registered first chords and notifies Emacs through the
 notification pipe that every Portal view shares
 ([details](docs/terminal-input-bridge.md#the-notification-pipe)). It holds fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
 command. Ordinary terminal input and output stay native; there is no polling timer
@@ -869,13 +869,14 @@ the app sends, in order. Other web views have no bridge.
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
 | `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
+| `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
-| `native/Core/include/portal.h` | The platform interface: the view primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
+| `native/Core/include/portal.h` | The platform interface: the view and input primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
-| `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
+| `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
 | `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
@@ -1051,7 +1052,7 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-for core in channel views; do
+for core in channel views input; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
@@ -1060,7 +1061,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
-  test/native-focus.swift build/channel.o build/views.o \
+  test/native-focus.swift build/channel.o build/views.o build/input.o \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -1076,8 +1077,8 @@ and sends `follow` over the bridge. A full notification pipe delays records with
 reordering them, retried on the Swift timer, and records still waiting when
 Emacs replaces the pipe go to the new one; a closed view's records never go.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
-without Ghostty, and they link the core's registry and pipe without the Emacs
-bindings.
+without Ghostty, and they link the core's registry, input handoff and pipe
+without the Emacs bindings.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
@@ -1120,8 +1121,23 @@ that hiding keeps a session and its size and placing it in another frame keeps t
 same platform view; and that closing destroys a view once, after which neither Lisp
 calls nor a late record from the platform reach it.
 
+`ctest -R input-core` runs `test/portal-input-tests.c`, which presses keys as a
+user would through the fake platform. The fake routes each press as the macOS
+platform does, holding what the core says to hold and replaying it when the test
+runs its event loop, and plays Emacs's side with `portal--input` actions. It
+checks a handoff from the prefix to the command; that keys typed before Emacs
+acknowledges are held and replayed in order; that only the first key of a
+sequence, when it repeats the trigger, goes to the app, and a key's repeats
+send no records; C-g, Command-Escape and Emacs's unfocus; that a click abandons
+a handoff before it selects the pane, while Emacs's own focus changes do not;
+that serials of finished or abandoned handoffs, or another view's, do nothing;
+that hiding or closing ends a handoff; passthrough and when it ends; binding
+profiles, with Shift and punctuation; and that an invalid or colliding prefix or
+binding leaves the previous configuration working.
+
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
-the 19 functions and their arities, and the conversion of options, edges, and strings,
+the 19 functions and their arities, the input functions' conversion of chords and
+binding JSON, and the conversion of options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,
 raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
 without calling the backend. A signal raised while converting an argument reaches

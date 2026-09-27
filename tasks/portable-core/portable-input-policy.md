@@ -90,24 +90,79 @@ timeouts or watchdogs.
 
 ## Acceptance criteria and verification
 
-- [ ] `portal.h` no longer declares the removed operations. Its input part is
+- [x] `portal.h` no longer declares the removed operations. Its input part is
   the primitives and calls into the core above.
-- [ ] C tests with a fake platform exercise the real transitions. They cover
+- [x] C tests with a fake platform exercise the real transitions. They cover
   delayed acknowledgement, rapid tails, repeated prefixes, literal delivery,
   cancellation, command completion, stale serials, passthrough, and hide or
   close during a handoff.
-- [ ] Rebinding stays atomic, and a collision leaves the previous working
+- [x] Rebinding stays atomic, and a collision leaves the previous working
   configuration intact. No shared declaration or Lisp payload uses AppKit
   modifier bit values.
 - [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
   graphical input and terminal suites and the native focus checks verify real
   replay, key-up handling, minibuffer commands, and focus changes for both view
   kinds.
-- [ ] Ordinary Escape and C-g still reach the view while it owns input. C-b
+- [x] Ordinary Escape and C-g still reach the view while it owns input. C-b
   remains the default prefix, Command-Escape returns to Emacs, and no global
   physical shortcut is introduced.
 - [ ] Record verification and mark this task done using the author-tasks skill;
   follow `AGENTS.md` for the implementation worktree and PR.
+
+## Decisions
+
+- **States.** Each view's handoff is `idle`, `awaiting` acknowledgement,
+  `reading` the key sequence, or `executing` the command. A `first` flag inside
+  `reading` marks the key that may repeat the trigger. `focused` (as the
+  platform reports) and `passthrough` are separate flags. The input state lives
+  with each view in the registry (`struct portal_input` in
+  `native/Core/input.h`).
+- **Serials** come from one counter and are never reused. An action with a
+  serial applies only while that handoff is still going. That covers
+  cancellation, hide, close and newer handoffs without bumping serials on
+  cancel.
+- **Held events belong to the platform.** A `PORTAL_KEY_HOLD` answer makes the
+  press the trigger and holds every key event after it, until the core calls
+  `portal_view_replay`. Replaying keeps the trigger. Discarding drops
+  everything, and ends the platform's capture of the window's keys.
+- **Literal delivery is its own primitive**, `portal_view_literal`, because
+  replay posts events through normal routing, while a literal goes straight
+  to the view's responder after the core focuses it.
+- **Focus reports.** The platform reports every change in whether a view has
+  the keyboard, and reports a change it makes for the core before returning.
+  It also reports the user's gestures as they happen: a click about to focus
+  the view, and Command-Escape. A report that arrives while no Lisp function
+  or core call is running is the user's doing and abandons the handoff with an
+  `escape` record. Losing the keyboard always ends passthrough. `emacs.c`
+  marks every Lisp call as Emacs's request, so `C-b s-f` (find) or a command
+  focusing a view never abandons its own handoff.
+- **One extra query**, `portal_input_owner`, lets the Swift toolbar's ownership
+  dot and Command-F read the core's state until
+  [the toolbar task](portable-toolbar-state.md) moves toolbar state into the
+  core.
+- `portal--terminal-bindings` still takes JSON. `emacs.c` parses it with
+  `json-parse-string`, and each entry's `flags` became `modifiers`, using
+  Portal's values (Shift 1, Control 2, Meta 4, Super 8).
+
+## Verification (2026-09-28)
+
+- `./build.sh` and `ctest --test-dir build --output-on-failure`: 16 of 16
+  pass, including the new `input-core` (`test/portal-input-tests.c`) and the
+  updated `module`, `input` and `terminal-bindings` tests. Mutating eight
+  input rules in `input.c` (for example, the request guard, Shift
+  normalization, the first-key literal, the serial check, repeat
+  suppression, passthrough ending and the prefix collision) each fails
+  `input-core`.
+- The standalone checks `build/check-focus` and `build/check-toolbar` pass.
+  They cover guest Escape and C-g, Command-Escape, hiding, click-to-select,
+  link handoff, the owner dot, Command-F in passthrough, and Open in Emacs
+  ending a pending prefix (records `prefix`, `escape`, `bridge`).
+- Graphical suites: **not yet verified.** They ran while the screen was
+  locked (`loginwindow` in front), so no key or click injection could reach
+  Emacs: 25 of 52 passed and 27 failed. Unchanged `main` fails the same 27
+  under the same conditions, and every test that injects nothing passes. Rerun
+  them with Emacs in front (README, Verification) before marking this task
+  done.
 
 ## Blocked by
 
