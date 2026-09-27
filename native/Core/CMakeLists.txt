@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.29)
 
-# Portal's C Emacs bindings, tested against a fake backend. This needs only a
-# C compiler and Emacs: no Swift, Apple frameworks, Bun or Ghostty. The
-# top-level project includes it, and it can be configured alone to run just
-# these tests. SwiftPM compiles the same sources into the production module.
+# Portal's C core, tested against a fake backend: the Emacs bindings and the
+# notification pipe. This needs only a C compiler and Emacs: no Swift, Apple
+# frameworks, Bun or Ghostty. The top-level project includes it, and it can be
+# configured alone to run just these tests. SwiftPM compiles the same sources
+# into the production module.
 project(portal-core LANGUAGES C)
 set(portal_root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 
@@ -27,12 +28,26 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    # The real bindings with test/portal-fake-backend.c in place of native/Backend.swift.
-    add_library(portal-test-module MODULE emacs.c "${portal_root}/test/portal-fake-backend.c")
-    target_include_directories(portal-test-module PRIVATE include "${EMACS_INCLUDE}")
-    target_compile_options(portal-test-module PRIVATE -Wall -Wextra -Werror)
-    set_target_properties(portal-test-module PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF PREFIX "")
+    set(fake_backend "${portal_root}/test/portal-fake-backend.c")
+    # The core's pipe and the fake backend compile without emacs-module.h, so
+    # nothing the platform calls can reach Emacs.
+    add_library(portal-test-core OBJECT channel.c "${fake_backend}")
+    target_include_directories(portal-test-core PUBLIC include . "${portal_root}/test")
+    set_target_properties(portal-test-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # The real bindings with the fake backend in place of native/Backend.swift.
+    add_library(portal-test-module MODULE emacs.c)
+    target_include_directories(portal-test-module PRIVATE "${EMACS_INCLUDE}")
+    target_link_libraries(portal-test-module PRIVATE portal-test-core)
+    add_executable(portal-channel-tests "${portal_root}/test/portal-channel-tests.c")
+    target_link_libraries(portal-channel-tests PRIVATE portal-test-core)
+    foreach(target portal-test-core portal-test-module portal-channel-tests)
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+        set_target_properties(${target} PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    endforeach()
+    set_target_properties(portal-test-module PROPERTIES PREFIX "")
+    add_test(NAME channel COMMAND portal-channel-tests)
+    set_tests_properties(channel PROPERTIES TIMEOUT 30)
     add_test(NAME module
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
             "${EMACS}" --batch -Q --module-assertions

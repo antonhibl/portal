@@ -172,7 +172,7 @@ final class NativeHost: NSObject {
             if !host.ownsFocus(view), let input = surface.input {
                 // A click abandons a prefix Emacs is still reading.
                 if input.ownership == .pending { input.escape() }
-                Views.channel.notify("select", target: input.target)
+                Core.notify("select", target: input.target)
             }
             break
         }

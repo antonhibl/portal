@@ -103,7 +103,7 @@ final class NativeInput: NativeInputHandler {
     }
 
     private func notify(_ kind: String, key: Int = 0) -> Bool {
-        Views.channel.notify(kind, target: target, fields: [String(serial), String(key)])
+        Core.notify(kind, target: target, fields: [String(serial), String(key)])
     }
 
     enum Ownership { case emacs, view, pending, passthrough }

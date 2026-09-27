@@ -2,13 +2,16 @@
 /* Portal's Emacs module: registers the Lisp interface of docs/adr/0002,
    converts arguments and results, and signals errors.  Each Lisp function
    copies its arguments, calls one operation from portal.h, and converts and
-   frees what the operation returns.  No Emacs environment or value outlives
-   the module call that received it. */
+   frees what the operation returns; portal--channel connects the core's
+   pipe (channel.h) instead.  No Emacs environment or value outlives the
+   module call that received it. */
 #include <emacs-module.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "channel.h"
 #include "portal.h"
 
 int plugin_is_GPL_compatible;
@@ -328,16 +331,19 @@ LISP_FUNCTION(Fplace)
     return result;
 }
 
+/* open_channel returns a new descriptor, which the core owns once connected. */
 LISP_FUNCTION(Fchannel)
 {
-    portal_text error = {0};
     int fd = env->is_not_nil(env, args[0]) ? env->open_channel(env, args[0]) : -1;
     if (!returning(env))
         return NULL;
-    bool succeeded = portal_channel(fd, &error);
-    if (!succeeded && fd >= 0)
-        close(fd);
-    return done(env, succeeded, &error);
+    if (portal_channel_connect(fd))
+        return symbol(env, "t");
+    const char *reason = strerror(errno);
+    close(fd);
+    signal_error(env, "Portal cannot use the record pipe: %s",
+                 env->make_string(env, reason, (ptrdiff_t) strlen(reason)));
+    return NULL;
 }
 
 LISP_FUNCTION(Fterminal_theme)

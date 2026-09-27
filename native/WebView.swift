@@ -216,11 +216,11 @@ private final class WebBridge: NSObject, WKScriptMessageHandler {
         signal()
     }
 
-    /// Announce the waiting messages with one record. The channel delivers it
-    /// in order with other records, waiting while the pipe is full.
+    /// Announce the waiting messages with one record. The core delivers it in
+    /// order with other records, waiting while the pipe is full.
     private func signal() {
         guard !notified, !closed, !messages.isEmpty else { return }
-        notified = Views.channel.notify("bridge", target: target)
+        notified = Core.notify("bridge", target: target)
     }
 
     /// Return every queued message as a JSON array, and allow the next record.

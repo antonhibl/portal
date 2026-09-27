@@ -56,16 +56,22 @@ page from later becoming Emacs commands.
 ## The notification pipe
 
 Every notification from the native module reaches Emacs on one pipe.
-`portal-view.el` owns it: it creates the pipe process with the first view and
-passes it to `portal--channel`. In Swift, the view registry owns the writing end
-(`Views.channel`).
+`portal-view.el` owns its reading end: it creates the pipe process with the
+first view and passes it to `portal--channel`. The module's C core owns the
+writing end (`native/Core/channel.c`). Platform code, such as Swift's input and
+bridge, sends a record by calling the core's `portal_notify`.
 
-Each record is one ASCII line, `TYPE TARGET FIELD...`, separated by spaces and at
-most `PIPE_BUF` bytes long, so every write is atomic. Records reach Emacs in the
-order they are sent. While the pipe is full, a record waits in Swift, with those
-sent after it, and is retried, so a busy Emacs delays records but never loses
-or reorders them. Input sends these records, each with the handoff serial and a
-key field:
+Each record is one line, `TYPE TARGET FIELD...`, of printable ASCII words
+separated by spaces and at most `PIPE_BUF` bytes long, so every write is
+atomic. The core refuses any other record, and returns whether it accepted
+one. Records reach Emacs in the order they are sent. While the pipe is full, a
+record waits in the core, with those sent after it, and the core retries it
+on a timer the platform provides. A busy Emacs thus delays records but never
+loses or reorders them. While no pipe is connected, or after Emacs closes its
+end, records wait for Emacs to connect one, and records still waiting then go
+to the new pipe first. The pipe never raises SIGPIPE, so a closed end cannot
+end Emacs, and child processes do not inherit it. Input sends these records,
+each with the handoff serial and a key field:
 
 | Record | Sent when |
 | --- | --- |
@@ -100,7 +106,8 @@ before Portal receives an event.
 
 Verified with [registration tests](../test/portal-terminal-bindings-tests.el),
 batch [record dispatch tests](../test/portal-view-tests.el) (split, batched and
-unknown-target records),
+unknown-target records), [pipe tests](../test/portal-channel-tests.c) (a full
+pipe, reconnects, malformed records and a closed reader),
 six quick-terminal behavior tests, and
 [18 graphical terminal tests](../test/portal-terminal-tests.el), including real
 AppKit input, live rebinding/unbinding, quick-only scope, hidden-session updates,

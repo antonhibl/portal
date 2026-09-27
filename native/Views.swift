@@ -63,8 +63,6 @@ enum Views {
         "terminal": TerminalSession.self, "web": WebSession.self]
     private static var views: [String: any PortalView] = [:]
     private static var nextID = 0
-    /// The pipe carrying every view's records to Emacs; see `portal--channel`.
-    static let channel = NativeEventChannel()
     /// Hidden views live in this offscreen window, which is never shown, so
     /// their sessions keep running whatever happens to Emacs frames.
     private static let parkingWindow: NSWindow = {
