@@ -63,7 +63,9 @@ handoff's serial, and does nothing unless that handoff is still going, so a late
 acknowledgement or completion never affects another handoff or view. Hiding or
 closing a view, or Emacs's `unfocus`, ends its handoff silently. The user ending
 one, with Command-Escape or a click in the view, sends an `escape` record
-first. A focus change that Emacs's own call makes, such as `C-b s-f` opening the
+first. So does a hosted app handing Emacs a local link, or its toolbar's Open
+in Emacs: the web core (`native/Core/web.c`) calls `portal_input_escape`
+before it sends the `bridge` record. A focus change that Emacs's own call makes, such as `C-b s-f` opening the
 find field, never ends a handoff. Command-Escape stays in the platform, so it
 works immediately, without a round trip through Lisp or JavaScript.
 
