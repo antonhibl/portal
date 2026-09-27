@@ -14,12 +14,10 @@ protocol NativeInputHandler: AnyObject {
 protocol NativeSurface: NativeInputHandler {
     var nativeView: NSView { get }
     var input: NativeInput? { get }
-    var toolbarModel: ToolbarModel? { get }
 }
 
 extension NativeSurface {
     var input: NativeInput? { nil }
-    var toolbarModel: ToolbarModel? { nil }
 }
 
 @MainActor
@@ -80,18 +78,26 @@ final class NativeHost: NSObject {
 
     @objc private func windowUpdated() { refreshOwnership() }
 
-    /// Tell the core which views gained or lost the keyboard, then show it.
+    /// Tell the core which views gained or lost the keyboard; it redraws
+    /// their toolbars.
     func refreshOwnership() {
         for surface in surfaces.values.compactMap(\.value) { surface.input?.observe() }
-        for container in containers.values { container.toolbar?.refresh() }
     }
 
-    static func refreshToolbars(layout: Bool = false) {
-        for host in frames.objectEnumerator()?.allObjects as? [NativeHost] ?? [] {
-            for container in host.containers.values {
-                if layout { container.updateToolbar() } else { container.toolbar?.refresh() }
-            }
-        }
+    /// Show TOOLBAR above SURFACE, if it is in this frame.
+    func draw(_ toolbar: ToolbarState, for surface: any NativeSurface) {
+        containers[ObjectIdentifier(surface)]?.apply(toolbar)
+    }
+
+    /// Give SURFACE's find field the keyboard, and tell the core.
+    func focusFind(_ surface: any NativeSurface) {
+        containers[ObjectIdentifier(surface)]?.toolbar?.focusSearch()
+        refreshOwnership()
+    }
+
+    /// Whether SURFACE's toolbar shows its find field.
+    private func finding(_ surface: any NativeSurface) -> Bool {
+        containers[ObjectIdentifier(surface)]?.state.finding == true
     }
 
     func ownsFocus(_ surface: NSView) -> Bool {
@@ -105,19 +111,16 @@ final class NativeHost: NSObject {
         refreshOwnership()
     }
 
-    /// Show SURFACE at RECTANGLE, in Emacs's frame pixels from the top left.
+    /// Show SURFACE at RECTANGLE, in Emacs's frame pixels from the top left,
+    /// below TOOLBAR, which a surface new to this frame starts with.
     /// Callers check that the frame still has its `view` first.
-    func place(_ surface: any NativeSurface, rectangle: CGRect) {
+    func place(_ surface: any NativeSurface, rectangle: CGRect, toolbar: ToolbarState) {
         guard let view else { return }
         _ = surface.input // Register shared input before the first focus or key event.
         let key = ObjectIdentifier(surface)
-        let child: NSView
-        if let model = surface.toolbarModel {
-            model.input = surface.input
-            let container = containers[key] ?? NativeContainer(content: surface.nativeView, model: model)
-            containers[key] = container
-            child = container
-        } else { child = surface.nativeView }
+        let child = containers[key] ?? NativeContainer(content: surface.nativeView,
+                                                       target: surface.input?.target ?? "", state: toolbar)
+        containers[key] = child
         var frame = rectangle
         frame.origin.x += view.bounds.minX
         frame.origin.y = view.isFlipped
@@ -198,7 +201,7 @@ final class NativeHost: NSObject {
         }
         if event.type == .keyDown { pressedKeys[event.keyCode] = owner }
         // Search fields belong to the surface for ownership, but keep AppKit text editing.
-        let finding = host?.focusedSurface?.toolbarModel?.finding == true
+        let finding = host?.focusedSurface.map { host?.finding($0) == true } ?? false
         let inContent = host?.focusedSurface.map { surface in
             guard let responder = window.firstResponder as? NSView else { return false }
             return responder === surface.nativeView || responder.isDescendant(of: surface.nativeView)

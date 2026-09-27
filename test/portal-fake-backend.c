@@ -3,8 +3,8 @@
    operations of native/Core/include/portal.h, so the real C core runs without
    AppKit, WebKit or Ghostty.  A view describes what its operations received:
    its options, the "handle" that tells views apart, the "frame" title and
-   "size" it was last attached with, whether it is "attached", and the
-   global settings, as "fake".  Views never move: attaching records where.
+   "size" it was last attached with, and whether it is "attached".  Views
+   never move: attaching records where.
 
    A view created with the option :description describes itself with exactly
    that text instead, for tests of how the core reads descriptions.
@@ -15,7 +15,8 @@
    each Enter, and its "theme" the last one applied, false for the default.
    The engine's themes are those in `themes' below, listed out of order.
 
-   A web view's primitives are described below, at portal_web_load.
+   A web view's primitives are described below, at portal_web_load, and
+   toolbars' at portal_toolbar_draw.
 
    Failures on demand: creating a view with the option :fail fails, with that
    option's string as the message; attaching to a frame whose title starts
@@ -73,9 +74,11 @@ struct portal_view {
     bool holding;          /* It holds the presses in HELD, after TRIGGER. */
     struct press held[MAX_KEYS];
     size_t held_count;
+    portal_toolbar toolbar; /* The last drawn, whose query is QUERY. */
+    portal_text query;
+    size_t draws;
 };
 
-static struct portal_view settings;
 static struct portal_fake_calls calls;
 static bool refusing; /* See portal_fake_refuse. */
 static uint64_t timers[MAX_TIMERS]; /* Tokens of the timers not yet fired, oldest first. */
@@ -306,6 +309,7 @@ bool portal_view_destroy(portal_view *view, portal_text *error)
         free(view->properties[i].name.data);
     }
     free(view->target);
+    free(view->query.data);
     *view = (struct portal_view) {.destroyed = true};
     return true;
 }
@@ -373,9 +377,7 @@ bool portal_view_describe(portal_view *view, portal_text *state, portal_text *er
     struct json json = {0};
     put(&json, "{", 1);
     put_properties(&json, view);
-    put(&json, ",\"fake\":{", 9);
-    put_properties(&json, &settings);
-    put(&json, "}}", 2);
+    put(&json, "}", 1);
     *state = (portal_text) {json.data, json.length};
     return true;
 }
@@ -557,32 +559,115 @@ bool portal_terminal_set_font_size(portal_view *terminal, double points, portal_
     return true;
 }
 
-bool portal_toolbar(bool enabled, portal_text *error)
+/* Toolbars.  A view keeps the last toolbar the core drew, and describes
+   whether it is "visible" as "strip", its background color as
+   "strip-background", in components from 0 to 1000, or false for the
+   default, and its page's "zoom".  Finds and calls wait, oldest first, for
+   a test to take and answer them. */
+
+static struct portal_fake_request requests[MAX_KEYS];
+static size_t request_count;
+
+static void request(struct portal_view *web, bool find, const char *format, ...)
 {
-    (void) error;
-    set_flag(&settings, "toolbar", enabled);
-    return true;
+    if (request_count == MAX_KEYS)
+        abort();
+    struct portal_fake_request *entry = &requests[request_count++];
+    *entry = (struct portal_fake_request) {.find = find};
+    snprintf(entry->target, sizeof entry->target, "%s", web->target);
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(entry->text, sizeof entry->text, format, arguments);
+    va_end(arguments);
 }
 
-bool portal_toolbar_theme(portal_string json, portal_text *error)
+bool portal_fake_request(struct portal_fake_request *request)
 {
-    if (!json.length || json.data[0] != '{')
-        return fail(error, "Toolbar theme must be a JSON object");
-    set_string(&settings, "toolbar-theme", json.data, json.length);
-    return true;
-}
-
-bool portal_toolbar_action(portal_view *view, portal_string action, portal_text *state,
-                           portal_text *error)
-{
-    if (!usable(view, -1, error))
+    if (!request_count)
         return false;
-    if (view->kind != PORTAL_WEB)
-        return fail(error, "No toolbar controls for this native view");
-    char json[256];
-    int length = snprintf(json, sizeof json, "{\"action\":\"%.*s\"}", (int) action.length,
-                          action.data);
-    *state = copy(json, length < (int) sizeof json ? (size_t) length : sizeof json - 1);
+    *request = requests[0];
+    memmove(requests, requests + 1, --request_count * sizeof *requests);
+    return true;
+}
+
+bool portal_toolbar_draw(portal_view *view, const portal_toolbar *state, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    free(view->query.data);
+    view->query = copy(state->query.data, state->query.length);
+    view->toolbar = *state;
+    view->toolbar.query = (portal_string) {view->query.data, view->query.length};
+    view->draws++;
+    set_flag(view, "strip", state->visible);
+    portal_color background = state->colors.background;
+    if (background.set)
+        set_integers(view, "strip-background",
+                     (int64_t[]) {(int64_t) (background.red * 1000 + 0.5),
+                                  (int64_t) (background.green * 1000 + 0.5),
+                                  (int64_t) (background.blue * 1000 + 0.5)},
+                     3);
+    else
+        set_flag(view, "strip-background", false);
+    return true;
+}
+
+const portal_toolbar *portal_fake_toolbar(const char *target, size_t *draws)
+{
+    for (size_t i = 0; i < view_count; i++)
+        if (!all[i]->destroyed && !strcmp(all[i]->target, target)) {
+            *draws = all[i]->draws;
+            return all[i]->draws ? &all[i]->toolbar : NULL;
+        }
+    *draws = 0;
+    return NULL;
+}
+
+static bool attached(const struct portal_view *view);
+
+/* The find field is part of the view, so the view gets the keyboard. */
+bool portal_toolbar_focus(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    if (!view->toolbar.finding)
+        return fail(error, "The fake has no find field to focus");
+    calls.fields++;
+    if (attached(view))
+        set_focus(view);
+    return true;
+}
+
+bool portal_web_zoom(portal_view *web, double scale, portal_text *error)
+{
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
+        return false;
+    struct property *entry = property(web, "zoom", 4);
+    entry->kind = REAL;
+    entry->real = scale;
+    return true;
+}
+
+bool portal_web_find(portal_view *web, portal_string query, bool backwards, uint64_t token,
+                     portal_text *error)
+{
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
+        return false;
+    request(web, true, "%s%.*s", backwards ? "back " : "", (int) query.length, query.data);
+    requests[request_count - 1].token = token;
+    return true;
+}
+
+bool portal_web_call(portal_view *web, portal_script script, portal_string function,
+                     portal_string argument, uint64_t token, portal_text *error)
+{
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
+        return false;
+    if (script != PORTAL_SCRIPT_CONTENTS)
+        return fail(error, "The fake has no such script");
+    request(web, false, "%.*s(%.*s)", (int) function.length, function.data,
+            (int) argument.length, argument.data);
+    requests[request_count - 1].token = token;
     return true;
 }
 

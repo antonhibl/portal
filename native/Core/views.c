@@ -3,7 +3,8 @@
    every kind shares.  A view is registered here from a successful create
    until close, and the platform view it holds is never used outside that
    span.  The platform renders views; Lisp chooses where (portal-view.el).
-   Each view keeps its input here too, which input.c manages.
+   Each view keeps its input here too, which input.c manages, and what
+   web.c and toolbar.c keep for it.
 
    The registry is a list in creation order.  Emacs has few views at once,
    so finding a target walks the list. */
@@ -15,6 +16,7 @@
 #include "channel.h"
 #include "core.h"
 #include "terminals.h"
+#include "toolbar.h"
 #include "views.h"
 #include "web.h"
 
@@ -23,6 +25,7 @@ struct view {
     portal_view *native;
     portal_kind kind;
     struct portal_web_state *web; /* A web view's pages and bridge (web.c). */
+    struct portal_toolbar_state *toolbar; /* Its toolbar (toolbar.c). */
     uint64_t id;
     bool attached;
     portal_edges edges; /* Where it is attached, while ATTACHED. */
@@ -59,6 +62,18 @@ struct portal_input *portal_views_input(portal_string target)
 {
     struct view *view = find(target, PORTAL_ANY_KIND, NULL);
     return view ? &view->input : NULL;
+}
+
+struct portal_toolbar_state *portal_views_toolbar(portal_string target)
+{
+    struct view *view = find(target, PORTAL_ANY_KIND, NULL);
+    return view ? view->toolbar : NULL;
+}
+
+void portal_views_each_toolbar(void (*visit)(struct portal_toolbar_state *toolbar))
+{
+    for (struct view *view = views.first; view; view = view->next)
+        visit(view->toolbar);
 }
 
 portal_view *portal_views_find_web(portal_string target, struct portal_web_state **web,
@@ -99,7 +114,17 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
         portal_web_state_free(web);
         return fail_with(error, "Portal is out of memory");
     }
-    *view = (struct view) {.kind = kind, .web = web, .id = id, .length = length};
+    /* This checks the options that choose the toolbar. */
+    struct portal_toolbar_state *toolbar =
+        portal_toolbar_state_new(kind, options, count, web && portal_web_state_hosted(web), error);
+    if (!toolbar) {
+        free(view);
+        free(copy);
+        portal_web_state_free(web);
+        return false;
+    }
+    *view = (struct view) {.kind = kind, .web = web, .toolbar = toolbar, .id = id,
+                           .length = length};
     memcpy(view->target, name, length + 1);
     memcpy(copy, name, length + 1);
     if (!portal_view_create(kind, (portal_string) {view->target, length}, options, count,
@@ -107,6 +132,7 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
         free(view);
         free(copy);
         portal_web_state_free(web);
+        portal_toolbar_state_free(toolbar);
         return false;
     }
     portal_input_open(&view->input, view->native, (portal_string) {view->target, length},
@@ -116,6 +142,7 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
     else
         views.first = view;
     views.last = view;
+    portal_toolbar_open(toolbar, view->native, (portal_string) {view->target, length});
     *target = (portal_text) {copy, length};
     return true;
 }
@@ -179,6 +206,7 @@ bool portal_views_close(portal_string target, portal_text *error)
         return false;
     }
     portal_web_state_free(view->web);
+    portal_toolbar_state_free(view->toolbar);
     free(view);
     return true;
 }

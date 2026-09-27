@@ -5,7 +5,7 @@
 ;; linked with test/portal-fake-backend.c instead of the macOS backend.  The
 ;; module file is named by PORTAL_TEST_MODULE; run with --module-assertions.
 ;; `portal--inspect' reports the core's state of a view and what the fake
-;; received, including its global settings as `:fake'.
+;; received, including the toolbar the core last drew for it.
 ;; test/portal-views-tests.c covers the core's registry in detail.
 
 (require 'ert)
@@ -32,12 +32,6 @@
          (id (plist-get (portal--inspect target) :id)))
     (portal--close target)
     (1+ id)))
-
-(defun portal-module-tests--settings ()
-  "Return the fake backend's global settings."
-  (let ((target (portal--open "web" nil)))
-    (prog1 (plist-get (portal--inspect target) :fake)
-      (portal--close target))))
 
 (defmacro portal-module-tests--untouched (&rest body)
   "Run BODY and check that it opened no view in the backend."
@@ -203,14 +197,26 @@
     (should (equal (should-error (portal--input-prefix "C" 2))
                    '(error "Portal prefix conflicts with a native binding"))))
   (should (eq (portal--terminal-bindings "{\"regular\":[],\"quick\":[]}") t))
-  (should (eq (portal--toolbar nil) nil))
-  (should (eq (plist-get (portal-module-tests--settings) :toolbar) nil))
-  (should (eq (portal--toolbar 'yes) t))
-  (should (eq (plist-get (portal-module-tests--settings) :toolbar) t))
-  (should (eq (portal--toolbar-theme "{\"background\":[0,0,0]}") t))
+  (let ((page (portal--open "web" '(:toolbar "navigation"))))
+    (should (eq (portal--toolbar nil) nil))
+    (should (eq (plist-get (portal--inspect page) :strip) nil))
+    (should (eq (portal--toolbar 'yes) t))
+    (should (eq (plist-get (portal--inspect page) :strip) t))
+    ;; Colors are arrays of numbers from 0 to 1; any other shape, like a
+    ;; missing color, leaves the platform's default.
+    (should (eq (portal--toolbar-theme "{\"background\":[0,0.5,1],\"other\":[1,1,1]}") t))
+    (should (equal (plist-get (portal--inspect page) :strip-background) '(0 500 1000)))
+    (dolist (color '("[0,0.5]" "[0,0.5,1.5]" "[0,\"0\",1]" "{\"red\":1}" "null"))
+      (should (eq (portal--toolbar-theme (format "{\"background\":%s}" color)) t))
+      (should-not (plist-get (portal--inspect page) :strip-background)))
+    (should (eq (portal--toolbar-theme "{}") t))
+    (should (equal (portal--toolbar-action page "increase")
+                   (concat "{\"back\":false,\"find\":false,\"forward\":false,\"headings\":false,"
+                           "\"match\":0,\"matches\":0,\"query\":\"\",\"toc\":false,\"value\":110}")))
+    (should (equal (plist-get (portal--inspect page) :zoom) 1.1))
+    (portal--close page))
   ;; The fake app echoes what Emacs sends it, from the page Emacs loaded.
   (let ((web (portal--open "web" '(:hosted t :echo t))))
-    (should (equal (portal--toolbar-action web "zoom-in") "{\"action\":\"zoom-in\"}"))
     (should (eq (portal--web-load web "http://127.0.0.1:1/app") t))
     (should (equal (portal--web-receive web) "[]"))
     (should (eq (portal--web-send web "{\"a\":1}") t))
@@ -255,9 +261,14 @@
                     ((portal--input-prefix "c" 262144) . "Expected one modified ASCII prefix")
                     ((portal--input-prefix "c" -1) . "Expected one modified ASCII prefix")
                     ((portal--input ,web "unknown") . "Unknown Portal input action: unknown")
-                    ((portal--toolbar-theme "") . "Toolbar theme must be a JSON object")
-                    ((portal--toolbar-action ,terminal "zoom-in")
+                    ((portal--open "web" (:toolbar t))
+                     . "A web view's :toolbar must be \"navigation\", \"contents\", \"markdown\" or \"none\"")
+                    ((portal--toolbar-theme "[]") . "Toolbar theme must be a JSON object")
+                    ((portal--toolbar-theme "\"background\"") . "Toolbar theme must be a JSON object")
+                    ((portal--toolbar-action ,web "increase")
                      . "No toolbar controls for this native view")
+                    ((portal--toolbar-action ,terminal "zoom-in")
+                     . "Unknown terminal toolbar action: zoom-in")
                     ((portal--toolbar-action "web:0" "zoom-in") . "No Portal view web:0")))
       (should (equal (should-error (apply (caar case) (cdar case))) (list 'error (cdr case)))))
     ;; The terminal before the one that rejected the theme has it.
@@ -278,6 +289,9 @@
                    '(wrong-type-argument integerp a)))
     (should (equal (should-error (portal--input 1 'action "serial"))
                    '(wrong-type-argument stringp 1)))
+    ;; Emacs parses a theme's JSON, and its signal is the parser's.
+    (should (eq (car (should-error (portal--toolbar-theme ""))) 'json-end-of-file))
+    (should (eq (car (should-error (portal--toolbar-theme 'json))) 'wrong-type-argument))
     ;; Signals leave no state behind: the next calls succeed.
     (should (eq (portal--place target [0 0 1 1] "title") t))
     (should (eq (condition-case nil (portal--hide 'target)

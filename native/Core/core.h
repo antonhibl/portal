@@ -36,4 +36,44 @@ static inline bool fail_with(portal_text *error, const char *message)
     return fail(error, message, (portal_string) {"", 0});
 }
 
+/* JSON the core writes: its own messages and results. */
+struct json {
+    char *data; /* NUL-terminated. */
+    size_t length;
+    bool failed; /* Out of memory. */
+};
+
+static inline void put(struct json *json, const char *data, size_t length)
+{
+    char *grown = json->failed ? NULL : realloc(json->data, json->length + length + 1);
+    if (!grown) {
+        json->failed = true;
+        return;
+    }
+    json->data = grown;
+    memcpy(json->data + json->length, data, length);
+    json->length += length;
+    json->data[json->length] = '\0';
+}
+
+/* STRING, which is UTF-8, as a JSON string. */
+static inline void put_string(struct json *json, portal_string string)
+{
+    static const char hex[] = "0123456789abcdef";
+    put(json, "\"", 1);
+    for (size_t i = 0; i < string.length; i++) {
+        unsigned char c = (unsigned char) string.data[i];
+        if (c == '"' || c == '\\') {
+            char escaped[] = {'\\', (char) c};
+            put(json, escaped, 2);
+        } else if (c < 0x20) {
+            char escaped[] = {'\\', 'u', '0', '0', hex[c >> 4], hex[c & 15]};
+            put(json, escaped, sizeof escaped);
+        } else {
+            put(json, (const char *) &c, 1);
+        }
+    }
+    put(json, "\"", 1);
+}
+
 #endif

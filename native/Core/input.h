@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Input handoff, as the rest of the core uses it.  input.c implements these
-   and, for the platform, portal_input_key, portal_input_focus and
-   portal_input_owner from portal.h.  Only the core, tests and the standalone
-   checks include this header.
+   and, for the platform, portal_input_key and portal_input_focus from
+   portal.h.  Only the core, tests and the standalone checks include this
+   header.
 
    A view's app gets the keys typed in it, except the prefix and, in a
    terminal, the first chord of a native binding.  Either starts a handoff:
@@ -81,6 +81,10 @@ bool portal_input_perform(portal_string target, portal_string action, int64_t se
    record first, so Emacs stops reading its key sequence before any record
    the caller sends next.  A TARGET that names no open view does nothing. */
 void portal_input_escape(portal_string target);
+
+/* Who has TARGET's keyboard, which its toolbar shows; Emacs for a TARGET
+   that names no open view. */
+portal_owner portal_input_owner(portal_string target);
 
 /* Emacs calls the module, from true until false; calls nest.  A focus change
    the platform reports meanwhile is Emacs's doing, not the user's, so it

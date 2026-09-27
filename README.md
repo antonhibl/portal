@@ -97,9 +97,10 @@ follow Emacs faces and update after theme changes.
 
 `portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`,
 `portal-find`, `portal-web-back` (`l`), and `portal-web-forward` (`r`) use the
-same native state as the buttons. Terminal equivalents are
+same state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
-`portal-terminal-text-size-reset`. Command-F runs `portal-find` in a web view
+`portal-terminal-text-size-reset`, and in a terminal Command-Plus, Command-Minus
+and Command-0 do the same, with or without a toolbar. Command-F runs `portal-find` in a web view
 with a toolbar, except in passthrough; in Portal's own web buffers, `s-f` also
 runs it while Emacs owns the keyboard. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
@@ -884,10 +885,11 @@ the app sends, in order. Other web views have no bridge.
 | `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
 | `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
 | `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, and reading text |
-| `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, and the bridge's queue, senders and records |
+| `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, whether it can go back or forward, and the bridge's queue, senders and records |
+| `native/Core/toolbar.c` | Toolbars: each view's buttons and which work, zoom and text size with their limits, the table of contents, the find field and its searches, visibility and colors, and what a click does |
 | `native/Core/scripts/` | Browser scripts every platform's web views share, embedded in the core: local links, and the toolbar's contents and find count |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
-| `native/Core/include/portal.h` | The platform interface: the view, input, terminal and web primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
+| `native/Core/include/portal.h` | The platform interface: the primitives a platform implements ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record or reporting what a page did, the shared scripts' glue, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
@@ -895,9 +897,9 @@ the app sends, in order. Other web views have no bridge.
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
 | `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions, the terminal primitives, the theme catalog, and terminal input |
-| `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
-| `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
-| `native/WebToolbar.swift` | Web zoom, find and navigation, running the shared contents script in an isolated world |
+| `portal-toolbar.el` | Toolbar option, face colors, and commands reading the core's toolbar state |
+| `native/Toolbar.swift` | The AppKit strip the core's state draws: buttons, ownership dot, find field, layout and colors, and the view container |
+| `native/WebToolbar.swift` | The WebKit side of the toolbar's primitives: the shared contents script in an isolated world, calls of its functions, and find |
 | `native/Package.swift` | One native library and pinned Ghostty dependency |
 
 These are ordinary source boundaries within one native module. A small
@@ -912,18 +914,35 @@ terminal, and closing a terminal does not remove web views.
 
 The C bindings register every Lisp function and convert its arguments and results.
 Lifecycle functions call the core's view registry, input functions its input handoff,
-terminal functions its terminal rules, and web functions its web rules. The others
-look up their target's view in the registry, which checks its kind, and pass it to one
-named operation in `portal.h`, such as `portal_toolbar_action`, which
-`native/Backend.swift` implements with the Swift features. The operations use
-plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
-`malloc` that the bindings free, and an explicit error result that becomes a Lisp
-`error`. Structured results, such as `portal--inspect`'s state, cross as JSON, which
-the bindings parse with `json-parse-string`. The later portable-core tasks move Portal's
-rules from Swift into a C core, reducing `portal.h` to the primitives a platform must
-provide ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)). The bindings check that argument strings are valid UTF-8, since Emacs copies
-a unibyte string's raw bytes unchanged. A later backend can replace any operation
-without changing its Lisp callers.
+terminal functions its terminal rules, web functions its web rules, and toolbar
+functions its toolbars. Portal's rules live in the core, and `portal.h` holds only
+the primitives a platform must provide and the calls it makes into the core
+([ADR 0003](docs/adr/0003-platform-interface-primitives.md)); `native/Backend.swift`
+implements the primitives on macOS. They use plain C types: borrowed UTF-8 arguments
+with explicit lengths, results allocated with `malloc` that the core frees, and an
+explicit error result that becomes a Lisp `error`. Structured results, such as
+`portal--inspect`'s state, cross as JSON, which the bindings parse with
+`json-parse-string`. The bindings check that argument strings are valid UTF-8, since
+Emacs copies a unibyte string's raw bytes unchanged.
+
+A platform implements these 25 primitives:
+
+| Area | Primitives |
+| --- | --- |
+| Views | `portal_view_create`, `portal_view_destroy`, `portal_view_attach`, `portal_view_detach`, `portal_view_describe` |
+| Input | `portal_view_focus`, `portal_view_unfocus`, `portal_view_replay`, `portal_view_literal` |
+| Web views | `portal_web_parse_url`, `portal_web_load`, `portal_web_go`, `portal_web_post`, `portal_web_zoom`, `portal_web_find`, `portal_web_call` |
+| Terminals | `portal_terminal_list_themes`, `portal_terminal_apply_theme`, `portal_terminal_paste_text`, `portal_terminal_press_enter`, `portal_terminal_read_text`, `portal_terminal_set_font_size` |
+| Toolbars | `portal_toolbar_draw`, `portal_toolbar_focus` |
+| Timers | `portal_timer_start` |
+
+It tells the core what happened with `portal_notify` and `portal_timer_fired`; for
+input, `portal_input_key` and `portal_input_focus`; for pages, `portal_web_posted`,
+`portal_web_navigating`, `portal_web_committed`, `portal_web_loaded`,
+`portal_web_history`, `portal_web_failed`, `portal_web_found`,
+`portal_web_returned` and `portal_web_headings`; and for toolbars,
+`portal_toolbar_clicked` and `portal_toolbar_typed`. `portal_web_script` hands it the
+browser scripts every platform shares.
 
 The notification pipe was the first of Portal's rules in the core,
 `native/Core/channel.c`. `portal--channel` hands it the pipe's descriptor, and
@@ -971,8 +990,8 @@ then, with ENTER, presses Enter as a separate key, but only if the paste succeed
 Enter is its own primitive: input replays real native events and needs no synthetic
 key. Reading text on macOS selects all and leaves the selection active. The macOS
 platform keeps the Ghostty types, binding strings such as `select_all` and
-`set_font_size`, the default theme that follows the system appearance, and the
-keyboard's text-size steps and limits, until the toolbar moves into the core.
+`set_font_size`, and the default theme that follows the system appearance. The
+core keeps each terminal's text size, which starts at `PORTAL_TERMINAL_POINTS`.
 
 A terminal describes its `:ready`, `:title`, `:columns`, `:rows` and `:exited`, which
 every platform reports. Other facts are diagnostics for tests: `:layer`, the class of
@@ -990,14 +1009,17 @@ to reload it. It answers every navigation a hosted app's page asks for: allow it
 the app host's origin, open another site in the default browser, or hand a local
 file to Emacs. It owns the bridge's queue and its one outstanding `bridge` record,
 and decides which posted messages to keep from what the platform observed about
-the sender, never from what a page claims. The platform supplies four primitives
+the sender, never from what a page claims. The platform supplies seven primitives
 for web views: parse a URL, returning its own spelling of it, and, on one view, load
-a URL, step through history (back, forward or reload, as an enum), and post a
-message to the page. The core keeps every URL in the platform's spelling, the one
+a URL, step through history (back, forward or reload, as an enum), post a
+message to the page, set its zoom, find text in it, and call a function of a shared
+script with a JSON argument; finds and calls answer later, with the token the core
+gave them. The core keeps every URL in the platform's spelling, the one
 WebKit reports pages in, with spaces percent-encoded and Unicode hosts in punycode,
 so it compares URLs byte for byte and one parser decides when two are the same. It reports what pages do by
 calling the core: a message was posted, a navigation is wanted, a page was
-committed, something failed, or the toolbar asked to edit in Emacs. Those calls name
+committed or finished loading, its history changed, something failed, a find or
+call finished, or the contents script counted headings. Those calls name
 the view by target, so a completion that finishes after the view closed reaches
 nothing. The browser scripts every platform shares, for local links and the
 toolbar's contents, are JavaScript in `native/Core/scripts`, which the core embeds
@@ -1005,6 +1027,27 @@ with `#embed` when it is compiled, so no platform needs files or the app host at
 time. Each is a function the platform starts in an isolated world with its own
 transport; only platform glue names WebKit. Hosted apps see one interface,
 `window.portalBridge`, with `postMessage` and `receive`.
+
+Toolbars live in the core too, in `native/Core/toolbar.c`. It keeps each view's
+layout, fixed when the view opens from `:toolbar` or, for a terminal, `:quick`; its
+zoom or text size, with the zoom steps and the 1 to 255 point limits; whether the
+table of contents is open and how many headings the page has; and the find field's
+text and matches. It reads who has the keyboard from the input core and whether the
+page can go back or forward from the web core, and never copies them. After anything
+that may change what a toolbar shows, the core builds a snapshot, a `portal_toolbar`
+with the visibility and colors in it, and asks the platform to draw it only if it
+differs from the last one drawn; nothing serializes JSON to decide. A click, the
+find field's text, a Lisp command and a keyboard shortcut all run the same code on
+the same state, and `portal--toolbar-action` returns that state as JSON. Searches
+run one at a time, each a count by the contents script and then a find: text that
+changes replaces the searches still waiting, a page that finishes loading drops the
+result of one from before and searches again, and a result no request waits for
+reaches nothing. Opening find gives the field the keyboard with
+`portal_toolbar_focus`; closing it gives the page the keyboard with
+`portal_view_focus`, but only while the view still has it, so it never takes the
+keyboard back from Emacs or another view. The platform keeps drawing: AppKit
+buttons and the search field, layout, SF Symbols, tooltips, accessibility, tracking
+areas and appearance changes, and turns face colors into `NSColor`s.
 
 Rectangles are in Emacs's frame pixels, from the top left of the frame's content
 area, as `window-inside-pixel-edges` reports them. On macOS these are AppKit points,
@@ -1092,8 +1135,13 @@ its button; Edit in Emacs handing the keyboard to the source pane; a save
 refreshing the page while Emacs keeps the keyboard, including a hidden page
 once it is shown; Back showing the list without a task completed on its page;
 and an action refused over unsaved changes.
-The combined graphical suite includes web, terminal, Excalidraw, Markdown, and
-shared input tests, plus
+The graphical toolbar tests type into the real find field and step through matches
+with real keys, check that closing find leaves the keyboard with Emacs once the user
+returned there, that web state survives buffer switches, reload and a theme change,
+that a terminal's grid follows its text size and live toolbar visibility, and that
+Excalidraw and a quick terminal have no strip.
+The combined graphical suite includes web, terminal, Excalidraw, Markdown, toolbar,
+and shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
@@ -1121,7 +1169,7 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-for core in channel views input terminals web; do
+for core in channel views input terminals web toolbar; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
@@ -1131,7 +1179,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
-  build/web.o \
+  build/web.o build/toolbar.o \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -1149,13 +1197,18 @@ and sends `follow` over the bridge. A full notification pipe delays records with
 reordering them, retried on the Swift timer, and records still waiting when
 Emacs replaces the pipe go to the new one; a closed view's records never go.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
-without Ghostty, and they link the core's registry, input handoff, web rules and
-pipe without the Emacs bindings.
+without Ghostty, and they link the core's registry, input handoff, terminal and web
+rules, toolbars and pipe without the Emacs bindings.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
-`test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
-focus-preserving buttons, back and forward in previews, zoom limits, TOC, find,
-retained state, and a Markdown preview's Open in Emacs.
+`test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout with
+the real core: buttons that keep the keyboard where it was, the ownership dot, back
+and forward in previews, zoom limits, the TOC across hiding and reload, typing into
+the real find field, Return, Shift-Return and Escape, Command-F and passthrough,
+closing find after the keyboard went back to Emacs, live visibility and colors, a
+view without a toolbar filling its pane, and a Markdown preview's Open in Emacs.
+Keys reach the find field through the event loop, as real presses do, since the
+field reads Shift from the current event.
 
 Both standalone checks use `test/native-checks.swift` to print failures with a
 source location and exit with status 1. Use its `check`, `require`, and `fail`
@@ -1217,6 +1270,19 @@ unknown and closed targets reach no platform view; that platform errors and refu
 reach Lisp; and that a terminal whose process exited stays open and describable until
 closed.
 
+`ctest -R toolbar-core` runs `test/portal-toolbar-tests.c`, which drives the core's
+toolbars with the fake platform, answering its finds and script calls by hand. It
+checks each layout's buttons and which of them work, including views without a
+toolbar and an invalid `:toolbar`; zoom steps and text sizes stopping at their limits,
+and a size the platform refuses; the keyboard's text size and Command-F shortcuts,
+and passthrough; the ownership dot and its clicks; searches running one at a time in
+order, newer text replacing waiting searches, match counting and wrapping; a page
+that loads dropping old results and searching again; the table of contents across
+pages; closing find only returning the keyboard to a view that has it; state kept
+across hiding, another frame and hidden toolbars; drawing only what changed, and
+drawing again after a refused draw; clicks on buttons a toolbar does not have; and
+that a closed view hears nothing.
+
 `ctest -R web-core` runs `test/portal-web-tests.c`, which drives web views' rules and
 the bridge as Lisp and a platform would, with records going to a real pipe. It checks
 which URLs load, that about:blank in a new view and the document on screen do not add
@@ -1230,7 +1296,8 @@ from a page that has gone is ignored; and that a closed view hears nothing.
 
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
 the 19 functions and their arities, the input functions' conversion of chords and
-binding JSON, and the conversion of options, edges, and strings,
+binding JSON, the toolbar theme's conversion of face colors, and the conversion of
+options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,
 raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
 without calling the backend. A signal raised while converting an argument reaches

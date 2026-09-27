@@ -45,8 +45,6 @@ protocol PortalView: AnyObject {
     init(target: String, options: ViewOptions) throws
     var surface: any NativeSurface { get }
     var input: NativeInput { get }
-    /// The view's toolbar controls, or nil when it has no toolbar.
-    var toolbar: ToolbarModel? { get }
     /// The view is in a window for the first time: the parking window.
     func opened() throws
     /// The view is now shown in a frame.
@@ -88,6 +86,8 @@ final class NativeView {
     /// Where the view is in its window. Parking keeps it, so hiding never
     /// resizes the page or the shell's grid.
     private var rectangle: CGRect
+    /// The toolbar the core drew last, which the view shows wherever it goes.
+    private var toolbar = ToolbarState()
 
     /// Make a view of TYPE, in the parking window with its session running.
     init(_ type: any PortalView.Type, target: String, options: ViewOptions) throws {
@@ -125,6 +125,18 @@ final class NativeView {
         [("focused", .flag(host.ownsFocus(kind.surface.nativeView)))] + kind.describe()
     }
 
+    /// Show TOOLBAR, now and wherever the view goes.
+    func draw(_ toolbar: ToolbarState) {
+        self.toolbar = toolbar
+        host.draw(toolbar, for: kind.surface)
+    }
+
+    /// Give the toolbar's find field the keyboard, if the view is attached.
+    func focusFind() {
+        guard host !== Self.parking else { return }
+        host.focusFind(kind.surface)
+    }
+
     /// Remove the view from its current window and add it to NEXT's, in one step.
     private func move(to next: NativeHost) {
         if next !== host {
@@ -132,6 +144,6 @@ final class NativeView {
             host = next
             kind.input.host = next
         }
-        next.place(kind.surface, rectangle: rectangle)
+        next.place(kind.surface, rectangle: rectangle, toolbar: toolbar)
     }
 }

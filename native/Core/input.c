@@ -7,7 +7,11 @@
 
    A focus change the platform reports while Emacs or the core is calling it
    is their own doing.  Any other is the user's: it abandons the view's
-   handoff, and losing the keyboard also ends passthrough. */
+   handoff, and losing the keyboard also ends passthrough.
+
+   A key that the view's app would get may be a toolbar's shortcut instead
+   (toolbar.c), and every change of who has a view's keyboard redraws its
+   toolbar, which shows it. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +20,7 @@
 #include "channel.h"
 #include "core.h"
 #include "input.h"
+#include "toolbar.h"
 #include "views.h"
 
 enum { MODIFIERS = PORTAL_SHIFT | PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER };
@@ -142,15 +147,13 @@ bool portal_input_close(struct portal_input *view, portal_text *error)
     input.requests++;
     bool done = end(view, error);
     input.requests--;
+    portal_toolbar_refresh(view->target);
     return done;
 }
 
-portal_key portal_input_key(portal_string target, portal_chord chord, bool repeat)
+/* What VIEW's app does with KEY, a normalized chord. */
+static portal_key decide(struct portal_input *view, portal_chord key, bool repeat)
 {
-    struct portal_input *view = portal_views_input(target);
-    if (!view)
-        return PORTAL_KEY_PASS;
-    portal_chord key = normalize(chord);
     switch (view->handoff) {
     case PORTAL_AWAITING:
         return PORTAL_KEY_HOLD; /* The platform holds these without asking. */
@@ -192,6 +195,21 @@ portal_key portal_input_key(portal_string target, portal_chord chord, bool repea
     return PORTAL_KEY_HOLD;
 }
 
+portal_key portal_input_key(portal_string target, portal_chord chord, bool repeat)
+{
+    struct portal_input *view = portal_views_input(target);
+    if (!view)
+        return PORTAL_KEY_PASS;
+    portal_chord key = normalize(chord);
+    portal_key result = decide(view, key, repeat);
+    /* Only a view with the keyboard has shortcuts, not one that holds a
+       trigger for Emacs. */
+    if (result == PORTAL_KEY_PASS && view->focused && portal_toolbar_shortcut(target, key))
+        result = PORTAL_KEY_TAKE;
+    portal_toolbar_refresh(target);
+    return result;
+}
+
 void portal_input_focus(portal_string target, bool focused)
 {
     struct portal_input *view = portal_views_input(target);
@@ -202,6 +220,7 @@ void portal_input_focus(portal_string target, bool focused)
         view->passthrough = false;
     if (!input.requests)
         abandon(view);
+    portal_toolbar_refresh(target);
 }
 
 void portal_input_escape(portal_string target)
@@ -215,6 +234,7 @@ void portal_input_escape(portal_string target)
     input.requests++;
     ignore(portal_view_unfocus(view->view, &error), &error);
     input.requests--;
+    portal_toolbar_refresh(target);
 }
 
 portal_owner portal_input_owner(portal_string target)
@@ -303,6 +323,7 @@ bool portal_input_perform(portal_string target, portal_string action, int64_t se
     input.requests++;
     bool done = act(view, action, serial, result, error);
     input.requests--;
+    portal_toolbar_refresh(target);
     return done;
 }
 

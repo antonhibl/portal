@@ -174,6 +174,32 @@ public func portalWebPost(_ web: OpaquePointer, _ json: portal_string, _ token: 
     return perform(error) { try session(web, as: WebSession.self).post(json, token: token) } != nil
 }
 
+@_cdecl("portal_web_zoom")
+public func portalWebZoom(_ web: OpaquePointer, _ scale: Double,
+                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web)
+    return perform(error) { try session(web, as: WebSession.self).zoom(scale) } != nil
+}
+
+@_cdecl("portal_web_find")
+public func portalWebFind(_ web: OpaquePointer, _ query: portal_string, _ backwards: Bool, _ token: UInt64,
+                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web), query = String(copying: query)
+    return perform(error) {
+        try session(web, as: WebSession.self).find(query, backwards: backwards, token: token)
+    } != nil
+}
+
+@_cdecl("portal_web_call")
+public func portalWebCall(_ web: OpaquePointer, _ script: portal_script, _ function: portal_string,
+                          _ argument: portal_string, _ token: UInt64,
+                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web), function = String(copying: function), argument = String(copying: argument)
+    return perform(error) {
+        try session(web, as: WebSession.self).call(script, function: function, argument: argument, token: token)
+    } != nil
+}
+
 @_cdecl("portal_terminal_list_themes")
 public func portalTerminalListThemes(_ names: UnsafeMutablePointer<UnsafeMutablePointer<portal_text>?>,
                                      _ count: UnsafeMutablePointer<Int>,
@@ -245,21 +271,15 @@ public func portalViewLiteral(_ view: OpaquePointer, _ error: UnsafeMutablePoint
     return perform(error) { try view.kind.input.literal() } != nil
 }
 
-@_cdecl("portal_toolbar")
-public func portalToolbar(_ enabled: Bool, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    perform(error) { NativeToolbar.configure(enabled) } != nil
+@_cdecl("portal_toolbar_draw")
+public func portalToolbarDraw(_ view: OpaquePointer, _ state: UnsafePointer<portal_toolbar>,
+                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view), state = ToolbarState(state.pointee)
+    return perform(error) { view.draw(state) } != nil
 }
 
-@_cdecl("portal_toolbar_theme")
-public func portalToolbarTheme(_ json: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let json = String(copying: json)
-    return perform(error) { try NativeToolbar.theme(json) } != nil
-}
-
-@_cdecl("portal_toolbar_action")
-public func portalToolbarAction(_ view: OpaquePointer, _ action: portal_string,
-                                _ state: UnsafeMutablePointer<portal_text>,
-                                _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let view = native(view), action = String(copying: action)
-    return perform(error, into: state) { try NativeToolbar.perform(action, model: view.kind.toolbar) }
+@_cdecl("portal_toolbar_focus")
+public func portalToolbarFocus(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { view.focusFind() } != nil
 }

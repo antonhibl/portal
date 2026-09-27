@@ -3,9 +3,9 @@ import AppKit
 import PortalCore
 
 // Calls between Swift and the C core outside the Lisp operations: the core's
-// notification pipe, input, what web pages do, the shared browser scripts,
-// and the timer primitive, all in native/Core/include/portal.h. The standalone
-// checks compile this file too.
+// notification pipe, input, what web pages do, what the user does with a
+// toolbar, the shared browser scripts, and the timer primitive, all in
+// native/Core/include/portal.h. The standalone checks compile this file too.
 
 extension String {
     /// A copy of borrowed UTF-8 from the core.
@@ -62,11 +62,6 @@ enum Core {
         borrow(target) { portal_input_focus($0, focused) }
     }
 
-    /// Who has TARGET's keyboard.
-    static func owner(_ target: String) -> portal_owner {
-        borrow(target) { portal_input_owner($0) }
-    }
-
     private static func borrow<T>(_ text: String, _ body: (portal_string) -> T) -> T {
         text.withCString { body(portal_string(data: $0, length: text.utf8.count)) }
     }
@@ -86,8 +81,34 @@ enum Core {
         borrowing([target, message]) { portal_web_failed($0[0], token, $0[1]) }
     }
 
-    static func edit(_ target: String) {
-        borrowing([target]) { portal_web_edit($0[0]) }
+    static func loaded(_ target: String) {
+        borrow(target) { portal_web_loaded($0) }
+    }
+
+    static func history(_ target: String, back: Bool, forward: Bool) {
+        borrow(target) { portal_web_history($0, back, forward) }
+    }
+
+    static func found(_ target: String, token: UInt64, found: Bool) {
+        borrow(target) { portal_web_found($0, token, found) }
+    }
+
+    /// VALUE is nil for a call that failed or returned anything but an integer.
+    static func returned(_ target: String, token: UInt64, value: Int?) {
+        borrow(target) { portal_web_returned($0, token, value != nil, Int64(value ?? 0)) }
+    }
+
+    static func headings(_ target: String, _ count: Int) {
+        borrow(target) { portal_web_headings($0, Int64(count)) }
+    }
+
+    /// The user clicked BUTTON in TARGET's toolbar, or pressed its field's key for it.
+    static func clicked(_ target: String, _ button: portal_button) {
+        borrow(target) { portal_toolbar_clicked($0, button) }
+    }
+
+    static func typed(_ target: String, _ query: String) {
+        borrowing([target, query]) { portal_toolbar_typed($0[0], $0[1]) }
     }
 
     /// The shared browser script SCRIPT, started in its world with a report
