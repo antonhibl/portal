@@ -74,6 +74,20 @@ test("ambiguous, unsupported and malformed status edits are refused", () => {
 	refused("---\nstatus: &s todo\n---\n", "cannot be changed safely");
 	refused("---\n? status\n: todo\n---\n", "cannot be changed safely");
 	refused("---\nstatus: todo\nstatus: todo\n---\n", "more than one status");
+	// A duplicate written in a form the edit never changes still counts.
+	refused(
+		"---\nstatus: !!str done\nstatus: todo\n---\n",
+		"more than one status",
+	);
+	refused("---\n? status\n: done\nstatus: todo\n---\n", "more than one status");
+	refused(
+		'---\n"st\\x61tus": done\nstatus: todo\n---\n',
+		"more than one status",
+	);
+	refused(
+		"---\n{status: todo, 'status': !!str done}\n---\n",
+		"more than one status",
+	);
 	refused(
 		"---\nnotes: |\n  status: todo\nstatus: todo\n---\n",
 		"more than one status",
@@ -81,8 +95,10 @@ test("ambiguous, unsupported and malformed status edits are refused", () => {
 	// The only entry that looks like a status is text in another value.
 	refused(
 		"---\nnotes: |\n  status: todo\nstatus: !!str todo\n---\n",
-		"would change other front matter",
+		"more than one status",
 	);
+	// The entry's value reads as more than the status word.
+	refused("---\nstatus: todo#x\n---\n", "would change other front matter");
 	refused("---\nstatus: todo\n", "no closing");
 	refused("# No front matter\n", "has no status");
 	expect(() =>

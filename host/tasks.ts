@@ -233,13 +233,22 @@ export function statusEdit(
 	const entries = [...text.slice(span.start, span.end).matchAll(statusEntry)];
 	const [entry] = entries;
 	const value = entry?.[1];
-	if (!entry || value === undefined || entries.length > 1) {
+	if (!entry || value === undefined)
 		throw new Error(
-			entries.length === 0
-				? "The task's status is not written as a plain `status: todo` or `status: done` entry, so it cannot be changed safely. Edit it in Emacs."
-				: "The task's front matter has more than one status entry, so the change would be ambiguous. Edit it in Emacs.",
+			"The task's status is not written as a plain `status: todo` or `status: done` entry, so it cannot be changed safely. Edit it in Emacs.",
 		);
-	}
+	// With this entry's key renamed, no status may remain: YAML keeps only the
+	// last of duplicate keys, however each is written.
+	const key = span.start + entry.index;
+	const renamed = `${text.slice(0, key)}portal-probe${text.slice(key + entry[0].indexOf(":"))}`;
+	let probe: Record<string, unknown> | null = null;
+	try {
+		probe = frontMatter(renamed).data;
+	} catch {}
+	if (entries.length > 1 || !probe || Object.hasOwn(probe, "status"))
+		throw new Error(
+			"The task's front matter has more than one status entry, so the change would be ambiguous. Edit it in Emacs.",
+		);
 	const start = span.start + entry.index + entry[0].length - value.length;
 	const replacement = value.replace(/todo|done/, status);
 	const patched =

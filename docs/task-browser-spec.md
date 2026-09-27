@@ -270,7 +270,9 @@ Only the value changes, keeping its quotes. The edited text must read back as
 the same body and the same front matter with only `status` changed; anything
 else, such as a tag, an anchor, an explicit key, a duplicated key, or a
 lookalike inside another value, is refused with an explanation, and the
-document is left for Emacs. Discovery still reads every valid form. The bytes
+document is left for Emacs. YAML keeps only the last of duplicate keys, so
+duplicates are found by renaming the entry's key and checking that no `status`
+remains, whatever syntax the other key uses. Discovery still reads every valid form. The bytes
 planned from must still classify as the requested task, so a file that another
 task replaced since discovery is refused.
 
