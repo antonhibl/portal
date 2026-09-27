@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 
 # Add stable task IDs, dependencies, and execution order
@@ -139,28 +139,58 @@ during implementation without changing the contracts above.
 
 ## Acceptance criteria and verification
 
-- [ ] Existing tasks without new fields retain their identities, URLs, status,
+- [x] Existing tasks without new fields retain their identities, URLs, status,
   title behavior, attachment bounds, and relative-link behavior.
-- [ ] Metadata examples parse; malformed IDs/dependency lists and collisions
+- [x] Metadata examples parse; malformed IDs/dependency lists and collisions
   produce actionable diagnostics. Duplicate definitions with different status
   values or different explicit IDs never silently select one source.
-- [ ] Renaming an explicitly identified task, or converting `x.md` to
+- [x] Renaming an explicitly identified task, or converting `x.md` to
   `x/content.md`, preserves dependency resolution, detail URLs, and image
   requests. A source link opens the correct effective-ID detail page.
-- [ ] Real-filesystem/HTTP tests cover chains, diamonds, independent tasks,
+- [x] Real-filesystem/HTTP tests cover chains, diamonds, independent tasks,
   deterministic tie-breaking, repeated references, self/multi-task cycles,
   missing/invalid/duplicate targets, and dependents of broken subgraphs.
-- [ ] A done prerequisite unblocks its dependents even if its own historical
+- [x] A done prerequisite unblocks its dependents even if its own historical
   dependency is unfinished or broken. Reopening it blocks them on reload.
   Completed-task filtering never changes dependency resolution or ranks.
-- [ ] Dependency errors leave unrelated work and otherwise valid task details
+- [x] Dependency errors leave unrelated work and otherwise valid task details
   readable; an all-blocked root never misleadingly reports "No tasks".
-- [ ] Graphical checks verify readiness labels, dependency/reverse links,
+- [x] Graphical checks verify readiness labels, dependency/reverse links,
   completed prerequisites, navigation/filter preservation, and save/reload.
-- [ ] `bun run --cwd host check`, `bun run --cwd host typecheck`, `./build.sh`,
+- [x] `bun run --cwd host check`, `bun run --cwd host typecheck`, `./build.sh`,
   and `ctest --test-dir build --output-on-failure` pass. Record affected GUI
   checks, update authoring documentation, and mark this task done only after
   implementation and verification. Follow `AGENTS.md` for its worktree and PR.
+
+## Outcome
+
+`host/tasks.ts` now builds one index and plan per request. Discovery reads
+every candidate, separates the effective ID from the location, and groups
+tasks sharing an ID or location into conflicts. The plan resolves each
+`depends_on` entry and derives reverse edges. It finds cycles among unfinished
+tasks with Tarjan's algorithm, then ranks the rest with Kahn's algorithm,
+taking the smallest ID first. Broken tasks and their unfinished dependents go
+to **Blocked by dependency problems**. Detail, image, and source-link
+resolution all use the index. The list became the execution view with a
+separate **Completed** section; detail pages show ID, **Depends on**, and
+**Blocks**. The README, `docs/task-browser-spec.md`, and the author-tasks skill
+document the fields, and [nested tasks](nested-tasks.md) now declares its
+dependency on this task.
+
+## Verification
+
+- `bun run --cwd host check`, `bun run --cwd host typecheck`, and `./build.sh`
+  pass. `ctest --test-dir build --output-on-failure` passes 9 of 9. The run also
+  exposed a timing race in `portal-server-early-exit-clears-startup`, which now
+  waits for the sentinel.
+- New app host tests cover ID and `depends_on` parsing and diagnostics,
+  explicit/fallback, duplicate, and location conflicts, ordering (chains,
+  diamonds, ties, repeats, cycles, missing/invalid/conflicting targets, broken
+  subgraphs), done and reopened prerequisites, filter independence, the
+  all-blocked root, and renames and folder conversion with explicit IDs.
+- Graphical: `portal-tasks-gui-dependencies-readiness-and-links` is new, and
+  the three existing `portal-tasks-gui-*` checks pass unchanged in a graphical
+  Emacs.
 
 ## Blocked by
 

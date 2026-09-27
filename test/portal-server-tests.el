@@ -230,11 +230,38 @@
 (defun portal-server-test--rows (page)
   "Return the (STATUS TITLE HREF) of each task row in PAGE, in order."
   (let ((start 0) rows)
-    (while (string-match "<li><a href=\"\\([^\"]*\\)\"><span class=\"status status-\\([a-z]+\\)\">[a-z]+</span><span class=\"title\">\\([^<]*\\)</span>"
+    (while (string-match "<li><a href=\"\\([^\"]*\\)\">\\(?:<span class=\"rank\">[0-9]+</span>\\)?<span class=\"status status-\\([a-z]+\\)\">[a-z]+</span><span class=\"title\">\\([^<]*\\)</span>"
                          page start)
       (push (list (match-string 2 page) (match-string 3 page) (match-string 1 page)) rows)
       (setq start (match-end 0)))
     (nreverse rows)))
+
+(defun portal-server-test--part (page open close)
+  "Return the text of PAGE between OPEN and the next CLOSE, or nil."
+  (when (string-match (concat (regexp-quote open) "\\(\\(?:.\\|\n\\)*?\\)" (regexp-quote close)) page)
+    (match-string 1 page)))
+
+(defun portal-server-test--order (page)
+  "Return the titles of PAGE's ordered unfinished tasks, in order."
+  (mapcar #'cadr (portal-server-test--rows
+                  (or (portal-server-test--part page "<ol class=\"tasks\">" "</ol>") ""))))
+
+(defun portal-server-test--stuck (page)
+  "Return the titles of PAGE's tasks blocked by dependency problems."
+  (mapcar #'cadr (portal-server-test--rows
+                  (or (portal-server-test--part page "<section class=\"stuck\">" "</section>") ""))))
+
+(defun portal-server-test--completed (page)
+  "Return the titles of PAGE's completed section."
+  (mapcar #'cadr (portal-server-test--rows
+                  (or (portal-server-test--part page "<section class=\"completed\">" "</section>") ""))))
+
+(defun portal-server-test--readiness (page title)
+  "Return the readiness text of the row titled TITLE in PAGE."
+  (when (string-match (concat "<span class=\"title\">" (regexp-quote title)
+                              "</span><span class=\"readiness readiness-[a-z]+\">\\([^<]*\\)</span>")
+                      page)
+    (match-string 1 page)))
 
 (defmacro portal-server-test--with-tasks (&rest body)
   "Run BODY with the host started and ROOT a fresh, real task folder."
@@ -281,9 +308,12 @@
                          ("todo" "no-heading" ,(concat "tasks?root=" hex "&amp;task=no-heading")))))
         (should (string-match-p (regexp-quote (concat "tasks?root=" hex "&amp;show=all\">Show completed")) page))
         (should-not (string-match-p "<h2>Problems" page)))
-      (should (equal (mapcar #'cadr (portal-server-test--rows (portal-server-test--tasks root "&show=all")))
-                     '("From front matter" "Root content" "Windows" "Setext title" "Fix search &amp; &lt;more&gt;"
-                       "Navigation" "no-heading")))
+      ;; Completed tasks follow the unfinished ones, in their own section.
+      (let ((page (portal-server-test--tasks root "&show=all")))
+        (should (equal (portal-server-test--order page)
+                       '("From front matter" "Root content" "Setext title" "Fix search &amp; &lt;more&gt;"
+                         "no-heading")))
+        (should (equal (portal-server-test--completed page) '("Windows" "Navigation"))))
       (should (string-match-p "Hide completed" (portal-server-test--tasks root "&show=all"))))))
 
 (ert-deftest portal-server-tasks-report-problems-without-hiding-tasks ()
@@ -390,7 +420,7 @@
       (portal-server-test--write directory "outside.txt" "outside\n")
       (let ((page (portal-server-test--tasks root "&task=fix-search")))
         (should (string-match-p "HTTP/1.1 200" page))
-        (should (string-match-p (regexp-quote (format "<a href=\"tasks?root=%s\">Tasks</a><span class=\"status status-todo\">todo</span>" hex)) page))
+        (should (string-match-p (regexp-quote (format "<a href=\"tasks?root=%s\">Tasks</a><span class=\"task-state\"><span class=\"status status-todo\">todo</span><span class=\"readiness readiness-ready\">ready</span>" hex)) page))
         ;; The heading supplies the title once, and front matter is gone.
         (should (= (length (split-string page "<h1")) 2))
         (should (string-match-p "<h1 id=\"fix-search\">Fix search</h1>" page))
@@ -504,6 +534,241 @@
     (dolist (query '("/tasks" "/tasks?root=relative" "/tasks?root=%2Ftmp%00x"))
       (should (string-match-p "HTTP/1.1 400" (portal-server-test--get query))))))
 
+(defun portal-server-test--task (root name &rest front-matter)
+  "Write task NAME in ROOT with FRONT-MATTER lines and no heading.
+Its title is then its ID."
+  (portal-server-test--write root name "---\n" (mapconcat (lambda (line) (concat line "\n")) front-matter "") "---\n"))
+
+(ert-deftest portal-server-tasks-parse-ids-and-dependency-metadata ()
+  (portal-server-test--with-tasks
+    (let ((task (lambda (name &rest lines) (apply #'portal-server-test--task root name lines))))
+      (portal-server-test--write root "file-name.md"
+                                 "---\nid: implement-c-adapter\nstatus: todo\ndepends_on:\n  - extract-c-interface\n---\n\n# Implement the C adapter\n")
+      (funcall task "extract.md" "id: extract-c-interface" "status: done" "depends_on: []")
+      (dolist (bad '("Upper" "3" "" "-a" "a--b" "a_b" "[a]"))
+        (funcall task (format "id %s.md" bad) (concat "id: " bad) "status: todo"))
+      ;; Invalid dependency metadata leaves the task and its body readable.
+      (portal-server-test--write root "null-list.md" "---\nstatus: todo\ndepends_on:\n---\nStill readable.\n")
+      (dolist (bad '("scalar" "[1]" "[\"\"]" "{a: b}" "[[a]]"))
+        (funcall task (format "list %s.md" (md5 bad)) (concat "depends_on: " bad) "status: todo"))
+      ;; An explicit ID shares one namespace with fallback IDs.
+      (funcall task "alpha.md" "status: todo")
+      (funcall task "claims-alpha.md" "id: alpha" "status: todo")
+      ;; Explicit duplicates never pick a source, whatever their status.
+      (funcall task "dup-one.md" "id: dup" "status: todo")
+      (funcall task "dup-two.md" "id: dup" "status: done")
+      ;; One location is one task, even under two IDs.
+      (funcall task "place.md" "id: place-one" "status: todo")
+      (funcall task "place/content.md" "id: place-two" "status: done")
+      (let ((page (portal-server-test--tasks root)))
+        (should (equal (portal-server-test--order page) '("Implement the C adapter")))
+        (should (equal (portal-server-test--readiness page "Implement the C adapter") "Ready"))
+        (should (equal (portal-server-test--stuck page)
+                       (sort (cons "null-list"
+                                   (mapcar (lambda (bad) (concat "list " (md5 bad)))
+                                           '("scalar" "[1]" "[\"\"]" "{a: b}" "[[a]]")))
+                             #'string<)))
+        (dolist (bad '("Upper" "3" "" "-a" "a--b" "a_b" "[a]"))
+          (ert-info (bad)
+            (should (string-match-p (concat (regexp-quote (expand-file-name (format "id %s.md" bad) root))
+                                            "</code>: Invalid id")
+                                    page))))
+        (should (string-match-p (concat (regexp-quote (expand-file-name "null-list.md" root))
+                                        "</code> ([^)]*null-list</a>): Invalid depends_on")
+                                page))
+        (should (string-match-p (concat "alpha</a> is defined more than once: <code>"
+                                        (regexp-quote (expand-file-name "alpha.md" root)) "</code> and <code>"
+                                        (regexp-quote (expand-file-name "claims-alpha.md" root)))
+                                page))
+        (should (string-match-p (concat "dup</a> is defined more than once: <code>"
+                                        (regexp-quote (expand-file-name "dup-one.md" root)))
+                                page))
+        (should (string-match-p (concat "place-one</a> and <a [^>]*>place-two</a> conflict: <code>"
+                                        (regexp-quote (expand-file-name "place.md" root)) "</code> and <code>"
+                                        (regexp-quote (expand-file-name "place/content.md" root)))
+                                page)))
+      ;; No conflicting source is shown, with either filter.
+      (should-not (cl-intersection (mapcar #'cadr (portal-server-test--rows (portal-server-test--tasks root "&show=all")))
+                                   '("alpha" "dup" "place-one" "place-two")
+                                   :test #'equal))
+      (dolist (id '("alpha" "dup" "place-one" "place-two"))
+        (ert-info (id)
+          (let ((page (portal-server-test--tasks root (concat "&task=" id))))
+            (should (string-match-p "HTTP/1.1 409" page))
+            (should (string-match-p "defined more than once" page)))))
+      (let ((page (portal-server-test--tasks root "&task=place-two")))
+        (should (string-match-p (regexp-quote (expand-file-name "place.md" root)) page))
+        (should (string-match-p (regexp-quote (expand-file-name "place/content.md" root)) page)))
+      (let ((page (portal-server-test--tasks root "&task=null-list")))
+        (should (string-match-p "HTTP/1.1 200" page))
+        (should (string-match-p "Still readable\\." page))
+        (should (string-match-p "readiness-blocked" page))
+        (should (string-match-p "<code>depends_on</code> is invalid" page)))
+      ;; An invalid ID is reported at the task's location.
+      (let ((page (portal-server-test--tasks root (concat "&task=" (url-hexify-string "id Upper")))))
+        (should (string-match-p "HTTP/1.1 422" page))
+        (should (string-match-p "Invalid id &quot;Upper&quot;" page))))))
+
+(ert-deftest portal-server-tasks-order-unfinished-work-by-dependencies ()
+  (portal-server-test--with-tasks
+    (let ((task (lambda (name &rest lines) (apply #'portal-server-test--task root name lines))))
+      ;; Independent tasks, a chain, and a diamond with a repeated reference.
+      (funcall task "z-free.md" "status: todo")
+      (funcall task "b-free.md" "status: todo")
+      (funcall task "c3.md" "status: todo" "depends_on: [c2]")
+      (funcall task "c2.md" "status: todo" "depends_on: [c1]")
+      (funcall task "c1.md" "status: todo")
+      (funcall task "d-top.md" "status: todo")
+      (funcall task "d-left.md" "status: todo" "depends_on: [d-top]")
+      (funcall task "d-right.md" "status: todo" "depends_on: [d-top]")
+      (funcall task "d-bottom.md" "status: todo" "depends_on: [d-right, d-left, d-right]")
+      ;; Broken subgraphs, and the work waiting on them.
+      (funcall task "self.md" "status: todo" "depends_on: [self]")
+      (funcall task "loop-a.md" "status: todo" "depends_on: [loop-c]")
+      (funcall task "loop-b.md" "status: todo" "depends_on: [loop-a]")
+      (funcall task "loop-c.md" "status: todo" "depends_on: [loop-b]")
+      (funcall task "after-loop.md" "status: todo" "depends_on: [loop-a]")
+      (funcall task "missing.md" "status: todo" "depends_on: [ghost]")
+      (funcall task "bad-list.md" "status: todo" "depends_on: ghost")
+      (funcall task "invalid.md" "status: Todo")
+      (funcall task "to-invalid.md" "status: todo" "depends_on: [invalid]")
+      (funcall task "twice.md" "status: todo")
+      (funcall task "twice/content.md" "status: done")
+      (funcall task "to-twice.md" "status: todo" "depends_on: [twice]")
+      (funcall task "downstream.md" "status: todo" "depends_on: [c1, missing]")
+      ;; A done prerequisite counts, whatever its own history.
+      (funcall task "old.md" "status: done" "depends_on: [ghost-old, c3]")
+      (funcall task "uses-old.md" "status: todo" "depends_on: [old]")
+      (let* ((page (portal-server-test--tasks root))
+             (order '("b-free" "c1" "c2" "c3" "d-top" "d-left" "d-right" "d-bottom" "uses-old" "z-free")))
+        (should (equal (portal-server-test--order page) order))
+        (should (string-match-p "<span class=\"rank\">1</span><span class=\"status status-todo\">todo</span><span class=\"title\">b-free<" page))
+        (should (equal (portal-server-test--stuck page)
+                       '("after-loop" "bad-list" "downstream" "loop-a" "loop-b" "loop-c" "missing" "self"
+                         "to-invalid" "to-twice")))
+        (dolist (expected '(("b-free" . "Ready") ("c1" . "Ready") ("uses-old" . "Ready")
+                            ("c2" . "Blocked by c1") ("d-bottom" . "Blocked by d-right and d-left")
+                            ("missing" . "Blocked by ghost (does not exist)")
+                            ("to-invalid" . "Blocked by invalid (is not a valid task)")
+                            ("to-twice" . "Blocked by twice (is defined more than once)")
+                            ("bad-list" . "Blocked by invalid depends_on")
+                            ("self" . "Blocked by a cycle on itself")
+                            ("loop-a" . "Blocked by a cycle with loop-b and loop-c")
+                            ("after-loop" . "Blocked by loop-a")
+                            ("downstream" . "Blocked by c1 and missing")))
+          (ert-info ((car expected))
+            (should (equal (portal-server-test--readiness page (car expected)) (cdr expected)))))
+        ;; Problems name the sources and IDs, including a done task's history.
+        (dolist (problem `(("missing.md" . "It depends on <code>ghost</code>, which does not exist")
+                           ("old.md" . "It depends on <code>ghost-old</code>, which does not exist")
+                           ("self.md" . "It depends on itself")
+                           ("bad-list.md" . "Invalid depends_on")))
+          (ert-info ((car problem))
+            (should (string-match-p (concat (regexp-quote (expand-file-name (car problem) root))
+                                            "</code> ([^)]*</a>): " (regexp-quote (cdr problem)))
+                                    page))))
+        (should (string-match-p "loop-a</a>, <a [^>]*>loop-b</a>, and <a [^>]*>loop-c</a> depend on each other in a cycle"
+                                page))
+        (should-not (string-match-p "No tasks\\|No unfinished" page))
+        ;; Showing completed work adds a section and changes no rank.
+        (let ((all (portal-server-test--tasks root "&show=all")))
+          (should (equal (portal-server-test--order all) order))
+          (should (equal (portal-server-test--completed all) '("old")))))
+      ;; Detail pages show the ID, prerequisites, and what the task blocks.
+      (let ((hex (url-hexify-string root))
+            (page (portal-server-test--tasks root "&task=d-bottom&show=all")))
+        (should (string-match-p "<dt>ID</dt><dd><code>d-bottom</code></dd>" page))
+        (should (string-match-p "readiness-blocked\">blocked<" page))
+        (should (string-match-p
+                 (regexp-quote (format (concat "<dt>Depends on</dt><dd><ul class=\"references\">"
+                                               "<li><a href=\"tasks?root=%s&amp;task=d-right&amp;show=all\">d-right</a> <code>d-right</code> <span class=\"status status-todo\">todo</span></li>"
+                                               "<li><a href=\"tasks?root=%s&amp;task=d-left&amp;show=all\">d-left</a> ")
+                                       hex hex))
+                 page))
+        (should-not (string-match-p "<dt>Blocks" page))
+        (setq page (portal-server-test--tasks root "&task=d-top"))
+        (should (string-match-p "readiness-ready\">ready<" page))
+        (should (string-match-p (concat "<dt>Blocks</dt><dd><ul class=\"references\"><li><a [^>]*task=d-left\">d-left</a>"
+                                        ".*task=d-right\">d-right</a>")
+                                page))
+        ;; A done prerequisite stays linked with the completed filter off.
+        (setq page (portal-server-test--tasks root "&task=uses-old"))
+        (should (string-match-p (regexp-quote (format "<a href=\"tasks?root=%s&amp;task=old\">old</a> <code>old</code> <span class=\"status status-done\">done</span>" hex))
+                                page))
+        ;; A done task keeps its dependencies and has no readiness.
+        (setq page (portal-server-test--tasks root "&task=old"))
+        (should (string-match-p "status-done" page))
+        (should-not (string-match-p "class=\"readiness" page))
+        (should (string-match-p "<code>ghost-old</code> <span class=\"dependency-problem\">This task does not exist\\.</span>" page))
+        (should (string-match-p "task=c3\">c3</a>" page))
+        (should (string-match-p "<dt>Blocks</dt>.*task=uses-old\">uses-old</a>" page))
+        (setq page (portal-server-test--tasks root "&task=loop-b"))
+        (should (string-match-p "<dt>Cycle</dt><dd class=\"dependency-problem\">It depends on itself through <a [^>]*>loop-a</a> and <a [^>]*>loop-c</a>" page)))
+      ;; Completing and reopening work shows on reload.
+      (funcall task "c1.md" "status: done")
+      (let ((page (portal-server-test--tasks root)))
+        (should (equal (car (portal-server-test--order page)) "b-free"))
+        (should-not (member "c1" (portal-server-test--order page)))
+        (should (equal (portal-server-test--readiness page "c2") "Ready")))
+      (funcall task "old.md" "status: todo" "depends_on: [ghost-old, c3]")
+      (let ((page (portal-server-test--tasks root)))
+        (should-not (member "uses-old" (portal-server-test--order page)))
+        (should (member "uses-old" (portal-server-test--stuck page)))
+        (should (equal (portal-server-test--readiness page "uses-old") "Blocked by old"))))))
+
+(ert-deftest portal-server-tasks-never-call-blocked-work-no-tasks ()
+  (portal-server-test--with-tasks
+    (portal-server-test--task root "one.md" "status: todo" "depends_on: [two]")
+    (portal-server-test--task root "two.md" "status: todo" "depends_on: [one]")
+    (let ((page (portal-server-test--tasks root)))
+      (should-not (string-match-p "No tasks\\|No unfinished" page))
+      (should (string-match-p "No task can be ordered until its dependency problems are fixed" page))
+      (should (equal (portal-server-test--stuck page) '("one" "two"))))))
+
+(ert-deftest portal-server-tasks-follow-explicit-ids-across-moves ()
+  (portal-server-test--with-tasks
+    (let ((hex (url-hexify-string root))
+          (png "\211PNG\r\n\032\n")
+          (image (lambda (path)
+                   (portal-server-test--get
+                    (format "/tasks/file?root=%s&task=moving&path=%s" (url-hexify-string root)
+                            (url-hexify-string (expand-file-name path root)))))))
+      (portal-server-test--write root "first-name.md" "---\nid: moving\nstatus: todo\n---\n# Moving\n")
+      (portal-server-test--write root "assets/pic.png" png)
+      (portal-server-test--write root "legacy.md" "---\nstatus: todo\n---\n# Legacy\n")
+      (portal-server-test--write root "waiter.md"
+                                 "---\nstatus: todo\ndepends_on: [moving, legacy]\n---\n# Waiter\n\n"
+                                 "[old](first-name.md#x) [new](second-name.md) [folder](second-name/content.md)\n")
+      (let ((page (portal-server-test--tasks root "&task=waiter")))
+        (should (string-match-p "task=moving\">Moving</a> <code>moving</code>" page))
+        (should (string-match-p "task=legacy\">Legacy</a> <code>legacy</code>" page))
+        (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page "old"))
+                       (concat "tasks?root=" hex "&task=moving#x"))))
+      (should (string-match-p "HTTP/1.1 200" (funcall image "assets/pic.png")))
+      ;; Renaming the file keeps the ID, its URL, and dependencies on it.
+      (rename-file (expand-file-name "first-name.md" root) (expand-file-name "second-name.md" root))
+      (should (string-match-p "HTTP/1.1 200" (portal-server-test--tasks root "&task=moving")))
+      (should (string-match-p "HTTP/1.1 404" (portal-server-test--tasks root "&task=second-name")))
+      (should (string-match-p "HTTP/1.1 200" (funcall image "assets/pic.png")))
+      (let ((page (portal-server-test--tasks root "&task=waiter")))
+        (should (string-match-p "task=moving\">Moving</a>" page))
+        (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page "new"))
+                       (concat "tasks?root=" hex "&task=moving")))
+        ;; A prose link to the old place needs updating; the dependency does not.
+        (should (string-match-p "class=\"broken-link\"[^>]*>old</a>" page)))
+      (should (equal (portal-server-test--readiness (portal-server-test--tasks root) "Waiter")
+                     "Blocked by Moving and Legacy"))
+      ;; So does converting it to a folder, whose attachments move with it.
+      (make-directory (expand-file-name "second-name" root))
+      (rename-file (expand-file-name "second-name.md" root) (expand-file-name "second-name/content.md" root))
+      (portal-server-test--write root "second-name/pic.png" png)
+      (should (string-match-p "HTTP/1.1 200" (funcall image "second-name/pic.png")))
+      (should (string-match-p "HTTP/1.1 403" (funcall image "assets/pic.png")))
+      (let ((page (portal-server-test--tasks root "&task=waiter&show=all")))
+        (should (string-match-p "task=moving&amp;show=all\">Moving</a>" page))
+        (should (equal (replace-regexp-in-string "&amp;" "&" (portal-server-test--href page "folder"))
+                       (concat "tasks?root=" hex "&task=moving&show=all")))))))
+
 (ert-deftest portal-server-startup-timeout-cleans-up ()
   (let ((portal-server-program "/bin/cat")
         (portal-server-start-timeout 0.05))
@@ -517,9 +782,10 @@
   (let ((portal-server-program "/usr/bin/false"))
     (portal-server-test--with-host
       (let ((process (portal-start-server)))
+        ;; The sentinel runs after the process is seen to exit.
         (portal-server-test--wait (lambda () (not (process-live-p process))))
-        (should-not (portal-server-url))
-        (should-not portal--server-process)))))
+        (portal-server-test--wait (lambda () (not portal--server-process)))
+        (should-not (portal-server-url))))))
 
 (ert-deftest portal-server-readiness-can-arrive-in-pieces ()
   (let ((program (make-temp-file "portal-handshake-")))

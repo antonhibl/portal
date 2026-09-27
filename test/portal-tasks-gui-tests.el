@@ -72,6 +72,16 @@ The root is `portal-markdown-gui--directory'."
   (portal-excalidraw-gui--js
    "const image = document.querySelector('img'); return !!image && image.complete && image.naturalWidth === 1;"))
 
+(defun portal-tasks-gui--text ()
+  "Return the page's visible text."
+  (portal-excalidraw-gui--js "return document.body.innerText;"))
+
+(defun portal-tasks-gui--readiness (title)
+  "Return the readiness of the list row titled TITLE, or :null without one."
+  (portal-excalidraw-gui--js
+   (format "const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.title')?.textContent === %S); return row ? row.querySelector('.readiness')?.textContent ?? '' : null;"
+           title)))
+
 (ert-deftest portal-tasks-gui-list-and-detail-keep-history-filter-and-position ()
   (portal-tasks-gui--root
     (should-not (alist-get 'back (portal-markdown-gui--state)))
@@ -157,6 +167,66 @@ The root is `portal-markdown-gui--directory'."
       (select-window origin)
       (should (alist-get 'back (portal-markdown-gui--state)))
       (should (alist-get 'forward (portal-markdown-gui--state))))))
+
+(ert-deftest portal-tasks-gui-dependencies-readiness-and-links ()
+  (portal-tasks-gui--root
+    ;; A saved task waits for one unfinished and one completed task.
+    (portal-markdown-gui--write
+     "release.md"
+     "---\nid: release-notes\nstatus: todo\ndepends_on: [shipped, fix-search]\n---\n# Release notes\n")
+    (call-interactively (key-binding "g"))
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-tasks-gui--readiness "Release notes") "Blocked by Fix search")))
+    (should (equal (portal-tasks-gui--readiness "Fix search") "Ready"))
+    ;; Its page links its prerequisites, including completed ones.
+    (portal-tasks-gui--link "Release notes")
+    (portal-test--wait-for-page "Release notes")
+    (portal-tasks-gui--route "&task=release-notes")
+    (let ((text (portal-tasks-gui--text)))
+      (should (string-match-p "release-notes" text))
+      (should (string-match-p "blocked" text))
+      (should (string-match-p "Shipped shipped done" text))
+      (should (string-match-p "Fix search fix-search todo" text)))
+    (portal-tasks-gui--link "Shipped")
+    (portal-test--wait-for-page "Shipped")
+    (portal-tasks-gui--route "&task=shipped")
+    (should-not (string-search "show=all" portal-web--hosted-path))
+    ;; A completed task shows what it blocks, and no readiness.
+    (should (portal-excalidraw-gui--js
+             "return !document.querySelector('.readiness') && document.body.innerText.includes('Blocks');"))
+    (portal-tasks-gui--link "Release notes")
+    (portal-test--wait-for-page "Release notes")
+    (call-interactively (key-binding "l"))
+    (portal-test--wait-for-page "Shipped")
+    (call-interactively (key-binding "r"))
+    (portal-test--wait-for-page "Release notes")
+    ;; The completed filter survives the list and dependency links.
+    (portal-tasks-gui--link "Tasks")
+    (portal-test--wait-for-page "Tasks")
+    (portal-tasks-gui--link "Show completed")
+    (portal-tasks-gui--route "&show=all")
+    (portal-test--wait-for-page "Tasks")
+    (should (portal-excalidraw-gui--js
+             "return document.querySelector('.completed h2').textContent === 'Completed' && document.querySelector('.completed').innerText.includes('Shipped');"))
+    (portal-tasks-gui--link "Release notes")
+    (portal-test--wait-for-page "Release notes")
+    (portal-tasks-gui--route "&task=release-notes&show=all")
+    (portal-tasks-gui--link "Fix search")
+    (portal-test--wait-for-page "Fix search")
+    (portal-tasks-gui--route "&task=fix-search&show=all")
+    ;; Completing a prerequisite and reloading makes its dependent ready.
+    (portal-web-back)
+    (portal-test--wait-for-page "Release notes")
+    (portal-markdown-gui--write "fix-search.md" "---\nstatus: done\n---\n# Fix search\n")
+    (call-interactively (key-binding "g"))
+    (portal-terminal-test--wait
+     (lambda () (portal-excalidraw-gui--js "return document.querySelector('.readiness')?.textContent === 'ready';")))
+    (portal-tasks-gui--route "&task=release-notes&show=all")
+    (portal-tasks-gui--link "Tasks")
+    (portal-test--wait-for-page "Tasks")
+    (portal-terminal-test--wait (lambda () (equal (portal-tasks-gui--readiness "Release notes") "Ready")))
+    (should (portal-excalidraw-gui--js
+             "return document.querySelector('.completed').innerText.includes('Fix search');"))))
 
 (ert-deftest portal-tasks-gui-reload-after-an-app-host-restart ()
   (portal-tasks-gui--root
