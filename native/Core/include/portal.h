@@ -4,14 +4,15 @@
    The C core in native/Core is the module's portable part.  emacs.c
    registers the Lisp interface (docs/adr/0002), converts arguments and
    results, and signals errors.  views.c owns every Portal view's identity
-   and lifecycle, and channel.c owns the pipe that carries records to Emacs.
+   and lifecycle, input.c decides who gets each key press, and channel.c owns
+   the pipe that carries records to Emacs.
    The platform implements the operations below: the production module links
    the macOS backend, native/Backend.swift, and the core's tests link
    test/portal-fake-backend.c.  Nothing here knows about Emacs values or a UI
    toolkit.
 
    These operations are becoming the primitives of docs/adr/0003.  The view
-   lifecycle already is; the web, terminal, input and toolbar operations
+   lifecycle and input already are; the web, terminal and toolbar operations
    still mirror their Lisp functions, until their rules move into the core.
 
    Threads: the core calls each operation synchronously, on the thread that
@@ -128,12 +129,29 @@ bool portal_terminal_themes(portal_text *names, portal_text *error);
 bool portal_terminal_paste(portal_view *terminal, portal_string text, bool enter,
                            portal_text *error);
 bool portal_terminal_text(portal_view *terminal, portal_text *text, portal_text *error);
-bool portal_terminal_bindings(portal_string json, portal_text *error);
 
-/* Input, for a view of any kind.  SERIAL is 0 when absent. */
-bool portal_input_prefix(portal_string character, int64_t flags, portal_text *error);
-bool portal_input(portal_view *view, portal_string action, int64_t serial, bool *result,
-                  portal_text *error);
+/* Input, for a view of any kind.  The core decides what each key press in a
+   view does: the view's app gets it, or it starts a handoff, in which Emacs
+   reads and runs a command (docs/terminal-input-bridge.md).  The platform
+   captures keys, moves the keyboard, and keeps the native events: the core
+   sees only portal_chord values, never replays them.
+
+   Give VIEW the keyboard, if it is attached; or, if VIEW has the keyboard,
+   return it to Emacs.  Either reports what changed with portal_input_focus
+   before it returns, so the core knows the result. */
+bool portal_view_focus(portal_view *view, portal_text *error);
+bool portal_view_unfocus(portal_view *view, portal_text *error);
+/* The key events VIEW holds, from a press the core answered
+   PORTAL_KEY_HOLD (below): that press, its trigger, and the events after it.
+   With REPLAY, deliver the events after the trigger again, in order, ahead
+   of any new ones, as if they had just happened, and stop holding them; VIEW
+   keeps its trigger.  Without, discard them all, trigger included.  Holding
+   nothing, either does nothing. */
+bool portal_view_replay(portal_view *view, bool replay, portal_text *error);
+/* Deliver VIEW's trigger to the app, as a real press and release of that
+   key where VIEW's keyboard input goes.  The core gives VIEW the keyboard
+   first.  Fails if VIEW holds no trigger. */
+bool portal_view_literal(portal_view *view, portal_text *error);
 
 /* Toolbar.  STATE is a JSON object. */
 bool portal_toolbar(bool enabled, portal_text *error);
@@ -164,5 +182,59 @@ bool portal_notify(portal_string type, portal_string target, const portal_string
                    size_t count);
 /* A timer from portal_timer_start has fired. */
 void portal_timer_fired(uint64_t token);
+
+/* Modifier keys, as Emacs names them.  Which keys are Meta and Super is the
+   platform's business: on macOS, Option and Command. */
+typedef enum portal_modifier {
+    PORTAL_SHIFT = 1 << 0,
+    PORTAL_CONTROL = 1 << 1,
+    PORTAL_META = 1 << 2,
+    PORTAL_SUPER = 1 << 3,
+} portal_modifier;
+
+/* A key press: CHARACTER, the Unicode code point the key types with Shift
+   but no other modifier, such as 'b' for Control-B and '!' for Shift-1 on a
+   US layout, or 0 for a key that types no single character; and the
+   portal_modifier bits held.  The core ignores other bits, case, and Shift
+   on a character Shift already made. */
+typedef struct portal_chord {
+    uint32_t character;
+    uint32_t modifiers;
+} portal_chord;
+
+/* What the platform does with a key press.  PASS: deliver it as it would
+   without Portal.  TAKE: drop it.  HOLD: keep it as the view's trigger, and
+   hold every key event after it in the view's window, in order, presses,
+   repeats, releases and modifier changes alike, without asking the core,
+   until portal_view_replay.  While a view holds a trigger, the key events in
+   its window are its own, whichever view has the keyboard: the platform asks
+   the core about each press there. */
+typedef enum portal_key { PORTAL_KEY_PASS, PORTAL_KEY_TAKE, PORTAL_KEY_HOLD } portal_key;
+
+/* CHORD was pressed, or REPEAT-ed, in TARGET's view: the view has the
+   keyboard, or holds a trigger in the window where the key was pressed.
+   Press and repeat only: a release or a modifier change never needs the
+   core. */
+portal_key portal_input_key(portal_string target, portal_chord chord, bool repeat);
+
+/* TARGET's view gained or lost the keyboard.  Report each change, whatever
+   made it; one the platform makes for the core, before that call returns.
+   Report the user moving the keyboard too, before anything changes: a click
+   that will give the view the keyboard, and the platform's own way back to
+   Emacs, Command-Escape on macOS, which returns the keyboard without asking
+   the core, even when the view does not have it.  A report that neither
+   Emacs nor the core caused abandons the view's handoff. */
+void portal_input_focus(portal_string target, bool focused);
+
+/* Who has TARGET's keyboard, for a toolbar to show until the toolbar's state
+   moves into the core: Emacs, the view, Emacs handling the view's handoff, or
+   the view in passthrough, which gives its app every key. */
+typedef enum portal_owner {
+    PORTAL_OWNER_EMACS,
+    PORTAL_OWNER_VIEW,
+    PORTAL_OWNER_PENDING,
+    PORTAL_OWNER_PASSTHROUGH,
+} portal_owner;
+portal_owner portal_input_owner(portal_string target);
 
 #endif

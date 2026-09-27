@@ -15,7 +15,14 @@
    every view primitive refuses to run, as on the wrong thread.  Timers fire only when a test
    fires them.  A destroyed view's memory is kept, marked destroyed, so a
    later call that names it is counted instead of reading freed memory
-   (portal-fake-backend.h). */
+   (portal-fake-backend.h).
+
+   Keys: all views share one window, where one attached view at a time can
+   have the keyboard, and Emacs has it otherwise.  Tests press keys, click
+   and press Command-Escape as a user would, and the fake routes each press
+   as the macOS platform does: holding what the core says to hold, and
+   replaying it when a test runs the event loop.  It logs where each press
+   went. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +31,13 @@
 #include "portal-fake-backend.h"
 #include "portal.h"
 
-enum { MAX_PROPERTIES = 32, MAX_TIMERS = 64 };
+enum { MAX_PROPERTIES = 32, MAX_TIMERS = 64, MAX_VIEWS = 4096, MAX_KEYS = 64 };
+
+/* A key press, as the platform keeps it. */
+struct press {
+    portal_chord chord;
+    bool repeat;
+};
 
 /* One property that portal--inspect reports. */
 struct property {
@@ -43,6 +56,12 @@ struct portal_view {
     bool destroyed;
     struct property properties[MAX_PROPERTIES];
     size_t count;
+    bool focused;          /* It has the keyboard. */
+    bool triggered;        /* It holds TRIGGER. */
+    struct press trigger;
+    bool holding;          /* It holds the presses in HELD, after TRIGGER. */
+    struct press held[MAX_KEYS];
+    size_t held_count;
 };
 
 static struct portal_view settings;
@@ -50,6 +69,11 @@ static struct portal_fake_calls calls;
 static bool refusing; /* See portal_fake_refuse. */
 static uint64_t timers[MAX_TIMERS]; /* Tokens of the timers not yet fired, oldest first. */
 static size_t timer_count;
+static struct portal_view *all[MAX_VIEWS]; /* Every view created, destroyed or not. */
+static size_t view_count;
+static struct press posted[MAX_KEYS]; /* Replayed presses the event loop has not run. */
+static size_t posted_count;
+static char key_log[4096];            /* Where presses went, since the last portal_fake_keys. */
 
 static portal_text copy(const char *data, size_t length)
 {
@@ -228,6 +252,9 @@ bool portal_view_create(portal_kind kind, portal_string target, const portal_opt
     view->kind = kind;
     view->target = copy(target.data, target.length).data;
     set_integer(view, "handle", (int64_t) ++calls.created);
+    if (view_count == MAX_VIEWS)
+        abort();
+    all[view_count++] = view;
     set_flag(view, "attached", false);
     for (size_t i = 0; i < count; i++) {
         struct property *entry = property(view, options[i].name.data, options[i].name.length);
@@ -241,11 +268,15 @@ bool portal_view_create(portal_kind kind, portal_string target, const portal_opt
     return true;
 }
 
+static void set_focus(struct portal_view *view);
+
 bool portal_view_destroy(portal_view *view, portal_text *error)
 {
     if (!usable(view, -1, error) || refused(error))
         return false;
     calls.destroyed++;
+    if (view->focused)
+        set_focus(NULL);
     for (size_t i = 0; i < view->count; i++) {
         clear(&view->properties[i]);
         free(view->properties[i].name.data);
@@ -274,6 +305,8 @@ bool portal_view_detach(portal_view *view, portal_text *error)
     if (!usable(view, -1, error) || refused(error))
         return false;
     calls.detached++;
+    if (view->focused)
+        set_focus(NULL);
     set_flag(view, "frame", false);
     set_flag(view, "attached", false);
     return true;
@@ -458,40 +491,6 @@ bool portal_terminal_text(portal_view *terminal, portal_text *text, portal_text 
     return true;
 }
 
-bool portal_terminal_bindings(portal_string json, portal_text *error)
-{
-    if (!json.length || json.data[0] != '{')
-        return fail(error, "Invalid native terminal binding");
-    set_string(&settings, "bindings", json.data, json.length);
-    return true;
-}
-
-bool portal_input_prefix(portal_string character, int64_t flags, portal_text *error)
-{
-    if (character.length != 1 || flags <= 0)
-        return fail(error, "Expected one modified ASCII prefix");
-    set_string(&settings, "prefix", character.data, character.length);
-    set_integer(&settings, "flags", flags);
-    return true;
-}
-
-/* Like the native module, report false for "pending" while no handoff is
-   pending. */
-bool portal_input(portal_view *view, portal_string action, int64_t serial, bool *result,
-                  portal_text *error)
-{
-    if (!usable(view, -1, error))
-        return false;
-    if (is(action, "unknown"))
-        return fail(error, "Unknown Portal input action: unknown");
-    *result = !is(action, "pending");
-    if (*result) {
-        set_string(view, "action", action.data, action.length);
-        set_integer(view, "serial", serial);
-    }
-    return true;
-}
-
 bool portal_toolbar(bool enabled, portal_text *error)
 {
     (void) error;
@@ -519,4 +518,198 @@ bool portal_toolbar_action(portal_view *view, portal_string action, portal_text 
                           action.data);
     *state = copy(json, length < (int) sizeof json ? (size_t) length : sizeof json - 1);
     return true;
+}
+
+/* Input.  Reports of the focus changes the fake makes reach the core at
+   once, as the contract in portal.h asks. */
+
+static portal_string target_of(const struct portal_view *view)
+{
+    return (portal_string) {view->target, strlen(view->target)};
+}
+
+/* Give VIEW the keyboard, or Emacs for NULL, reporting each change. */
+static void set_focus(struct portal_view *view)
+{
+    for (size_t i = 0; i < view_count; i++) {
+        struct portal_view *other = all[i];
+        if (other->destroyed || other->focused == (other == view))
+            continue;
+        other->focused = other == view;
+        portal_input_focus(target_of(other), other->focused);
+    }
+}
+
+static bool attached(const struct portal_view *view)
+{
+    const struct property *flag = get(view, "attached");
+    return flag && flag->flag;
+}
+
+bool portal_view_focus(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.focused++;
+    if (attached(view))
+        set_focus(view);
+    return true;
+}
+
+bool portal_view_unfocus(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.unfocused++;
+    if (view->focused)
+        set_focus(NULL);
+    return true;
+}
+
+static void log_key(const char *where, struct press press)
+{
+    char name[32];
+    size_t length = 0;
+    const char *prefixes[] = {"C-", "M-", "s-", "S-"};
+    const uint32_t bits[] = {PORTAL_CONTROL, PORTAL_META, PORTAL_SUPER, PORTAL_SHIFT};
+    for (size_t i = 0; i < 4; i++)
+        if (press.chord.modifiers & bits[i])
+            length += (size_t) snprintf(name + length, sizeof name - length, "%s", prefixes[i]);
+    snprintf(name + length, sizeof name - length, "%c%s", (char) press.chord.character,
+             press.repeat ? " repeat" : "");
+    size_t used = strlen(key_log);
+    snprintf(key_log + used, sizeof key_log - used, "%s%s %s", used ? ", " : "", where, name);
+}
+
+bool portal_view_replay(portal_view *view, bool replay, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    if (replay) {
+        calls.replayed++;
+        /* Ahead of presses posted before, as NSApp.postEvent(atStart:). */
+        if (posted_count + view->held_count > MAX_KEYS)
+            abort();
+        memmove(posted + view->held_count, posted, posted_count * sizeof *posted);
+        memcpy(posted, view->held, view->held_count * sizeof *posted);
+        posted_count += view->held_count;
+    } else {
+        calls.discarded++;
+        view->triggered = false;
+    }
+    view->holding = false;
+    view->held_count = 0;
+    return true;
+}
+
+bool portal_view_literal(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    if (!view->triggered)
+        return fail(error, "The fake holds no trigger to deliver");
+    if (!view->focused)
+        return fail(error, "The fake cannot deliver to a view without the keyboard");
+    log_key("literal", view->trigger);
+    return true;
+}
+
+/* The view whose window's keys are its own: the one holding a trigger. */
+static struct portal_view *capturing(void)
+{
+    for (size_t i = 0; i < view_count; i++)
+        if (!all[i]->destroyed && all[i]->triggered)
+            return all[i];
+    return NULL;
+}
+
+static struct portal_view *focused(void)
+{
+    for (size_t i = 0; i < view_count; i++)
+        if (!all[i]->destroyed && all[i]->focused)
+            return all[i];
+    return NULL;
+}
+
+void portal_fake_press(portal_chord chord, bool repeat)
+{
+    struct press press = {chord, repeat};
+    struct portal_view *view = capturing();
+    if (view && view->holding) {
+        if (view->held_count == MAX_KEYS)
+            abort();
+        view->held[view->held_count++] = press;
+        log_key("held", press);
+        return;
+    }
+    if (!view)
+        view = focused();
+    if (!view) {
+        log_key("emacs", press);
+        return;
+    }
+    switch (portal_input_key(target_of(view), chord, repeat)) {
+    case PORTAL_KEY_PASS:
+        /* Where it would go without Portal: the keyboard may have moved. */
+        view = focused();
+        log_key(view ? view->target : "emacs", press);
+        break;
+    case PORTAL_KEY_TAKE:
+        log_key("taken", press);
+        break;
+    case PORTAL_KEY_HOLD:
+        if (view->triggered) {
+            view->held[view->held_count++] = press;
+        } else {
+            view->triggered = view->holding = true;
+            view->trigger = press;
+        }
+        log_key("held", press);
+        break;
+    }
+}
+
+void portal_fake_run(void)
+{
+    while (posted_count) {
+        struct press press = posted[0];
+        memmove(posted, posted + 1, --posted_count * sizeof *posted);
+        portal_fake_press(press.chord, press.repeat);
+    }
+}
+
+void portal_fake_escape(void)
+{
+    struct portal_view *view = capturing();
+    if (!view)
+        view = focused();
+    if (!view)
+        return;
+    if (view->focused)
+        set_focus(NULL);
+    portal_input_focus(target_of(view), false);
+}
+
+bool portal_fake_click(const char *target)
+{
+    for (size_t i = 0; i < view_count; i++) {
+        struct portal_view *view = all[i];
+        if (view->destroyed || strcmp(view->target, target) || !attached(view))
+            continue;
+        if (!view->focused) {
+            portal_input_focus(target_of(view), true);
+            portal_notify((portal_string) {"select", 6}, target_of(view), NULL, 0);
+        }
+        set_focus(view);
+        return true;
+    }
+    return false;
+}
+
+const char *portal_fake_keys(void)
+{
+    static char keys[sizeof key_log];
+    memcpy(keys, key_log, sizeof keys);
+    key_log[0] = '\0';
+    return keys;
 }

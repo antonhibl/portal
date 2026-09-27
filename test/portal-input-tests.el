@@ -75,6 +75,14 @@
           (should-not (lookup-key portal-input-mode-map (kbd "C-b"))))
       (setq portal-input-prefix original))))
 
+(ert-deftest portal-input-prefix-descriptions-use-portal-modifiers ()
+  ;; The native module's values, not a platform's key flags.
+  (dolist (case '(("C-b" "b" 2) ("C-S-b" "b" 3) ("M-a" "a" 4) ("s-e" "e" 8)
+                  ("s-!" "!" 8) ("s-J" "j" 9) ("C-M-s-SPC" " " 14)))
+    (should (equal (portal-input--prefix-description (car case)) (cdr case))))
+  (dolist (bad '("b" "C-b x" "<f5>" "s-S-1" "C-é"))
+    (should-error (portal-input--prefix-description bad))))
+
 (ert-deftest portal-input-wrapper-controls-work-with-evil ()
   (skip-unless (locate-library "evil"))
   (require 'evil)

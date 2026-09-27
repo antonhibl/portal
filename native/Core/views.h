@@ -10,6 +10,7 @@
 #ifndef PORTAL_VIEWS_H
 #define PORTAL_VIEWS_H
 
+#include "input.h"
 #include "portal.h"
 
 /* A pane's pixel edges in its frame, as `window-inside-pixel-edges'. */
@@ -26,12 +27,14 @@ bool portal_views_open(portal_string kind, const portal_option *options, size_t 
    stays where it was, attached or not, and still open. */
 bool portal_views_place(portal_string target, portal_edges edges, portal_string title,
                         portal_text *error);
-/* Detach TARGET's view if it is attached, keeping its page or session.  If
-   the platform refuses, the view stays attached. */
+/* Detach TARGET's view if it is attached, keeping its page or session, and
+   end its handoff and passthrough.  If the platform refuses, the view stays
+   attached. */
 bool portal_views_hide(portal_string target, portal_text *error);
-/* Close TARGET, destroying its platform view once.  The target is gone
-   before the platform hears of it, so nothing the platform does meanwhile
-   can reach it.  If the platform refuses, the view stays open. */
+/* Close TARGET, ending its handoff and destroying its platform view once.
+   The target is gone before the platform hears of it, so nothing the
+   platform does meanwhile can reach it.  If the platform refuses, the view
+   stays open. */
 bool portal_views_close(portal_string target, portal_text *error);
 /* TARGET's state as a JSON object, or null for a target that names no open
    view: the platform's description, with "id", "kind", "visible" and
@@ -46,6 +49,9 @@ enum { PORTAL_ANY_KIND = -1 };
    is NULL, set it to "No Portal view TARGET".  The view is valid until the
    next lifecycle call. */
 portal_view *portal_views_find(portal_string target, int kind, portal_text *error);
+
+/* TARGET's input, if TARGET names an open view; valid until it closes. */
+struct portal_input *portal_views_input(portal_string target);
 
 /* Apply terminal theme NAME, or the default for a null NAME, to every open
    terminal view. */

@@ -8,13 +8,14 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     weak var input: NativeInput?
     private var controls: WebToolbar?
     var toolbarModel: ToolbarModel? { controls?.model }
-    private static let findKey = NativeKey(character: "f", flags: NSEvent.ModifierFlags.command.rawValue)
 
     /// Command-F opens the toolbar's find field, as in a browser. Without a
     /// visible toolbar, or in passthrough, the page gets the key.
     func handleKeyEvent(_ event: NSEvent) -> Bool {
         if input?.handleKeyEvent(event) == true { return true }
-        guard event.type == .keyDown, input?.ownership == .view, NativeKey(event) == Self.findKey,
+        guard event.type == .keyDown, input?.ownership == .view,
+              event.modifierFlags.intersection(NativeInput.modifiers) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "f",
               let model = toolbarModel, (try? model.perform("find")) != nil else { return false }
         return true
     }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import Foundation
+import AppKit
 import PortalCore
 
 // Calls between Swift and the C core outside the Lisp operations: the core's
-// notification pipe, and the timer primitive, both in
+// notification pipe, input, and the timer primitive, all in
 // native/Core/include/portal.h. The standalone checks compile this file too.
 
 /// The C core, as Swift features call it.
@@ -27,6 +27,26 @@ enum Core {
                 portal_notify($0[0], $0[1], $0.baseAddress! + 2, fields.count)
             }
         }
+    }
+
+    /// What to do with EVENT, a key press in TARGET's view or its window.
+    static func key(_ target: String, _ event: NSEvent) -> portal_key {
+        let chord = portal_chord(event)
+        return borrow(target) { portal_input_key($0, chord, event.isARepeat) }
+    }
+
+    /// TARGET's view gained or lost the keyboard.
+    static func focus(_ target: String, _ focused: Bool) {
+        borrow(target) { portal_input_focus($0, focused) }
+    }
+
+    /// Who has TARGET's keyboard.
+    static func owner(_ target: String) -> portal_owner {
+        borrow(target) { portal_input_owner($0) }
+    }
+
+    private static func borrow<T>(_ text: String, _ body: (portal_string) -> T) -> T {
+        text.withCString { body(portal_string(data: $0, length: text.utf8.count)) }
     }
 }
 

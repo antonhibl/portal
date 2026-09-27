@@ -6,7 +6,7 @@
 
 (defgroup portal-input nil "Input for Portal native views." :group 'applications)
 (declare-function portal--input "portal" (target action &optional serial))
-(declare-function portal--input-prefix "portal" (character flags))
+(declare-function portal--input-prefix "portal" (character modifiers))
 (declare-function portal-terminal--validate-native-prefix "portal-terminal-bindings" (description))
 (declare-function evil-make-overriding-map "evil-core" (keymap &optional state copy))
 (defvar portal-terminal--native-maps)
@@ -19,8 +19,12 @@
 (defvar portal-input-mode-map (make-sparse-keymap))
 (defvaralias 'portal-terminal-prefix 'portal-input-prefix)
 
+(defconst portal-input--modifiers '((shift . 1) (control . 2) (meta . 4) (super . 8))
+  "The native module's value of each modifier, as its chords carry them.")
+
 (defun portal-input--prefix-description (value)
-  "Validate VALUE and return its native character and modifier mask."
+  "Validate VALUE and return its native character and modifiers.
+The modifiers are a sum of `portal-input--modifiers' values."
   (let* ((keys (kbd value))
          (event (and (= (length keys) 1) (aref keys 0)))
          (basic (and event (event-basic-type event)))
@@ -31,8 +35,8 @@
     (when (and (memq 'shift mods) (/= basic 32) (not (<= ?a basic ?z)))
       (error "Use the resulting punctuation, e.g. s-! instead of s-S-1"))
     (list (downcase (char-to-string basic))
-          (cl-loop for (mod . bit) in '((shift . 17) (control . 18) (meta . 19) (super . 20))
-                   when (memq mod mods) sum (ash 1 bit)))))
+          (cl-loop for (mod . value) in portal-input--modifiers
+                   when (memq mod mods) sum value))))
 
 (defalias 'portal-terminal--prefix-description #'portal-input--prefix-description)
 

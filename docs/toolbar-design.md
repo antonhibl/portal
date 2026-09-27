@@ -84,9 +84,11 @@ left after the dot, separated by a rule.
 
 ## Ownership dot
 
-The dot shows who receives the keyboard. Swift already knows this through
-`NativeHost.ownsFocus` and `NativeInput`'s pending and passthrough states, so
-the dot updates immediately with no polling.
+The dot shows who receives the keyboard. The C core already knows this: the
+platform reports each change of keyboard focus, and the core keeps each view's
+handoff and passthrough state (`native/Core/input.c`). Swift reads it with
+`portal_input_owner` whenever it refreshes the strip, so the dot updates
+immediately with no polling.
 
 | State | Appearance | Tooltip | Click |
 | --- | --- | --- | --- |
