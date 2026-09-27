@@ -13,6 +13,8 @@
 #include <string.h>
 
 #include "channel.h"
+#include "core.h"
+#include "terminals.h"
 #include "views.h"
 
 struct view {
@@ -33,31 +35,6 @@ static struct {
 } views;
 
 static const char *const kinds[] = {[PORTAL_WEB] = "web", [PORTAL_TERMINAL] = "terminal"};
-
-static bool is(portal_string string, const char *literal)
-{
-    return string.length == strlen(literal) && !memcmp(string.data, literal, string.length);
-}
-
-/* Set *ERROR to MESSAGE followed by DETAIL, which may hold any bytes. */
-static bool fail(portal_text *error, const char *message, portal_string detail)
-{
-    size_t length = strlen(message);
-    char *text = malloc(length + detail.length + 1);
-    if (text) {
-        memcpy(text, message, length);
-        if (detail.length)
-            memcpy(text + length, detail.data, detail.length);
-        text[length + detail.length] = '\0';
-        *error = (portal_text) {text, length + detail.length};
-    }
-    return false;
-}
-
-static bool fail_with(portal_text *error, const char *message)
-{
-    return fail(error, message, (portal_string) {"", 0});
-}
 
 static struct view *find(portal_string target, int kind, portal_text *error)
 {
@@ -92,7 +69,10 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
         kind = PORTAL_TERMINAL;
     else
         return fail(error, "Unknown Portal view kind: ", kind_name);
-    /* Taken before anything can fail, so no two opens share an ID. */
+    if (kind == PORTAL_TERMINAL && !portal_terminals_check(options, count, error))
+        return false;
+    /* An open that gets this far spends its ID even if it fails, so no two
+       opens share one. */
     uint64_t id = ++views.ids;
     char name[32];
     size_t length = (size_t) snprintf(name, sizeof name, "%s:%" PRIu64, kinds[kind], id);
@@ -253,21 +233,13 @@ bool portal_views_inspect(portal_string target, portal_text *state, portal_text 
     return true;
 }
 
-bool portal_views_terminal_theme(const portal_string *name, portal_text *error)
+bool portal_views_each(portal_kind kind, bool (*visit)(portal_view *view, void *context),
+                       void *context)
 {
-    size_t count = 0;
     for (struct view *view = views.first; view; view = view->next)
-        count += view->kind == PORTAL_TERMINAL;
-    portal_view **terminals = malloc((count ? count : 1) * sizeof *terminals);
-    if (!terminals)
-        return fail_with(error, "Portal is out of memory");
-    count = 0;
-    for (struct view *view = views.first; view; view = view->next)
-        if (view->kind == PORTAL_TERMINAL)
-            terminals[count++] = view->native;
-    bool applied = portal_terminal_theme(name, terminals, count, error);
-    free(terminals);
-    return applied;
+        if (view->kind == kind && !visit(view->native, context))
+            return false;
+    return true;
 }
 
 /* A platform's late record, for a view that is gone or not yet open, would

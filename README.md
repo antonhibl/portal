@@ -870,15 +870,16 @@ the app sends, in order. Other web views have no bridge.
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
 | `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
 | `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
+| `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, and reading text |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
-| `native/Core/include/portal.h` | The platform interface: the view and input primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
+| `native/Core/include/portal.h` | The platform interface: the view, input and terminal primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
 | `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
-| `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
+| `native/Terminal.swift` | The terminal view kind: Ghostty sessions, the terminal primitives, the theme catalog, and terminal input |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
 | `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
 | `native/WebToolbar.swift` | Web zoom, find, navigation, and isolated page TOC support |
@@ -895,7 +896,8 @@ Features own their state and cleanup. Closing a web view does not destroy a
 terminal, and closing a terminal does not remove web views.
 
 The C bindings register every Lisp function and convert its arguments and results.
-Lifecycle functions call the core's view registry. The others look up their target's
+Lifecycle functions call the core's view registry, input functions its input handoff,
+and terminal functions its terminal rules. The others look up their target's
 view in the registry, which checks its kind, and pass it to one named operation in
 `portal.h`, such as `portal_web_load`, which `native/Backend.swift` implements with
 the Swift features. The operations use
@@ -936,6 +938,32 @@ reaches the view. The core drops a record the platform sends for a target that
 names no open view. A primitive that fails changes nothing: a failed open leaves
 nothing registered, and a failed placement, such as for a deleted frame, leaves
 the view where it was and still open, for Lisp to place again or close.
+
+The core also owns Portal's terminal rules, in `native/Core/terminals.c`, and asks
+the platform for six primitives on one terminal, or on the engine: list the theme
+names, apply a named theme or the default, paste text, press Enter, read all text, and
+set the font size. Before the platform creates a terminal, the core checks its
+options: `:directory` must be a string, `:command` and `:theme` a string or nil, and
+`:theme` a name the platform lists. It checks a theme's name the same way before
+applying it to every open terminal, oldest first, so an unknown name changes none. If
+one terminal rejects a theme, the error is that terminal's: those before it keep the
+new theme, and it and those after it keep their old one. `portal--terminal-themes`
+returns the platform's names sorted by code point. `portal--terminal-paste` pastes,
+then, with ENTER, presses Enter as a separate key, but only if the paste succeeded.
+Enter is its own primitive: input replays real native events and needs no synthetic
+key. Reading text on macOS selects all and leaves the selection active. The macOS
+platform keeps the Ghostty types, binding strings such as `select_all` and
+`set_font_size`, the default theme that follows the system appearance, and the
+keyboard's text-size steps and limits, until the toolbar moves into the core.
+
+A terminal describes its `:ready`, `:title`, `:columns`, `:rows` and `:exited`, which
+every platform reports. Other facts are diagnostics for tests: `:layer`, the class of
+the macOS renderer's layer, and `:focused`, which input owns. A process that exits
+leaves its view open with its last output, and its buffer too, until Lisp closes it;
+nothing restarts the shell. Closing the view, which destroys it, ends the process.
+The core does not react to an exit, so the platform calls nothing new. As for every
+kind, the core never passes a closed terminal to the platform: a stale target fails
+with "No Portal view TARGET", and a theme reaches only open terminals.
 
 Rectangles are in Emacs's frame pixels, from the top left of the frame's content
 area, as `window-inside-pixel-edges` reports them. On macOS these are AppKit points,
@@ -1052,7 +1080,7 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-for core in channel views input; do
+for core in channel views input terminals; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
@@ -1061,7 +1089,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
-  test/native-focus.swift build/channel.o build/views.o build/input.o \
+  test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -1134,6 +1162,16 @@ that serials of finished or abandoned handoffs, or another view's, do nothing;
 that hiding or closing ends a handoff; passthrough and when it ends; binding
 profiles, with Shift and punctuation; and that an invalid or colliding prefix or
 binding leaves the previous configuration working.
+
+`ctest -R terminals` runs `test/portal-terminals-tests.c`, which drives the core's
+terminal rules with the same fake platform. It checks that invalid options, including
+unknown or inexact theme names, create nothing; that the theme catalog is sorted and
+escaped; that a theme reaches every open terminal and no web view, that an unknown name
+reaches none, and that a terminal rejecting it stops the change there; that Enter
+follows a paste only when asked and never after a failed paste; that wrong-kind,
+unknown and closed targets reach no platform view; that platform errors and refusals
+reach Lisp; and that a terminal whose process exited stays open and describable until
+closed.
 
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
 the 19 functions and their arities, the input functions' conversion of chords and

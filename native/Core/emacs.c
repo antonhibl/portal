@@ -3,10 +3,10 @@
    converts arguments and results, and signals errors.  Each Lisp function
    copies its arguments, calls the core, and converts and frees what it
    returns.  The lifecycle functions call views.h, portal--channel
-   channel.h, and the input functions input.h.  The others find their
-   target's view through views.h, which checks its kind, and pass it to one
-   platform operation from portal.h.  No Emacs environment or value outlives
-   the module call that received it. */
+   channel.h, the input functions input.h, and the terminal functions
+   terminals.h.  The others find their target's view through views.h, which
+   checks its kind, and pass it to one platform operation from portal.h.  No
+   Emacs environment or value outlives the module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -16,6 +16,7 @@
 #include "channel.h"
 #include "input.h"
 #include "portal.h"
+#include "terminals.h"
 #include "views.h"
 
 int plugin_is_GPL_compatible;
@@ -303,8 +304,8 @@ STRINGS(inspect, portal_views_inspect(a[0], result, error))
 STRINGS(web_load, VIEW(PORTAL_WEB) && portal_web_load(view, a[1], error))
 STRINGS(web_send, VIEW(PORTAL_WEB) && portal_web_send(view, a[1], error))
 STRINGS(web_receive, VIEW(PORTAL_WEB) && portal_web_receive(view, result, error))
-STRINGS(terminal_themes, portal_terminal_themes(result, error))
-STRINGS(terminal_text, VIEW(PORTAL_TERMINAL) && portal_terminal_text(view, result, error))
+STRINGS(terminal_themes, portal_terminals_themes(result, error))
+STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_theme, portal_toolbar_theme(a[0], error))
 STRINGS(toolbar_action,
         VIEW(PORTAL_ANY_KIND) && portal_toolbar_action(view, a[1], result, error))
@@ -362,7 +363,7 @@ LISP_FUNCTION(Fterminal_theme)
     if (!named || read_text(env, args[0], &name)) {
         portal_string borrowed = borrow(name);
         result =
-            done(env, portal_views_terminal_theme(named ? &borrowed : NULL, &error), &error);
+            done(env, portal_terminals_theme(named ? &borrowed : NULL, &error), &error);
     }
     free(name.data);
     return result;
@@ -373,11 +374,9 @@ LISP_FUNCTION(Fterminal_paste)
     portal_text target = {0}, text = {0}, error = {0};
     emacs_value result = NULL;
     bool enter = nargs > 2 && env->is_not_nil(env, args[2]);
-    if (read_text(env, args[0], &target) && read_text(env, args[1], &text)) {
-        portal_view *terminal = portal_views_find(borrow(target), PORTAL_TERMINAL, &error);
-        result = done(env, terminal && portal_terminal_paste(terminal, borrow(text), enter, &error),
+    if (read_text(env, args[0], &target) && read_text(env, args[1], &text))
+        result = done(env, portal_terminals_paste(borrow(target), borrow(text), enter, &error),
                       &error);
-    }
     free(target.data);
     free(text.data);
     return result;

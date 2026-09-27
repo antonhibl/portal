@@ -16,110 +16,16 @@
 #include <unistd.h>
 
 #include "channel.h"
+#include "portal-core-tests.h"
 #include "portal-fake-backend.h"
 #include "portal.h"
+#include "terminals.h"
 #include "views.h"
-
-static int failures;
-
-#define CHECK(condition) check((condition), #condition, __LINE__)
-
-static void check(bool passed, const char *condition, int line)
-{
-    if (!passed) {
-        fprintf(stderr, "%s:%d: FAIL: %s\n", __FILE__, line, condition);
-        failures++;
-    }
-}
-
-static portal_string text(const char *literal)
-{
-    return (portal_string) {literal, strlen(literal)};
-}
-
-/* Whether ERROR says MESSAGE, which may hold LENGTH bytes including NULs;
-   free it. */
-static bool said(portal_text *error, const char *message, size_t length)
-{
-    bool same = error->data && error->length == length && !memcmp(error->data, message, length);
-    if (!same)
-        fprintf(stderr, "Expected error \"%.*s\", got \"%s\"\n", (int) length, message,
-                error->data ? error->data : "(none)");
-    free(error->data);
-    *error = (portal_text) {0};
-    return same;
-}
-
-static bool says(portal_text *error, const char *message)
-{
-    return said(error, message, strlen(message));
-}
-
-/* Open a view of KIND with the string options NAME, VALUE, ...; return its
-   target to free, or NULL with *ERROR set. */
-static char *open_view(const char *kind, portal_text *error, ...)
-{
-    portal_option options[4];
-    size_t count = 0;
-    va_list arguments;
-    va_start(arguments, error);
-    for (const char *name; (name = va_arg(arguments, const char *));) {
-        const char *value = va_arg(arguments, const char *);
-        options[count++] = (portal_option) {.name = text(name), .is_string = true,
-                                            .string = text(value)};
-    }
-    va_end(arguments);
-    portal_text target = {0};
-    if (!portal_views_open(text(kind), options, count, &target, error))
-        return NULL;
-    return target.data;
-}
-
-/* TARGET's state as JSON, to free. */
-static char *inspect(const char *target)
-{
-    portal_text state = {0}, error = {0};
-    if (!portal_views_inspect(text(target), &state, &error)) {
-        fprintf(stderr, "Inspecting %s failed: %s\n", target, error.data);
-        free(error.data);
-        return NULL;
-    }
-    return state.data;
-}
-
-/* Whether TARGET's state contains each of the NULL-terminated fragments. */
-static bool shows(const char *target, ...)
-{
-    char *state = inspect(target);
-    bool all = state != NULL;
-    va_list arguments;
-    va_start(arguments, target);
-    for (const char *fragment; all && (fragment = va_arg(arguments, const char *));)
-        if (!strstr(state, fragment)) {
-            fprintf(stderr, "Expected %s in %s\n", fragment, state);
-            all = false;
-        }
-    va_end(arguments);
-    free(state);
-    return all;
-}
 
 static bool place(const char *target, portal_edges edges, const char *frame,
                   portal_text *error)
 {
     return portal_views_place(text(target), edges, text(frame), error);
-}
-
-static bool same_calls(struct portal_fake_calls a, struct portal_fake_calls b)
-{
-    return !memcmp(&a, &b, sizeof a);
-}
-
-static void close_view(char *target)
-{
-    portal_text error = {0};
-    CHECK(portal_views_close(text(target), &error));
-    free(target);
 }
 
 /* A view's ID, from its target. */
@@ -132,7 +38,7 @@ static void test_targets_are_never_reused(void)
 {
     portal_text error = {0};
     char *web = open_view("web", &error, NULL);
-    char *terminal = open_view("terminal", &error, NULL);
+    char *terminal = open_view("terminal", &error, "directory", "/", NULL);
     CHECK(web && !strncmp(web, "web:", 4));
     CHECK(terminal && !strncmp(terminal, "terminal:", 9));
     /* IDs are global across kinds. */
@@ -145,7 +51,7 @@ static void test_targets_are_never_reused(void)
 
     /* A failed open registers nothing, yet its ID is spent. */
     struct portal_fake_calls before = portal_fake_calls();
-    CHECK(!open_view("terminal", &error, "fail", "No shell", NULL));
+    CHECK(!open_view("terminal", &error, "directory", "/", "fail", "No shell", NULL));
     CHECK(says(&error, "No shell"));
     CHECK(!open_view("window", &error, NULL));
     CHECK(says(&error, "Unknown Portal view kind: window"));
@@ -156,7 +62,7 @@ static void test_targets_are_never_reused(void)
     CHECK(!portal_notify(text("select"), text(failed), NULL, 0));
 
     /* Neither a closed nor a failed view's ID comes back. */
-    char *next = open_view("terminal", &error, NULL);
+    char *next = open_view("terminal", &error, "directory", "/", NULL);
     CHECK(next && id(next) == last + 2);
     close_view(next);
     close_view(web);
@@ -200,7 +106,7 @@ static void test_operations_check_the_kind(void)
 {
     portal_text error = {0};
     char *web = open_view("web", &error, NULL);
-    char *terminal = open_view("terminal", &error, NULL);
+    char *terminal = open_view("terminal", &error, "directory", "/", NULL);
     char message[64];
     snprintf(message, sizeof message, "No Portal view %s", web);
     CHECK(!portal_views_find(text(web), PORTAL_TERMINAL, &error));
@@ -212,12 +118,12 @@ static void test_operations_check_the_kind(void)
 
     /* Themes reach every terminal, and only terminals. */
     portal_string beta = text("Beta"), gamma = text("Gamma");
-    CHECK(portal_views_terminal_theme(&beta, &error));
+    CHECK(portal_terminals_theme(&beta, &error));
     CHECK(shows(terminal, "\"theme\":\"Beta\"", NULL));
     char *state = inspect(web);
     CHECK(state && !strstr(state, "\"theme\":\"Beta\","));
     free(state);
-    CHECK(!portal_views_terminal_theme(&gamma, &error));
+    CHECK(!portal_terminals_theme(&gamma, &error));
     CHECK(says(&error, "Unknown terminal theme: Gamma"));
     CHECK(shows(terminal, "\"theme\":\"Beta\"", NULL));
     close_view(web);
@@ -228,19 +134,19 @@ static void test_operations_check_the_kind(void)
 static void test_the_registry_survives_closes_in_any_order(void)
 {
     portal_text error = {0};
-    char *first = open_view("terminal", &error, NULL);
-    char *second = open_view("terminal", &error, NULL);
-    char *third = open_view("terminal", &error, NULL);
+    char *first = open_view("terminal", &error, "directory", "/", NULL);
+    char *second = open_view("terminal", &error, "directory", "/", NULL);
+    char *third = open_view("terminal", &error, "directory", "/", NULL);
     close_view(second);
     close_view(third);
-    char *fourth = open_view("terminal", &error, NULL);
+    char *fourth = open_view("terminal", &error, "directory", "/", NULL);
     portal_string alpha = text("Alpha");
-    CHECK(portal_views_terminal_theme(&alpha, &error));
+    CHECK(portal_terminals_theme(&alpha, &error));
     CHECK(shows(first, "\"theme\":\"Alpha\"", NULL));
     CHECK(shows(fourth, "\"theme\":\"Alpha\"", NULL));
     close_view(first);
     close_view(fourth);
-    char *fifth = open_view("terminal", &error, NULL);
+    char *fifth = open_view("terminal", &error, "directory", "/", NULL);
     CHECK(fifth && portal_views_find(text(fifth), PORTAL_TERMINAL, NULL));
     close_view(fifth);
     CHECK(!portal_fake_calls().misused);
@@ -320,10 +226,10 @@ static void test_a_failed_placement_changes_nothing(void)
 static void test_hiding_keeps_the_session_and_its_size(void)
 {
     portal_text error = {0};
-    char *terminal = open_view("terminal", &error, NULL);
+    char *terminal = open_view("terminal", &error, "directory", "/", NULL);
     portal_view *handle = portal_views_find(text(terminal), PORTAL_TERMINAL, NULL);
     size_t created = portal_fake_calls().created;
-    CHECK(portal_terminal_paste(handle, text("echo kept"), true, &error));
+    CHECK(portal_terminals_paste(text(terminal), text("echo kept"), true, &error));
     CHECK(place(terminal, (portal_edges) {0, 0, 800, 600}, "one", &error));
     CHECK(portal_views_hide(text(terminal), &error));
     CHECK(shows(terminal, "\"visible\":false", "\"size\":[800,600]", "\"text\":\"echo kept\\u000a\"",

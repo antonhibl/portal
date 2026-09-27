@@ -11,12 +11,14 @@ final class TerminalSession: PortalView {
     var input: NativeInput { fail("The standalone checks have no terminals") }
     var toolbar: ToolbarModel? { nil }
     func describe() -> [(String, ViewValue)] { [] }
+    func applyTheme(_ name: String?) throws {}
+    func paste(_ text: String) throws {}
+    func pressEnter() throws {}
+    func text() throws -> String { "" }
+    func setFontSize(_ points: Double) throws {}
 }
 
 @MainActor
 enum Terminals {
     static func themeNames() -> [String] { [] }
-    static func setTheme(_ name: String?, sessions: [TerminalSession]) throws {}
-    static func paste(_ session: TerminalSession, text: String, enter: Bool) throws {}
-    static func text(_ session: TerminalSession) throws -> String { "" }
 }

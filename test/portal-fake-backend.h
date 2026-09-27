@@ -8,18 +8,23 @@
 
 #include "portal.h"
 
-/* How many times the core called each view primitive, and how many calls
-   named a view after the core destroyed it, or a view of the wrong kind,
-   which must never happen. */
+/* How many times the core called each view primitive, and some terminal
+   primitives, and how many calls named a view after the core destroyed it,
+   or a view of the wrong kind, which must never happen. */
 struct portal_fake_calls {
     size_t created, destroyed, attached, detached, described, misused;
     size_t focused, unfocused, replayed, discarded;
+    size_t listed, themed, entered; /* Theme lists, themes applied, and Enters tried. */
 };
 struct portal_fake_calls portal_fake_calls(void);
 
-/* While REFUSE, every view primitive fails without doing anything, as a
-   platform does when called on the wrong thread. */
+/* While REFUSE, every view and terminal primitive fails without doing
+   anything, as a platform does when called on the wrong thread. */
 void portal_fake_refuse(bool refuse);
+
+/* End TERMINAL's process, as when its shell exits: it describes itself as
+   "exited", and stays open. */
+void portal_fake_exit(portal_view *terminal);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);
