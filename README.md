@@ -467,9 +467,11 @@ its readiness message. Opening external URLs does not require the server.
   launched directly, without a shell or any lookup of Bun on PATH. Runtime
   loading of `.env` and `bunfig.toml` is disabled in the compiled binary.
 
-Control protocol version 2 announces readiness, port, and access token; it is
-not yet a general UI RPC API. Rebuilding publishes the host executable atomically. An already
-running host keeps its old code until `portal-restart-server` is called.
+Control protocol version 3 announces readiness, port, and access token and
+supports [hosted app actions](docs/hosted-actions.md). The app host sends `ready`
+and `request` records; Emacs sends `context`, `forget`, and `result` records.
+Rebuilding publishes the host executable atomically. An already running host
+keeps its old code until `portal-restart-server` is called.
 
 ## Markdown previews
 
