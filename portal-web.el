@@ -39,14 +39,16 @@ queues commands through `unread-command-events'.")
 (define-derived-mode portal-web-mode special-mode "Portal Web"
   "Major mode for a buffer presenting a web view.
 RET or a click enters the page, and Command-Escape returns to Emacs.
-g loads the page again, and l and r go back and forward.  q hides the view
-while the page keeps running, and killing the buffer closes it."
+g loads the page again, l and r go back and forward, and Command-F finds
+text in the page, whether Emacs or the page owns the keyboard.  q hides
+the view while the page keeps running, and killing the buffer closes it."
   (setq-local cursor-type nil)
   (setq-local portal-input--map-function (lambda () portal-web-mode-map))
   (portal-input-mode 1))
 (keymap-set portal-web-mode-map "g" #'portal-web-reload)
 (keymap-set portal-web-mode-map "l" #'portal-web-back)
 (keymap-set portal-web-mode-map "r" #'portal-web-forward)
+(keymap-set portal-web-mode-map "s-f" #'portal-find)
 
 (defun portal-web--check-url (url)
   "Signal a user error unless URL is a URL a web view can load."

@@ -99,7 +99,9 @@ follow Emacs faces and update after theme changes.
 `portal-find`, `portal-web-back` (`l`), and `portal-web-forward` (`r`) use the
 same native state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
-`portal-terminal-text-size-reset`. Find opens a field inside the strip; Return
+`portal-terminal-text-size-reset`. Command-F runs `portal-find` in a web view
+with a toolbar, except in passthrough; in Portal's own web buffers, `s-f` also
+runs it while Emacs owns the keyboard. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
 and redisplaying a pane; reload preserves zoom and the TOC. Killing the buffer
 releases it.
