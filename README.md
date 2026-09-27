@@ -558,7 +558,9 @@ A status written some other way, such as with a YAML tag, an anchor or in more
 than one place, is left alone, and the page asks you to edit it in Emacs. So
 are a task with unsaved changes in an Emacs buffer (save it first), a
 read-only file, a file that changes while the action runs, and a failed save;
-each reports why and changes nothing, since the file is replaced whole. An
+each reports why and changes nothing, since the file is replaced whole. The
+file is checked once more just before it is replaced; like any editor's save,
+only a save elsewhere in that instant could still be overwritten. An
 unmodified buffer visiting the task shows the saved file.
 Each button sets the status it names, so pressing it again, or twice, leaves
 the task as it asked. The page shows what is happening, and reports success

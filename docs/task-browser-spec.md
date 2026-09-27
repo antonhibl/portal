@@ -280,8 +280,12 @@ a visiting buffer, one another Emacs has locked, a read-only one, or one whose
 bytes changed since the plan. Otherwise it replaces those bytes and writes the
 result, with no conversion, backup or save hooks, to a new file beside the task
 that is flushed to disk, given the task's modes and extended attributes, and
-renamed over it, as `file-precious-flag` saves do. A failed write is reported
-and leaves the task as it was. An unmodified visiting buffer is then reverted.
+renamed over it, as `file-precious-flag` saves do. Just before the rename,
+Emacs checks the task's hash again and refuses if it changed during the write.
+No rename can be conditional on the target, so a save by another program that
+lands between that check and the rename is still lost: the same window every
+editor's save has. A failed write is reported and leaves the task as it was.
+An unmodified visiting buffer is then reverted.
 Only a file inside the view's root is written; nothing is committed or moved,
 and each checkout's copy stays independent.
 

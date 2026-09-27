@@ -327,6 +327,20 @@ makes the app host ready."
                 (set-file-modes root #o755))
               (should (equal (portal-tasks-test--bytes file) changed))
               (should (equal (directory-files root nil "\\`[^.]\\|\\`\\.portal") '("task.md")))
+              ;; A save elsewhere while the new file is written is kept.
+              (let ((write (symbol-function 'write-region))
+                    (concurrent (concat changed "Saved concurrently.\n")))
+                (cl-letf (((symbol-function 'write-region)
+                           (lambda (start end name &rest rest)
+                             (prog1 (apply write start end name rest)
+                               (when (string-prefix-p ".portal-" (file-name-nondirectory name))
+                                 (funcall write concurrent nil file nil 'silent))))))
+                  (should (string-search "changed on disk"
+                                         (cadr (should-error (portal-tasks--status-action plan)
+                                                             :type 'user-error)))))
+                (should (equal (portal-tasks-test--bytes file) concurrent))
+                (should (equal (directory-files root nil "\\`[^.]\\|\\`\\.portal") '("task.md"))))
+              (with-temp-file file (insert changed))
               ;; Only a file in the view's root is written.
               (should-error (portal-tasks--status-action
                              (plist-put (portal-tasks-test--plan outside "done") :file outside))

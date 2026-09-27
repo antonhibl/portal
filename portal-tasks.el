@@ -139,7 +139,7 @@ it unmodified is reverted to the saved file."
       (delete-region (1+ start) (1+ end))
       (goto-char (1+ start))
       (insert (encode-coding-string text 'utf-8))
-      (portal-tasks--replace file))
+      (portal-tasks--replace file (plist-get arguments :before)))
     (when buffer
       (with-current-buffer buffer
         (with-demoted-errors "Could not revert the task buffer: %S"
@@ -147,11 +147,20 @@ it unmodified is reverted to the saved file."
     (portal-tasks--refresh file)
     (list :file file)))
 
-(defun portal-tasks--replace (file)
-  "Replace FILE with the current buffer's bytes, all at once.
+(defun portal-tasks--hash (file)
+  "Return the SHA-256 of FILE's bytes."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (secure-hash 'sha256 (current-buffer))))
+
+(defun portal-tasks--replace (file before)
+  "Replace FILE, whose bytes have SHA-256 BEFORE, with the current buffer's bytes.
 The bytes go to a new file beside FILE and reach the disk, and then it takes
 FILE's modes, extended attributes and name, as `file-precious-flag' saves
-do.  A failed write leaves FILE as it was."
+do.  A failed write leaves FILE as it was.  FILE is checked for BEFORE again
+just before the rename, so a save elsewhere is lost only if it lands between
+that check and the rename, the window every editor's save has."
   (let ((temp (make-temp-file (expand-file-name ".portal-" (file-name-directory file)))))
     (unwind-protect
         (let ((coding-system-for-write 'no-conversion)
@@ -160,6 +169,8 @@ do.  A failed write leaves FILE as it was."
           (set-file-modes temp (file-modes file))
           (ignore-errors
             (set-file-extended-attributes temp (file-extended-attributes file)))
+          (unless (equal (portal-tasks--hash file) before)
+            (user-error "The task file changed on disk; try again"))
           (rename-file temp file t))
       (when (file-exists-p temp) (delete-file temp)))))
 
