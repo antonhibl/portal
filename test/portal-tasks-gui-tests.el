@@ -82,6 +82,39 @@ The root is `portal-markdown-gui--directory'."
    (format "const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.title')?.textContent === %S); return row ? row.querySelector('.waits')?.textContent ?? '' : null;"
            title)))
 
+(defun portal-tasks-gui--node (label)
+  "Return JavaScript for the tree item whose row label is LABEL."
+  (format "[...document.querySelectorAll('li')].find(li => li.querySelector('.title, .name')?.textContent === %S)"
+          label))
+
+(defun portal-tasks-gui--shown (label)
+  "Return non-nil when the tree row labeled LABEL is on the page and rendered."
+  (eq t (portal-excalidraw-gui--js
+         (format "const e = %s?.querySelector('.title, .name'); return !!e && e.checkVisibility();"
+                 (portal-tasks-gui--node label)))))
+
+(defun portal-tasks-gui--left (label)
+  "Return the left edge of the rendered tree row labeled LABEL."
+  (should (portal-tasks-gui--shown label))
+  (portal-excalidraw-gui--js
+   (format "return Math.round(%s.querySelector('.row').getBoundingClientRect().left);"
+           (portal-tasks-gui--node label))))
+
+(defun portal-tasks-gui--open (label)
+  "Return non-nil when the disclosure below LABEL's tree row is open."
+  (eq t (portal-excalidraw-gui--js
+         (format "return %s.querySelector(':scope > details').open;" (portal-tasks-gui--node label)))))
+
+(defun portal-tasks-gui--toggle (label)
+  "Press the real Return key on the disclosure below LABEL's tree row."
+  (portal-input-focus)
+  (should (eq t (portal-excalidraw-gui--js
+                 (format "const s = %s.querySelector(':scope > details > summary'); s.focus(); return document.activeElement === s;"
+                         (portal-tasks-gui--node label)))))
+  (should (portal-test-native-key 36 0 "\r"))
+  (portal-test-native-key 53 (ash 1 20) "\e")
+  (portal-integration-test--emacs-input))
+
 (ert-deftest portal-tasks-gui-list-and-detail-keep-history-filter-and-position ()
   (portal-tasks-gui--root
     (should-not (alist-get 'back (portal-markdown-gui--state)))
@@ -180,7 +213,7 @@ The root is `portal-markdown-gui--directory'."
     (should (equal (portal-tasks-gui--waits "Fix search") ""))
     ;; A blocked row is dimmed, and its title keeps a usable width.
     (should (portal-excalidraw-gui--js
-             "const row = [...document.querySelectorAll('li.blocked')].find(li => li.textContent.includes('Release notes')); return getComputedStyle(row.querySelector('.title')).color !== getComputedStyle(document.body).color && row.querySelector('.title').getBoundingClientRect().width > row.getBoundingClientRect().width / 2;"))
+             "const row = [...document.querySelectorAll('.row.blocked')].find(a => a.textContent.includes('Release notes')); return getComputedStyle(row.querySelector('.title')).color !== getComputedStyle(document.body).color && row.querySelector('.title').getBoundingClientRect().width > row.getBoundingClientRect().width / 2;"))
     ;; Its page links its prerequisites, including completed ones.
     (portal-tasks-gui--link "Release notes")
     (portal-test--wait-for-page "Release notes")
@@ -203,20 +236,23 @@ The root is `portal-markdown-gui--directory'."
     (portal-test--wait-for-page "Shipped")
     (call-interactively (key-binding "r"))
     (portal-test--wait-for-page "Release notes")
-    ;; The completed filter survives the list and dependency links.
+    ;; The view and completed filter survive the list and dependency links.
     (portal-tasks-gui--link "Tasks")
     (portal-test--wait-for-page "Tasks")
+    (portal-tasks-gui--link "Execution")
+    (portal-tasks-gui--route "&view=execution")
+    (portal-test--wait-for-page "Tasks")
     (portal-tasks-gui--link "Show completed")
-    (portal-tasks-gui--route "&show=all")
+    (portal-tasks-gui--route "&view=execution&show=all")
     (portal-test--wait-for-page "Tasks")
     (should (portal-excalidraw-gui--js
              "return document.querySelector('.completed h2').textContent === 'Completed' && document.querySelector('.completed').innerText.includes('Shipped');"))
     (portal-tasks-gui--link "Release notes")
     (portal-test--wait-for-page "Release notes")
-    (portal-tasks-gui--route "&task=release-notes&show=all")
+    (portal-tasks-gui--route "&task=release-notes&view=execution&show=all")
     (portal-tasks-gui--link "Fix search")
     (portal-test--wait-for-page "Fix search")
-    (portal-tasks-gui--route "&task=fix-search&show=all")
+    (portal-tasks-gui--route "&task=fix-search&view=execution&show=all")
     ;; Completing a prerequisite and reloading makes its dependent ready.
     (portal-web-back)
     (portal-test--wait-for-page "Release notes")
@@ -224,7 +260,7 @@ The root is `portal-markdown-gui--directory'."
     (call-interactively (key-binding "g"))
     (portal-terminal-test--wait
      (lambda () (portal-excalidraw-gui--js "return document.querySelector('.readiness')?.textContent === 'ready';")))
-    (portal-tasks-gui--route "&task=release-notes&show=all")
+    (portal-tasks-gui--route "&task=release-notes&view=execution&show=all")
     (portal-tasks-gui--link "Tasks")
     (portal-test--wait-for-page "Tasks")
     (portal-terminal-test--wait (lambda () (equal (portal-tasks-gui--waits "Release notes") "")))
@@ -233,9 +269,12 @@ The root is `portal-markdown-gui--directory'."
 
 (ert-deftest portal-tasks-gui-reload-after-an-app-host-restart ()
   (portal-tasks-gui--root
+    (portal-tasks-gui--link "Execution")
+    (portal-tasks-gui--route "&view=execution")
+    (portal-test--wait-for-page "Tasks")
     (portal-tasks-gui--link "Fix search")
     (portal-test--wait-for-page "Fix search")
-    (portal-tasks-gui--route "&task=fix-search")
+    (portal-tasks-gui--route "&task=fix-search&view=execution")
     (let ((old (portal-server-url)))
       (portal-restart-server)
       (portal-terminal-test--wait (lambda () (and (portal-server-url)
@@ -246,7 +285,119 @@ The root is `portal-markdown-gui--directory'."
       (portal-test--wait-for-page "Fix search")
       (should (string-prefix-p (portal-server-url)
                                (plist-get (portal--inspect (portal-view-target)) :url)))
-      (should (string-search "&task=fix-search" portal-web--hosted-path)))))
+      (should (string-search "&task=fix-search&view=execution" portal-web--hosted-path)))))
+
+(ert-deftest portal-tasks-gui-nested-tree-disclosure-views-and-moves ()
+  (portal-tasks-gui--root
+    (portal-markdown-gui--write "big refactor/extract.md" "---\nid: extract-c\nstatus: todo\n---\n# Extract C\n")
+    (portal-markdown-gui--write "big refactor/implement/content.md"
+                                "---\nstatus: todo\ndepends_on: [extract-c]\n---\n# Implement\n")
+    (portal-markdown-gui--write "big refactor/implement/notes.md" "# Notes\n")
+    (portal-markdown-gui--write "epic/content.md" "---\nstatus: done\n---\n# Epic\n")
+    (portal-markdown-gui--write "epic/open.md" "---\nstatus: todo\n---\n# Open child\n")
+    (call-interactively (key-binding "g"))
+    (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "Open child")))
+    ;; Each level is indented, and a completed parent stays above its
+    ;; unfinished task while other completed tasks are hidden.
+    (should (> (portal-tasks-gui--left "Extract C") (+ (portal-tasks-gui--left "big refactor") 10)))
+    (should (= (portal-tasks-gui--left "Extract C") (portal-tasks-gui--left "Implement")))
+    (should (> (portal-tasks-gui--left "Open child") (+ (portal-tasks-gui--left "Epic") 10)))
+    (should (equal (portal-excalidraw-gui--js
+                    (format "return %s.querySelector('.status').textContent;" (portal-tasks-gui--node "Epic")))
+                   "done"))
+    (should-not (portal-tasks-gui--shown "Shipped"))
+    (should-not (portal-tasks-gui--shown "Notes"))
+    ;; A parent task's link and its disclosure are separate keyboard stops.
+    (portal-input-focus)
+    (portal-excalidraw-gui--js
+     (format "%s.querySelector('a.row').focus(); return true;" (portal-tasks-gui--node "Epic")))
+    (should (portal-test-native-key 48 0 "\t"))
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-excalidraw-gui--js "return document.activeElement.getAttribute('aria-label');")
+                       "Tasks in Epic")))
+    (portal-test-native-key 53 (ash 1 20) "\e")
+    (portal-integration-test--emacs-input)
+    ;; Real keys operate the disclosures of groups and parent tasks.
+    (portal-tasks-gui--toggle "big refactor")
+    (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Extract C"))))
+    (should (portal-tasks-gui--shown "big refactor"))
+    (portal-tasks-gui--toggle "Epic")
+    (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Open child"))))
+    (should (portal-tasks-gui--shown "Epic"))
+    (should-not (string-search "&task=" portal-web--hosted-path))
+    (portal-tasks-gui--toggle "Epic")
+    (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "Open child")))
+    (portal-tasks-gui--toggle "Epic")
+    (portal-terminal-test--wait (lambda () (not (portal-tasks-gui--shown "Open child"))))
+    ;; Back returns to the list as it was left; g expands it again.
+    (portal-tasks-gui--link "Epic")
+    (portal-test--wait-for-page "Epic")
+    (portal-tasks-gui--route "&task=epic")
+    (call-interactively (key-binding "l"))
+    (portal-test--wait-for-page "Tasks")
+    (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "Epic")))
+    (should-not (portal-tasks-gui--open "big refactor"))
+    (should-not (portal-tasks-gui--open "Epic"))
+    (call-interactively (key-binding "g"))
+    (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "Extract C")))
+    (should (portal-tasks-gui--open "Epic"))
+    ;; The execution view orders work across folders and shows where it is.
+    (portal-tasks-gui--link "Execution")
+    (portal-tasks-gui--route "&view=execution")
+    (portal-test--wait-for-page "Tasks")
+    (should (equal (portal-excalidraw-gui--js
+                    "return [...document.querySelectorAll('ol.tasks .title')].slice(0, 4).map(e => e.textContent + '@' + (e.nextElementSibling?.classList.contains('folder') ? e.nextElementSibling.textContent : '')).join('|');")
+                   "Open child@Epic|Extract C@big refactor|Implement@big refactor|Fix search@"))
+    ;; The view and filter survive task, dependency and folder links.
+    (portal-tasks-gui--link "Show completed")
+    (portal-tasks-gui--route "&view=execution&show=all")
+    (portal-test--wait-for-page "Tasks")
+    (portal-tasks-gui--link "Implement")
+    (portal-test--wait-for-page "Implement")
+    (portal-tasks-gui--route "implement&view=execution&show=all")
+    (portal-tasks-gui--link "Extract C")
+    (portal-test--wait-for-page "Extract C")
+    (portal-tasks-gui--route "&task=extract-c&view=execution&show=all")
+    (portal-tasks-gui--link "big refactor")
+    (portal-test--wait-for-page "Tasks")
+    (portal-terminal-test--wait (lambda () (not (string-search "&task=" portal-web--hosted-path))))
+    (portal-tasks-gui--route "&view=execution&show=all")
+    (should (equal (portal-excalidraw-gui--js "return location.hash;") ""))
+    (call-interactively (key-binding "l"))
+    (portal-test--wait-for-page "Extract C")
+    (call-interactively (key-binding "l"))
+    (portal-test--wait-for-page "Implement")
+    (call-interactively (key-binding "r"))
+    (portal-test--wait-for-page "Extract C")
+    (portal-tasks-gui--route "&task=extract-c&view=execution&show=all")
+    ;; A saved move shows on reload; the task keeps its page and dependents.
+    (make-directory (portal-markdown-gui--file "later"))
+    (rename-file (portal-markdown-gui--file "big refactor/extract.md")
+                 (portal-markdown-gui--file "later/extract.md"))
+    (call-interactively (key-binding "g"))
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector('.breadcrumbs').textContent;")
+                       "Tasks › later")))
+    (portal-tasks-gui--link "Tasks")
+    (portal-test--wait-for-page "Tasks")
+    (portal-tasks-gui--link "Tree")
+    (portal-tasks-gui--route "&show=all")
+    (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "later")))
+    (should-not (string-search "view=" portal-web--hosted-path))
+    (should (> (portal-tasks-gui--left "Extract C") (+ (portal-tasks-gui--left "later") 10)))
+    ;; In the tree view, a group's breadcrumb leads to its row, whose ID is
+    ;; percent-encoded like the fragment that names it.
+    (portal-tasks-gui--link "Implement")
+    (portal-test--wait-for-page "Implement")
+    (portal-tasks-gui--link "big refactor")
+    (portal-test--wait-for-page "Tasks")
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector(':target')?.id ?? '';")
+                       "folder-big%20refactor")))
+    (should (> (portal-markdown-gui--scroll) 0))
+    (should (string-search "&show=all" portal-web--hosted-path))
+    (should (equal (portal-tasks-gui--waits "Implement") "after 2"))
+    (should (portal-tasks-gui--shown "Shipped"))))
 
 (provide 'portal-tasks-gui-tests)
 ;;; portal-tasks-gui-tests.el ends here

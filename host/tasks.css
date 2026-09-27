@@ -21,27 +21,102 @@
 	color: var(--muted);
 	font-size: 0.85em;
 }
+.views {
+	display: flex;
+	gap: 0.25rem;
+	margin-left: auto;
+}
+.views a,
+.views [aria-current] {
+	border-radius: 0.3rem;
+	padding: 0.1em 0.5em;
+}
+.views [aria-current] {
+	background: var(--code);
+	font-weight: 600;
+}
+.view-note {
+	color: var(--muted);
+	font-size: 0.85em;
+}
 ol.tasks,
-ul.tasks {
+ul.tasks,
+ul.tree {
 	list-style: none;
 	padding: 0;
 	margin: 0;
+}
+ol.tasks,
+ul.tasks,
+.tree:not(.tree .tree) {
 	border-top: 1px solid var(--border);
 }
-.tasks li {
+.tasks li,
+.tree li {
 	margin: 0;
-	border-bottom: 1px solid var(--border);
 }
-.tasks a {
+.row {
 	display: flex;
 	align-items: baseline;
 	gap: 0.75rem;
+	border-bottom: 1px solid var(--border);
 	padding: 0.6rem 0.25rem;
 	color: inherit;
 	text-decoration: none;
 }
-.tasks .title {
+.row .title,
+.row .name {
 	flex: 1;
+}
+.row.blocked .title {
+	color: var(--muted);
+}
+a.row:hover .title,
+a.row:focus-visible .title {
+	text-decoration: underline;
+}
+.folder {
+	flex: none;
+	color: var(--muted);
+	font-size: 0.85em;
+}
+/* Each level of the tree is indented, with a disclosure control in the gutter. */
+.tree li {
+	position: relative;
+}
+.tree .row {
+	padding-left: 1.75rem;
+}
+.tree .tree {
+	padding-left: 1.5rem;
+}
+.tree summary {
+	list-style: none;
+	cursor: pointer;
+}
+.tree summary::-webkit-details-marker {
+	display: none;
+}
+.tree summary::before {
+	content: "▸";
+	position: absolute;
+	top: 0.6rem;
+	left: 0.5rem;
+	color: var(--muted);
+}
+.tree details[open] > summary::before {
+	content: "▾";
+}
+.tree .toggle {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1.75rem;
+	height: 2.4rem;
+	border-radius: 0.3rem;
+}
+.group > details > .row {
+	font-weight: 600;
 }
 .rank {
 	flex: none;
@@ -49,13 +124,6 @@ ul.tasks {
 	color: var(--muted);
 	font-variant-numeric: tabular-nums;
 	text-align: right;
-}
-.tasks .blocked .title {
-	color: var(--muted);
-}
-.tasks a:hover .title,
-.tasks a:focus-visible .title {
-	text-decoration: underline;
 }
 .waits {
 	flex: 0 1 auto;
@@ -105,6 +173,7 @@ ul.tasks {
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
+	gap: 1rem;
 	margin-bottom: 1.5rem;
 }
 .task-state {

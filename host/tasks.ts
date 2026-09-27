@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The task browser: saved Markdown tasks in one task root, read on each request.
-// A task is ROOT/NAME.md or ROOT/NAME/content.md with a `status` in its front
-// matter. NAME is its location; its ID is its front matter `id`, or else NAME.
-import { realpathSync } from "node:fs";
+// A task is a Markdown file at any depth under the root, with a `status` in its
+// front matter. A folder's content.md is that folder's own task. Its location
+// is its root-relative path without `.md` or `/content.md`; its ID is its
+// front matter `id`, or else that location.
+import { type Dirent, realpathSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,9 +15,11 @@ type Status = "todo" | "done";
 type Task = {
 	/** The effective ID: the front matter `id`, or else the location. */
 	id: string;
-	/** The file stem or folder name the task occupies in its root. */
+	/** Its logical path in the root: `a/b` for a/b.md or a/b/content.md. */
 	location: string;
 	source: string;
+	/** Whether it is its folder's content.md, and so that folder's task. */
+	folder: boolean;
 	status: Status;
 	title: string;
 	/** Whether the body's first level-one heading supplies the title. */
@@ -35,7 +39,7 @@ type Reading =
 	| { kind: "task"; task: Task }
 	| { kind: "document" }
 	| ({ kind: "problem" } & Problem);
-type Candidate = { location: string; source: string };
+type Candidate = { location: string; source: string; folder: boolean };
 /** Task documents sharing an ID or a location, none of which is used. */
 type Conflict = { ids: string[]; sources: string[] };
 
@@ -46,6 +50,8 @@ type Index = {
 	byId: Map<string, Task>;
 	/** The effective ID of every task document, conflicting or not, by source. */
 	bySource: Map<string, string>;
+	/** The usable tasks that are a folder's content.md, by location. */
+	byFolder: Map<string, Task>;
 	conflicts: Conflict[];
 	problems: Problem[];
 };
@@ -95,12 +101,26 @@ function byId(a: Task, b: Task): number {
 	return byCodeUnit(a.id, b.id);
 }
 
-function listHref(root: string, all: boolean): string {
-	return `tasks?root=${encode(root)}${all ? "&show=all" : ""}`;
+/** What the list shows: a root, in the tree or execution view, with or
+ * without completed tasks. Every task browser link keeps it. */
+type Listing = { root: string; execution: boolean; all: boolean };
+
+function listHref({ root, execution, all }: Listing, id?: string): string {
+	return (
+		`tasks?root=${encode(root)}` +
+		(id === undefined ? "" : `&task=${encode(id)}`) +
+		(execution ? "&view=execution" : "") +
+		(all ? "&show=all" : "")
+	);
 }
 
-function taskHref(root: string, id: string, all: boolean, hash = ""): string {
-	return `tasks?root=${encode(root)}&task=${encode(id)}${all ? "&show=all" : ""}${hash}`;
+function taskHref(listing: Listing, id: string, hash = ""): string {
+	return listHref(listing, id) + hash;
+}
+
+/** The fragment of folder LOCATION's row in the tree view. */
+function folderAnchor(location: string): string {
+	return `folder-${encode(location)}`;
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -186,10 +206,12 @@ function inlineText(markdown: string): string {
 		.trim();
 }
 
-/** Whether ID can name a task and its detail URL. */
+/** Whether ID can name a task and its detail URL: `/`-separated segments,
+ * none empty, `.` or `..`. It is never used as a path. */
 function validId(id: string): boolean {
 	return (
-		!!id && id !== "." && id !== ".." && !id.includes("/") && !id.includes("\0")
+		!id.includes("\0") &&
+		id.split("/").every((segment) => !["", ".", ".."].includes(segment))
 	);
 }
 
@@ -213,10 +235,9 @@ function dependencies(data: Record<string, unknown>): string[] | null {
 	return [...new Set(value.map(asId))];
 }
 
-/** What the saved TEXT of the candidate at LOCATION and SOURCE is. */
+/** What the saved TEXT of a candidate document is. */
 export function classify(
-	location: string,
-	source: string,
+	{ location, source, folder }: Candidate,
 	text: string,
 ): Reading {
 	let parsed: ReturnType<typeof frontMatter>;
@@ -273,6 +294,7 @@ export function classify(
 			id,
 			location,
 			source,
+			folder,
 			status,
 			title: title ?? heading ?? id,
 			headingTitle: heading !== null,
@@ -282,44 +304,76 @@ export function classify(
 	};
 }
 
-async function read({ location, source }: Candidate): Promise<Reading> {
+async function read(candidate: Candidate): Promise<Reading> {
 	try {
-		return classify(location, source, await readFile(source, "utf8"));
+		return classify(candidate, await readFile(candidate.source, "utf8"));
 	} catch (error) {
 		return {
 			kind: "problem",
-			source,
-			id: location,
+			source: candidate.source,
+			id: candidate.location,
 			message: `The file could not be read (${errorCode(error) ?? String(error)}).`,
 		};
 	}
 }
 
-/** The candidate documents directly in ROOT. Symbolic links are not
- * followed, and names are compared exactly. */
-async function candidates(root: string): Promise<Candidate[]> {
-	const found: Candidate[] = [];
-	for (const entry of await readdir(root, { withFileTypes: true })) {
-		const location = asId(
-			entry.isFile() ? entry.name.slice(0, -3) : entry.name,
-		);
-		if (entry.isFile() && entry.name.endsWith(".md")) {
-			found.push({ location, source: join(root, entry.name) });
-		} else if (entry.isDirectory()) {
-			const folder = join(root, entry.name);
-			try {
-				const content = await readdir(folder, { withFileTypes: true });
-				if (
-					content.some((file) => file.isFile() && file.name === "content.md")
-				) {
-					found.push({ location, source: join(folder, "content.md") });
-				}
-			} catch {
-				// An unreadable folder is supporting material, like any other.
+/** How many folders and files discovery reads at once. */
+const concurrency = 16;
+
+/** Run WORK on each of JOBS, and on each job it adds, LIMIT at a time.
+ * Rejects with the first failure. */
+function drain<Job>(
+	jobs: Job[],
+	limit: number,
+	work: (job: Job, add: (job: Job) => void) => Promise<void>,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		let active = 0;
+		let failed = false;
+		const next = () => {
+			while (!failed && active < limit && jobs.length > 0) {
+				const job = jobs.pop() as Job;
+				active++;
+				work(job, add).then(
+					() => {
+						active--;
+						next();
+					},
+					(error) => {
+						failed = true;
+						reject(error);
+					},
+				);
 			}
-		}
+			if (active === 0 && jobs.length === 0) resolve();
+		};
+		const add = (job: Job) => {
+			jobs.push(job);
+			next();
+		};
+		next();
+	});
+}
+
+/** A folder to list, at its logical path LOCATION, or a document to read. */
+type Job = { directory: string; location: string } | Candidate;
+
+/** The job for ENTRY in folder JOB: a folder, a candidate document, or
+ * nothing. Symbolic links are not followed, and names are compared exactly. */
+function entryJob(
+	job: { directory: string; location: string },
+	entry: Dirent,
+): Job | null {
+	const path = join(job.directory, entry.name);
+	const name = asId(entry.name);
+	const prefix = job.location ? `${job.location}/` : "";
+	if (entry.isDirectory()) return { directory: path, location: prefix + name };
+	if (!entry.isFile() || !entry.name.endsWith(".md")) return null;
+	// A folder's content.md is its task; the root's is a task of its own.
+	if (entry.name === "content.md" && job.location) {
+		return { location: job.location, source: path, folder: true };
 	}
-	return found;
+	return { location: prefix + name.slice(0, -3), source: path, folder: false };
 }
 
 /** TASKS split into those that are usable and the conflicts among the rest:
@@ -359,24 +413,50 @@ function separate(tasks: Task[]): { usable: Task[]; conflicts: Conflict[] } {
 	return { usable: usable.sort(byId), conflicts };
 }
 
-/** Read every candidate in ROOT, completed or not. */
+/** Read every candidate at any depth in ROOT, completed or not. An
+ * unreadable folder below ROOT is a problem; the other folders still load. */
 async function discover(root: string): Promise<Index> {
-	const readings = await Promise.all((await candidates(root)).map(read));
 	const all: Task[] = [];
 	const problems: Problem[] = [];
-	for (const reading of readings) {
-		if (reading.kind === "task") all.push(reading.task);
-		else if (reading.kind === "problem") {
-			const { kind: _, ...problem } = reading;
-			problems.push(problem);
-		}
-	}
+	await drain<Job>(
+		[{ directory: root, location: "" }],
+		concurrency,
+		async (job, add) => {
+			if ("source" in job) {
+				const reading = await read(job);
+				if (reading.kind === "task") all.push(reading.task);
+				else if (reading.kind === "problem") {
+					const { kind: _, ...problem } = reading;
+					problems.push(problem);
+				}
+				return;
+			}
+			let entries: Dirent[];
+			try {
+				entries = await readdir(job.directory, { withFileTypes: true });
+			} catch (error) {
+				if (!job.location) throw error;
+				problems.push({
+					source: job.directory,
+					message: `The folder could not be read (${errorCode(error) ?? String(error)}).`,
+				});
+				return;
+			}
+			for (const entry of entries) {
+				const next = entryJob(job, entry);
+				if (next) add(next);
+			}
+		},
+	);
 	problems.sort((a, b) => byCodeUnit(a.source, b.source));
 	const { usable, conflicts } = separate(all);
 	return {
 		tasks: usable,
 		byId: new Map(usable.map((task) => [task.id, task])),
 		bySource: new Map(all.map((task) => [asId(task.source), task.id])),
+		byFolder: new Map(
+			usable.flatMap((task) => (task.folder ? [[task.location, task]] : [])),
+		),
 		conflicts,
 		problems,
 	};
@@ -568,8 +648,8 @@ async function unusable(root: string): Promise<Response | null> {
 	}
 }
 
-function header(root: string, filter = ""): string {
-	return `<header class="tasks-header"><h1>Tasks</h1>${filter}<p class="root"><code>${html(root)}</code></p></header>`;
+function header(root: string, controls = ""): string {
+	return `<header class="tasks-header"><h1>Tasks</h1>${controls}<p class="root"><code>${html(root)}</code></p></header>`;
 }
 
 function failure(message: string, root: string, status: number): Response {
@@ -589,8 +669,8 @@ function source(path: string): string {
 	return `<code>${html(path)}</code>`;
 }
 
-function idLink(root: string, id: string, all: boolean): string {
-	return `<a href="${html(taskHref(root, id, all))}">${html(id)}</a>`;
+function idLink(listing: Listing, id: string): string {
+	return `<a href="${html(taskHref(listing, id))}">${html(id)}</a>`;
 }
 
 function and(items: string[]): string {
@@ -599,14 +679,14 @@ function and(items: string[]): string {
 		: `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
 
-function problemList(root: string, found: Snapshot, all: boolean): string {
-	const id = (task: Task) => idLink(root, task.id, all);
+function problemList(listing: Listing, found: Snapshot): string {
+	const id = (task: Task) => idLink(listing, task.id);
 	const items = [
 		...found.conflicts.map(({ ids, sources }) =>
 			ids.length === 1
-				? `<li>${idLink(root, ids[0] ?? "", all)} is defined more than once: ` +
+				? `<li>${idLink(listing, ids[0] ?? "")} is defined more than once: ` +
 					`${and(sources.map(source))}</li>`
-				: `<li>${and(ids.map((i) => idLink(root, i, all)))} conflict: ` +
+				: `<li>${and(ids.map((i) => idLink(listing, i)))} conflict: ` +
 					`${and(sources.map(source))} share a task ID or location</li>`,
 		),
 		...found.problems.map(
@@ -639,13 +719,26 @@ function problemList(root: string, found: Snapshot, all: boolean): string {
 		: `<section class="problems"><h2>Problems</h2><ul>${items.join("")}</ul></section>`;
 }
 
-/** TASK's row in the list, with RANKS giving execution positions. A blocked
- * row is dimmed and says what it waits for. */
-function row(
-	root: string,
+/** The folders holding TASK, outermost first: each folder's location, and
+ * its name or, when it is a task's folder, that task. */
+function folders(
 	found: Snapshot,
 	task: Task,
-	all: boolean,
+): { location: string; name: string; task: Task | undefined }[] {
+	const names = task.location.split("/").slice(0, -1);
+	return names.map((name, i) => {
+		const location = names.slice(0, i + 1).join("/");
+		return { location, name, task: found.byFolder.get(location) };
+	});
+}
+
+/** TASK's row, a link to its page, with RANKS giving execution positions. A
+ * blocked row is dimmed and says what it waits for. The execution view shows
+ * the folders holding it; the tree, which mixes statuses, marks it done. */
+function row(
+	listing: Listing,
+	found: Snapshot,
+	task: Task,
 	ranks: Map<Task, number>,
 ): string {
 	const rank = ranks.get(task);
@@ -653,28 +746,43 @@ function row(
 		task.status === "todo"
 			? waits(found, task, ranks)
 			: { text: "", problem: false };
+	const path = listing.execution
+		? folders(found, task).map((folder) => folder.task?.title ?? folder.name)
+		: [];
 	return (
-		`<li${text ? ` class="blocked"` : ""}><a href="${html(taskHref(root, task.id, all))}">` +
+		`<a class="row${text ? " blocked" : ""}" href="${html(taskHref(listing, task.id))}">` +
 		(rank === undefined ? "" : `<span class="rank">${rank}</span>`) +
+		(!listing.execution && task.status === "done" ? badge(task.status) : "") +
 		`<span class="title">${html(task.title)}</span>` +
+		(path.length === 0
+			? ""
+			: `<span class="folder">${path.map(html).join(" › ")}</span>`) +
 		(text
 			? `<span class="waits${problem ? " dependency-problem" : ""}">${html(text)}</span>`
 			: "") +
-		`</a></li>`
+		"</a>"
 	);
 }
 
-function list(root: string, found: Snapshot, all: boolean): Response {
+/** The execution view: unfinished tasks in order, then those with dependency
+ * problems, then, when shown, completed tasks. */
+function executionView(
+	listing: Listing,
+	found: Snapshot,
+	ranks: Map<Task, number>,
+): string {
 	const { order, stuck } = found.plan;
-	const toggle = `<p class="filter"><a href="${html(listHref(root, !all))}">${all ? "Hide completed" : "Show completed"}</a></p>`;
-	const ranks = new Map(order.map((task, i) => [task, i + 1]));
 	const rows = (tasks: Task[]) =>
-		tasks.map((task) => row(root, found, task, all, ranks)).join("");
+		tasks
+			.map((task) => `<li>${row(listing, found, task, ranks)}</li>`)
+			.join("");
 	let content = "";
 	if (order.length > 0) {
 		content += `<ol class="tasks">${rows(order)}</ol>`;
 	} else if (stuck.length > 0) {
 		content += `<p class="empty">No task can be ordered until its dependency problems are fixed.</p>`;
+	} else {
+		content += `<p class="empty">No unfinished tasks.</p>`;
 	}
 	if (stuck.length > 0) {
 		content +=
@@ -682,34 +790,191 @@ function list(root: string, found: Snapshot, all: boolean): Response {
 			`<ul class="tasks">${rows(stuck)}</ul></section>`;
 	}
 	const done = found.tasks.filter((task) => task.status === "done");
+	if (listing.all && done.length > 0) {
+		content += `<section class="completed"><h2>Completed</h2><ul class="tasks">${rows(done)}</ul></section>`;
+	}
+	return content;
+}
+
+/** A folder or a task in the tree. A folder is a group unless it has a TASK
+ * of its own; a task file holds nothing, so its CHILDREN are null. */
+type Node = {
+	location: string;
+	name: string;
+	task: Task | null;
+	children: Node[] | null;
+};
+
+/** The usable tasks in FOUND in their folders, under a nameless root. */
+function tree(found: Snapshot): Node {
+	const root: Node = { location: "", name: "", task: null, children: [] };
+	const directories = new Map([["", root]]);
+	const parent = (location: string) =>
+		directory(location.slice(0, Math.max(location.lastIndexOf("/"), 0)));
+	const directory = (location: string): Node => {
+		let node = directories.get(location);
+		if (!node) {
+			const name = location.slice(location.lastIndexOf("/") + 1);
+			node = { location, name, task: null, children: [] };
+			directories.set(location, node);
+			parent(location).children?.push(node);
+		}
+		return node;
+	};
+	for (const task of found.tasks) {
+		if (task.folder) directory(task.location).task = task;
+		else {
+			const name = task.location.slice(task.location.lastIndexOf("/") + 1);
+			parent(task.location).children?.push({
+				location: task.location,
+				name,
+				task,
+				children: null,
+			});
+		}
+	}
+	return root;
+}
+
+/** The shown part of a node, with the smallest execution rank in it. */
+type Branch = { node: Node; children: Branch[]; rank: number };
+
+/** Earliest rank first, then by location and, for a folder and a task
+ * file at one location, the folder first. */
+function byBranch(a: Branch, b: Branch): number {
+	if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
+	return (
+		byCodeUnit(a.node.location, b.node.location) ||
+		Number(a.node.children === null) - Number(b.node.children === null)
+	);
+}
+
+/** What the tree shows of NODE, or null for nothing. A task shows when it is
+ * unfinished or completed tasks are shown, and a completed task still shows
+ * above the tasks in its folder that do. A group shows only around tasks. */
+function prune(
+	node: Node,
+	listing: Listing,
+	ranks: Map<Task, number>,
+): Branch | null {
+	const children = (node.children ?? [])
+		.flatMap((child) => prune(child, listing, ranks) ?? [])
+		.sort(byBranch);
+	const shown =
+		node.task !== null && (listing.all || node.task.status === "todo");
+	if (!shown && children.length === 0) return null;
+	const own = (node.task && ranks.get(node.task)) ?? Infinity;
+	const rank = Math.min(own, ...children.map((child) => child.rank));
+	return { node, children, rank };
+}
+
+/** BRANCH as a tree item: a task row or a group name, and a disclosure of
+ * what it holds. */
+function treeItem(
+	listing: Listing,
+	found: Snapshot,
+	{ node, children }: Branch,
+	ranks: Map<Task, number>,
+): string {
+	const items = children
+		.map((child) => treeItem(listing, found, child, ranks))
+		.join("");
+	const inner = `<ul class="tree">${items}</ul>`;
+	const anchor = `id="${html(folderAnchor(node.location))}"`;
+	if (!node.task) {
+		return (
+			`<li class="group" ${anchor}><details open>` +
+			`<summary class="row"><span class="name">${html(node.name)}</span></summary>` +
+			`${inner}</details></li>`
+		);
+	}
+	const link = row(listing, found, node.task, ranks);
+	if (children.length === 0) return `<li class="task">${link}</li>`;
+	return (
+		`<li class="task parent" ${anchor}>${link}<details open>` +
+		`<summary class="toggle" aria-label="Tasks in ${html(node.task.title)}"></summary>` +
+		`${inner}</details></li>`
+	);
+}
+
+/** The tree view: every shown task once, in its folders. */
+function treeView(
+	listing: Listing,
+	found: Snapshot,
+	ranks: Map<Task, number>,
+): string {
+	const root = prune(tree(found), listing, ranks);
+	const items = (root?.children ?? [])
+		.map((branch) => treeItem(listing, found, branch, ranks))
+		.join("");
+	return (
+		`<p class="view-note">Browsing by folder: each folder follows its earliest ` +
+		`task in the execution order, which only the Execution view lists in order.</p>` +
+		`<ul class="tree">${items}</ul>`
+	);
+}
+
+/** The view switch and the completion filter. */
+function controls(listing: Listing): string {
+	const view = (execution: boolean, label: string) =>
+		listing.execution === execution
+			? `<span aria-current="page">${label}</span>`
+			: `<a href="${html(listHref({ ...listing, execution }))}">${label}</a>`;
+	return (
+		`<nav class="views" aria-label="View">${view(false, "Tree")}${view(true, "Execution")}</nav>` +
+		`<p class="filter"><a href="${html(listHref({ ...listing, all: !listing.all }))}">` +
+		`${listing.all ? "Hide completed" : "Show completed"}</a></p>`
+	);
+}
+
+function list(listing: Listing, found: Snapshot): Response {
+	const { order, stuck } = found.plan;
+	const ranks = new Map(order.map((task, i) => [task, i + 1]));
+	let content: string;
 	if (found.tasks.length === 0) {
 		content = `<p class="empty">No tasks</p>`;
-	} else if (order.length + stuck.length === 0) {
-		content = all
-			? `<p class="empty">No unfinished tasks.</p>`
-			: `<p class="empty">No unfinished tasks. <a href="${html(listHref(root, true))}">Show completed</a></p>`;
-	}
-	if (all && done.length > 0) {
-		content += `<section class="completed"><h2>Completed</h2><ul class="tasks">${rows(done)}</ul></section>`;
+	} else if (!listing.all && order.length + stuck.length === 0) {
+		content = `<p class="empty">No unfinished tasks. <a href="${html(listHref({ ...listing, all: true }))}">Show completed</a></p>`;
+	} else if (listing.execution) {
+		content = executionView(listing, found, ranks);
+	} else {
+		content = treeView(listing, found, ranks);
 	}
 	return page(
 		"Tasks",
-		header(root, toggle) + problemList(root, found, all) + content,
+		header(listing.root, controls(listing)) +
+			problemList(listing, found) +
+			content,
 		200,
 		styles,
 	);
 }
 
+/** The way back from a task page: the list, then the folders holding TASK,
+ * each a link to its task or, for a group, to the list: in the tree view, at
+ * the group's row, which the execution view does not have. */
+function breadcrumbs(listing: Listing, found?: Snapshot, task?: Task): string {
+	const links = [`<a href="${html(listHref(listing))}">Tasks</a>`];
+	for (const folder of found && task ? folders(found, task) : []) {
+		let href = listHref(listing);
+		if (folder.task) href = taskHref(listing, folder.task.id);
+		else if (!listing.execution) href += `#${folderAnchor(folder.location)}`;
+		links.push(
+			`<a href="${html(href)}">${html(folder.task?.title ?? folder.name)}</a>`,
+		);
+	}
+	return `<span class="breadcrumbs">${links.join(" › ")}</span>`;
+}
+
 /** A detail page's recoverable error, with a way back to the task list. */
 function detailFailure(
-	root: string,
-	all: boolean,
+	listing: Listing,
 	body: string,
 	status: number,
 ): Response {
 	return page(
 		"Task unavailable",
-		`<nav class="task-nav"><a href="${html(listHref(root, all))}">Tasks</a></nav>` +
+		`<nav class="task-nav">${breadcrumbs(listing)}</nav>` +
 			`<h1>Task unavailable</h1>${body}`,
 		status,
 		styles,
@@ -725,8 +990,10 @@ function inside(path: string, base: string): boolean {
 	);
 }
 
-/** TASK's body as HTML, with local links and images made to work here. */
-function body(root: string, found: Snapshot, task: Task, all: boolean): string {
+/** TASK's body as HTML, with local links and images made to work here.
+ * Relative links resolve from its document's folder, whatever its depth. */
+function body(listing: Listing, found: Snapshot, task: Task): string {
+	const { root } = listing;
 	const realRoot = realpathSync(root);
 	const base = realpathSync(dirname(task.source));
 	// Emacs visits the file under the root it named, in its Unicode form.
@@ -756,7 +1023,7 @@ function body(root: string, found: Snapshot, task: Task, all: boolean): string {
 				if (id !== undefined) {
 					link.setAttribute(
 						"href",
-						taskHref(root, id, all, target.hash).replaceAll("&", "&amp;"),
+						taskHref(listing, id, target.hash).replaceAll("&", "&amp;"),
 					);
 				} else if (inside(real, base)) {
 					link.setAttribute(
@@ -783,15 +1050,10 @@ function body(root: string, found: Snapshot, task: Task, all: boolean): string {
 }
 
 /** Task ID in FOUND, or the page that explains why it cannot be shown. */
-function resolve(
-	root: string,
-	found: Index,
-	id: string,
-	all: boolean,
-): Task | Response {
+function resolve(listing: Listing, found: Index, id: string): Task | Response {
 	const wanted = asId(id);
 	if (!validId(wanted)) {
-		return detailFailure(root, all, "<p>This is not a valid task ID.</p>", 400);
+		return detailFailure(listing, "<p>This is not a valid task ID.</p>", 400);
 	}
 	const task = found.byId.get(wanted);
 	if (task) return task;
@@ -799,8 +1061,7 @@ function resolve(
 	if (conflicts.length > 0) {
 		const sources = [...new Set(conflicts.flatMap((c) => c.sources))];
 		return detailFailure(
-			root,
-			all,
+			listing,
 			`<p>Task ${source(wanted)} is defined more than once, or shares its location with another task. Keep one of these and reload:</p>` +
 				`<ul>${sources.map((path) => `<li>${source(path)}</li>`).join("")}</ul>`,
 			409,
@@ -809,8 +1070,7 @@ function resolve(
 	const problems = found.problems.filter((problem) => problem.id === wanted);
 	if (problems.length > 0) {
 		return detailFailure(
-			root,
-			all,
+			listing,
 			`<ul>${problems
 				.map(
 					(problem) =>
@@ -821,28 +1081,22 @@ function resolve(
 		);
 	}
 	return detailFailure(
-		root,
-		all,
+		listing,
 		`<p>There is no task ${source(wanted)} in this folder.</p>`,
 		404,
 	);
 }
 
 /** TASK as a link, with its ID and saved status. */
-function reference(root: string, task: Task, all: boolean): string {
+function reference(listing: Listing, task: Task): string {
 	return (
-		`<li><a href="${html(taskHref(root, task.id, all))}">${html(task.title)}</a> ` +
+		`<li><a href="${html(taskHref(listing, task.id))}">${html(task.title)}</a> ` +
 		`<code>${html(task.id)}</code> ${badge(task.status)}</li>`
 	);
 }
 
 /** TASK's ID and the tasks it depends on and blocks. */
-function metadata(
-	root: string,
-	found: Snapshot,
-	task: Task,
-	all: boolean,
-): string {
+function metadata(listing: Listing, found: Snapshot, task: Task): string {
 	const { prerequisites, dependents, cycles } = found.plan;
 	let items = `<dt>ID</dt><dd><code>${html(task.id)}</code></dd>`;
 	if (task.dependsOn === null) {
@@ -853,7 +1107,7 @@ function metadata(
 		const references = (prerequisites.get(task) ?? []).map(
 			({ id, task: target, problem }) =>
 				target
-					? reference(root, target, all)
+					? reference(listing, target)
 					: `<li><code>${html(id)}</code> <span class="dependency-problem">This task ${html(problem ?? "")}.</span></li>`,
 		);
 		items += `<dt>Depends on</dt><dd><ul class="references">${references.join("")}</ul></dd>`;
@@ -865,25 +1119,20 @@ function metadata(
 			`<dt>Cycle</dt><dd class="dependency-problem">` +
 			(others.length === 0
 				? "It depends on itself."
-				: `It depends on itself through ${and(others.map((t) => idLink(root, t.id, all)))}.`) +
+				: `It depends on itself through ${and(others.map((t) => idLink(listing, t.id)))}.`) +
 			"</dd>";
 	}
 	const blocked = dependents.get(task) ?? [];
 	if (blocked.length > 0) {
 		items += `<dt>Blocks</dt><dd><ul class="references">${blocked
-			.map((dependent) => reference(root, dependent, all))
+			.map((dependent) => reference(listing, dependent))
 			.join("")}</ul></dd>`;
 	}
 	return `<dl class="task-meta">${items}</dl>`;
 }
 
-function detail(
-	root: string,
-	found: Snapshot,
-	id: string,
-	all: boolean,
-): Response {
-	const task = resolve(root, found, id, all);
+function detail(listing: Listing, found: Snapshot, id: string): Response {
+	const task = resolve(listing, found, id);
 	if (task instanceof Response) return task;
 	const title = task.headingTitle ? "" : `<h1>${html(task.title)}</h1>`;
 	let readiness = "";
@@ -894,10 +1143,10 @@ function detail(
 	}
 	return page(
 		task.title,
-		`<nav class="task-nav"><a href="${html(listHref(root, all))}">Tasks</a>` +
+		`<nav class="task-nav">${breadcrumbs(listing, found, task)}` +
 			`<span class="task-state">${badge(task.status)}${readiness}</span></nav>` +
-			metadata(root, found, task, all) +
-			`<article>${title}${body(root, found, task, all)}</article>`,
+			metadata(listing, found, task) +
+			`<article>${title}${body(listing, found, task)}</article>`,
 		200,
 		styles,
 	);
@@ -907,7 +1156,8 @@ function validRoot(root: string | null): root is string {
 	return !!root && isAbsolute(root) && !root.includes("\0");
 }
 
-/** The task list or, with `task`, one task's detail page. */
+/** The task list or, with `task`, one task's detail page. The list is the
+ * tree unless `view` is `execution`. */
 export async function tasks(params: URLSearchParams): Promise<Response> {
 	const root = params.get("root");
 	if (!validRoot(root)) {
@@ -918,13 +1168,17 @@ export async function tasks(params: URLSearchParams): Promise<Response> {
 			styles,
 		);
 	}
-	const all = params.get("show") === "all";
+	const listing = {
+		root,
+		execution: params.get("view") === "execution",
+		all: params.get("show") === "all",
+	};
 	const id = params.get("task");
 	try {
 		const problem = await unusable(root);
 		if (problem) return problem;
 		const found = await snapshot(root);
-		return id === null ? list(root, found, all) : detail(root, found, id, all);
+		return id === null ? list(listing, found) : detail(listing, found, id);
 	} catch (error) {
 		const code = errorCode(error);
 		if (code === "EACCES" || code === "EPERM") {
@@ -951,10 +1205,11 @@ export async function taskFile(params: URLSearchParams): Promise<Response> {
 		return refuse(400);
 	}
 	try {
-		const task = resolve(root, await discover(root), id, false);
+		const listing = { root, execution: false, all: false };
+		const task = resolve(listing, await discover(root), id);
 		if (task instanceof Response) return refuse(404);
 		const real = await realpath(path);
-		// A task's attachments are beside its source: the root for a file.
+		// A task's attachments are beside its source, in its document's folder.
 		if (!inside(real, await realpath(dirname(task.source)))) return refuse(403);
 		const type = images[extname(real).toLowerCase()];
 		if (!type) return refuse(415);
