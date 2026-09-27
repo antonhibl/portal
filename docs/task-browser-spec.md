@@ -173,9 +173,17 @@ have no rank: they follow under **Blocked by dependency problems**, by ID.
 **Problems** reports each dependency problem with source paths and IDs,
 including historical ones on done tasks, whatever the filter.
 
-The list is this execution view: position, title, status, and readiness.
-**Show completed** adds a separate completed section by ID without changing any
-rank. A detail page shows the effective ID, a **Depends on** list with linked
+The list is this execution view: position and title. Status is implied by the
+section. A ready row has no label. A blocked row is dimmed and ends with a
+short summary instead of blocker titles: `after` and the ranks of its
+unfinished prerequisites, nearest first, then the IDs of unranked ones, at most
+three and then `+N`; then its own dependency problems, such as a missing ID or
+a cycle, marked as problems. Every prerequisite of a ranked task ranks above
+it, so ranks always point up the list. Ranks are recomputed on each request
+and are valid only for the page they appear on.
+
+**Show completed** adds a separate completed section by ID without changing
+any rank. A detail page shows the effective ID, a **Depends on** list with linked
 titles, IDs, and statuses (explaining unresolved references inline), and the
 reverse **Blocks** list. A done task shows its dependencies but no readiness.
 Each request builds one index and graph and uses it for resolution, links, and

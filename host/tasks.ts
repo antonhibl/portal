@@ -502,22 +502,44 @@ function ready({ plan }: Snapshot, task: Task): boolean {
 	);
 }
 
-/** Why TASK, unfinished, cannot be started now, in short phrases. */
-function blockers({ plan }: Snapshot, task: Task): string[] {
+/** The most prerequisites a list row names before summarizing the rest. */
+const shownPrerequisites = 3;
+
+/** What TASK, unfinished, waits for, as short text for its list row, or ""
+ * when it is ready: its unfinished prerequisites by RANKS, nearest first, then
+ * by ID, and then its own dependency problems, which PROBLEM reports. */
+function waits(
+	{ plan }: Snapshot,
+	task: Task,
+	ranks: Map<Task, number>,
+): { text: string; problem: boolean } {
 	const cycle = plan.cycles.find((members) => members.includes(task)) ?? [];
-	const reasons: string[] = [];
-	if (task.dependsOn === null) reasons.push("invalid depends_on");
+	const ranked: number[] = [];
+	const unranked: string[] = [];
+	const problems: string[] = [];
+	if (task.dependsOn === null) problems.push("invalid depends_on");
 	for (const { id, task: target, problem } of plan.prerequisites.get(task) ??
 		[]) {
-		if (!target) reasons.push(`${id} (${problem})`);
-		else if (target.status === "todo" && !cycle.includes(target))
-			reasons.push(target.title);
+		if (!target) problems.push(`${id} (${problem})`);
+		else if (target.status === "todo" && !cycle.includes(target)) {
+			const rank = ranks.get(target);
+			if (rank === undefined) unranked.push(target.id);
+			else ranked.push(rank);
+		}
 	}
 	const others = cycle.filter((member) => member !== task);
-	if (cycle.length === 1) reasons.push("a cycle on itself");
+	if (cycle.length === 1) problems.push("a cycle on itself");
 	else if (others.length > 0)
-		reasons.push(`a cycle with ${and(others.map((t) => t.id))}`);
-	return reasons;
+		problems.push(`a cycle with ${and(others.map((t) => t.id))}`);
+	const refs = [...ranked.sort((a, b) => b - a).map(String), ...unranked];
+	const parts = [...problems];
+	if (refs.length > 0) {
+		const rest = refs.length - shownPrerequisites;
+		parts.unshift(
+			`after ${refs.slice(0, shownPrerequisites).join(", ")}${rest > 0 ? ` +${rest}` : ""}`,
+		);
+	}
+	return { text: parts.join(" · "), problem: problems.length > 0 };
 }
 
 /** Why ROOT cannot list tasks, as a page, or null when it can. */
@@ -617,37 +639,40 @@ function problemList(root: string, found: Snapshot, all: boolean): string {
 		: `<section class="problems"><h2>Problems</h2><ul>${items.join("")}</ul></section>`;
 }
 
-/** TASK's row in the list, with its execution position RANK when it has one. */
+/** TASK's row in the list, with RANKS giving execution positions. A blocked
+ * row is dimmed and says what it waits for. */
 function row(
 	root: string,
 	found: Snapshot,
 	task: Task,
 	all: boolean,
-	rank?: number,
+	ranks: Map<Task, number>,
 ): string {
-	let readiness = "";
-	if (task.status === "todo") {
-		readiness = ready(found, task)
-			? `<span class="readiness readiness-ready">Ready</span>`
-			: `<span class="readiness readiness-blocked">Blocked by ${html(and(blockers(found, task)))}</span>`;
-	}
+	const rank = ranks.get(task);
+	const { text, problem } =
+		task.status === "todo"
+			? waits(found, task, ranks)
+			: { text: "", problem: false };
 	return (
-		`<li><a href="${html(taskHref(root, task.id, all))}">` +
+		`<li${text ? ` class="blocked"` : ""}><a href="${html(taskHref(root, task.id, all))}">` +
 		(rank === undefined ? "" : `<span class="rank">${rank}</span>`) +
-		`${badge(task.status)}<span class="title">${html(task.title)}</span>${readiness}</a></li>`
+		`<span class="title">${html(task.title)}</span>` +
+		(text
+			? `<span class="waits${problem ? " dependency-problem" : ""}">${html(text)}</span>`
+			: "") +
+		`</a></li>`
 	);
 }
 
 function list(root: string, found: Snapshot, all: boolean): Response {
 	const { order, stuck } = found.plan;
 	const toggle = `<p class="filter"><a href="${html(listHref(root, !all))}">${all ? "Hide completed" : "Show completed"}</a></p>`;
-	const rows = (tasks: Task[], ranked = false) =>
-		tasks
-			.map((task, i) => row(root, found, task, all, ranked ? i + 1 : undefined))
-			.join("");
+	const ranks = new Map(order.map((task, i) => [task, i + 1]));
+	const rows = (tasks: Task[]) =>
+		tasks.map((task) => row(root, found, task, all, ranks)).join("");
 	let content = "";
 	if (order.length > 0) {
-		content += `<ol class="tasks">${rows(order, true)}</ol>`;
+		content += `<ol class="tasks">${rows(order)}</ol>`;
 	} else if (stuck.length > 0) {
 		content += `<p class="empty">No task can be ordered until its dependency problems are fixed.</p>`;
 	}
