@@ -180,7 +180,7 @@ section. A ready row has no label. A blocked row is dimmed and ends with a
 short summary instead of blocker titles: `after` and the ranks of its
 unfinished prerequisites, nearest first, then the IDs of unranked ones, at most
 three and then `+N`; then its own dependency problems, such as a missing ID or
-a cycle, marked as problems. Every prerequisite of a ranked task ranks above
+a cycle, marked as problems. A done row's title is dimmed and struck through. Every prerequisite of a ranked task ranks above
 it, so ranks always point up the list. Ranks are recomputed on each request
 and are valid only for the page they appear on.
 

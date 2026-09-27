@@ -247,6 +247,9 @@ The root is `portal-markdown-gui--directory'."
     (portal-test--wait-for-page "Tasks")
     (should (portal-excalidraw-gui--js
              "return document.querySelector('.completed h2').textContent === 'Completed' && document.querySelector('.completed').innerText.includes('Shipped');"))
+    ;; A completed task's title is struck through.
+    (should (portal-excalidraw-gui--js
+             "const title = document.querySelector('.completed .row.done .title'); return title.textContent === 'Shipped' && getComputedStyle(title).textDecorationLine.includes('line-through');"))
     (portal-tasks-gui--link "Release notes")
     (portal-test--wait-for-page "Release notes")
     (portal-tasks-gui--route "&task=release-notes&view=execution&show=all")

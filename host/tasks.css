@@ -86,12 +86,20 @@ ul.tasks,
 .row .name {
 	flex: 1;
 }
-.row.blocked .title {
+.row.blocked .title,
+.row.done .title {
 	color: var(--muted);
+}
+.row.done .title {
+	text-decoration: line-through;
 }
 a.row:hover .title,
 a.row:focus-visible .title {
 	text-decoration: underline;
+}
+a.row.done:hover .title,
+a.row.done:focus-visible .title {
+	text-decoration-line: line-through underline;
 }
 .folder {
 	flex: none;
