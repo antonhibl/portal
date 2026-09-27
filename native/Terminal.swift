@@ -45,8 +45,10 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     func terminalDidResize(_ size: TerminalGridMetrics) { grid = size }
     func terminalDidAttachSurface(_ surface: TerminalSurface) { terminalSurface = surface }
     func terminalDidDetachSurface() { terminalSurface = nil }
+    /// Ghostty asks to close the surface when its process ends, and also when
+    /// a close is requested while the process still runs.
     func terminalDidClose(processAlive: Bool) {
-        exited = true
+        if !processAlive { exited = true }
         session?.returnFocus()
     }
     func terminalDidRequestOpenURL(_ text: String, kind: TerminalOpenURLKind) {
