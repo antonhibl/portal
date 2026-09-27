@@ -84,7 +84,11 @@ struct CheckToolbar {
                                       charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
         app.sendEvent(escape)
         precondition(!model.finding && model.input?.ownership == .view)
-        try model.perform("find")
+        let commandF = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                        windowNumber: window.windowNumber, context: nil, characters: "f",
+                                        charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3)!
+        app.sendEvent(commandF)
+        precondition(model.finding && window.firstResponder !== web, "Command-F did not open find")
         wait("find query was not retained") { model.matchCount == 3 }
         _ = try NativeInput.perform(target, action: "unfocus")
         try model.perform("find")
