@@ -105,8 +105,10 @@ final class NativeHost: NSObject {
         if inputCapture === handler { inputCapture = nil }
     }
 
-    func place(_ surface: any NativeSurface, rectangle: CGRect) -> Bool {
-        guard let view else { return false }
+    /// Show SURFACE at RECTANGLE, in Emacs's frame pixels from the top left.
+    /// Callers check that the frame still has its `view` first.
+    func place(_ surface: any NativeSurface, rectangle: CGRect) {
+        guard let view else { return }
         _ = surface.input // Register shared input before the first focus or key event.
         let key = ObjectIdentifier(surface)
         let child: NSView
@@ -128,7 +130,6 @@ final class NativeHost: NSObject {
         child.layoutSubtreeIfNeeded()
         refreshOwnership()
         Self.startMonitoring()
-        return true
     }
 
     /// Hiding deliberately retains the view. Features decide whether to remove it.

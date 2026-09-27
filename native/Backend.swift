@@ -3,10 +3,11 @@ import Foundation
 import PortalCore
 
 // The macOS backend of the operations in native/Core/include/portal.h, whose
-// comments define ownership. The C bindings call each one synchronously; it
-// copies its arguments, runs on the main actor, and returns memory the
-// bindings free. Nothing here sees an Emacs value or environment. The timer
-// primitive is in CoreCalls.swift, which the standalone checks share.
+// comments define ownership. The core calls each one synchronously; it
+// copies its arguments, runs on the main actor, and returns memory the core
+// frees. A `portal_view` is a retained `NativeView`, which the core owns from
+// create to destroy. Nothing here sees an Emacs value or environment. The
+// timer primitive is in CoreCalls.swift, which the standalone checks share.
 
 private extension String {
     init(copying string: portal_string) {
@@ -56,48 +57,75 @@ private func json(_ value: Any) throws -> String {
            as: UTF8.self)
 }
 
-@_cdecl("portal_open")
-public func portalOpen(_ kind: portal_string, _ options: UnsafePointer<portal_option>?, _ count: Int,
-                       _ target: UnsafeMutablePointer<portal_text>,
-                       _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let kind = String(copying: kind)
+/// The `NativeView` the core holds as VIEW.
+private func native(_ view: OpaquePointer) -> NativeView {
+    Unmanaged<NativeView>.fromOpaque(UnsafeRawPointer(view)).takeUnretainedValue()
+}
+
+/// VIEW's session, which the core has checked is of KIND.
+@MainActor
+private func session<Kind: PortalView>(_ view: NativeView, as kind: Kind.Type) throws -> Kind {
+    guard let session = view.kind as? Kind else {
+        throw NativeError.message("The core passed a view of another kind")
+    }
+    return session
+}
+
+@_cdecl("portal_view_create")
+public func portalViewCreate(_ kind: portal_kind, _ target: portal_string,
+                             _ options: UnsafePointer<portal_option>?, _ count: Int,
+                             _ view: UnsafeMutablePointer<OpaquePointer?>,
+                             _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let target = String(copying: target)
     var values: [String: ViewOption] = [:]
     for option in UnsafeBufferPointer(start: options, count: count) {
         values[String(copying: option.name)] = option.is_string ? .string(String(copying: option.string))
             : .flag(option.flag)
     }
     let options = ViewOptions(values: values)
-    return perform(error, into: target) { try Views.open(kind: kind, options: options) }
+    let type: any PortalView.Type = kind == PORTAL_TERMINAL ? TerminalSession.self : WebSession.self
+    guard let created = perform(error, { try NativeView(type, target: target, options: options) }) else {
+        return false
+    }
+    view.pointee = OpaquePointer(Unmanaged.passRetained(created).toOpaque())
+    return true
 }
 
-@_cdecl("portal_place")
-public func portalPlace(_ target: portal_string, _ edges: portal_edges, _ title: portal_string,
-                        _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), title = String(copying: title)
-    let edges = [edges.left, edges.top, edges.right, edges.bottom].map { Int($0) }
-    return perform(error) { try Views.place(target, edges: edges, title: title) } != nil
+@_cdecl("portal_view_destroy")
+public func portalViewDestroy(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let native = native(view)
+    guard perform(error, { native.close() }) != nil else { return false }
+    Unmanaged<NativeView>.fromOpaque(UnsafeRawPointer(view)).release()
+    return true
 }
 
-@_cdecl("portal_hide")
-public func portalHide(_ target: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target)
-    return perform(error) { try Views.hide(target) } != nil
+/// Find the frame by its temporary title on every call; nothing is cached.
+@_cdecl("portal_view_attach")
+public func portalViewAttach(_ view: OpaquePointer, _ frame: portal_string, _ rect: portal_rect,
+                             _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view), title = String(copying: frame)
+    let rectangle = CGRect(x: Int(rect.x), y: Int(rect.y), width: Int(rect.width), height: Int(rect.height))
+    return perform(error) {
+        guard let host = NativeHost.bind(title: title) else {
+            throw NativeError.message("Cannot find the requested native Emacs frame")
+        }
+        try view.attach(to: host, rectangle: rectangle)
+    } != nil
 }
 
-@_cdecl("portal_close")
-public func portalClose(_ target: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target)
-    return perform(error) { try Views.close(target) } != nil
+@_cdecl("portal_view_detach")
+public func portalViewDetach(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { view.detach() } != nil
 }
 
-@_cdecl("portal_inspect")
-public func portalInspect(_ target: portal_string, _ state: UnsafeMutablePointer<portal_text>,
-                          _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target)
+@_cdecl("portal_view_describe")
+public func portalViewDescribe(_ view: OpaquePointer, _ state: UnsafeMutablePointer<portal_text>,
+                               _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
     return perform(error, into: state) {
-        guard let properties = Views.inspect(target) else { return "null" }
         var object: [String: Any] = [:]
-        for (name, value) in properties {
+        for (name, value) in view.describe() {
             switch value {
             case .flag(let flag): object[name] = flag
             case .integer(let integer): object[name] = integer
@@ -110,31 +138,35 @@ public func portalInspect(_ target: portal_string, _ state: UnsafeMutablePointer
 }
 
 @_cdecl("portal_web_load")
-public func portalWebLoad(_ target: portal_string, _ url: portal_string,
+public func portalWebLoad(_ web: OpaquePointer, _ url: portal_string,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), url = String(copying: url)
-    return perform(error) { try Views.view(target, as: WebSession.self).load(url) } != nil
+    let web = native(web), url = String(copying: url)
+    return perform(error) { try session(web, as: WebSession.self).load(url) } != nil
 }
 
 @_cdecl("portal_web_send")
-public func portalWebSend(_ target: portal_string, _ json: portal_string,
+public func portalWebSend(_ web: OpaquePointer, _ json: portal_string,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), json = String(copying: json)
-    return perform(error) { try Views.view(target, as: WebSession.self).send(json) } != nil
+    let web = native(web), json = String(copying: json)
+    return perform(error) { try session(web, as: WebSession.self).send(json) } != nil
 }
 
 @_cdecl("portal_web_receive")
-public func portalWebReceive(_ target: portal_string, _ json: UnsafeMutablePointer<portal_text>,
+public func portalWebReceive(_ web: OpaquePointer, _ json: UnsafeMutablePointer<portal_text>,
                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target)
-    return perform(error, into: json) { try Views.view(target, as: WebSession.self).receive() }
+    let web = native(web)
+    return perform(error, into: json) { try session(web, as: WebSession.self).receive() }
 }
 
 @_cdecl("portal_terminal_theme")
 public func portalTerminalTheme(_ name: UnsafePointer<portal_string>?,
+                                _ terminals: UnsafePointer<OpaquePointer?>?, _ count: Int,
                                 _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let name = name.map { String(copying: $0.pointee) }
-    return perform(error) { try Terminals.setTheme(name) } != nil
+    let terminals = UnsafeBufferPointer(start: terminals, count: count).compactMap { $0.map(native) }
+    return perform(error) {
+        try Terminals.setTheme(name, sessions: terminals.map { try session($0, as: TerminalSession.self) })
+    } != nil
 }
 
 @_cdecl("portal_terminal_themes")
@@ -144,17 +176,19 @@ public func portalTerminalThemes(_ names: UnsafeMutablePointer<portal_text>,
 }
 
 @_cdecl("portal_terminal_paste")
-public func portalTerminalPaste(_ target: portal_string, _ text: portal_string, _ enter: Bool,
+public func portalTerminalPaste(_ terminal: OpaquePointer, _ text: portal_string, _ enter: Bool,
                                 _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), text = String(copying: text)
-    return perform(error) { try Terminals.paste(target, text: text, enter: enter) } != nil
+    let terminal = native(terminal), text = String(copying: text)
+    return perform(error) {
+        try Terminals.paste(session(terminal, as: TerminalSession.self), text: text, enter: enter)
+    } != nil
 }
 
 @_cdecl("portal_terminal_text")
-public func portalTerminalText(_ target: portal_string, _ text: UnsafeMutablePointer<portal_text>,
+public func portalTerminalText(_ terminal: OpaquePointer, _ text: UnsafeMutablePointer<portal_text>,
                                _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target)
-    return perform(error, into: text) { try Terminals.text(target) }
+    let terminal = native(terminal)
+    return perform(error, into: text) { try Terminals.text(session(terminal, as: TerminalSession.self)) }
 }
 
 @_cdecl("portal_terminal_bindings")
@@ -171,10 +205,10 @@ public func portalInputPrefix(_ character: portal_string, _ flags: Int64,
 }
 
 @_cdecl("portal_input")
-public func portalInput(_ target: portal_string, _ action: portal_string, _ serial: Int64,
+public func portalInput(_ view: OpaquePointer, _ action: portal_string, _ serial: Int64,
                         _ result: UnsafeMutablePointer<Bool>, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), action = String(copying: action)
-    guard let performed = perform(error, { try NativeInput.perform(target, action: action, serial: Int(serial)) })
+    let view = native(view), action = String(copying: action)
+    guard let performed = perform(error, { try view.kind.input.perform(action, serial: Int(serial)) })
     else { return false }
     result.pointee = performed
     return true
@@ -192,9 +226,9 @@ public func portalToolbarTheme(_ json: portal_string, _ error: UnsafeMutablePoin
 }
 
 @_cdecl("portal_toolbar_action")
-public func portalToolbarAction(_ target: portal_string, _ action: portal_string,
+public func portalToolbarAction(_ view: OpaquePointer, _ action: portal_string,
                                 _ state: UnsafeMutablePointer<portal_text>,
                                 _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let target = String(copying: target), action = String(copying: action)
-    return perform(error, into: state) { try NativeToolbar.perform(action, target: target) }
+    let view = native(view), action = String(copying: action)
+    return perform(error, into: state) { try NativeToolbar.perform(action, model: view.kind.toolbar) }
 }

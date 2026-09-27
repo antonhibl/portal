@@ -67,9 +67,9 @@ enum NativeToolbar {
     static var revision = 0
     static var colors: [String: NSColor] = [:]
 
-    /// Perform ACTION on TARGET's toolbar and return the toolbar's state as JSON.
-    static func perform(_ action: String, target: String) throws -> String {
-        guard let model = Views.toolbar(target) else {
+    /// Perform ACTION on a view's toolbar MODEL and return its state as JSON.
+    static func perform(_ action: String, model: ToolbarModel?) throws -> String {
+        guard let model else {
             throw NativeError.message("No toolbar controls for this native view")
         }
         try model.perform(action)

@@ -1,9 +1,21 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* An in-memory backend for the module and core tests.  It implements the
    operations of native/Core/include/portal.h, so the real C core runs without
-   AppKit, WebKit or Ghostty.  portal--inspect reports what each view's
-   operations received, and the target "fake" reports the global settings.
-   Timers fire only when a test fires them (portal-fake-backend.h). */
+   AppKit, WebKit or Ghostty.  A view describes what its operations received:
+   its options, the "handle" that tells views apart, the "frame" title and
+   "size" it was last attached with, whether it is "attached", and the
+   global settings, as "fake".  Views never move: attaching records where.
+
+   A view created with the option :description describes itself with exactly
+   that text instead, for tests of how the core reads descriptions.
+
+   Failures on demand: creating a view with the option :fail fails, with that
+   option's string as the message; attaching to a frame whose title starts
+   with "deleted" fails, as the frame is gone; and while a test says so,
+   every view primitive refuses to run, as on the wrong thread.  Timers fire only when a test
+   fires them.  A destroyed view's memory is kept, marked destroyed, so a
+   later call that names it is counted instead of reading freed memory
+   (portal-fake-backend.h). */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +24,7 @@
 #include "portal-fake-backend.h"
 #include "portal.h"
 
-enum { MAX_VIEWS = 64, MAX_PROPERTIES = 32, MAX_TIMERS = 64 };
+enum { MAX_PROPERTIES = 32, MAX_TIMERS = 64 };
 
 /* One property that portal--inspect reports. */
 struct property {
@@ -25,15 +37,17 @@ struct property {
     portal_text string;
 };
 
-struct view {
-    char *target; /* NULL once closed. */
-    char *kind;
+struct portal_view {
+    portal_kind kind;
+    char *target; /* For records. */
+    bool destroyed;
     struct property properties[MAX_PROPERTIES];
     size_t count;
 };
 
-static struct view views[MAX_VIEWS], settings = {.target = "fake"};
-static int64_t next_id;
+static struct portal_view settings;
+static struct portal_fake_calls calls;
+static bool refusing; /* See portal_fake_refuse. */
 static uint64_t timers[MAX_TIMERS]; /* Tokens of the timers not yet fired, oldest first. */
 static size_t timer_count;
 
@@ -71,7 +85,7 @@ static void clear(struct property *property)
 }
 
 /* VIEW's property NAME, cleared for a new value. */
-static struct property *property(struct view *view, const char *name, size_t length)
+static struct property *property(struct portal_view *view, const char *name, size_t length)
 {
     for (size_t i = 0; i < view->count; i++) {
         struct property *property = &view->properties[i];
@@ -87,7 +101,7 @@ static struct property *property(struct view *view, const char *name, size_t len
     return property;
 }
 
-static const struct property *get(const struct view *view, const char *name)
+static const struct property *get(const struct portal_view *view, const char *name)
 {
     for (size_t i = 0; i < view->count; i++)
         if (view->properties[i].name.length == strlen(name)
@@ -96,21 +110,21 @@ static const struct property *get(const struct view *view, const char *name)
     return NULL;
 }
 
-static void set_flag(struct view *view, const char *name, bool flag)
+static void set_flag(struct portal_view *view, const char *name, bool flag)
 {
     struct property *entry = property(view, name, strlen(name));
     entry->kind = FLAG;
     entry->flag = flag;
 }
 
-static void set_integer(struct view *view, const char *name, int64_t integer)
+static void set_integer(struct portal_view *view, const char *name, int64_t integer)
 {
     struct property *entry = property(view, name, strlen(name));
     entry->kind = INTEGER;
     entry->integer = integer;
 }
 
-static void set_string(struct view *view, const char *name, const char *data, size_t length)
+static void set_string(struct portal_view *view, const char *name, const char *data, size_t length)
 {
     struct property *entry = property(view, name, strlen(name));
     entry->kind = STRING;
@@ -118,7 +132,7 @@ static void set_string(struct view *view, const char *name, const char *data, si
 }
 
 /* Append DATA to VIEW's string property NAME, after SEPARATOR if it is not empty. */
-static void append(struct view *view, const char *name, const char *separator, const char *data,
+static void append(struct portal_view *view, const char *name, const char *separator, const char *data,
                    size_t length)
 {
     const struct property *old = get(view, name);
@@ -132,100 +146,6 @@ static void append(struct view *view, const char *name, const char *separator, c
     set_string(view, name, bytes, previous.length + gap + length);
     free(bytes);
     free(previous.data);
-}
-
-static struct view *find(portal_string target)
-{
-    if (is(target, settings.target))
-        return &settings;
-    for (size_t i = 0; i < MAX_VIEWS; i++)
-        if (views[i].target && is(target, views[i].target))
-            return &views[i];
-    return NULL;
-}
-
-/* TARGET's view, which must be of KIND unless KIND is NULL. */
-static struct view *lookup(portal_string target, const char *kind, portal_text *error)
-{
-    struct view *view = find(target);
-    if (!view || view == &settings || (kind && strcmp(view->kind, kind))) {
-        fail(error, "No Portal view %.*s", (int) target.length, target.data);
-        return NULL;
-    }
-    return view;
-}
-
-bool portal_open(portal_string kind, const portal_option *options, size_t count,
-                 portal_text *target, portal_text *error)
-{
-    if (!is(kind, "web") && !is(kind, "terminal"))
-        return fail(error, "Unknown Portal view kind: %.*s", (int) kind.length, kind.data);
-    struct view *view = NULL;
-    for (size_t i = 0; i < MAX_VIEWS && !view; i++)
-        if (!views[i].target)
-            view = &views[i];
-    if (!view)
-        return fail(error, "Too many fake views");
-    char name[64];
-    snprintf(name, sizeof name, "%.*s:%lld", (int) kind.length, kind.data,
-             (long long) ++next_id);
-    view->target = copy(name, strlen(name)).data;
-    view->kind = copy(kind.data, kind.length).data;
-    set_string(view, "kind", kind.data, kind.length);
-    set_integer(view, "id", next_id);
-    set_flag(view, "visible", false);
-    for (size_t i = 0; i < count; i++) {
-        struct property *entry = property(view, options[i].name.data, options[i].name.length);
-        entry->kind = options[i].is_string ? STRING : FLAG;
-        if (options[i].is_string)
-            entry->string = copy(options[i].string.data, options[i].string.length);
-        else
-            entry->flag = options[i].flag;
-    }
-    *target = copy(name, strlen(name));
-    return true;
-}
-
-bool portal_place(portal_string target, portal_edges edges, portal_string title,
-                  portal_text *error)
-{
-    struct view *view = lookup(target, NULL, error);
-    if (!view)
-        return false;
-    if (edges.right <= edges.left || edges.bottom <= edges.top)
-        return fail(error, "Expected [LEFT TOP RIGHT BOTTOM] with positive dimensions");
-    struct property *entry = property(view, "edges", strlen("edges"));
-    entry->kind = INTEGERS;
-    entry->count = 4;
-    entry->integers = malloc(4 * sizeof *entry->integers);
-    memcpy(entry->integers, (int64_t[]) {edges.left, edges.top, edges.right, edges.bottom},
-           4 * sizeof *entry->integers);
-    set_string(view, "title", title.data, title.length);
-    set_flag(view, "visible", true);
-    return true;
-}
-
-bool portal_hide(portal_string target, portal_text *error)
-{
-    struct view *view = lookup(target, NULL, error);
-    if (view)
-        set_flag(view, "visible", false);
-    return view != NULL;
-}
-
-bool portal_close(portal_string target, portal_text *error)
-{
-    struct view *view = lookup(target, NULL, error);
-    if (!view)
-        return false;
-    for (size_t i = 0; i < view->count; i++) {
-        clear(&view->properties[i]);
-        free(view->properties[i].name.data);
-    }
-    free(view->target);
-    free(view->kind);
-    *view = (struct view) {0};
-    return true;
 }
 
 /* A growing JSON text. */
@@ -263,34 +183,147 @@ static void put_string(struct json *json, portal_text text)
     put(json, "\"", 1);
 }
 
-bool portal_inspect(portal_string target, portal_text *state, portal_text *error)
+/* Whether a view primitive refuses to run, setting *ERROR. */
+static bool refused(portal_text *error)
 {
-    (void) error;
-    const struct view *view = find(target);
-    struct json json = {0};
-    put(&json, view ? "{" : "null", view ? 1 : 4);
-    for (size_t i = 0; view && i < view->count; i++) {
+    return refusing && !fail(error, "The fake refuses to run view primitives");
+}
+
+void portal_fake_refuse(bool refuse)
+{
+    refusing = refuse;
+}
+
+/* Whether the core may use VIEW, of KIND unless KIND is -1: it must not
+   have been destroyed.  Anything else is counted for the tests to find. */
+static bool usable(struct portal_view *view, int kind, portal_text *error)
+{
+    if (view && !view->destroyed && (kind < 0 || (int) view->kind == kind))
+        return true;
+    calls.misused++;
+    return fail(error, "The core passed a view it may not use");
+}
+
+static void set_integers(struct portal_view *view, const char *name, const int64_t *integers,
+                         size_t count)
+{
+    struct property *entry = property(view, name, strlen(name));
+    entry->kind = INTEGERS;
+    entry->count = count;
+    entry->integers = malloc((count ? count : 1) * sizeof *entry->integers);
+    memcpy(entry->integers, integers, count * sizeof *entry->integers);
+}
+
+bool portal_view_create(portal_kind kind, portal_string target, const portal_option *options,
+                        size_t count, portal_view **result, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    for (size_t i = 0; i < count; i++)
+        if (is(options[i].name, "fail") && (options[i].is_string || options[i].flag))
+            return options[i].is_string
+                ? fail(error, "%.*s", (int) options[i].string.length, options[i].string.data)
+                : fail(error, "The fake could not create the view");
+    struct portal_view *view = calloc(1, sizeof *view);
+    view->kind = kind;
+    view->target = copy(target.data, target.length).data;
+    set_integer(view, "handle", (int64_t) ++calls.created);
+    set_flag(view, "attached", false);
+    for (size_t i = 0; i < count; i++) {
+        struct property *entry = property(view, options[i].name.data, options[i].name.length);
+        entry->kind = options[i].is_string ? STRING : FLAG;
+        if (options[i].is_string)
+            entry->string = copy(options[i].string.data, options[i].string.length);
+        else
+            entry->flag = options[i].flag;
+    }
+    *result = view;
+    return true;
+}
+
+bool portal_view_destroy(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.destroyed++;
+    for (size_t i = 0; i < view->count; i++) {
+        clear(&view->properties[i]);
+        free(view->properties[i].name.data);
+    }
+    free(view->target);
+    *view = (struct portal_view) {.destroyed = true};
+    return true;
+}
+
+bool portal_view_attach(portal_view *view, portal_string frame, portal_rect rect,
+                        portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.attached++;
+    if (frame.length >= 7 && !memcmp(frame.data, "deleted", 7))
+        return fail(error, "Cannot find the requested native Emacs frame");
+    set_string(view, "frame", frame.data, frame.length);
+    set_integers(view, "size", (int64_t[]) {rect.width, rect.height}, 2);
+    set_flag(view, "attached", true);
+    return true;
+}
+
+bool portal_view_detach(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.detached++;
+    set_flag(view, "frame", false);
+    set_flag(view, "attached", false);
+    return true;
+}
+
+static void put_properties(struct json *json, const struct portal_view *view)
+{
+    for (size_t i = 0; i < view->count; i++) {
         const struct property *property = &view->properties[i];
         if (i)
-            put(&json, ",", 1);
-        put_string(&json, property->name);
-        put(&json, ":", 1);
+            put(json, ",", 1);
+        put_string(json, property->name);
+        put(json, ":", 1);
         if (property->kind == FLAG)
-            put(&json, property->flag ? "true" : "false", property->flag ? 4 : 5);
+            put(json, property->flag ? "true" : "false", property->flag ? 4 : 5);
         else if (property->kind == INTEGER)
-            put_format(&json, "%lld", property->integer);
+            put_format(json, "%lld", property->integer);
         else if (property->kind == STRING)
-            put_string(&json, property->string);
+            put_string(json, property->string);
         else
             for (size_t k = 0; k < property->count; k++)
-                put_format(&json, k ? ",%lld" : "[%lld", property->integers[k]);
+                put_format(json, k ? ",%lld" : "[%lld", property->integers[k]);
         if (property->kind == INTEGERS)
-            put(&json, property->count ? "]" : "[]", property->count ? 1 : 2);
+            put(json, property->count ? "]" : "[]", property->count ? 1 : 2);
     }
-    if (view)
-        put(&json, "}", 1);
+}
+
+bool portal_view_describe(portal_view *view, portal_text *state, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.described++;
+    const struct property *description = get(view, "description");
+    if (description && description->kind == STRING) {
+        *state = copy(description->string.data, description->string.length);
+        return true;
+    }
+    struct json json = {0};
+    put(&json, "{", 1);
+    put_properties(&json, view);
+    put(&json, ",\"fake\":{", 9);
+    put_properties(&json, &settings);
+    put(&json, "}}", 2);
     *state = (portal_text) {json.data, json.length};
     return true;
+}
+
+struct portal_fake_calls portal_fake_calls(void)
+{
+    return calls;
 }
 
 void portal_timer_start(uint64_t token, uint64_t milliseconds)
@@ -316,46 +349,43 @@ void portal_fake_fire_timers(void)
         portal_timer_fired(fired[i]);
 }
 
-bool portal_web_load(portal_string target, portal_string url, portal_text *error)
+bool portal_web_load(portal_view *web, portal_string url, portal_text *error)
 {
-    struct view *web = lookup(target, "web", error);
-    if (web)
-        set_string(web, "url", url.data, url.length);
-    return web != NULL;
+    if (!usable(web, PORTAL_WEB, error))
+        return false;
+    set_string(web, "url", url.data, url.length);
+    return true;
 }
 
-/* TARGET's view, which must be a hosted web view. */
-static struct view *hosted(portal_string target, portal_text *error)
+/* Whether WEB is a hosted web view. */
+static bool hosted(struct portal_view *web, portal_text *error)
 {
-    struct view *web = lookup(target, "web", error);
-    const struct property *option = web ? get(web, "hosted") : NULL;
-    if (web && !(option && (option->kind == STRING || option->flag))) {
-        fail(error, "Web view %.*s is not a hosted app, so it has no bridge", (int) target.length,
-             target.data);
-        return NULL;
-    }
-    return web;
+    if (!usable(web, PORTAL_WEB, error))
+        return false;
+    const struct property *option = get(web, "hosted");
+    if (option && (option->kind == STRING || option->flag))
+        return true;
+    return fail(error, "Web view %s is not a hosted app, so it has no bridge", web->target);
 }
 
 /* The fake app echoes what Emacs sends it.  Like the real bridge, one record
    announces its messages until Emacs receives them. */
-bool portal_web_send(portal_string target, portal_string json, portal_text *error)
+bool portal_web_send(portal_view *web, portal_string json, portal_text *error)
 {
-    struct view *web = hosted(target, error);
-    if (!web)
+    if (!hosted(web, error))
         return false;
     const struct property *messages = get(web, "messages");
     bool announced = messages && messages->string.length;
+    portal_string target = {web->target, strlen(web->target)};
     if (!announced && !portal_notify((portal_string) {"bridge", 6}, target, NULL, 0))
         return fail(error, "The bridge record was refused");
     append(web, "messages", ",", json.data, json.length);
     return true;
 }
 
-bool portal_web_receive(portal_string target, portal_text *json, portal_text *error)
+bool portal_web_receive(portal_view *web, portal_text *json, portal_text *error)
 {
-    struct view *web = hosted(target, error);
-    if (!web)
+    if (!hosted(web, error))
         return false;
     const struct property *messages = get(web, "messages");
     portal_text sent = messages ? messages->string : (portal_text) {"", 0};
@@ -370,18 +400,26 @@ bool portal_web_receive(portal_string target, portal_text *json, portal_text *er
 
 static const char *const themes[] = {"Alpha", "Beta", "Ωmega"};
 
-bool portal_terminal_theme(const portal_string *name, portal_text *error)
+/* Like the real one, resolve the theme before touching any terminal. */
+bool portal_terminal_theme(const portal_string *name, portal_view *const *terminals,
+                           size_t count, portal_text *error)
 {
-    if (!name) {
-        set_flag(&settings, "theme", false);
-        return true;
+    bool known = !name;
+    for (size_t i = 0; name && i < sizeof themes / sizeof *themes; i++)
+        known = known || is(*name, themes[i]);
+    if (!known)
+        return fail(error, "Unknown terminal theme: %.*s", (int) name->length, name->data);
+    for (size_t i = 0; i < count; i++)
+        if (!usable(terminals[i], PORTAL_TERMINAL, error))
+            return false;
+    for (size_t i = 0; i <= count; i++) {
+        struct portal_view *view = i < count ? terminals[i] : &settings;
+        if (name)
+            set_string(view, "theme", name->data, name->length);
+        else
+            set_flag(view, "theme", false);
     }
-    for (size_t i = 0; i < sizeof themes / sizeof *themes; i++)
-        if (is(*name, themes[i])) {
-            set_string(&settings, "theme", name->data, name->length);
-            return true;
-        }
-    return fail(error, "Unknown terminal theme: %.*s", (int) name->length, name->data);
+    return true;
 }
 
 bool portal_terminal_themes(portal_text *names, portal_text *error)
@@ -400,11 +438,10 @@ bool portal_terminal_themes(portal_text *names, portal_text *error)
 }
 
 /* The fake terminal's scrollback is everything pasted into it. */
-bool portal_terminal_paste(portal_string target, portal_string text, bool enter,
+bool portal_terminal_paste(portal_view *terminal, portal_string text, bool enter,
                            portal_text *error)
 {
-    struct view *terminal = lookup(target, "terminal", error);
-    if (!terminal)
+    if (!usable(terminal, PORTAL_TERMINAL, error))
         return false;
     append(terminal, "text", "", text.data, text.length);
     if (enter)
@@ -412,10 +449,9 @@ bool portal_terminal_paste(portal_string target, portal_string text, bool enter,
     return true;
 }
 
-bool portal_terminal_text(portal_string target, portal_text *text, portal_text *error)
+bool portal_terminal_text(portal_view *terminal, portal_text *text, portal_text *error)
 {
-    struct view *terminal = lookup(target, "terminal", error);
-    if (!terminal)
+    if (!usable(terminal, PORTAL_TERMINAL, error))
         return false;
     const struct property *scrollback = get(terminal, "text");
     *text = scrollback ? copy(scrollback->string.data, scrollback->string.length) : copy("", 0);
@@ -439,15 +475,16 @@ bool portal_input_prefix(portal_string character, int64_t flags, portal_text *er
     return true;
 }
 
-/* Like the native module, report false for an unknown target, and for
-   "pending" while no handoff is pending. */
-bool portal_input(portal_string target, portal_string action, int64_t serial, bool *result,
+/* Like the native module, report false for "pending" while no handoff is
+   pending. */
+bool portal_input(portal_view *view, portal_string action, int64_t serial, bool *result,
                   portal_text *error)
 {
-    struct view *view = find(target);
+    if (!usable(view, -1, error))
+        return false;
     if (is(action, "unknown"))
         return fail(error, "Unknown Portal input action: unknown");
-    *result = view && view != &settings && !is(action, "pending");
+    *result = !is(action, "pending");
     if (*result) {
         set_string(view, "action", action.data, action.length);
         set_integer(view, "serial", serial);
@@ -470,11 +507,12 @@ bool portal_toolbar_theme(portal_string json, portal_text *error)
     return true;
 }
 
-bool portal_toolbar_action(portal_string target, portal_string action, portal_text *state,
+bool portal_toolbar_action(portal_view *view, portal_string action, portal_text *state,
                            portal_text *error)
 {
-    struct view *web = find(target);
-    if (!web || web == &settings || strcmp(web->kind, "web"))
+    if (!usable(view, -1, error))
+        return false;
+    if (view->kind != PORTAL_WEB)
         return fail(error, "No toolbar controls for this native view");
     char json[256];
     int length = snprintf(json, sizeof json, "{\"action\":\"%.*s\"}", (int) action.length,

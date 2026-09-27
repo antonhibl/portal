@@ -53,27 +53,29 @@ struct CheckFocus {
         try checkHosted(window: window)
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)
-        checkChannel()
+        try checkChannel()
     }
 
     /// A full pipe delays records, without losing or reordering them: the
     /// core retries it on this platform's timer. test/portal-channel-tests.c
-    /// covers the core's other cases.
+    /// covers the core's other cases. Records name an open view: the core
+    /// drops the others.
     @MainActor
-    static func checkChannel() {
+    static func checkChannel() throws {
+        let web = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("none")]))
         var fds: [Int32] = [0, 0]
         check(pipe(&fds) == 0)
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
         check(portal_channel_connect(fds[1]))
         defer { _ = portal_channel_connect(-1); close(fds[0]) }
-        check(!Core.notify("two words", target: "web:1"), "A malformed record was accepted")
+        check(!Core.notify("two words", target: web), "A malformed record was accepted")
         // Fill the pipe, as an Emacs busy with a long command leaves it.
         let filler = [UInt8](repeating: UInt8(ascii: "."), count: 512)
         var filled = 0
         while case let count = write(fds[1], filler, filler.count), count > 0 { filled += count }
-        check(Core.notify("escape", target: "web:1", fields: ["2", "0"])
-                     && Core.notify("bridge", target: "web:1"), "A full pipe refused records")
-        let expected = "escape web:1 2 0\nbridge web:1\n"
+        check(Core.notify("escape", target: web, fields: ["2", "0"])
+                     && Core.notify("bridge", target: web), "A full pipe refused records")
+        let expected = "escape \(web) 2 0\nbridge \(web)\n"
         var received: [UInt8] = []
         let deadline = Date(timeIntervalSinceNow: 5)
         while received.count < filled + expected.utf8.count && Date() < deadline {
@@ -88,8 +90,8 @@ struct CheckFocus {
         // Records waiting when Emacs replaces its pipe go to the new one, in order.
         while write(fds[1], filler, filler.count) > 0 {}
         while write(fds[1], filler, 1) > 0 {}
-        check(Core.notify("escape", target: "web:1", fields: ["3", "0"])
-                     && Core.notify("bridge", target: "web:1"), "A full pipe refused records")
+        check(Core.notify("escape", target: web, fields: ["3", "0"])
+                     && Core.notify("bridge", target: web), "A full pipe refused records")
         close(fds[0])
         check(pipe(&fds) == 0)
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
@@ -97,7 +99,10 @@ struct CheckFocus {
         var buffer = [UInt8](repeating: 0, count: 4096)
         let count = read(fds[0], &buffer, buffer.count)
         let moved = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
-        check(moved == "escape web:1 3 0\nbridge web:1\n", "Replacing the pipe lost records: \(moved)")
+        check(moved == "escape \(web) 3 0\nbridge \(web)\n", "Replacing the pipe lost records: \(moved)")
+        // A late record, for a closed view, never reaches Emacs.
+        try Views.close(web)
+        check(!Core.notify("bridge", target: web), "A closed view's record was accepted")
         print("A full pipe delays records in order, and loses none, even when Emacs replaces it")
     }
 

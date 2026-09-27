@@ -40,7 +40,7 @@ static bool notify(const char *type, const char *target, ...)
     for (const char *field; (field = va_arg(arguments, const char *));)
         fields[count++] = (portal_string) {field, strlen(field)};
     va_end(arguments);
-    return portal_notify((portal_string) {type, strlen(type)},
+    return portal_channel_send((portal_string) {type, strlen(type)},
                          (portal_string) {target, strlen(target)}, fields, count);
 }
 
@@ -158,16 +158,16 @@ static void test_rejects_malformed_and_oversized_records(void)
     CHECK(!notify("r\xc3\xa9sum\xc3\xa9", "web:1", NULL));
     CHECK(!notify("delete\x7f", "web:1", NULL));
     portal_string nul = {"a\0b", 3};
-    CHECK(!portal_notify(nul, nul, NULL, 0));
-    CHECK(!portal_notify(nul, nul, NULL, (size_t) -1));
+    CHECK(!portal_channel_send(nul, nul, NULL, 0));
+    CHECK(!portal_channel_send(nul, nul, NULL, (size_t) -1));
 
     /* A record fills PIPE_BUF exactly, newline included, and no more. */
     char type[PIPE_BUF];
     memset(type, 't', sizeof type);
     portal_string target = {"web:1", 5};
-    CHECK(!portal_notify((portal_string) {type, PIPE_BUF - 6}, target, NULL, 0));
-    CHECK(!portal_notify((portal_string) {type, PIPE_BUF}, target, NULL, 0));
-    CHECK(portal_notify((portal_string) {type, PIPE_BUF - 7}, target, NULL, 0));
+    CHECK(!portal_channel_send((portal_string) {type, PIPE_BUF - 6}, target, NULL, 0));
+    CHECK(!portal_channel_send((portal_string) {type, PIPE_BUF}, target, NULL, 0));
+    CHECK(portal_channel_send((portal_string) {type, PIPE_BUF - 7}, target, NULL, 0));
     char expected[PIPE_BUF + 1];
     memcpy(expected, type, PIPE_BUF - 7);
     memcpy(expected + PIPE_BUF - 7, " web:1\n", 8);

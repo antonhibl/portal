@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Portal's Emacs module: registers the Lisp interface of docs/adr/0002,
    converts arguments and results, and signals errors.  Each Lisp function
-   copies its arguments, calls one operation from portal.h, and converts and
-   frees what the operation returns; portal--channel connects the core's
-   pipe (channel.h) instead.  No Emacs environment or value outlives the
-   module call that received it. */
+   copies its arguments, calls the core, and converts and frees what it
+   returns.  The lifecycle functions call views.h, and portal--channel
+   channel.h.  The others find their target's view through views.h, which
+   checks its kind, and pass it to one platform operation from portal.h.  No
+   Emacs environment or value outlives the module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -13,6 +14,7 @@
 
 #include "channel.h"
 #include "portal.h"
+#include "views.h"
 
 int plugin_is_GPL_compatible;
 
@@ -283,24 +285,28 @@ LISP_FUNCTION(Fstrings)
     return value;
 }
 
-/* How each strings function calls its operation, with arguments A. */
+/* How each strings function calls the core, with arguments A.  VIEW(KIND)
+   is the view of that kind named by the first argument, or false. */
 #define STRINGS(name, call)                                                        \
     static bool name(UNUSED const portal_string *a, UNUSED portal_text *result, \
                      portal_text *error)                                          \
     {                                                                             \
+        UNUSED portal_view *view;                                                 \
         return call;                                                              \
     }
-STRINGS(hide, portal_hide(a[0], error))
-STRINGS(close_view, portal_close(a[0], error))
-STRINGS(inspect, portal_inspect(a[0], result, error))
-STRINGS(web_load, portal_web_load(a[0], a[1], error))
-STRINGS(web_send, portal_web_send(a[0], a[1], error))
-STRINGS(web_receive, portal_web_receive(a[0], result, error))
+#define VIEW(kind) (view = portal_views_find(a[0], kind, error))
+STRINGS(hide, portal_views_hide(a[0], error))
+STRINGS(close_view, portal_views_close(a[0], error))
+STRINGS(inspect, portal_views_inspect(a[0], result, error))
+STRINGS(web_load, VIEW(PORTAL_WEB) && portal_web_load(view, a[1], error))
+STRINGS(web_send, VIEW(PORTAL_WEB) && portal_web_send(view, a[1], error))
+STRINGS(web_receive, VIEW(PORTAL_WEB) && portal_web_receive(view, result, error))
 STRINGS(terminal_themes, portal_terminal_themes(result, error))
-STRINGS(terminal_text, portal_terminal_text(a[0], result, error))
+STRINGS(terminal_text, VIEW(PORTAL_TERMINAL) && portal_terminal_text(view, result, error))
 STRINGS(terminal_bindings, portal_terminal_bindings(a[0], error))
 STRINGS(toolbar_theme, portal_toolbar_theme(a[0], error))
-STRINGS(toolbar_action, portal_toolbar_action(a[0], a[1], result, error))
+STRINGS(toolbar_action,
+        VIEW(PORTAL_ANY_KIND) && portal_toolbar_action(view, a[1], result, error))
 
 LISP_FUNCTION(Fopen)
 {
@@ -308,7 +314,7 @@ LISP_FUNCTION(Fopen)
     struct options options = {0};
     emacs_value result = NULL;
     if (read_text(env, args[0], &kind) && read_options(env, args[1], &options)) {
-        if (portal_open(borrow(kind), options.items, options.count, &target, &error))
+        if (portal_views_open(borrow(kind), options.items, options.count, &target, &error))
             result = take_string(env, &target);
         else
             fail(env, &error);
@@ -325,7 +331,8 @@ LISP_FUNCTION(Fplace)
     emacs_value result = NULL;
     if (read_text(env, args[0], &target) && read_edges(env, args[1], &edges)
         && read_text(env, args[2], &title))
-        result = done(env, portal_place(borrow(target), edges, borrow(title), &error), &error);
+        result =
+            done(env, portal_views_place(borrow(target), edges, borrow(title), &error), &error);
     free(target.data);
     free(title.data);
     return result;
@@ -353,7 +360,8 @@ LISP_FUNCTION(Fterminal_theme)
     bool named = env->is_not_nil(env, args[0]);
     if (!named || read_text(env, args[0], &name)) {
         portal_string borrowed = borrow(name);
-        result = done(env, portal_terminal_theme(named ? &borrowed : NULL, &error), &error);
+        result =
+            done(env, portal_views_terminal_theme(named ? &borrowed : NULL, &error), &error);
     }
     free(name.data);
     return result;
@@ -364,9 +372,11 @@ LISP_FUNCTION(Fterminal_paste)
     portal_text target = {0}, text = {0}, error = {0};
     emacs_value result = NULL;
     bool enter = nargs > 2 && env->is_not_nil(env, args[2]);
-    if (read_text(env, args[0], &target) && read_text(env, args[1], &text))
-        result = done(env, portal_terminal_paste(borrow(target), borrow(text), enter, &error),
+    if (read_text(env, args[0], &target) && read_text(env, args[1], &text)) {
+        portal_view *terminal = portal_views_find(borrow(target), PORTAL_TERMINAL, &error);
+        result = done(env, terminal && portal_terminal_paste(terminal, borrow(text), enter, &error),
                       &error);
+    }
     free(target.data);
     free(text.data);
     return result;
@@ -392,9 +402,11 @@ LISP_FUNCTION(Finput)
     if (read_text(env, args[0], &target) && read_text(env, args[1], &action)) {
         int64_t serial =
             nargs > 2 && env->is_not_nil(env, args[2]) ? env->extract_integer(env, args[2]) : 0;
+        /* An unknown target performs nothing. */
+        portal_view *view = portal_views_find(borrow(target), PORTAL_ANY_KIND, NULL);
         bool performed = false;
         if (returning(env)) {
-            if (portal_input(borrow(target), borrow(action), serial, &performed, &error))
+            if (!view || portal_input(view, borrow(action), serial, &performed, &error))
                 result = boolean(env, performed);
             else
                 fail(env, &error);

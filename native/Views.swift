@@ -28,7 +28,7 @@ struct ViewOptions: Sendable {
     }
 }
 
-/// A value in the plist returned by `portal--inspect`.
+/// A value in a view's description, which `portal--inspect` returns.
 enum ViewValue: Sendable {
     case flag(Bool)
     case integer(Int)
@@ -36,34 +36,44 @@ enum ViewValue: Sendable {
     case string(String)
 }
 
-/// One view kind. The registry owns each view's lifetime; the kind owns its
-/// rendering, input and session. A view is always in a window: a frame's while
-/// it is shown, otherwise the parking window. Moving it between windows must
-/// happen inside one call, so it is never windowless. Closing ends it.
+/// One view kind: its rendering, input and session. The C core owns each
+/// view's identity and lifetime (native/Core/views.c), and `NativeView`
+/// attaches it to frames and parks it; the kind only reacts.
 @MainActor
 protocol PortalView: AnyObject {
-    /// Open the view in PARKING, hidden.
-    init(target: String, options: ViewOptions, parking: NativeHost) throws
+    /// Make the view, in no window yet. Its input starts in the parking window.
+    init(target: String, options: ViewOptions) throws
+    var surface: any NativeSurface { get }
     var input: NativeInput { get }
     /// The view's toolbar controls, or nil when it has no toolbar.
     var toolbar: ToolbarModel? { get }
-    /// Show the view in HOST, moving it there from its current window.
-    func place(in host: NativeHost, rectangle: CGRect) throws
-    /// Hide the view by moving it into PARKING, keeping its session and size.
-    func hide(in parking: NativeHost)
+    /// The view is in a window for the first time: the parking window.
+    func opened() throws
+    /// The view is now shown in a frame.
+    func attached()
+    /// The view is about to be parked.
+    func detaching()
+    /// End the page or session, before the view leaves its window.
     func close()
-    func inspect() -> [(String, ViewValue)]
+    /// What only the view knows; `NativeView` adds focus, and the core the rest.
+    func describe() -> [(String, ViewValue)]
 }
 
-/// Every Portal view, keyed by its native target (`kind:id`). IDs are global
-/// across kinds and never reused, so a stale target can never reach a new view.
+extension PortalView {
+    func opened() throws {}
+    func attached() {}
+    func detaching() {}
+    func close() {}
+}
+
+/// A Portal view as the core holds it, from `portal_view_create` to
+/// `portal_view_destroy`: one kind's session, and the window it is in. A view
+/// is always in a window: a frame's while it is attached, otherwise the
+/// parking window. It moves between windows inside one call, so it is never
+/// windowless, and Ghostty keeps draining its PTY.
 @MainActor
-enum Views {
-    private static let kinds: [String: any PortalView.Type] = [
-        "terminal": TerminalSession.self, "web": WebSession.self]
-    private static var views: [String: any PortalView] = [:]
-    private static var nextID = 0
-    /// Hidden views live in this offscreen window, which is never shown, so
+final class NativeView {
+    /// Detached views live in this offscreen window, which is never shown, so
     /// their sessions keep running whatever happens to Emacs frames.
     private static let parkingWindow: NSWindow = {
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 960, height: 640),
@@ -71,56 +81,57 @@ enum Views {
         window.isReleasedWhenClosed = false
         return window
     }()
-    private static let parking = NativeHost.bind(window: parkingWindow)!
+    static let parking = NativeHost.bind(window: parkingWindow)!
 
-    static func open(kind: String, options: ViewOptions) throws -> String {
-        guard let type = kinds[kind] else { throw NativeError.message("Unknown Portal view kind: \(kind)") }
-        nextID += 1
-        let target = "\(kind):\(nextID)"
-        views[target] = try type.init(target: target, options: options, parking: parking)
-        return target
-    }
+    let kind: any PortalView
+    private var host = NativeView.parking
+    /// Where the view is in its window. Parking keeps it, so hiding never
+    /// resizes the page or the shell's grid.
+    private var rectangle: CGRect
 
-    static func place(_ target: String, edges: [Int], title: String) throws {
-        guard edges.count == 4, edges[2] > edges[0], edges[3] > edges[1] else {
-            throw NativeError.message("Expected [LEFT TOP RIGHT BOTTOM] with positive dimensions")
+    /// Make a view of TYPE, in the parking window with its session running.
+    init(_ type: any PortalView.Type, target: String, options: ViewOptions) throws {
+        kind = try type.init(target: target, options: options)
+        rectangle = host.view?.bounds ?? .zero
+        move(to: host)
+        do { try kind.opened() } catch {
+            close()
+            throw error
         }
-        let view = try view(target)
-        guard let host = NativeHost.bind(title: title) else {
-            throw NativeError.message("Cannot find the requested native Emacs frame")
+        detach()
+    }
+
+    /// Show the view in HOST at RECTANGLE. Checked before anything moves, so
+    /// a failure leaves the view where it was.
+    func attach(to next: NativeHost, rectangle: CGRect) throws {
+        guard next.view != nil else { throw NativeError.message("The view's frame was deleted") }
+        self.rectangle = rectangle
+        move(to: next)
+        kind.attached()
+    }
+
+    func detach() {
+        kind.detaching()
+        move(to: Self.parking)
+        host.hide(kind.surface)
+    }
+
+    func close() {
+        kind.close()
+        host.remove(kind.surface)
+    }
+
+    func describe() -> [(String, ViewValue)] {
+        [("focused", .flag(host.ownsFocus(kind.surface.nativeView)))] + kind.describe()
+    }
+
+    /// Remove the view from its current window and add it to NEXT's, in one step.
+    private func move(to next: NativeHost) {
+        if next !== host {
+            host.remove(kind.surface)
+            host = next
+            kind.input.host = next
         }
-        try view.place(in: host, rectangle: CGRect(x: edges[0], y: edges[1],
-                                                   width: edges[2] - edges[0], height: edges[3] - edges[1]))
-    }
-
-    static func hide(_ target: String) throws { try view(target).hide(in: parking) }
-
-    static func close(_ target: String) throws {
-        guard let view = views.removeValue(forKey: target) else { throw unknown(target) }
-        view.close()
-    }
-
-    static func inspect(_ target: String) -> [(String, ViewValue)]? { views[target]?.inspect() }
-
-    static func input(_ target: String) -> NativeInput? { views[target]?.input }
-
-    static func toolbar(_ target: String) -> ToolbarModel? { views[target]?.toolbar }
-
-    static func view<Kind: PortalView>(_ target: String, as kind: Kind.Type) throws -> Kind {
-        guard let view = views[target] as? Kind else { throw unknown(target) }
-        return view
-    }
-
-    static func all<Kind: PortalView>(_ kind: Kind.Type) -> [Kind] {
-        views.values.compactMap { $0 as? Kind }
-    }
-
-    private static func view(_ target: String) throws -> any PortalView {
-        guard let view = views[target] else { throw unknown(target) }
-        return view
-    }
-
-    private static func unknown(_ target: String) -> NativeError {
-        NativeError.message("No Portal view \(target)")
+        next.place(kind.surface, rectangle: rectangle)
     }
 }

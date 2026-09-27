@@ -144,8 +144,8 @@ static bool valid_word(portal_string word)
     return true;
 }
 
-bool portal_notify(portal_string type, portal_string target, const portal_string *fields,
-                   size_t count)
+bool portal_channel_send(portal_string type, portal_string target, const portal_string *fields,
+                         size_t count)
 {
     /* Each word takes at least two bytes: itself and a space or the newline. */
     if (count > PIPE_BUF / 2)
