@@ -3,6 +3,78 @@ import AppKit
 import GhosttyTerminal
 import GhosttyTheme
 
+/// Ghostty accepts only string environment overrides. A null removal needs
+/// the bundled child launcher, which unsets it immediately before exec.
+@MainActor
+private struct TerminalLaunch {
+    var command: String?
+    var environment: [String: String] = [:]
+    var shellIntegration: String?
+
+    init(options: ViewOptions) throws {
+        command = try options.string("command")
+        var arguments: [String]?
+        if let json = try options.string("argv") {
+            guard command == nil,
+                  let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String],
+                  let program = values.first, program.hasPrefix("/"),
+                  values.allSatisfy({ !$0.contains("\0") }) else {
+                throw NativeError.message("Terminal :argv must be an absolute program and literal arguments, without :command")
+            }
+            arguments = values
+            command = values.map(Self.quote).joined(separator: " ")
+        }
+        var removals: [String] = []
+        if let json = try options.string("environment") {
+            guard let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+                throw NativeError.message("Terminal :environment must be a JSON object")
+            }
+            for (name, value) in values {
+                guard !name.isEmpty && !name.contains("=") && !name.contains("\0") else {
+                    throw NativeError.message("Invalid terminal environment name")
+                }
+                if value is NSNull {
+                    removals.append(name)
+                } else if let value = value as? String, !value.contains("\0") {
+                    environment[name] = value
+                } else {
+                    throw NativeError.message("Terminal environment values must be strings or null")
+                }
+            }
+        }
+        guard !removals.isEmpty else { return }
+        guard let arguments else {
+            throw NativeError.message("Terminal environment removals require :argv")
+        }
+        let program = arguments[0]
+        guard let launcher = Bundle(for: HostedTerminal.self).executableURL?
+            .deletingLastPathComponent().appendingPathComponent("portal-terminal-launcher"),
+              FileManager.default.isExecutableFile(atPath: launcher.path) else {
+            throw NativeError.message("Rebuild Portal to install its terminal launcher")
+        }
+        // The command still has exactly the target's arguments, so Ghostty
+        // can prepare shell integration (including Bash/Nushell flag edits).
+        // Only argv[0] changes; the launcher forwards the resulting arguments.
+        let shell = URL(fileURLWithPath: program).lastPathComponent
+        shellIntegration = program == "/bin/bash" ? "none"
+            : ["bash": "bash", "zsh": "zsh", "fish": "fish", "elvish": "elvish", "nu": "nushell"][shell] ?? "none"
+        command = ([launcher.path] + arguments.dropFirst()).map(Self.quote).joined(separator: " ")
+        let transport = "PORTAL_TERMINAL_LAUNCH"
+        var request: [String: Any] = ["program": program, "unset": removals.sorted()]
+        // Preserve a caller's variable even if it shares the transport name.
+        if let original = environment[transport] ?? ProcessInfo.processInfo.environment[transport] {
+            request["restore"] = original
+        } else {
+            request["restore"] = NSNull()
+        }
+        environment[transport] = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+    }
+
+    private static func quote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
 @MainActor
 private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     TerminalSurfaceGridResizeDelegate, TerminalSurfaceLifecycleDelegate,
@@ -19,17 +91,18 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     /// The process has ended. The view stays, showing its last output.
     var exited = false
 
-    init(directory: String, command: String?, environment: [String: String], theme: TerminalTheme) {
+    init(directory: String, launch: TerminalLaunch, theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: environment.merging(["INSIDE_EMACS": "portal-ghostty"]) { _, value in value },
-            command: command,
+            envVars: launch.environment.merging(["INSIDE_EMACS": "portal-ghostty"]) { _, value in value },
+            command: launch.command,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
             builder.withFontSize(Float(Self.defaultFontSize))
+            if let shell = launch.shellIntegration { builder.withCustom("shell-integration", shell) }
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
             builder.withCustom("keybind", "super+t=unbind")
@@ -78,8 +151,7 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         quick = options.flag("quick")
-        let terminal = HostedTerminal(directory: directory, command: try options.string("command"),
-                                      environment: try Self.commandEnvironment(options.string("environment")),
+        let terminal = HostedTerminal(directory: directory, launch: try TerminalLaunch(options: options),
                                       theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
@@ -93,18 +165,6 @@ final class TerminalSession: PortalView {
         controls.minimum = 1
         controls.maximum = 255
         controls.action = { [weak self] in try self?.textSize($0) }
-    }
-
-    /// Lisp's process-environment is independent of the native process environ.
-    /// Pass values per surface; never change the environment of Emacs itself.
-    private static func commandEnvironment(_ json: String?) throws -> [String: String] {
-        guard let json else { return [:] }
-        guard let values = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: String],
-              values.allSatisfy({ !$0.key.isEmpty && !$0.key.contains("=")
-                  && !$0.key.contains("\0") && !$0.value.contains("\0") }) else {
-            throw NativeError.message("Terminal :environment must contain valid environment names and string values")
-        }
-        return values
     }
 
     /// Ghostty makes its surface once the view is in a window.

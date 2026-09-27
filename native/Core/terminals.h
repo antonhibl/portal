@@ -11,8 +11,9 @@
 #include "portal.h"
 
 /* Check a terminal's OPTIONS before the platform creates it: :directory must
-   be a string, :command and :theme a string or nil, and :theme a name the
-   platform lists.  A later duplicate option wins, and other options pass. */
+   be a string; :command, :argv, :environment and :theme a string or nil;
+   :command and :argv mutually exclusive; and :theme a name the platform
+   lists. A later duplicate option wins, and other options pass. */
 bool portal_terminals_check(const portal_option *options, size_t count, portal_text *error);
 
 /* The platform's theme names as a sorted JSON array of strings. */

@@ -94,15 +94,21 @@ references is quoted inside the prompt. Native command quoting is independent.
 No worktree is created and no task status is changed by launching.
 
 `portal-terminal-start` accepts directory, executable, literal arguments, and
-an optional buffer name. It resolves the executable, quotes the arguments once
-for Ghostty's POSIX shell command interface, and opens a dedicated terminal in
-another pane using Emacs display rules. Swift passes the startup command to
-`TerminalSurfaceOptions` before creating the surface. The calling buffer's
-exported `process-environment` values travel as a JSON `:environment` option and
-become per-surface environment overrides. This includes Lisp-side `setenv` and
-PATH imports, which do not update the native process environment. Ghostty keeps
+an optional buffer name. It resolves the executable and sends a JSON `:argv`
+array to the native adapter, which quotes it once for Ghostty's POSIX command
+interface. It opens a dedicated terminal in another pane using Emacs display
+rules. The calling buffer's exported `process-environment` values travel as a
+JSON `:environment` option: strings override values, empty strings stay empty,
+and null removes a variable. The first occurrence wins, including a bare name
+that unsets an older value. This includes Lisp-side `setenv` and PATH imports,
+which do not update the native process environment. Ghostty keeps
 ownership of terminal metadata and its shell-integration variables; when zsh
 is launched explicitly, its bootstrap restores the supplied `ZDOTDIR`.
+Ghostty's current API cannot remove environment variables. For launches with
+removals, the bundled `portal-terminal-launcher` unsets them in the PTY child
+and immediately execs the requested program. Ghostty still prepares shell
+integration and terminal metadata; the Emacs process environment is untouched.
+The older raw `:command` option remains available without null removals.
 Programs start directly without loading an interactive shell configuration.
 There is no delayed paste or simulated typing. Hidden terminals continue
 running; closing their buffers

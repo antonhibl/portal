@@ -129,10 +129,11 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Dismiss the quick terminal before opening an ordinary terminal"))
   (portal-terminal--new))
 
-(defun portal-terminal--new (&optional quick-root command name elsewhere environment)
+(defun portal-terminal--new (&optional quick-root command name elsewhere environment argv)
   "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
 NAME names its buffer.  ELSEWHERE displays it in another pane.
-ENVIRONMENT is a JSON object of environment overrides for COMMAND."
+ENVIRONMENT is a JSON object of string values or null removals.
+ARGV is a JSON array of literal program arguments, instead of COMMAND."
   (when (file-remote-p default-directory)
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
@@ -165,6 +166,7 @@ ENVIRONMENT is a JSON object of environment overrides for COMMAND."
           (with-current-buffer buffer
             (portal-view-open 'terminal (list :directory directory
                                               :command command
+                                              :argv argv
                                               :environment environment
                                               :theme portal-terminal-theme
                                               :quick (and quick-root t)))
@@ -187,8 +189,7 @@ from `process-environment', including changes made by `setenv'."
         ;; Like getenv, the first entry wins, including an unset entry.
         (unless (gethash name seen)
           (puthash name t seen)
-          (when (and separator
-                     (not (member name '("TERM" "TERMINFO" "TERMINFO_DIRS" "COLORTERM"
+          (when (and (not (member name '("TERM" "TERMINFO" "TERMINFO_DIRS" "COLORTERM"
                                          "TERM_PROGRAM" "TERM_PROGRAM_VERSION" "INSIDE_EMACS"
                                          "PWD" "COLUMNS" "LINES" "VTE_VERSION")))
                      (not (string-prefix-p "GHOSTTY_" name)))
@@ -197,15 +198,15 @@ from `process-environment', including changes made by `setenv'."
             (puthash (if (and (equal name "ZDOTDIR")
                              (equal (file-name-nondirectory program) "zsh"))
                          "GHOSTTY_ZSH_ZDOTDIR" name)
-                     (substring entry (1+ separator)) values)))))
+                     (if separator (substring entry (1+ separator)) :null) values)))))
     (json-serialize values)))
 
 (defun portal-terminal-start (directory program arguments &optional name)
   "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
 Return its buffer.  NAME optionally names the buffer.  Arguments are literal
-strings, quoted once for Ghostty's POSIX shell command interface.
-Exported values in the calling buffer's `process-environment' override the
-native process's environment; Ghostty supplies terminal metadata."
+strings passed to the native launcher without shell expansion.
+The calling buffer's `process-environment' supplies exported values and
+explicit removals; Ghostty supplies terminal metadata."
   (unless (and (stringp directory) (file-name-absolute-p directory)
                (not (file-remote-p directory)) (file-directory-p directory))
     (user-error "Choose an existing local terminal directory"))
@@ -215,16 +216,12 @@ native process's environment; Ghostty supplies terminal metadata."
     (user-error "Terminal program and arguments must be strings without NUL"))
   (let* ((default-directory (file-name-as-directory directory))
          (executable (executable-find program))
-         (shell-file-name "/bin/sh")
          (configuration (current-window-configuration)))
     (unless executable (user-error "Cannot find terminal program: %s" program))
     (condition-case err
-        ;; Ghostty's macOS wrapper supplies exec itself. Supply the program
-        ;; and literal arguments, without an extra shell builtin in front.
         (portal-terminal--new
-         nil (mapconcat #'shell-quote-argument
-                        (cons executable (append arguments nil)) " ")
-         name t (portal-terminal--command-environment executable))
+         nil nil name t (portal-terminal--command-environment executable)
+         (json-serialize (vconcat (list executable) arguments)))
       (error (set-window-configuration configuration)
              (portal-view-sync)
              (signal (car err) (cdr err))))))
