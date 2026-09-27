@@ -1,5 +1,8 @@
 ---
+id: portable-terminal-adapter
 status: todo
+depends_on:
+  - portable-view-lifecycle
 ---
 
 # Confine Ghostty integration to the macOS terminal adapter

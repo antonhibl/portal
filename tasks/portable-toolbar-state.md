@@ -1,5 +1,10 @@
 ---
+id: portable-toolbar-state
 status: todo
+depends_on:
+  - portable-input-policy
+  - portable-web-bridge
+  - portable-terminal-adapter
 ---
 
 # Share toolbar state while keeping macOS controls native

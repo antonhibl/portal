@@ -1,5 +1,8 @@
 ---
+id: portable-view-lifecycle
 status: todo
+depends_on:
+  - portable-module-bindings
 ---
 
 # Own native view lifetime in the C core

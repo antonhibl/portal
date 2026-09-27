@@ -1,5 +1,7 @@
 ---
+id: portable-module-bindings
 status: todo
+depends_on: []
 ---
 
 # Move Emacs module bindings into C
