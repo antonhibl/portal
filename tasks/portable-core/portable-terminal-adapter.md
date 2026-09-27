@@ -5,93 +5,107 @@ depends_on:
   - portable-view-lifecycle
 ---
 
-# Confine Ghostty integration to the macOS terminal adapter
+# Reduce terminal views to platform primitives
 
 ## Context and problem
 
 Portal is improving its macOS architecture to make a future Linux port natural.
-This task does not implement Linux, prototype another renderer, add Linux CI,
-or target Windows. The prerequisites provide C bindings and shared lifecycle.
+This task does not implement Linux, prototype another renderer, add Linux CI or
+target Windows. Follow ADR 0003 (`docs/adr/0003-platform-interface-primitives.md`).
 
-Portal depends on the pinned Apple-platform `GhosttyTerminal` and `GhosttyTheme`
-Swift libraries. `native/Terminal.swift` mixes those types with Portal options,
-text-size behavior, target lookup, and session inspection. Ghostty running on
-Linux does not make this wrapper portable: its Linux application uses GTK4,
-while GTK/PGTK Emacs currently uses GTK3. Treat full Linux embedding as a future
-implementation choice, not a promise that replacing the Swift view is trivial.
+Portal depends on the pinned Apple-platform `GhosttyTerminal` and
+`GhosttyTheme` Swift libraries. `native/Terminal.swift` mixes those types with
+Portal's options, text-size behavior and inspection. Ghostty running on Linux
+does not make this wrapper portable: its Linux application uses GTK4, while
+GTK/PGTK Emacs currently uses GTK3. Full Linux embedding is a future choice, not
+a promise that replacing the Swift view is trivial.
 
 ## Outcome and scope
 
-The C core and Emacs bindings express Portal terminal operations without knowing
-Ghostty or AppKit types. The existing Swift wrapper remains the production
-macOS implementation, retaining its rendering and process integration.
+The core implements the terminal Lisp functions and asks the platform only for
+what a terminal engine must do. The existing Swift wrapper stays the production
+macOS terminal, with its rendering and process integration.
 
-- Define typed terminal operations for existing behavior: create options,
-  paste with optional Enter, text extraction, theme enumeration/application,
-  and text-size changes. Common place/hide/focus/close operations use the
-  existing view/host seam; do not create a competing terminal lifecycle.
-- Report title, grid size, readiness, process exit, and errors as plain data or
-  typed events. Keep any existing macOS-only inspection field, such as the
-  renderer layer name, as adapter diagnostic data rather than a required
-  portable concept. Preserve the external inspect shape on macOS.
-- Keep `TerminalView`, `TerminalSurface`, controller/theme catalog types,
-  Metal/display integration, native clipboard/input, and Ghostty configuration
-  calls inside Swift. Do not reimplement the wrapper or call the internal
-  Ghostty C embedding interface directly merely to reduce Swift line count.
-- Let C perform shared option/target validation where it owns that information;
-  translate typed operations to Ghostty binding strings only in the adapter.
-  Retain current native keyboard/text-size shortcuts. Their shared value/limit
-  model can remain with the existing toolbar until the toolbar extraction.
-- Preserve shell working directory, `INSIDE_EMACS`, wait-after-command behavior,
-  Emacs ownership of window/tab commands, theme defaults/live changes, and
-  package resources for terminfo/shell integration.
-- Preserve bracketed paste semantics and explicit Enter as a key operation.
-  Text extraction currently selects all and leaves the selection active;
-  changing that behavior is a separate feature.
+- Move Portal's terminal rules into the core. That includes option validation it
+  can check, checking a theme name against the platform's list before touching
+  any session, and applying a theme to every open terminal. Preserve today's
+  behavior, including partial failure when one terminal rejects a theme.
+- Keep `TerminalView`, `TerminalSession`, the controller and theme catalog
+  types, Metal and display integration, the native clipboard and input, and
+  Ghostty configuration inside Swift. Do not reimplement the wrapper or call
+  Ghostty's internal C embedding interface just to reduce Swift.
+- Preserve the shell working directory, `INSIDE_EMACS`, wait-after-command,
+  Emacs ownership of window and tab commands, theme defaults and live changes,
+  and the bundled terminfo and shell-integration resources.
+- Preserve bracketed paste and Enter as a separate key press. Text extraction
+  selects all and leaves the selection active; changing that is a separate
+  feature.
 - Preserve hidden-session progress and grid size, frame movement, and cleanup.
-  Process exit must not silently restart a shell or close its buffer. Keep
-  parking-window mechanics in the macOS adapter and shared identity in C.
+  Process exit must not silently restart a shell or close its buffer.
+- Keep native keyboard text-size shortcuts. Their step and limit rules can stay
+  where they are until the toolbar task.
 
-Persistent sessions across Emacs restarts, replacing Ghostty, changing terminal
-performance settings, and Windows/Linux dependency packaging are outside scope.
+Persistent sessions across Emacs restarts, replacing Ghostty, performance
+settings, and packaging for Windows or Linux are outside scope.
+
+## Platform interface
+
+- **Removes** the Lisp-shaped `portal_terminal_paste`, `portal_terminal_text`,
+  `portal_terminal_theme` and `portal_terminal_themes`.
+- **Adds, implemented by the platform, each on one terminal handle:**
+  - paste text;
+  - press Enter;
+  - read all text;
+  - apply a named theme, or the default;
+  - set the font size.
+- **Also adds** listing the theme names the engine offers. Terminal creation
+  options go through the lifecycle's create primitive.
+- A terminal's title, grid, readiness and exit status come from the lifecycle's
+  describe primitive. Add a call into the core only if the core must react, for
+  example to process exit, and follow the channel task's convention.
+- Ghostty binding strings, such as `select_all`, stay inside the macOS
+  platform.
 
 ## Starting points
 
-Read `native/Terminal.swift`, `native/Package.swift`, `native/Package.resolved`,
-`portal-terminal.el`, `portal-terminal-quick.el`, and the README's terminal
-behavior/build sections. Inspect the resolved Ghostty wrapper only as needed;
-do not silently upgrade it. Use `test/portal-terminal-tests.el`,
-`test/portal-terminal-quick-tests.el`, `test/portal-integration-tests.el`, and
-`test/native-terminal-stub.swift`. Follow the prerequisites' C binding, registry,
-and host declarations. Upstream background: [Ghostty architecture](https://ghostty.org/docs/about)
-and [internal embedding interface](https://github.com/ghostty-org/ghostty/blob/main/include/ghostty.h).
+Read ADR 0003, `native/Terminal.swift`, `native/Package.swift`,
+`native/Package.resolved`, `portal-terminal.el`, `portal-terminal-quick.el`,
+the README's terminal and build sections, and the C files from the
+prerequisites. Inspect the resolved Ghostty wrapper only as needed, and do not
+upgrade it silently. Use `test/portal-terminal-tests.el`,
+`test/portal-terminal-quick-tests.el`, `test/portal-integration-tests.el` and
+`test/native-terminal-stub.swift`. Upstream background:
+[Ghostty architecture](https://ghostty.org/docs/about) and the
+[internal embedding interface](https://github.com/ghostty-org/ghostty/blob/main/include/ghostty.h).
 
 ## Decisions to settle during implementation
 
-Choose the smallest typed option/state representation and define failed creation,
-theme application, and late callback behavior. Distinguish view destruction from
-process exit. Preserve observable behavior, including any non-atomic multi-view
-theme failure semantics, rather than promising new guarantees without evidence.
-Record which fields are diagnostic or macOS-specific.
+Decide whether "press Enter" is its own primitive or a key primitive that input
+also needs; pick one and don't keep both. Define failed creation, theme
+application, and late platform calls. Distinguish destroying a view from its
+process exiting. Record which described facts are diagnostic or macOS-specific,
+such as the renderer layer name.
 
 ## Acceptance criteria and verification
 
-- [ ] Shared C declarations and Emacs bindings contain no Ghostty/AppKit/Metal
-  types or engine binding strings. One adapter owns each terminal resource.
-- [ ] Fake-terminal tests exercise the real C operations, wrong-kind/unknown
-  targets, invalid options, backend errors, title/grid/exit events, and callbacks
-  after destruction without depending on the Ghostty package.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass.
-  Graphical terminal/combined suites verify real paste versus Enter, text
-  extraction, theme/text size, hidden output, frame movement, exit, and cleanup.
-  Confirm quick terminals still use the same per-project shell without a toolbar.
-- [ ] The existing pinned dependency and bundle resources remain usable; no
-  Linux renderer or new terminal engine has been added.
-- [ ] Update README architecture, record verification, and mark this task done;
-  follow `AGENTS.md` for the implementation worktree and PR.
+- [ ] `portal.h` declares none of the removed operations. Its terminal part is
+  the primitives above, and it contains no Ghostty, AppKit or Metal types, or
+  engine binding strings.
+- [ ] C tests with a fake terminal platform exercise the real core. They cover
+  wrong-kind and unknown targets, invalid options, unknown and failing themes,
+  platform errors, described facts, and calls after destruction, without the
+  Ghostty package.
+- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
+  graphical terminal and combined suites check paste versus Enter, text
+  extraction, theme and text size, hidden output, frame movement, exit and
+  cleanup. Quick terminals still use one shell per project without a toolbar.
+- [ ] The pinned dependency and bundle resources still work. No Linux renderer
+  or new terminal engine has been added.
+- [ ] Update the README architecture, record verification, and mark this task
+  done; follow `AGENTS.md` for the implementation worktree and PR.
 
 ## Blocked by
 
 - [Own native view lifetime in the C core](portable-view-lifecycle.md) supplies
-  typed ownership and lifecycle operations. Input and web extraction are not
-  prerequisites; use their existing interfaces until those tasks merge.
+  handles, the create and describe primitives, and the registry. Input and web
+  extraction are not prerequisites.

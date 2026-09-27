@@ -831,7 +831,7 @@ the app sends, in order. Other web views have no bridge.
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
-| `native/Core/include/portal.h` | The typed C operations behind each Lisp function, with their ownership and thread rules |
+| `native/Core/include/portal.h` | The platform interface: typed C operations with their ownership and thread rules. It mirrors the Lisp functions for now ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)) |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
@@ -859,7 +859,9 @@ which `native/Backend.swift` implements with the Swift features. The operations 
 plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
 `malloc` that the bindings free, and an explicit error result that becomes a Lisp
 `error`. Structured results, such as `portal--inspect`'s state, cross as JSON, which
-the bindings parse with `json-parse-string`. The bindings check that argument strings are valid UTF-8, since Emacs copies
+the bindings parse with `json-parse-string`. The later portable-core tasks move Portal's
+rules from Swift into a C core, reducing `portal.h` to the primitives a platform must
+provide ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)). The bindings check that argument strings are valid UTF-8, since Emacs copies
 a unibyte string's raw bytes unchanged. A later backend can replace any operation
 without changing its Lisp callers.
 

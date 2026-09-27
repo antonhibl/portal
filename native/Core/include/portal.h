@@ -7,6 +7,11 @@
    native/Backend.swift; the module tests link test/portal-fake-backend.c.
    Nothing here knows about Emacs values or a UI toolkit.
 
+   For now these operations mirror the Lisp functions.  They are becoming the
+   platform interface of docs/adr/0003: as Portal's rules move into the C
+   core, their operations here give way to the primitives a platform must
+   provide.
+
    Threads: the bindings call each operation synchronously, on the thread that
    runs the Emacs module call.  A backend may require a particular thread and
    fail otherwise; the macOS backend requires the main thread.

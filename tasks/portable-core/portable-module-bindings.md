@@ -107,6 +107,12 @@ None; this is the first refactor task.
   or AppKit declarations.
 - `native/Backend.swift` implements `portal.h` with the existing Swift code and
   keeps the main-thread check and `MainActor` dispatch.
+- Review settled the target shape in ADR 0003
+  (`docs/adr/0003-platform-interface-primitives.md`). `portal.h` mirrors the Lisp
+  functions only for now. Each later portable-core task moves Portal's rules
+  into the C core and replaces its operations with platform primitives. The
+  notification channel now comes first, because it sets the convention for
+  platform calls into the core.
 - The bindings reject strings that are not valid UTF-8 with
   `wrong-type-argument`, because Emacs copies unibyte raw bytes and surrogates
   unchanged. `portal--input` now treats an explicit nil SERIAL as absent, like
