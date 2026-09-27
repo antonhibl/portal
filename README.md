@@ -924,7 +924,7 @@ focused-view removal return focus to the editor:
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/NativeHost.swift native/NativeInput.swift native/NativeEventChannel.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
-  test/native-terminal-stub.swift test/native-focus.swift \
+  test/native-checks.swift test/native-terminal-stub.swift test/native-focus.swift \
   -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
@@ -945,6 +945,19 @@ Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
 focus-preserving buttons, back and forward in previews, zoom limits, TOC, find,
 retained state, and a Markdown preview's Open in Emacs.
+
+Both standalone checks use `test/native-checks.swift` to print failures with a
+source location and exit with status 1. Use its `check`, `require`, and `fail`
+helpers for test expectations, and `runChecks` at the entry point to report thrown
+errors. This keeps ordinary test failures from triggering macOS crash dialogs;
+crashes in the native code under test are still reported by macOS. The checks
+still open real windows to exercise AppKit and WebKit.
+
+Verify the failure reporter without opening windows:
+
+```sh
+python3 -B -m unittest discover -s test -p 'test_native_checks.py'
+```
 
 The compiled-host integration tests run without a graphical display:
 
