@@ -153,6 +153,36 @@ test("removed, conflicting and closed sources never reach the terminal operation
 	}
 });
 
+test("blocked tasks disable Implement and never reach the terminal operation", async () => {
+	const f = await fixture();
+	await writeFile(
+		join(f.root, "source.md"),
+		"---\nid: stable-task\nstatus: todo\ndepends_on: [first]\n---\n# Implement me\n",
+	);
+	await writeFile(
+		join(f.root, "first.md"),
+		"---\nid: first\nstatus: todo\n---\n# First\n",
+	);
+	const html = await (await tasks(f.params, f.actions)).text();
+	expect(html).toContain(
+		'<button type="submit" disabled title="Finish its prerequisites first">Implement with Claude</button>',
+	);
+	expect(html).not.toContain('name="request"');
+	// A form rendered before the task became blocked cannot launch it.
+	const location = new URL((await f.post()).headers.get("Location") ?? "");
+	expect(f.sent).toHaveLength(0);
+	expect(
+		await (await tasks(location.searchParams, f.actions)).text(),
+	).toContain("This task is blocked.");
+	await writeFile(
+		join(f.root, "first.md"),
+		"---\nid: first\nstatus: done\n---\n# First\n",
+	);
+	expect(await (await tasks(f.params, f.actions)).text()).toContain(
+		'name="request"',
+	);
+});
+
 test("HTTP callers cannot choose another view's project or invoke an arbitrary operation", async () => {
 	const f = await fixture();
 	expect((await f.post("https://example.com")).status).toBe(403);

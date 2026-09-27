@@ -1278,17 +1278,18 @@ function detail(
 	const task = resolve(listing, found, id);
 	if (task instanceof Response) return task;
 	const title = task.headingTitle ? "" : `<h1>${html(task.title)}</h1>`;
+	const blocked = task.status === "todo" && !ready(found, task);
 	let readiness = "";
 	if (task.status === "todo") {
-		readiness = ready(found, task)
-			? `<span class="readiness readiness-ready">ready</span>`
-			: `<span class="readiness readiness-blocked">blocked</span>`;
+		readiness = blocked
+			? `<span class="readiness readiness-blocked">blocked</span>`
+			: `<span class="readiness readiness-ready">ready</span>`;
 	}
 	return taskPage(
 		task.title,
 		`<nav class="task-nav">${breadcrumbs(listing, found, task)}` +
 			`<span class="task-state">${badge(task.status)}${readiness}</span></nav>` +
-			(actions?.controls(listing, task, result) ?? "") +
+			(actions?.controls(listing, task, blocked, result) ?? "") +
 			metadata(listing, found, task) +
 			`<article>${title}${body(listing, found, task)}</article>`,
 		200,
@@ -1430,7 +1431,13 @@ export class TaskActions {
 		return context?.app === "tasks" && context.root === listing.root;
 	}
 
-	controls(listing: Listing, task: Task, result?: string | null): string {
+	/** TASK's buttons. A BLOCKED task cannot be implemented yet. */
+	controls(
+		listing: Listing,
+		task: Task,
+		blocked: boolean,
+		result?: string | null,
+	): string {
 		if (!this.operable(listing))
 			return `<p class="action-note">Reload this task view in Portal to change, edit or implement this task.</p>`;
 		const buttons = `<div class="task-controls">${operations(task, false)}`;
@@ -1451,6 +1458,11 @@ export class TaskActions {
 			previous.message
 				? `<p role="status" class="action-note${previous.failed ? " action-error" : ""}">${html(previous.message)}</p>`
 				: "";
+		if (blocked)
+			return (
+				`${notice}${buttons}<form class="task-action">` +
+				`<button type="submit" disabled title="Finish its prerequisites first">Implement with Claude</button></form></div>`
+			);
 		const id = crypto.randomUUID();
 		this.forms.set(id, { listing, task: task.id, created: Date.now() });
 		return (
@@ -1552,13 +1564,18 @@ export class TaskActions {
 		});
 	}
 
-	/** Task ID's current source in LISTING's root, for its registered view. */
-	private async locate(listing: Listing, id: string): Promise<Task> {
+	/** Task ID's current source in LISTING's root, for its registered view,
+	 * looked up in FOUND when the caller has already read the root. */
+	private async locate(
+		listing: Listing,
+		id: string,
+		found?: Index,
+	): Promise<Task> {
 		if (!listing.context || !this.operable(listing))
 			throw new Error(
 				"The task view has closed or expired. Reload before trying again.",
 			);
-		const task = resolve(listing, await discover(listing.root), id);
+		const task = resolve(listing, found ?? (await discover(listing.root)), id);
 		if (task instanceof Response)
 			throw new Error(
 				"The task was removed, became invalid, or has a conflicting ID. Reload the page.",
@@ -1571,7 +1588,10 @@ export class TaskActions {
 
 	private async launch(form: Implementation) {
 		const { listing } = form;
-		const task = await this.locate(listing, form.task);
+		const found = await snapshot(listing.root);
+		const task = await this.locate(listing, form.task, found);
+		if (task.status === "todo" && !ready(found, task))
+			throw new Error("This task is blocked. Finish its prerequisites first.");
 		const context = this.host.context(listing.context ?? null) ?? {};
 		if (
 			typeof context.project !== "string" ||
