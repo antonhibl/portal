@@ -262,16 +262,14 @@ final class WebSession: PortalView {
     private let toolbarName: String
     private let page: WebPage
     private let bridge: WebBridge?
-    private var host: NativeHost
+    var surface: any NativeSurface { page }
     let input: NativeInput
     var toolbar: ToolbarModel? { page.toolbarModel }
-    private var rectangle: CGRect
-    private var edges: [Int] = []
 
     /// `:toolbar` is "navigation", "contents", "markdown" or "none"; "markdown"
     /// is "contents" with Open in Emacs when `:hosted`. With `:hosted`, the page
     /// keeps no data between sessions, never leaves the app host, and has a bridge.
-    init(target: String, options: ViewOptions, parking: NativeHost) throws {
+    init(target: String, options: ViewOptions) throws {
         guard let name = try options.string("toolbar"), let kind = Self.toolbars[name] else {
             throw NativeError.message(
                 "A web view's :toolbar must be \"navigation\", \"contents\", \"markdown\" or \"none\"")
@@ -283,45 +281,16 @@ final class WebSession: PortalView {
         self.page = page
         bridge = hosted ? WebBridge(target: target, page: page) : nil
         if hosted && name == "markdown" { page.toolbarModel?.edit = { [weak page] in page?.edit() } }
-        host = parking
-        rectangle = parking.view?.bounds ?? .zero
-        input = NativeInput(target: target, view: page, host: parking) { [weak page] in
+        input = NativeInput(target: target, view: page, host: NativeView.parking) { [weak page] in
             guard let page, !page.isHidden else { return false }
             return page.window?.makeFirstResponder(page) ?? false
         }
         page.input = input
-        try move(to: parking)
-        hide(in: parking)
-    }
-
-    /// Remove the page from its current window and add it to NEXT's, in one step.
-    private func move(to next: NativeHost) throws {
-        if next !== host {
-            host.remove(page)
-            host = next
-            input.host = next
-        }
-        guard next.place(page, rectangle: rectangle) else {
-            throw NativeError.message("The web view's frame was deleted")
-        }
-    }
-
-    func place(in host: NativeHost, rectangle: CGRect) throws {
-        self.rectangle = rectangle
-        try move(to: host)
-        edges = [Int(rectangle.minX), Int(rectangle.minY), Int(rectangle.maxX), Int(rectangle.maxY)]
-    }
-
-    func hide(in parking: NativeHost) {
-        edges = []
-        try? move(to: parking)
-        parking.hide(page)
     }
 
     func close() {
         bridge?.close()
         page.stopLoading()
-        host.remove(page)
     }
 
     func load(_ address: String) throws {
@@ -342,11 +311,8 @@ final class WebSession: PortalView {
         return bridge
     }
 
-    func inspect() -> [(String, ViewValue)] {
+    func describe() -> [(String, ViewValue)] {
         var state: [(String, ViewValue)] = [
-            ("visible", .flag(page.window != nil && !page.isHiddenOrHasHiddenAncestor)),
-            ("focused", .flag(host.ownsFocus(page))),
-            ("edges", .integers(edges)),
             ("toolbar", .string(toolbarName)),
             ("loading", .flag(page.isLoading))]
         if let url = page.url { state.append(("url", .string(url.absoluteString))) }

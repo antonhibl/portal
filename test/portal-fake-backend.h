@@ -3,7 +3,20 @@
 #ifndef PORTAL_FAKE_BACKEND_H
 #define PORTAL_FAKE_BACKEND_H
 
+#include <stdbool.h>
 #include <stddef.h>
+
+/* How many times the core called each view primitive, and how many calls
+   named a view after the core destroyed it, or a view of the wrong kind,
+   which must never happen. */
+struct portal_fake_calls {
+    size_t created, destroyed, attached, detached, described, misused;
+};
+struct portal_fake_calls portal_fake_calls(void);
+
+/* While REFUSE, every view primitive fails without doing anything, as a
+   platform does when called on the wrong thread. */
+void portal_fake_refuse(bool refuse);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);

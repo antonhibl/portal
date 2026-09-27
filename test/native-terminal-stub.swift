@@ -4,13 +4,19 @@ import AppKit
 
 @MainActor
 final class TerminalSession: PortalView {
-    init(target: String, options: ViewOptions, parking: NativeHost) throws {
+    init(target: String, options: ViewOptions) throws {
         throw NativeError.message("The standalone checks have no terminals")
     }
+    var surface: any NativeSurface { fail("The standalone checks have no terminals") }
     var input: NativeInput { fail("The standalone checks have no terminals") }
     var toolbar: ToolbarModel? { nil }
-    func place(in host: NativeHost, rectangle: CGRect) throws {}
-    func hide(in parking: NativeHost) {}
-    func close() {}
-    func inspect() -> [(String, ViewValue)] { [] }
+    func describe() -> [(String, ViewValue)] { [] }
+}
+
+@MainActor
+enum Terminals {
+    static func themeNames() -> [String] { [] }
+    static func setTheme(_ name: String?, sessions: [TerminalSession]) throws {}
+    static func paste(_ session: TerminalSession, text: String, enter: Bool) throws {}
+    static func text(_ session: TerminalSession) throws -> String { "" }
 }

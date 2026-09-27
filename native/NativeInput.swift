@@ -179,10 +179,10 @@ final class NativeInput: NativeInputHandler {
         return true
     }
 
-    static func perform(_ target: String, action: String, serial: Int = 0) throws -> Bool {
-        guard let input = Views.input(target) else { return false }
-        if serial != 0 && (serial != input.serial || !input.active) { return false }
-        return try input.perform(action)
+    /// Perform ACTION, unless SERIAL is not 0 and names no pending handoff.
+    func perform(_ action: String, serial: Int) throws -> Bool {
+        if serial != 0 && (serial != self.serial || !active) { return false }
+        return try perform(action)
     }
 
     private func perform(_ action: String) throws -> Bool {

@@ -95,11 +95,11 @@ struct CheckToolbar {
         app.sendEvent(commandF)
         check(model.finding && window.firstResponder !== web, "Command-F did not open find")
         wait("find query was not retained") { model.matchCount == 3 }
-        _ = try NativeInput.perform(target, action: "unfocus")
+        _ = try Views.input(target, action: "unfocus")
         try model.perform("find")
         check(model.input?.ownership == .view, "Repeated find must focus its field")
         try model.perform("close-find")
-        _ = try NativeInput.perform(target, action: "passthrough")
+        _ = try Views.input(target, action: "passthrough")
         check(model.input?.ownership == .passthrough)
         app.sendEvent(commandF)
         check(!model.finding && model.input?.ownership == .passthrough, "Passthrough must pass Command-F")
@@ -152,7 +152,7 @@ struct CheckToolbar {
         try Views.close(plain)
         let (target, button) = try edit(hosted: true)
         check(!button.isHidden)
-        let focused = try NativeInput.perform(target, action: "focus")
+        let focused = try Views.input(target, action: "focus")
         check(focused && window.firstResponder !== editor)
         // Clicking while Emacs reads a prefix ends that read first, so Emacs
         // runs the edit instead of taking it for the prefix's next key.

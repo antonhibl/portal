@@ -1,11 +1,12 @@
 ;;; portal-module-tests.el --- The C module bindings with a fake backend -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Loads the real Emacs bindings, native/Core/emacs.c, linked with
-;; test/portal-fake-backend.c instead of the macOS backend.  The module file
-;; is named by PORTAL_TEST_MODULE; run with --module-assertions.  The fake
-;; reports what it received through `portal--inspect', and the target "fake"
-;; reports its global settings.
+;; Loads the real Emacs bindings, native/Core/emacs.c, and the real core,
+;; linked with test/portal-fake-backend.c instead of the macOS backend.  The
+;; module file is named by PORTAL_TEST_MODULE; run with --module-assertions.
+;; `portal--inspect' reports the core's state of a view and what the fake
+;; received, including its global settings as `:fake'.
+;; test/portal-views-tests.c covers the core's registry in detail.
 
 (require 'ert)
 
@@ -32,6 +33,12 @@
     (portal--close target)
     (1+ id)))
 
+(defun portal-module-tests--settings ()
+  "Return the fake backend's global settings."
+  (let ((target (portal--open "web" nil)))
+    (prog1 (plist-get (portal--inspect target) :fake)
+      (portal--close target))))
+
 (defmacro portal-module-tests--untouched (&rest body)
   "Run BODY and check that it opened no view in the backend."
   (declare (indent 0))
@@ -55,13 +62,22 @@
       (should (eq (plist-get state :quick) t))
       (should (plist-member state :toolbar))
       (should-not (plist-get state :toolbar))
-      (should-not (plist-get state :visible)))
+      (should-not (plist-get state :visible))
+      (should-not (plist-get state :edges)))
     (should (eq (portal--place target [10 20 110 220] "frame ✓") t))
     (let ((state (portal--inspect target)))
       (should (equal (plist-get state :edges) '(10 20 110 220)))
-      (should (equal (plist-get state :title) "frame ✓"))
+      (should (equal (plist-get state :frame) "frame ✓"))
+      (should (equal (plist-get state :size) '(100 200)))
       (should (eq (plist-get state :visible) t)))
     (should (eq (portal--hide target) t))
+    (let ((state (portal--inspect target)))
+      (should-not (plist-get state :visible))
+      (should-not (plist-get state :edges))
+      (should (equal (plist-get state :size) '(100 200))))
+    ;; A failed placement leaves the view where it was.
+    (should (equal (should-error (portal--place target [0 0 1 1] "deleted frame"))
+                   '(error "Cannot find the requested native Emacs frame")))
     (should-not (plist-get (portal--inspect target) :visible))
     (should (eq (portal--close target) t))
     (should-not (portal--inspect target))
@@ -110,12 +126,13 @@
                     ([10 20 30 x] . wrong-type-argument)
                     ([10 20 30 1.5] . wrong-type-argument)
                     ([10 20 30 ,(expt 2 80)] . overflow-error)
-                    ([10 20 5 40] . error)))  ; The backend checks dimensions.
+                    ([10 20 5 40] . error)            ; The core checks dimensions,
+                    ([0 0 ,(expt 2 40) 1] . error)))  ; and range.
       (should (eq (car (should-error (portal--place target (car case) "title"))) (cdr case))))
     (should-error (portal--place target [0 0 1 1] 'title) :type 'wrong-type-argument)
     (let ((state (portal--inspect target)))
       (should-not (plist-get state :edges))
-      (should-not (plist-get state :title))
+      (should-not (plist-get state :frame))
       (should-not (plist-get state :visible)))
     (portal--close target)))
 
@@ -155,11 +172,11 @@
     (should-error (portal--input terminal "command" "7") :type 'wrong-type-argument)
     (should (equal (plist-get (portal--inspect terminal) :action) "ack"))
     (should (eq (portal--terminal-theme "Ωmega") t))
-    (should (equal (plist-get (portal--inspect "fake") :theme) "Ωmega"))
+    (should (equal (plist-get (portal--inspect terminal) :theme) "Ωmega"))
     (should (eq (portal--terminal-theme nil) t))
-    (let ((settings (portal--inspect "fake")))
-      (should (plist-member settings :theme))
-      (should-not (plist-get settings :theme)))
+    (let ((state (portal--inspect terminal)))
+      (should (plist-member state :theme))
+      (should-not (plist-get state :theme)))
     (should-error (portal--terminal-theme 'Alpha) :type 'wrong-type-argument)
     (portal--close terminal)))
 
@@ -170,16 +187,16 @@
     (should (eq (portal--input terminal "pending") nil))
     (portal--close terminal))
   (should (eq (portal--input-prefix "c" 262144) t))
-  (let ((settings (portal--inspect "fake")))
+  (let ((settings (portal-module-tests--settings)))
     (should (equal (plist-get settings :prefix) "c"))
     (should (eql (plist-get settings :flags) 262144)))
   (should-error (portal--input-prefix "c" "1") :type 'wrong-type-argument)
   (should (eq (portal--terminal-bindings "{\"regular\":[]}") t))
-  (should (equal (plist-get (portal--inspect "fake") :bindings) "{\"regular\":[]}"))
+  (should (equal (plist-get (portal-module-tests--settings) :bindings) "{\"regular\":[]}"))
   (should (eq (portal--toolbar nil) nil))
-  (should (eq (plist-get (portal--inspect "fake") :toolbar) nil))
+  (should (eq (plist-get (portal-module-tests--settings) :toolbar) nil))
   (should (eq (portal--toolbar 'yes) t))
-  (should (eq (plist-get (portal--inspect "fake") :toolbar) t))
+  (should (eq (plist-get (portal-module-tests--settings) :toolbar) t))
   (should (eq (portal--toolbar-theme "{\"background\":[0,0,0]}") t))
   (let ((web (portal--open "web" '(:hosted t))))
     (should (equal (portal--toolbar-action web "zoom-in") "{\"action\":\"zoom-in\"}"))
@@ -194,6 +211,7 @@
   (let ((web (portal--open "web" nil))
         (terminal (portal--open "terminal" nil)))
     (dolist (case `(((portal--open "50%s" nil) . "Unknown Portal view kind: 50%s")
+                    ((portal--open "web" (:fail "No web ✗")) . "No web ✗")
                     ((portal--place "web:0" [0 0 1 1] "t") . "No Portal view web:0")
                     ((portal--hide "web:0") . "No Portal view web:0")
                     ((portal--web-load ,terminal "about:blank") . ,(format "No Portal view %s" terminal))
@@ -209,7 +227,8 @@
                     ((portal--input ,web "unknown") . "Unknown Portal input action: unknown")
                     ((portal--toolbar-theme "") . "Toolbar theme must be a JSON object")
                     ((portal--toolbar-action ,terminal "zoom-in")
-                     . "No toolbar controls for this native view")))
+                     . "No toolbar controls for this native view")
+                    ((portal--toolbar-action "web:0" "zoom-in") . "No Portal view web:0")))
       (should (equal (should-error (apply (caar case) (cdar case))) (list 'error (cdr case)))))
     (portal--close web)
     (portal--close terminal)))

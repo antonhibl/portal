@@ -868,14 +868,15 @@ the app sends, in order. Other web views have no bridge.
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
+| `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
-| `native/Core/include/portal.h` | The platform interface: typed C operations with their ownership and thread rules, and the calls a platform makes into the core. It mostly mirrors the Lisp functions for now ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)) |
+| `native/Core/include/portal.h` | The platform interface: the view primitives, the operations that still mirror Lisp functions ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
-| `native/Views.swift` | The view registry, keyed by native target, and the view kind protocol |
+| `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
 | `native/Terminal.swift` | The terminal view kind: Ghostty sessions and terminal input |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading native state |
 | `native/Toolbar.swift` | Native strip, controls, ownership dot, and view container |
@@ -893,8 +894,10 @@ Features own their state and cleanup. Closing a web view does not destroy a
 terminal, and closing a terminal does not remove web views.
 
 The C bindings register every Lisp function and convert its arguments and results.
-Each function calls one named operation in `portal.h`, such as `portal_web_load`,
-which `native/Backend.swift` implements with the Swift features. The operations use
+Lifecycle functions call the core's view registry. The others look up their target's
+view in the registry, which checks its kind, and pass it to one named operation in
+`portal.h`, such as `portal_web_load`, which `native/Backend.swift` implements with
+the Swift features. The operations use
 plain C types: borrowed UTF-8 arguments with explicit lengths, results allocated with
 `malloc` that the bindings free, and an explicit error result that becomes a Lisp
 `error`. Structured results, such as `portal--inspect`'s state, cross as JSON, which
@@ -915,16 +918,35 @@ Terminal and web views run on the shared Portal view lifecycle
 ([ADR 0002](docs/adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
 every native lifecycle call: `portal--open KIND OPTIONS` returns a target such as
 `terminal:3` or `web:4`, and `portal--place`, `portal--hide`, `portal--close` and
-`portal--inspect` take that target. In Swift, `Views` keeps one registry keyed by
-target; each view kind implements the small `PortalView` protocol, and IDs are
-never reused. On each window change, `portal-view.el` picks one window per view,
+`portal--inspect` take that target.
+
+The C core owns every view's identity, in `native/Core/views.c`. It gives out
+targets, with IDs that are global across kinds and never reused, even after a
+failed open, so a stale target can never reach a newer view. It holds each
+platform view from create to destroy, checks the kind of every view that a kind's
+operation names, and keeps what every kind shares: whether the view is attached,
+and at which edges. The platform supplies five primitives: create a view of a kind,
+destroy it, attach it at a rectangle in the frame with a given title, detach it, and
+describe what only it knows, such as a page's title or a terminal's grid.
+`portal--inspect` combines that description with the core's `:id`, `:kind`,
+`:visible` and `:edges`. Closing removes the target before the platform destroys
+the view, so the platform destroys it exactly once and nothing it does meanwhile
+reaches the view. The core drops a record the platform sends for a target that
+names no open view. A primitive that fails changes nothing: a failed open leaves
+nothing registered, and a failed placement, such as for a deleted frame, leaves
+the view where it was and still open, for Lisp to place again or close.
+
+Rectangles are in Emacs's frame pixels, from the top left of the frame's content
+area, as `window-inside-pixel-edges` reports them. On macOS these are AppKit points,
+so the platform only flips the y axis. On each window change, `portal-view.el` picks one window per view,
 in any frame: the selected window if it shows the buffer, then the view's current
 window, then any other window showing the buffer. With none, the view is hidden.
 A geometry cache means nothing crosses the seam when nothing moved. Each placement
 renames the frame briefly so Swift can find its native window; nothing about
 frames is cached. Placing a view in another frame moves it there within the one
-call. Swift keeps hidden views in an offscreen parking window that is never
-shown. New views start there, so a view is always in some window and its session
+call. In Swift, `NativeView` attaches both kinds, and each kind implements the
+small `PortalView` protocol. Detaching parks a view in an offscreen window that is
+never shown. New views start there, so a view is always in some window and its session
 or page keeps running. Deleting a frame hides its views, and the next sync places each
 one wherever its buffer is still shown. Killing the buffer or changing its major
 mode closes the view. Operations that belong to one kind have their own exports,
@@ -1029,18 +1051,22 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
-  -c native/Core/channel.c -o build/channel.o
+for core in channel views; do
+  xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
+    -c native/Core/$core.c -o build/$core.o
+done
 xcrun swiftc -swift-version 6 -warnings-as-errors \
-  -I native/Core/include -import-objc-header native/Core/channel.h \
-  native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
+  -I native/Core/include -import-objc-header test/native-core.h \
+  native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
-  test/native-checks.swift test/native-terminal-stub.swift test/native-focus.swift \
-  build/channel.o -framework AppKit -framework WebKit -o build/check-focus
+  test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
+  test/native-focus.swift build/channel.o build/views.o \
+  -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
 
-The checks open web views through the same `Views` registry as Emacs. They also
+The checks open web views through the core's registry and the macOS primitives,
+as Emacs does, with `test/native-views.swift` in place of the Emacs bindings. They also
 check that a hosted web view keeps no data between sessions, that a page
 outside the app host goes to the default browser while the app stays, that
 only a hosted app's main frame can use the bridge, and that a hosted app
@@ -1048,10 +1074,10 @@ reports each committed page over it. A click on it sends `select`, and a click
 on a local link, even one longer than a record, returns the keyboard to Emacs
 and sends `follow` over the bridge. A full notification pipe delays records without losing or
 reordering them, retried on the Swift timer, and records still waiting when
-Emacs replaces the pipe go to the new one.
+Emacs replaces the pipe go to the new one; a closed view's records never go.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
-without Ghostty, and they link the core's pipe, `native/Core/channel.c`, without
-the Emacs bindings.
+without Ghostty, and they link the core's registry and pipe without the Emacs
+bindings.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
@@ -1083,7 +1109,18 @@ cmake --build build/core
 ctest --test-dir build/core --output-on-failure
 ```
 
-The full build runs the same tests as `ctest --test-dir build -R module`. They check
+`ctest -R views` runs `test/portal-views-tests.c`, a C program that drives the view
+registry with the fake platform, which counts every primitive the core calls and any
+call that names a destroyed view or a view of the wrong kind. It checks that targets
+are never reused, including after close or a failed open; that invalid targets,
+wrong-kind lookups and invalid rectangles reach no platform view; that repeated
+placement attaches the same platform view each time, and repeated hiding detaches it
+once; that a failed placement, or a primitive the platform refuses, changes nothing;
+that hiding keeps a session and its size and placing it in another frame keeps the
+same platform view; and that closing destroys a view once, after which neither Lisp
+calls nor a late record from the platform reach it.
+
+The full build runs the same module tests as `ctest --test-dir build -R module`. They check
 the 19 functions and their arities, and the conversion of options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,
 raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
