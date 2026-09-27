@@ -8,6 +8,7 @@ import { type Dirent, realpathSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { HostActions } from "./actions";
 import { attribute, localTarget, page, render } from "./markdown";
 import styles from "./tasks.css" with { type: "text" };
 
@@ -103,14 +104,23 @@ function byId(a: Task, b: Task): number {
 
 /** What the list shows: a root, in the tree or execution view, with or
  * without completed tasks. Every task browser link keeps it. */
-type Listing = { root: string; execution: boolean; all: boolean };
+type Listing = {
+	root: string;
+	execution: boolean;
+	all: boolean;
+	context?: string;
+};
 
-function listHref({ root, execution, all }: Listing, id?: string): string {
+function listHref(
+	{ root, execution, all, context }: Listing,
+	id?: string,
+): string {
 	return (
 		`tasks?root=${encode(root)}` +
 		(id === undefined ? "" : `&task=${encode(id)}`) +
 		(execution ? "&view=execution" : "") +
-		(all ? "&show=all" : "")
+		(all ? "&show=all" : "") +
+		(context ? `&context=${encode(context)}` : "")
 	);
 }
 
@@ -1131,7 +1141,13 @@ function metadata(listing: Listing, found: Snapshot, task: Task): string {
 	return `<dl class="task-meta">${items}</dl>`;
 }
 
-function detail(listing: Listing, found: Snapshot, id: string): Response {
+function detail(
+	listing: Listing,
+	found: Snapshot,
+	id: string,
+	actions?: TaskActions,
+	result?: string | null,
+): Response {
 	const task = resolve(listing, found, id);
 	if (task instanceof Response) return task;
 	const title = task.headingTitle ? "" : `<h1>${html(task.title)}</h1>`;
@@ -1145,10 +1161,12 @@ function detail(listing: Listing, found: Snapshot, id: string): Response {
 		task.title,
 		`<nav class="task-nav">${breadcrumbs(listing, found, task)}` +
 			`<span class="task-state">${badge(task.status)}${readiness}</span></nav>` +
+			(actions?.controls(listing, task, result) ?? "") +
 			metadata(listing, found, task) +
 			`<article>${title}${body(listing, found, task)}</article>`,
 		200,
 		styles,
+		true,
 	);
 }
 
@@ -1158,7 +1176,10 @@ function validRoot(root: string | null): root is string {
 
 /** The task list or, with `task`, one task's detail page. The list is the
  * tree unless `view` is `execution`. */
-export async function tasks(params: URLSearchParams): Promise<Response> {
+export async function tasks(
+	params: URLSearchParams,
+	actions?: TaskActions,
+): Promise<Response> {
 	const root = params.get("root");
 	if (!validRoot(root)) {
 		return page(
@@ -1172,13 +1193,16 @@ export async function tasks(params: URLSearchParams): Promise<Response> {
 		root,
 		execution: params.get("view") === "execution",
 		all: params.get("show") === "all",
+		context: params.get("context") ?? undefined,
 	};
 	const id = params.get("task");
 	try {
 		const problem = await unusable(root);
 		if (problem) return problem;
 		const found = await snapshot(root);
-		return id === null ? list(listing, found) : detail(listing, found, id);
+		return id === null
+			? list(listing, found)
+			: detail(listing, found, id, actions, params.get("action"));
 	} catch (error) {
 		const code = errorCode(error);
 		if (code === "EACCES" || code === "EPERM") {
@@ -1228,5 +1252,145 @@ export async function taskFile(params: URLSearchParams): Promise<Response> {
 		if (code === "EACCES" || code === "EPERM") return refuse(403);
 		console.error("Task attachment failed:", error);
 		return refuse(500);
+	}
+}
+
+type Implementation = {
+	listing: Listing;
+	task: string;
+	created: number;
+	pending?: Promise<void>;
+	message?: string;
+	failed?: boolean;
+};
+
+/** Server-rendered forms with bounded, single-use launch receipts. Resubmitting
+ * the same form returns the same result, even while its first POST is pending. */
+export class TaskActions {
+	private forms = new Map<string, Implementation>();
+
+	constructor(private host: HostActions) {}
+
+	controls(listing: Listing, task: Task, result?: string | null): string {
+		const context = this.host.context(listing.context ?? null);
+		if (context?.app !== "tasks" || context.root !== listing.root)
+			return `<p class="action-note">Reload this task view in Portal to enable implementation.</p>`;
+		if (typeof context.project !== "string")
+			return `<p class="action-note">Open this task folder from a project to implement it.</p>`;
+		for (const [id, form] of this.forms) {
+			if (Date.now() - form.created > 600_000) this.forms.delete(id);
+		}
+		while (this.forms.size >= 1024) {
+			const first = this.forms.keys().next().value;
+			if (first) this.forms.delete(first);
+		}
+		const previous = result ? this.forms.get(result) : undefined;
+		const notice =
+			previous &&
+			previous.listing.context === listing.context &&
+			previous.task === task.id &&
+			previous.message
+				? `<p role="status" class="action-note${previous.failed ? " action-error" : ""}">${html(previous.message)}</p>`
+				: "";
+		const id = crypto.randomUUID();
+		this.forms.set(id, { listing, task: task.id, created: Date.now() });
+		return (
+			`${notice}<form class="task-action" method="post" action="tasks/implement">` +
+			`<input type="hidden" name="request" value="${id}">` +
+			`<button type="submit">Implement with Claude</button></form>`
+		);
+	}
+
+	async implement(request: Request): Promise<Response> {
+		if (request.headers.get("origin") !== new URL(request.url).origin)
+			return new Response("Invalid action origin", { status: 403 });
+		if (
+			request.headers.get("content-type")?.split(";")[0] !==
+			"application/x-www-form-urlencoded"
+		)
+			return new Response("Expected a form submission", { status: 415 });
+		// Read a bounded body even for chunked requests.
+		const reader = request.body?.getReader();
+		let body = "";
+		if (reader) {
+			const decoder = new TextDecoder();
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				body += decoder.decode(value, { stream: true });
+				if (body.length > 4096) {
+					await reader.cancel();
+					return new Response("Form is too large", { status: 413 });
+				}
+			}
+			body += decoder.decode();
+		}
+		const id = new URLSearchParams(body).get("request") ?? "";
+		const form = this.forms.get(id);
+		if (!form || Date.now() - form.created > 600_000)
+			return page(
+				"Action expired",
+				"<h1>Action expired</h1><p>Go back and reload the task before trying again.</p>",
+				409,
+			);
+		form.pending ??= this.launch(form).catch((error: unknown) => {
+			form.failed = true;
+			form.message =
+				error instanceof Error ? error.message : "Could not open the terminal.";
+		});
+		await form.pending;
+		return new Response(null, {
+			status: 303,
+			headers: {
+				Location: new URL(
+					`../${listHref(form.listing, form.task)}&action=${id}`,
+					request.url,
+				).href,
+			},
+		});
+	}
+
+	private async launch(form: Implementation) {
+		const { listing } = form;
+		const context = this.host.context(listing.context ?? null);
+		if (
+			!listing.context ||
+			context?.app !== "tasks" ||
+			context.root !== listing.root
+		)
+			throw new Error(
+				"The task view has closed or expired. Reload before trying again.",
+			);
+		if (
+			typeof context.project !== "string" ||
+			!isAbsolute(context.project) ||
+			typeof context.program !== "string" ||
+			!Array.isArray(context.args) ||
+			!context.args.every((arg) => typeof arg === "string")
+		)
+			throw new Error(
+				"This task view needs a project and a Claude executable.",
+			);
+		const found = await snapshot(listing.root);
+		const task = resolve(listing, found, form.task);
+		if (task instanceof Response)
+			throw new Error(
+				"The task was removed, became invalid, or has a conflicting ID. Reload its detail.",
+			);
+		const source = await realpath(task.source);
+		if (!inside(source, await realpath(listing.root)))
+			throw new Error("The task source is outside its task folder.");
+		const project = await realpath(context.project);
+		const path = relative(project, source).normalize("NFC");
+		// Quoted @ references preserve whitespace inside the initial prompt;
+		// shell quoting is a separate concern handled by the terminal launcher.
+		const mention = /[\s"\\]/.test(path) ? JSON.stringify(path) : path;
+		await this.host.request(listing.context, "terminal.open", {
+			directory: project,
+			program: context.program,
+			args: [...context.args, `implement @${mention}`],
+			name: `*claude: ${task.id}*`,
+		});
+		form.message = "Claude terminal opened for this task.";
 	}
 }

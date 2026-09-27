@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { assets } from "./.generated/assets";
+import { HostActions } from "./actions";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
 import { markdown } from "./markdown";
-import { taskFile, tasks } from "./tasks";
+import { TaskActions, taskFile, tasks } from "./tasks";
 
 // Applies only to the local editor. Fonts, images and lazy modules cannot fall
 // back to a CDN; user-authored URLs cannot embed remote pages or run scripts.
@@ -15,6 +16,10 @@ const editorPolicy =
 
 // A private URL capability, passed only through the parent's readiness pipe.
 const token = crypto.randomUUID().replaceAll("-", "");
+const actions = new HostActions((record) =>
+	process.stdout.write(`${JSON.stringify(record)}\n`),
+);
+const taskActions = new TaskActions(actions);
 
 async function respond(request: Request): Promise<Response> {
 	const url = new URL(request.url);
@@ -31,10 +36,19 @@ async function respond(request: Request): Promise<Response> {
 		route !== "/markdown" &&
 		route !== "/tasks" &&
 		route !== "/tasks/file" &&
+		route !== "/tasks/implement" &&
 		route !== "/excalidraw/" &&
 		!asset
 	) {
 		return new Response("Not found", { status: 404 });
+	}
+	if (route === "/tasks/implement") {
+		if (request.method !== "POST")
+			return new Response("Method not allowed", {
+				status: 405,
+				headers: { Allow: "POST" },
+			});
+		return taskActions.implement(request);
 	}
 	if (request.method !== "GET" && request.method !== "HEAD") {
 		return new Response("Method not allowed", {
@@ -43,7 +57,7 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
-	if (route === "/tasks") return tasks(url.searchParams);
+	if (route === "/tasks") return tasks(url.searchParams, taskActions);
 	if (route === "/tasks/file") return taskFile(url.searchParams);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
@@ -67,7 +81,8 @@ const server = Bun.serve({
 	async fetch(request) {
 		const response = await respond(request);
 		response.headers.set("Cache-Control", "no-store");
-		response.headers.set("Referrer-Policy", "no-referrer");
+		if (!response.headers.has("Referrer-Policy"))
+			response.headers.set("Referrer-Policy", "no-referrer");
 		response.headers.set("X-Content-Type-Options", "nosniff");
 		return request.method === "HEAD"
 			? new Response(null, {
@@ -91,6 +106,27 @@ async function shutdown() {
 // The parent's pipe is also our lifetime: EOF covers an abrupt Emacs exit.
 process.stdin.on("end", shutdown);
 process.stdin.on("error", shutdown);
+process.stdin.setEncoding("utf8");
+let pending = "";
+process.stdin.on("data", (chunk: string) => {
+	try {
+		pending += chunk;
+		for (;;) {
+			const end = pending.indexOf("\n");
+			if (end < 0) break;
+			const line = pending.slice(0, end);
+			if (Buffer.byteLength(line) > 65536)
+				throw new Error("Oversized parent record");
+			pending = pending.slice(end + 1);
+			actions.receive(JSON.parse(line));
+		}
+		if (Buffer.byteLength(pending) > 65536)
+			throw new Error("Oversized parent record");
+	} catch (error) {
+		console.error("Invalid app host protocol:", error);
+		void shutdown();
+	}
+});
 process.stdin.resume();
 for (const signal of ["SIGHUP", "SIGTERM", "SIGINT"] as const) {
 	process.on(signal, shutdown);
@@ -99,6 +135,6 @@ process.stdout.on("error", shutdown);
 
 // stdout is a protocol channel. Send diagnostics to stderr instead.
 process.stdout.write(
-	JSON.stringify({ type: "ready", protocol: 2, port: server.port, token }) +
+	JSON.stringify({ type: "ready", protocol: 3, port: server.port, token }) +
 		"\n",
 );

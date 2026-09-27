@@ -9,6 +9,7 @@ export function page(
 	body: string,
 	status = 200,
 	css = "",
+	forms = false,
 ): Response {
 	return new Response(
 		`<!doctype html>
@@ -25,9 +26,11 @@ export function page(
 			status,
 			headers: {
 				"Content-Type": "text/html; charset=utf-8",
+				// A no-referrer form POST has an opaque Origin in WebKit. Keep
+				// its origin for same-origin actions, without sending paths outside.
+				"Referrer-Policy": forms ? "same-origin" : "no-referrer",
 				// Markdown is a document, not executable application code.
-				"Content-Security-Policy":
-					"default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+				"Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; base-uri 'none'; form-action ${forms ? "'self'" : "'none'"}; frame-ancestors 'none'`,
 			},
 		},
 	);

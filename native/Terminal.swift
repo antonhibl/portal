@@ -18,12 +18,13 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var terminalSurface: TerminalSurface?
     var closed = false
 
-    init(directory: String, theme: TerminalTheme) {
+    init(directory: String, command: String?, theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
             envVars: ["INSIDE_EMACS": "portal-ghostty"],
+            command: command,
             waitAfterCommand: true)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
@@ -74,7 +75,8 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         quick = options.flag("quick")
-        let terminal = HostedTerminal(directory: directory, theme: try Terminals.resolveTheme(options.string("theme")))
+        let terminal = HostedTerminal(directory: directory, command: try options.string("command"),
+                                      theme: try Terminals.resolveTheme(options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
         host = parking

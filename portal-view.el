@@ -40,6 +40,8 @@ Records for unknown targets, or of types with no handler, are dropped.")
 
 (defvar portal-view--buffers nil "Buffers with a Portal view, in creation order.")
 (defvar-local portal-view--target nil "This buffer's native target.")
+(defvar-local portal-view-close-hook nil
+  "Hook run before this buffer's live view closes, while its target is valid.")
 (defvar-local portal-view--window nil "The window showing this buffer's view, or nil.")
 (defvar-local portal-view--geometry nil
   "The placement last sent to the native view, or nil while it is hidden.
@@ -141,6 +143,8 @@ changes major mode."
 (defun portal-view-close ()
   "End the current buffer's Portal view, if it has one."
   (when-let* ((target portal-view--target))
+    (with-demoted-errors "Portal view close hook: %S"
+      (run-hooks 'portal-view-close-hook))
     (setq portal-view--buffers (delq (current-buffer) portal-view--buffers)
           portal-view--target nil
           portal-view--window nil

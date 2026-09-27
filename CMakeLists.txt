@@ -27,7 +27,7 @@ add_custom_command(
         --outfile "${CMAKE_BINARY_DIR}/.portal-host"
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.portal-host" "${CMAKE_BINARY_DIR}/portal-host"
-    DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
+    DEPENDS host/actions.ts host/server.ts host/hello.html host/markdown.ts host/markdown.css
         host/tasks.ts host/tasks.css
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
         host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
@@ -42,6 +42,14 @@ endif()
 find_program(EMACS NAMES emacs REQUIRED)
 include(CTest)
 if(BUILD_TESTING)
+    add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
+    add_test(NAME actions
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" -L "${CMAKE_SOURCE_DIR}/test"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-actions-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(actions PROPERTIES TIMEOUT 30)
     add_test(NAME ui-host
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
