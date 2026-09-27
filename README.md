@@ -386,7 +386,7 @@ cmake --build --preset dev
 
 CMake locates Emacs, builds the Bun host, and invokes the native Swift package.
 `native/Package.swift` defines two targets linked into the one module: `PortalCore`,
-the C Emacs bindings in `native/Core`, and `Portal`, the Swift backend containing the
+the C core in `native/Core`, and `Portal`, the Swift backend containing the
 host, web, terminal, input and toolbar code. There are no separate feature libraries
 or plugin builds. Configuration writes the discovered header
 path to `build/emacs-include.txt`, which the package also reads for editor support.
@@ -868,8 +868,10 @@ the app sends, in order. Other web views have no bridge.
 | `host/markdown.ts` | Local Markdown reads, HTML rendering, and error pages |
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
-| `native/Core/include/portal.h` | The platform interface: typed C operations with their ownership and thread rules. It mirrors the Lisp functions for now ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)) |
+| `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
+| `native/Core/include/portal.h` | The platform interface: typed C operations with their ownership and thread rules, and the calls a platform makes into the core. It mostly mirrors the Lisp functions for now ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)) |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
+| `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record, and the timer primitive |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, navigation, inspection, and hosted apps' bridge |
 | `native/NativeInput.swift` | Shared native prefix capture, passthrough, and literal input |
@@ -901,6 +903,13 @@ rules from Swift into a C core, reducing `portal.h` to the primitives a platform
 provide ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)). The bindings check that argument strings are valid UTF-8, since Emacs copies
 a unibyte string's raw bytes unchanged. A later backend can replace any operation
 without changing its Lisp callers.
+
+The notification pipe is the first of Portal's rules in the core,
+`native/Core/channel.c`. `portal--channel` hands it the pipe's descriptor, and
+platform code sends records by calling `portal_notify`, which the core
+implements ([details](docs/terminal-input-bridge.md#the-notification-pipe)). The
+core asks the platform for one primitive in return, a timer that calls it back.
+Calls into the core run on the module thread and never reach Emacs.
 
 Terminal and web views run on the shared Portal view lifecycle
 ([ADR 0002](docs/adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
@@ -1020,11 +1029,14 @@ also verifies guest Escape/`C-g` retain focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
+xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
+  -c native/Core/channel.c -o build/channel.o
 xcrun swiftc -swift-version 6 -warnings-as-errors \
-  native/NativeHost.swift native/NativeInput.swift native/NativeEventChannel.swift \
+  -I native/Core/include -import-objc-header native/Core/channel.h \
+  native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-focus.swift \
-  -framework AppKit -framework WebKit -o build/check-focus
+  build/channel.o -framework AppKit -framework WebKit -o build/check-focus
 build/check-focus
 ```
 
@@ -1035,10 +1047,11 @@ only a hosted app's main frame can use the bridge, and that a hosted app
 reports each committed page over it. A click on it sends `select`, and a click
 on a local link, even one longer than a record, returns the keyboard to Emacs
 and sends `follow` over the bridge. A full notification pipe delays records without losing or
-reordering them, and records still waiting when Emacs replaces the pipe go to
-the new one.
+reordering them, retried on the Swift timer, and records still waiting when
+Emacs replaces the pipe go to the new one.
 `test/native-terminal-stub.swift` stands in for the terminal kind, so they build
-without Ghostty.
+without Ghostty, and they link the core's pipe, `native/Core/channel.c`, without
+the Emacs bindings.
 
 Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout,
@@ -1058,11 +1071,11 @@ Verify the failure reporter without opening windows:
 python3 -B -m unittest discover -s test -p 'test_native_checks.py'
 ```
 
-The C Emacs bindings have their own tests. They load the real bindings, compiled
+The C core has its own tests. They load the real bindings, compiled
 with `test/portal-fake-backend.c` in place of the Swift backend, into batch Emacs
 with `--module-assertions`. They need only CMake, a C compiler and Emacs; they do not
 use Swift, Apple frameworks, Bun or Ghostty. The application itself still requires
-macOS.
+macOS, and so does the core's pipe for now: it relies on `F_SETNOSIGPIPE`.
 
 ```sh
 cmake -S native/Core -B build/core
@@ -1075,7 +1088,18 @@ the 19 functions and their arities, and the conversion of options, edges, and st
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,
 raw bytes, surrogates), vectors, and plists, and invalid optional arguments, signal
 without calling the backend. A signal raised while converting an argument reaches
-Lisp unchanged, and a backend error becomes a Lisp `error` with its message.
+Lisp unchanged, and a backend error becomes a Lisp `error` with its message. A
+record the fake platform sends reaches a connected pipe, waits while none is, and
+survives its reader being deleted.
+
+`ctest -R channel` runs `test/portal-channel-tests.c`, a C program that drives the
+pipe with real POSIX pipes, firing the fake platform's timers by hand. It fills a
+pipe and checks that records of every kind arrive in order, none lost or
+duplicated, as it drains. It also covers records waiting while disconnected or
+moving to a new pipe, cancelled retries, malformed and oversized records,
+descriptor ownership, and a closed reader with SIGPIPE's default action, which
+would end the test. A narrow write seam interrupts or shortens writes, which a
+real pipe cannot do on demand.
 
 The compiled-host integration tests run without a graphical display:
 

@@ -5,7 +5,8 @@ import PortalCore
 // The macOS backend of the operations in native/Core/include/portal.h, whose
 // comments define ownership. The C bindings call each one synchronously; it
 // copies its arguments, runs on the main actor, and returns memory the
-// bindings free. Nothing here sees an Emacs value or environment.
+// bindings free. Nothing here sees an Emacs value or environment. The timer
+// primitive is in CoreCalls.swift, which the standalone checks share.
 
 private extension String {
     init(copying string: portal_string) {
@@ -106,11 +107,6 @@ public func portalInspect(_ target: portal_string, _ state: UnsafeMutablePointer
         }
         return try json(object)
     }
-}
-
-@_cdecl("portal_channel")
-public func portalChannel(_ fd: Int32, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    perform(error) { Views.channel.connect(fd) } != nil
 }
 
 @_cdecl("portal_web_load")

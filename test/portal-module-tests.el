@@ -233,22 +233,53 @@
                 t))
     (portal--close target)))
 
+(defun portal-module-tests--pipe (name)
+  "Return a pipe process NAME that collects what it receives in its `:received'."
+  (let ((process (make-pipe-process :name name :noquery t
+                                    :filter (lambda (process text)
+                                              (process-put process :received
+                                                           (concat (process-get process :received)
+                                                                   text))))))
+    (process-put process :received "")
+    process))
+
+(defun portal-module-tests--await (process suffix)
+  "Wait until what PROCESS received ends with SUFFIX; return all of it."
+  (with-timeout (5 (ert-fail (format "Expected %S, got %S" suffix
+                                     (process-get process :received))))
+    (while (not (string-suffix-p suffix (process-get process :received)))
+      (accept-process-output process 0.05)))
+  (process-get process :received))
+
 (ert-deftest portal-module-connects-the-channel ()
-  (let* ((received "")
-         (process (make-pipe-process :name "portal-module-test" :noquery t
-                                     :filter (lambda (_process text)
-                                               (setq received (concat received text))))))
+  ;; The fake app announces its messages with a bridge record, which the
+  ;; platform sends through the core's pipe.
+  (let ((first (portal-module-tests--pipe "portal-module-first"))
+        (second (portal-module-tests--pipe "portal-module-second"))
+        (web (portal--open "web" '(:hosted t))))
     (unwind-protect
-        (progn
-          (should (eq (portal--channel process) t))
-          (should (eq (plist-get (portal--inspect "fake") :channel) t))
-          (with-timeout (5 (ert-fail "No record arrived"))
-            (while (not (string-suffix-p "\n" received))
-              (accept-process-output process 0.05)))
-          (should (equal received "fake connected\n"))
-          (should-error (portal--channel "process") :type 'wrong-type-argument)
-          (should (eq (portal--channel nil) t))
-          (should-not (plist-get (portal--inspect "fake") :channel)))
-      (delete-process process))))
+        (let ((record (format "bridge %s\n" web)))
+          (should (eq (portal--channel first) t))
+          (should (eq (portal--web-send web "{}") t))
+          (let ((received (portal-module-tests--await first record)))
+            (portal--web-receive web)
+            ;; Records wait while no pipe is connected, and go to the next one.
+            (should (eq (portal--channel nil) t))
+            (should (eq (portal--web-send web "{}") t))
+            (accept-process-output nil 0.1)
+            (should (equal (process-get first :received) received)))
+          (should (eq (portal--channel second) t))
+          (should (equal (portal-module-tests--await second record) record))
+          (portal--web-receive web)
+          ;; A deleted reader leaves the records waiting; Emacs carries on.
+          (delete-process second)
+          (should (eq (portal--web-send web "{}") t))
+          (should (eq (portal--channel first) t))
+          (portal-module-tests--await first (concat record record))
+          (should-error (portal--channel "process") :type 'wrong-type-argument))
+      (portal--channel nil)
+      (portal--close web)
+      (delete-process first)
+      (delete-process second))))
 
 ;;; portal-module-tests.el ends here

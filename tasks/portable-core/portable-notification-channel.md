@@ -1,6 +1,6 @@
 ---
 id: portable-notification-channel
-status: todo
+status: done
 depends_on:
   - portable-module-bindings
 ---
@@ -79,25 +79,112 @@ documented as a future concern; proving a port is not required.
 
 ## Acceptance criteria and verification
 
-- [ ] `portal.h` no longer declares `portal_channel`. The only new platform
+- [x] `portal.h` no longer declares `portal_channel`. The only new platform
   primitive is the timer, and a call into the core cannot reach Emacs.
-- [ ] A C test uses real POSIX pipes and the fake platform's timer. It fills a
+- [x] A C test uses real POSIX pipes and the fake platform's timer. It fills a
   pipe, queues several kinds of records, drains it, and sees exact FIFO
   delivery with nothing lost or duplicated.
-- [ ] Tests cover queueing while disconnected, reconnecting with records
+- [x] Tests cover queueing while disconnected, reconnecting with records
   waiting, malformed and oversized records, interrupted writes, and cancelled
   retries. Use a narrow injected write seam only where a real pipe cannot
   produce the case deterministically.
-- [ ] Closing the reader cannot kill Emacs through SIGPIPE. The descriptor
+- [x] Closing the reader cannot kill Emacs through SIGPIPE. The descriptor
   lifecycle and errors are tested without AppKit or Swift.
-- [ ] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
+- [x] `./build.sh` and `ctest --test-dir build --output-on-failure` pass. The
   native channel and focus checks and the graphical input and Excalidraw
   suites still show prefix handoff and bridge delivery through the production
   module.
-- [ ] Record verification and mark this task done using the author-tasks skill;
+- [x] Record verification and mark this task done using the author-tasks skill;
   follow `AGENTS.md` for the implementation worktree and PR.
 
 ## Blocked by
 
 - [Move Emacs module bindings into C](portable-module-bindings.md) supplies the
   C build, the Emacs channel binding and the fake-platform test module.
+
+## Outcome
+
+- `native/Core/channel.c` owns the pipe: validation, the queue of waiting
+  records, retries and the descriptor. It never includes `emacs-module.h`, and
+  CMake compiles it, with the fake backend, into an object library that has no
+  Emacs include path, so nothing the platform calls can reach Emacs.
+- `portal.h` no longer declares `portal_channel`. It adds one platform
+  primitive, `portal_timer_start(token, milliseconds)`, and two calls into
+  the core: `portal_notify(type, target, fields, count)` and
+  `portal_timer_fired(token)`. The header now says the platform calls the core
+  only on the module thread, with borrowed arguments, and that no callback
+  reaches Emacs.
+- `portal--channel` keeps its behavior. `emacs.c` passes the descriptor from
+  `open_channel` to `portal_channel_connect`, declared in the core's private
+  `native/Core/channel.h`. On failure, the descriptor stays the caller's, the old
+  pipe stays connected, and `emacs.c` closes it and signals with `strerror`.
+- Decisions:
+  - **Queue.** A singly linked list of `malloc`ed records, so sending one
+    never moves the rest.
+  - **Descriptors.** Connecting sets `O_NONBLOCK`, `FD_CLOEXEC` and
+    `F_SETNOSIGPIPE`. Replacing or disconnecting closes the old descriptor
+    once and never retries `close`. Reconnecting the same descriptor keeps it.
+  - **Timers.** The platform's timers cannot be cancelled. The core cancels
+    a retry by forgetting its token, which is never 0 or reused, so a stale
+    callback neither writes nor starts another timer. Any connect cancels the
+    pending retry, and at most one retry is pending.
+  - **Write size.** A record, newline included, fits in `PIPE_BUF`, so each
+    write is all or nothing. A short write, which POSIX rules out, would
+    resume where it stopped. A new pipe always gets whole records.
+  - **Errors.** `EINTR` retries at once, and `EAGAIN` retries after 20 ms. Any
+    other error, such as `EPIPE`, leaves records waiting for Emacs to connect
+    a pipe.
+  - **Validation.** Words must be nonempty printable ASCII (0x21 to 0x7e),
+    which is slightly stricter than before: the Swift check let control
+    characters other than whitespace through. `notify` returns false only for
+    a record it will never send (malformed, too long, or out of memory).
+  - **Other platforms.** Other platforms are a future concern. Without
+    `F_SETNOSIGPIPE`, `channel.c` stops with `#error`. Its comment records
+    the Linux approach: block SIGPIPE in the writing thread and consume the
+    signal a closed reader raises.
+- Swift: `native/NativeEventChannel.swift` and `Views.channel` are gone.
+  `native/CoreCalls.swift` holds `Core.notify`, which input, pane selection and
+  the web bridge call, and the timer, `DispatchQueue.main.asyncAfter`.
+  `native/Core/include/module.modulemap` names `portal.h` `PortalCore`, so
+  SwiftPM and the standalone checks import it the same way. The checks link
+  `channel.c` and use `channel.h` as their bridging header.
+- The fake backend implements the timer: its timers fire only when a test fires
+  them (`test/portal-fake-backend.h`). Its hosted app announces echoed
+  messages with one `bridge` record, as the real bridge does. That replaces
+  the "fake connected" line.
+- README and `docs/terminal-input-bridge.md` describe the core's pipe, the
+  new tests and the new check commands.
+
+## Verification
+
+Run on macOS 27.0 with Swift 6.4, Emacs 31.1, and CMake 4.4.3 on 2026-09-27:
+
+- `ctest --test-dir build/core --output-on-failure` passed `channel` and
+  `module` (11 ERT tests under `--module-assertions`). `otool -L` shows that the
+  channel test links only `libSystem`. In `test/portal-channel-tests.c`, each of
+  these single changes to `channel.c` makes the test fail:
+  - dropping `F_SETNOSIGPIPE`, which kills the test with SIGPIPE (exit 141)
+  - keeping the retry token across a connect, or letting stale tokens fire
+  - treating `EINTR` as an error
+  - restarting a short write
+  - resuming a partial record on a new pipe
+  - closing a reconnected descriptor
+  - starting a timer per notify
+  - dropping `FD_CLOEXEC`
+  - an off-by-one size limit
+  - losing queued records
+- `./build.sh` built without warnings. `nm` shows `portal_notify`,
+  `portal_timer_fired` and `portal_timer_start` defined in `portal.dylib`, no
+  `portal_channel`, and no undefined `portal_*` symbols. `ctest --test-dir
+  build --output-on-failure` passed 14 of 14.
+- `build/check-focus` passed, including the full-pipe and reconnect check
+  retried on the Swift timer and the bridge and `select` records.
+  `build/check-toolbar` passed, including the Markdown preview's
+  `prefix`/`escape`/`bridge` records. `test_native_checks.py` passed.
+- The README's combined graphical suite, run through the production module with
+  `--module-assertions`, passed 52 of 52 in three of four runs. It covers prefix
+  handoff, Excalidraw bridge delivery and Markdown link handoff. In the other,
+  slower run, `portal-markdown-gui-link-click-ends-a-pending-prefix` and
+  `portal-markdown-gui-source-links-hand-off-and-return` found no
+  `portal-web-follow` event after an injected link click. The log showed no
+  record errors, and the four Markdown tests then passed in three separate runs.

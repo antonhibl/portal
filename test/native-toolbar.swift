@@ -132,8 +132,8 @@ struct CheckToolbar {
         var fds: [Int32] = [0, 0]
         check(pipe(&fds) == 0)
         _ = fcntl(fds[0], F_SETFL, O_NONBLOCK)
-        Views.channel.connect(fds[1])
-        defer { Views.channel.connect(-1); close(fds[0]) }
+        check(portal_channel_connect(fds[1]))
+        defer { _ = portal_channel_connect(-1); close(fds[0]) }
         func container(_ target: String) -> NativeContainer {
             require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         }

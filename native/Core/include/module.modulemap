@@ -1,0 +1,6 @@
+// portal.h for Swift: the production module's Swift backend and the
+// standalone checks (README.md) import it as PortalCore.
+module PortalCore {
+    header "portal.h"
+    export *
+}

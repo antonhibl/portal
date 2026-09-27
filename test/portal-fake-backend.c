@@ -1,17 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* An in-memory backend for the module tests.  It implements the operations of
-   native/Core/include/portal.h, so the real C bindings run without AppKit,
-   WebKit or Ghostty.  portal--inspect reports what each view's operations
-   received, and the target "fake" reports the global settings. */
+/* An in-memory backend for the module and core tests.  It implements the
+   operations of native/Core/include/portal.h, so the real C core runs without
+   AppKit, WebKit or Ghostty.  portal--inspect reports what each view's
+   operations received, and the target "fake" reports the global settings.
+   Timers fire only when a test fires them (portal-fake-backend.h). */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
+#include "portal-fake-backend.h"
 #include "portal.h"
 
-enum { MAX_VIEWS = 64, MAX_PROPERTIES = 32 };
+enum { MAX_VIEWS = 64, MAX_PROPERTIES = 32, MAX_TIMERS = 64 };
 
 /* One property that portal--inspect reports. */
 struct property {
@@ -33,7 +34,8 @@ struct view {
 
 static struct view views[MAX_VIEWS], settings = {.target = "fake"};
 static int64_t next_id;
-static int channel = -1;
+static uint64_t timers[MAX_TIMERS]; /* Tokens of the timers not yet fired, oldest first. */
+static size_t timer_count;
 
 static portal_text copy(const char *data, size_t length)
 {
@@ -291,17 +293,27 @@ bool portal_inspect(portal_string target, portal_text *state, portal_text *error
     return true;
 }
 
-/* Announce each connection on the pipe, so tests see the descriptor works. */
-bool portal_channel(int fd, portal_text *error)
+void portal_timer_start(uint64_t token, uint64_t milliseconds)
 {
-    (void) error;
-    if (channel >= 0)
-        close(channel);
-    channel = fd;
-    set_flag(&settings, "channel", fd >= 0);
-    if (fd >= 0 && write(fd, "fake connected\n", 15) != 15)
-        return fail(error, "Could not write to the pipe");
-    return true;
+    (void) milliseconds;
+    if (timer_count == MAX_TIMERS)
+        abort();
+    timers[timer_count++] = token;
+}
+
+size_t portal_fake_timers(void)
+{
+    return timer_count;
+}
+
+void portal_fake_fire_timers(void)
+{
+    uint64_t fired[MAX_TIMERS];
+    size_t count = timer_count;
+    memcpy(fired, timers, count * sizeof *timers);
+    timer_count = 0;
+    for (size_t i = 0; i < count; i++)
+        portal_timer_fired(fired[i]);
 }
 
 bool portal_web_load(portal_string target, portal_string url, portal_text *error)
@@ -325,13 +337,19 @@ static struct view *hosted(portal_string target, portal_text *error)
     return web;
 }
 
-/* The fake app echoes what Emacs sends it. */
+/* The fake app echoes what Emacs sends it.  Like the real bridge, one record
+   announces its messages until Emacs receives them. */
 bool portal_web_send(portal_string target, portal_string json, portal_text *error)
 {
     struct view *web = hosted(target, error);
-    if (web)
-        append(web, "messages", ",", json.data, json.length);
-    return web != NULL;
+    if (!web)
+        return false;
+    const struct property *messages = get(web, "messages");
+    bool announced = messages && messages->string.length;
+    if (!announced && !portal_notify((portal_string) {"bridge", 6}, target, NULL, 0))
+        return fail(error, "The bridge record was refused");
+    append(web, "messages", ",", json.data, json.length);
+    return true;
 }
 
 bool portal_web_receive(portal_string target, portal_text *json, portal_text *error)
