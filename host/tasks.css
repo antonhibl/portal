@@ -279,6 +279,11 @@ a.row:focus-visible .title {
 	outline: 2px solid currentColor;
 	outline-offset: 3px;
 }
+.task-action button:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+	background: transparent;
+}
 .task-op[aria-disabled="true"] {
 	cursor: progress;
 	opacity: 0.7;
