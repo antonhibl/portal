@@ -853,9 +853,18 @@ Its title is then its ID."
         (should (string-search
                  (format (concat "<span class=\"breadcrumbs\"><a href=\"tasks?root=%s&amp;view=execution\">Tasks</a>"
                                  " › <a href=\"tasks?root=%s&amp;task=one&amp;view=execution\">One</a>"
-                                 " › <a href=\"tasks?root=%s&amp;view=execution#folder-one%%2Ftwo\">two</a>"
-                                 " › <a href=\"tasks?root=%s&amp;view=execution#folder-one%%2Ftwo%%2Fthree\">three</a></span>")
+                                 " › <a href=\"tasks?root=%s&amp;view=execution\">two</a>"
+                                 " › <a href=\"tasks?root=%s&amp;view=execution\">three</a></span>")
                          hex hex hex hex)
+                 page))
+        (should-not (string-search "#folder-" page)))
+      ;; In the tree view, a group's breadcrumb leads to its row.
+      (let ((page (portal-server-test--tasks root "&task=one%2Ftwo%2Fthree%2Fleaf")))
+        (should (string-search
+                 (format (concat " › <a href=\"tasks?root=%s&amp;task=one\">One</a>"
+                                 " › <a href=\"tasks?root=%s#folder-one%%2Ftwo\">two</a>"
+                                 " › <a href=\"tasks?root=%s#folder-one%%2Ftwo%%2Fthree\">three</a></span>")
+                         hex hex hex)
                  page))
         (should (string-match-p "<dt>ID</dt><dd><code>one/two/three/leaf</code>" page)))
       ;; The tree marks each folder for those links.
@@ -1066,7 +1075,7 @@ Its title is then its ID."
         (should (string-search (format "src=\"tasks/file?root=%s&amp;task=g%%2Fsub%%2Ftask&amp;path=%s\""
                                        hex (url-hexify-string (expand-file-name "g/sub/pic.png" root)))
                                page))
-        (should (string-search (format "<a href=\"tasks?root=%s&amp;task=g&amp;view=execution&amp;show=all\">G</a> › <a href=\"tasks?root=%s&amp;view=execution&amp;show=all#folder-g%%2Fsub\">sub</a>"
+        (should (string-search (format "<a href=\"tasks?root=%s&amp;task=g&amp;view=execution&amp;show=all\">G</a> › <a href=\"tasks?root=%s&amp;view=execution&amp;show=all\">sub</a>"
                                        hex hex)
                                page)))
       (let ((file (lambda (path)

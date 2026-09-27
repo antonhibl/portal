@@ -362,7 +362,7 @@ The root is `portal-markdown-gui--directory'."
     (portal-test--wait-for-page "Tasks")
     (portal-terminal-test--wait (lambda () (not (string-search "&task=" portal-web--hosted-path))))
     (portal-tasks-gui--route "&view=execution&show=all")
-    (should (equal (portal-excalidraw-gui--js "return location.hash;") "#folder-big%20refactor"))
+    (should (equal (portal-excalidraw-gui--js "return location.hash;") ""))
     (call-interactively (key-binding "l"))
     (portal-test--wait-for-page "Extract C")
     (call-interactively (key-binding "l"))
@@ -385,6 +385,17 @@ The root is `portal-markdown-gui--directory'."
     (portal-terminal-test--wait (lambda () (portal-tasks-gui--shown "later")))
     (should-not (string-search "view=" portal-web--hosted-path))
     (should (> (portal-tasks-gui--left "Extract C") (+ (portal-tasks-gui--left "later") 10)))
+    ;; In the tree view, a group's breadcrumb leads to its row, whose ID is
+    ;; percent-encoded like the fragment that names it.
+    (portal-tasks-gui--link "Implement")
+    (portal-test--wait-for-page "Implement")
+    (portal-tasks-gui--link "big refactor")
+    (portal-test--wait-for-page "Tasks")
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector(':target')?.id ?? '';")
+                       "folder-big%20refactor")))
+    (should (> (portal-markdown-gui--scroll) 0))
+    (should (string-search "&show=all" portal-web--hosted-path))
     (should (equal (portal-tasks-gui--waits "Implement") "after 2"))
     (should (portal-tasks-gui--shown "Shipped"))))
 

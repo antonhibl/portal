@@ -951,13 +951,14 @@ function list(listing: Listing, found: Snapshot): Response {
 }
 
 /** The way back from a task page: the list, then the folders holding TASK,
- * each a link to its task, or to its place in the list. */
+ * each a link to its task or, for a group, to the list: in the tree view, at
+ * the group's row, which the execution view does not have. */
 function breadcrumbs(listing: Listing, found?: Snapshot, task?: Task): string {
 	const links = [`<a href="${html(listHref(listing))}">Tasks</a>`];
 	for (const folder of found && task ? folders(found, task) : []) {
-		const href = folder.task
-			? taskHref(listing, folder.task.id)
-			: `${listHref(listing)}#${folderAnchor(folder.location)}`;
+		let href = listHref(listing);
+		if (folder.task) href = taskHref(listing, folder.task.id);
+		else if (!listing.execution) href += `#${folderAnchor(folder.location)}`;
 		links.push(
 			`<a href="${html(href)}">${html(folder.task?.title ?? folder.name)}</a>`,
 		);

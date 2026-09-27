@@ -232,8 +232,8 @@ view, including the dimmed `after` summary of blocked tasks. With the completed
 filter off, a done parent stays as a contextual row above visible unfinished
 tasks. The execution view adds each task's folder breadcrumb. Both views use
 one dependency graph built over all tasks before filtering. Detail pages show
-folder breadcrumbs: a parent task links to its page, a group to its place in
-the tree. Back/Forward keeps disclosure state with WebKit's page history; `g`
+folder breadcrumbs: a parent task links to its page, and a group to the list,
+at its row when that list is the tree. Back/Forward keeps disclosure state with WebKit's page history; `g`
 reopens it.
 
 ## Project and root selection
