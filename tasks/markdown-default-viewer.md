@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 
 # Open Markdown files directly with portal-preview-markdown?
