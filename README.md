@@ -459,16 +459,19 @@ its readiness message. Opening external URLs does not require the server.
   `portal-hello`, to retry.
   There is no automatic restart loop.
 - Emacs supervises the child through a pipe. stdout carries a versioned JSON
-  readiness line; stderr carries diagnostics. Closing stdin requests shutdown,
+  readiness line and hosted action requests; stdin carries contexts and action
+  results. stderr carries diagnostics. Closing stdin requests shutdown,
   including when Emacs exits unexpectedly. Normal shutdown also handles OS
   termination signals and has a forced-termination fallback.
 - `portal-server-program` selects the standalone executable. At runtime it is
   launched directly, without a shell or any lookup of Bun on PATH. Runtime
   loading of `.env` and `bunfig.toml` is disabled in the compiled binary.
 
-Control protocol version 2 announces readiness, port, and access token; it is
-not yet a general UI RPC API. Rebuilding publishes the host executable atomically. An already
-running host keeps its old code until `portal-restart-server` is called.
+Control protocol version 3 announces readiness, port, and access token and
+supports [hosted app actions](docs/hosted-actions.md). The app host sends `ready`
+and `request` records; Emacs sends `context`, `forget`, and `result` records.
+Rebuilding publishes the host executable atomically. An already running host
+keeps its old code until `portal-restart-server` is called.
 
 ## Markdown previews
 
@@ -541,6 +544,32 @@ writes, moves or deletes them.
 
 This repository keeps its tasks in `tasks/`, using the default root; browse them
 in the dashboard. Agents use the [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
+
+### Implementing a task
+
+Click **Implement with Claude** on a task detail to open a dedicated native
+terminal in another pane. Claude starts in the project root with
+`--dangerously-skip-permissions` and an initial prompt such as
+`implement @tasks/fix-search.md`. Folder tasks use their actual `content.md`
+path. The project is captured when the task view opens; selecting another
+project later does not change the launch directory.
+
+The task page submits a normal form to the app host, which resolves the current
+source by task ID and requests the terminal through Emacs. Duplicate submissions
+share one launch. Reloading the result page does not start another session.
+Errors appear on the detail page. A task folder with no known project remains
+browsable but cannot launch Claude.
+
+Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` before
+opening a task view to choose the executable or adjust its arguments. The
+executable defaults to Claude on Emacs's PATH, falling back to
+`~/.local/bin/claude`; arguments default to `("--dangerously-skip-permissions")`.
+Claude's first-run login or setup can still appear in the terminal. The view
+keeps running when hidden, and killing its terminal buffer ends it.
+
+See [hosted app actions](docs/hosted-actions.md) for the reusable instance/action
+interface and its process protocol. Restart Emacs after rebuilding the native
+module, and use the matching app host (protocol 3).
 
 ### Choosing the task root
 

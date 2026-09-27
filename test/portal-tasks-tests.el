@@ -32,6 +32,7 @@ makes the app host ready."
      (save-window-excursion
        (unwind-protect
            (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+                     ((symbol-function 'portal-server-send) #'ignore)
                      ((symbol-function 'portal-server-url) (lambda () host)))
              (set-frame-parameter nil 'portal-project-context nil)
              (delete-other-windows)
@@ -69,7 +70,8 @@ makes the app host ready."
 
 (defun portal-tasks-test--path (root)
   "Return the app host path of ROOT's task list."
-  (concat "/tasks?root=" (url-hexify-string (directory-file-name root))))
+  (concat "/tasks?root=" (url-hexify-string (directory-file-name root))
+          "&context=" (url-hexify-string portal-view--target)))
 
 (defun portal-tasks-test--url (&optional target)
   "Return the URL TARGET, by default the selected pane's view, loaded last."

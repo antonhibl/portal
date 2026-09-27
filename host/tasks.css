@@ -228,3 +228,29 @@ a.row:focus-visible .title {
 	text-decoration: line-through;
 	cursor: help;
 }
+
+.task-action {
+	margin: 1rem 0;
+}
+.task-action button {
+	font: inherit;
+	color: inherit;
+	background: transparent;
+	border: 1px solid currentColor;
+	border-radius: 0.35rem;
+	padding: 0.4rem 0.8rem;
+	cursor: pointer;
+}
+.task-action button:hover {
+	background: light-dark(#eee, #333);
+}
+.task-action button:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 3px;
+}
+.action-note {
+	font-size: 0.9rem;
+}
+.action-error {
+	color: light-dark(#a32626, #ffaaaa);
+}

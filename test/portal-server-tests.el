@@ -1145,7 +1145,7 @@ Its title is then its ID."
         (progn
           (with-temp-file program
             (insert "#!/bin/sh\nprintf '%s' '{\"type\":\"ready\",'\nsleep 0.05\n"
-                    "printf '%s\\n' '\"protocol\":2,\"port\":12345,\"token\":\"0123456789abcdef0123456789abcdef\"}'\ncat >/dev/null\n"))
+                    "printf '%s\\n' '\"protocol\":3,\"port\":12345,\"token\":\"0123456789abcdef0123456789abcdef\"}'\ncat >/dev/null\n"))
           (set-file-modes program #o700)
           (let ((portal-server-program program))
             (portal-server-test--with-host

@@ -18,6 +18,7 @@
 (require 'portal-view)
 (require 'portal-input)
 (require 'portal-server)
+(require 'portal-actions)
 
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--web-send "portal-web" (target json))
@@ -392,6 +393,13 @@ Hosted apps that have already loaded keep their page."
   (dolist (buffer (portal-view-buffers 'web))
     (with-current-buffer buffer
       (when (and portal-web--hosted-path (not portal-web--url))
+        (when-let* ((context (portal-actions-register)))
+          ;; The same native incarnation keeps its context across host restarts.
+          (unless (string-match-p "[?&]context=" portal-web--hosted-path)
+            (setq portal-web--hosted-path
+                  (concat portal-web--hosted-path
+                          (if (string-search "?" portal-web--hosted-path) "&" "?")
+                          "context=" (url-hexify-string context)))))
         (setq portal-web--url (concat (portal-server-url) portal-web--hosted-path))
         (portal--web-load portal-web--target portal-web--url)))))
 

@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (require 'cl-lib)
+(require 'seq)
 (require 'windmove)
 
 (defgroup portal-terminal nil
@@ -127,8 +128,9 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
     (user-error "Dismiss the quick terminal before opening an ordinary terminal"))
   (portal-terminal--new))
 
-(defun portal-terminal--new (&optional quick-root)
-  "Create a shell, optionally belonging to QUICK-ROOT's scratch terminal."
+(defun portal-terminal--new (&optional quick-root command name elsewhere)
+  "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
+NAME names its buffer.  ELSEWHERE displays it in another pane."
   (when (file-remote-p default-directory)
     (user-error "Start in a local directory; run ssh inside the terminal for remote shells"))
   (portal-terminal--connect)
@@ -137,7 +139,7 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
         (buffer (generate-new-buffer
                  (if quick-root
                      (format "*portal-quick:%s*" (abbreviate-file-name quick-root))
-                   "*portal-terminal*")))
+                   (or name "*portal-terminal*"))))
         ready)
     (unwind-protect
         (progn
@@ -153,16 +155,54 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
                       "This buffer has one live view, which follows its selected pane.\n")))
           (if quick-root
               (portal-terminal-quick--display buffer)
-            (switch-to-buffer buffer))
+            (if elsewhere
+                (pop-to-buffer buffer '(nil (inhibit-same-window . t)
+                                            (reusable-frames . visible)))
+              (switch-to-buffer buffer)))
           (redisplay t)
           (with-current-buffer buffer
             (portal-view-open 'terminal (list :directory directory
+                                              :command command
                                               :theme portal-terminal-theme
                                               :quick (and quick-root t)))
             (portal-terminal-focus))
           (setq ready t))
       (unless ready (kill-buffer buffer)))
     buffer))
+
+(defun portal-terminal-start (directory program arguments &optional name)
+  "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
+Return its buffer.  NAME optionally names the buffer.  Arguments are literal
+strings, quoted once for Ghostty's POSIX shell command interface."
+  (unless (and (stringp directory) (file-name-absolute-p directory)
+               (not (file-remote-p directory)) (file-directory-p directory))
+    (user-error "Choose an existing local terminal directory"))
+  (unless (and (stringp program) (sequencep arguments)
+               (seq-every-p (lambda (s) (and (stringp s) (not (string-search "\0" s)))) arguments)
+               (not (string-search "\0" program)))
+    (user-error "Terminal program and arguments must be strings without NUL"))
+  (let* ((default-directory (file-name-as-directory directory))
+         (executable (executable-find program))
+         (shell-file-name "/bin/sh")
+         (configuration (current-window-configuration)))
+    (unless executable (user-error "Cannot find terminal program: %s" program))
+    (condition-case err
+        ;; Ghostty's macOS wrapper supplies exec itself. Supply the program
+        ;; and literal arguments, without an extra shell builtin in front.
+        (portal-terminal--new
+         nil (mapconcat #'shell-quote-argument
+                        (cons executable (append arguments nil)) " ")
+         name t)
+      (error (set-window-configuration configuration)
+             (portal-view-sync)
+             (signal (car err) (cdr err))))))
+
+(defun portal-terminal-open-action (arguments)
+  "Handle a hosted app's terminal.open operation with JSON ARGUMENTS."
+  (let ((buffer (portal-terminal-start
+                 (plist-get arguments :directory) (plist-get arguments :program)
+                 (plist-get arguments :args) (plist-get arguments :name))))
+    (list :target (buffer-local-value 'portal-view--target buffer))))
 
 ;;;###autoload
 (defun portal-terminal-focus ()

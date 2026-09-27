@@ -9,6 +9,16 @@
 (require 'url-util)
 (require 'portal-project)
 (require 'portal-web)
+(require 'portal-terminal)
+
+(defcustom portal-tasks-claude-program
+  (or (executable-find "claude") (expand-file-name "~/.local/bin/claude"))
+  "Claude Code executable used by the task detail's Implement button."
+  :type 'file :group 'portal)
+
+(defcustom portal-tasks-claude-arguments '("--dangerously-skip-permissions")
+  "Arguments for task implementation, before the project-relative initial prompt."
+  :type '(repeat string) :group 'portal)
 
 (defcustom portal-tasks-directory "tasks/"
   "The task root: a directory relative to the project root, or an absolute one.
@@ -18,6 +28,15 @@ Set it for one project in its .dir-locals.el."
   :group 'portal)
 
 (defvar-local portal-tasks--root nil "The task root this buffer shows.")
+(defvar-local portal-tasks--project nil "The project root captured when this task view opened.")
+
+(defun portal-tasks--project-root (root)
+  "Find ROOT's project, or the editing project for an external task folder."
+  (let* ((context (portal-project-context))
+         (project (or (project-current nil (file-name-as-directory root))
+                      (and context (not (file-remote-p context))
+                           (project-current nil context)))))
+    (when project (file-truename (project-root project)))))
 
 (defun portal-tasks--configured-root ()
   "Return the configured task root of the project being edited, or nil.
@@ -57,12 +76,17 @@ view reads saved files: save a task in Emacs, then press g to reload."
          (buffer (portal-web--find 'portal-tasks--root root)))
     (if buffer
         (switch-to-buffer buffer)
-      (portal-web--visit
-       nil (format "tasks %s" (abbreviate-file-name root))
-       (lambda ()
-         (setq portal-tasks--root root)
-         (portal-web-open-hosted (concat "/tasks?root=" (url-hexify-string root))
-                                 "navigation"))))
+      (let ((project (portal-tasks--project-root root)))
+        (portal-web--visit
+         nil (format "tasks %s" (abbreviate-file-name root))
+         (lambda ()
+           (setq portal-tasks--root root portal-tasks--project project)
+           (portal-actions-enable
+            (list :app "tasks" :root root :project project
+                  :program portal-tasks-claude-program :args (vconcat portal-tasks-claude-arguments))
+            '(("terminal.open" . portal-terminal-open-action)))
+           (portal-web-open-hosted (concat "/tasks?root=" (url-hexify-string root))
+                                   "navigation")))))
     (current-buffer)))
 
 (provide 'portal-tasks)

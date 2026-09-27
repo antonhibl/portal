@@ -18,6 +18,18 @@
 
 (defvar portal-server-ready-hook nil
   "Hook run when the shared UI host is ready, including after a restart.")
+(defvar portal-server-request-function nil
+  "Function accepting PROCESS and a request plist from the app host.
+It must queue UI work into the command loop, not execute it in the filter.")
+
+(defun portal-server-send (record &optional process)
+  "Send JSON RECORD to the ready app host PROCESS, defaulting to the current one."
+  (let ((process (or process portal--server-process)))
+    (unless (and process (eq process portal--server-process)
+                 (process-live-p process) (process-get process 'url))
+      (error "The Portal app host is not ready"))
+    (process-send-string process (concat (json-serialize record) "\n"))))
+
 (defvar portal--server-process nil "The shared UI host process, if started.")
 
 (defun portal-server-url ()
@@ -44,34 +56,47 @@
   (process-put process 'failure reason)
   (when (process-live-p process) (delete-process process)))
 
-(defun portal--server-filter (process output)
-  "Read the readiness record from PROCESS's OUTPUT, allowing partial lines."
-  (when (and (eq process portal--server-process)
-             (not (process-get process 'url)))
-    (let ((pending (concat (process-get process 'pending) output)))
-      (process-put process 'pending pending)
-      (condition-case err
-          (cond
-           ((> (length pending) 4096) (error "Oversized readiness message"))
-           ((string-match "\n" pending)
-            (let* ((record (json-parse-string (substring pending 0 (match-beginning 0))
-                                              :object-type 'plist))
-                   (port (plist-get record :port))
-                   (token (plist-get record :token)))
-              (unless (and (equal (plist-get record :type) "ready")
-                           (equal (plist-get record :protocol) 2)
-                           (integerp port) (< 0 port 65536)
-                           (stringp token)
-                           (string-match-p "\\`[[:xdigit:]]\\{32\\}\\'" token))
-                (error "Invalid UI host readiness message"))
-              (process-put process 'pending nil)
-              (process-put process 'url (format "http://127.0.0.1:%d/%s" port token))
-              (portal--server-cancel-timer process 'startup-timer))))
-        (error (portal--server-fail process (error-message-string err))))
-      (when (and (eq process portal--server-process)
-                 (process-get process 'url))
+(defun portal--server-record (process record)
+  "Handle one parsed protocol RECORD from the current app host PROCESS."
+  (if (not (process-get process 'url))
+      (let ((port (plist-get record :port)) (token (plist-get record :token)))
+        (unless (and (equal (plist-get record :type) "ready")
+                     (equal (plist-get record :protocol) 3)
+                     (integerp port) (< 0 port 65536)
+                     (stringp token)
+                     (string-match-p "\\`[[:xdigit:]]\\{32\\}\\'" token))
+          (error "Invalid UI host readiness message"))
+        (process-put process 'url (format "http://127.0.0.1:%d/%s" port token))
+        (process-put process 'requests (make-hash-table :test #'equal))
+        (portal--server-cancel-timer process 'startup-timer)
         (message "Portal UI server ready")
-        (run-hooks 'portal-server-ready-hook)))))
+        (run-hooks 'portal-server-ready-hook))
+    (unless (and (equal (plist-get record :type) "request")
+                 (stringp (plist-get record :id))
+                 (stringp (plist-get record :context))
+                 (stringp (plist-get record :operation)))
+      (error "Invalid UI host action request"))
+    ;; Retransmission must never run an operation twice. IDs live for this host.
+    (let ((seen (process-get process 'requests)) (id (plist-get record :id)))
+      (unless (gethash id seen)
+        (puthash id t seen)
+        (if portal-server-request-function
+            (funcall portal-server-request-function process record)
+          (portal-server-send (list :type "result" :id id :error "No action handler is installed") process))))))
+
+(defun portal--server-filter (process output)
+  "Read newline-delimited JSON from PROCESS, including partial and batched records."
+  (when (eq process portal--server-process)
+    (condition-case err
+        (let ((pending (concat (process-get process 'pending) output)) end)
+          (while (setq end (string-match "\n" pending))
+            (let ((line (substring pending 0 end)))
+              (when (> (string-bytes line) 65536) (error "Oversized UI host record"))
+              (setq pending (substring pending (1+ end)))
+              (portal--server-record process (json-parse-string line :object-type 'plist))))
+          (when (> (string-bytes pending) 65536) (error "Oversized UI host record"))
+          (process-put process 'pending pending))
+      (error (portal--server-fail process (error-message-string err))))))
 
 (defun portal--server-sentinel (process event)
   "Handle PROCESS exiting with EVENT, without restarting it automatically."

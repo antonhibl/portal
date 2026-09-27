@@ -399,5 +399,78 @@ The root is `portal-markdown-gui--directory'."
     (should (equal (portal-tasks-gui--waits "Implement") "after 2"))
     (should (portal-tasks-gui--shown "Shipped"))))
 
+
+(ert-deftest portal-tasks-gui-implement-post-starts-a-native-terminal ()
+  (portal-test--with-web
+    (let* ((directory (file-truename (make-temp-file "portal-launch ' é " t)))
+           (root (expand-file-name "tasks" directory))
+           (source (expand-file-name "nested dir/task ' é.md" root))
+           (program (expand-file-name "claude probe" directory))
+           (receipt (expand-file-name "launch.json" directory))
+           (portal-tasks-claude-program program)
+           (display-buffer-alist nil))
+      (unwind-protect
+          (progn
+            (make-directory (expand-file-name ".git" directory))
+            (make-directory (file-name-directory source) t)
+            (with-temp-file source (insert "---\nid: launch-test\nstatus: todo\n---\n# Launch task\n"))
+            ;; A local stand-in captures argv/cwd from the actual Ghostty PTY.
+            ;; No Claude invocation or model request is made by this test.
+            (with-temp-file program
+              (insert "#!/usr/bin/python3\nimport json,os,sys,time\n"
+                      "with open('launch.json','w') as f: json.dump({'cwd':os.getcwd(),'args':sys.argv[1:],'terminal':os.isatty(0)},f)\n"
+                      "print('PORTAL_LAUNCH_OK',flush=True)\ntime.sleep(60)\n"))
+            (set-file-modes program #o700)
+            (select-frame-set-input-focus (selected-frame))
+            (sit-for 0.1)
+            (should (portal-view--with-frame-title (selected-frame) #'portal-test-native-target-frame))
+            (portal-tasks root)
+            (portal-test--wait-for-page "Tasks")
+            (portal-tasks-gui--link "Launch task")
+            (portal-test--wait-for-page "Launch task")
+            (let* ((page (current-buffer))
+                   (target portal-view--target)
+                   (point (portal-excalidraw-gui--js
+                           "const b=document.querySelector('.task-action button'); b.scrollIntoView(); const r=b.getBoundingClientRect(); return [Math.round(r.left+r.width/2), Math.round(r.top+r.height/2)];")))
+              (should (portal-test-native-click (aref point 0) (aref point 1)))
+              (condition-case err
+                  (portal-terminal-test--wait
+                   (lambda () (seq-find (lambda (event) (eq (car-safe event) 'portal-action))
+                                        unread-command-events)))
+                (error (message "Action page: %s" (portal-tasks-gui--text))
+                       (signal (car err) (cdr err))))
+              (let ((event (seq-find (lambda (event) (eq (car-safe event) 'portal-action))
+                                     unread-command-events)))
+                (setq unread-command-events (delq event unread-command-events))
+                (portal-actions--dispatch event))
+              (condition-case err
+                  (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
+                (error (message "Terminal launch output: %s"
+                                (portal--terminal-text
+                                 (buffer-local-value 'portal-view--target
+                                                     (car (portal-view-buffers 'terminal)))))
+                       (message "Action result: %s" (portal-tasks-gui--text))
+                       (signal (car err) (cdr err))))
+              (let ((launch (with-temp-buffer (insert-file-contents receipt)
+                                              (json-parse-buffer :object-type 'plist)))
+                    (terminal (car (portal-view-buffers 'terminal))))
+                (should (file-equal-p (plist-get launch :cwd) directory))
+                (should (eq (plist-get launch :terminal) t))
+                (should (equal (plist-get launch :args)
+                               ["--dangerously-skip-permissions" "implement @\"tasks/nested dir/task ' é.md\""]))
+                (should (eq (window-buffer (selected-window)) terminal))
+                (should (plist-get (portal--inspect (buffer-local-value 'portal-view--target terminal)) :focused))
+                (portal-test--wait-for-page "Launch task" target)
+                (should (get-buffer-window page))
+                (should (string-search "Claude terminal opened" (portal-tasks-gui--text)))
+                ;; The form redirects to GET. Reloading the result never launches again.
+                (with-current-buffer page (portal-web-reload))
+                (portal-test--wait-for-page "Launch task" target)
+                (should (= (length (portal-view-buffers 'terminal)) 1)))))
+        (portal-test-native-target-frame nil)
+        (setq unread-command-events nil)
+        (dolist (buffer (portal-view-buffers 'terminal)) (kill-buffer buffer))
+        (delete-directory directory t)))))
+
 (provide 'portal-tasks-gui-tests)
 ;;; portal-tasks-gui-tests.el ends here
