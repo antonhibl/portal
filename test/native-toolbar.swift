@@ -157,6 +157,18 @@ struct CheckToolbar {
         web.evaluateJavaScript("!!document.querySelector('nav[aria-label=\"Table of contents\"]:not([hidden])')") { value, _ in tocVisible = value as? Bool ?? false }
         wait("TOC not kept across reload") { tocVisible }
         check(web.pageZoom == 1.1 && flag("toc"))
+        // Command-R reloads as the button does, while the view has the keyboard.
+        dot().performClick(nil)
+        var marked = false
+        web.evaluateJavaScript("window.marked = true") { _, _ in marked = true }
+        wait("page was not marked") { marked }
+        press(key(window, "r", code: 15, flags: .command))
+        wait("Command-R did not reload") {
+            web.evaluateJavaScript("window.marked === undefined") { value, _ in marked = !(value as? Bool ?? false) }
+            return !marked && !web.isLoading
+        }
+        dot().performClick(nil)
+        check(container.state.owner == .emacs)
         // Colors are the core's; the strip draws them.
         var colors = portal_colors()
         colors.success = portal_color(set: true, red: 0, green: 1, blue: 0)

@@ -57,7 +57,9 @@ void portal_toolbar_refresh(portal_string target);
    it has the keyboard, is a toolbar's shortcut, which the core has acted
    on.  A terminal's Super-= or Super-+, Super-- and Super-0 change its
    text size, with or without a toolbar; Super-f opens the find field of a
-   web view's toolbar that shows, unless the view is in passthrough. */
+   web view's toolbar that shows, and Super-r reloads a web view whose
+   toolbar has Reload, even while toolbars are hidden; neither works in
+   passthrough. */
 bool portal_toolbar_shortcut(portal_string target, portal_chord key);
 /* For web.c: web view TARGET committed a page, which has shown no headings
    yet. */
