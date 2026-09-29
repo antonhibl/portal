@@ -154,9 +154,18 @@ The queued event is (EVENT (TARGET SERIAL KEY))."
                  (list (list event (list target (string-to-number serial)
                                          (string-to-number key))))))))
 
-(dolist (type '("prefix" "binding" "literal" "cancel" "escape"))
+(dolist (type '("prefix" "binding" "literal" "cancel"))
   (setf (alist-get type portal-view-record-handlers nil nil #'equal)
         (portal-input--queue (intern (concat "portal-input-" type)))))
+
+(defvar portal-input--escaped nil
+  "The handoff the user ended last, as (TARGET SERIAL), from its escape record.")
+
+(setf (alist-get "escape" portal-view-record-handlers nil nil #'equal)
+      (let ((queue (portal-input--queue 'portal-input-escape)))
+        (lambda (target serial key)
+          (setq portal-input--escaped (list target (string-to-number serial)))
+          (funcall queue target serial key))))
 
 (defun portal-input--select (event)
   "Select the pane showing the view clicked in EVENT, and give the view focus.
@@ -219,15 +228,17 @@ The click already gave the view the keyboard; this makes Emacs agree."
           (quit (message "Portal command cancelled"))
           (error (setq portal-input--resume nil)
                  (message "Portal command: %s" (error-message-string err))))
-      ;; Finishing fails once the handoff has ended.  The user ending it sent
-      ;; an escape, which cleared `portal-input--resume'.  Emacs hiding the
-      ;; view, as showing another buffer in its pane does, ended it silently,
-      ;; and the selected view resumes all the same.
-      (when serial (portal-input--action "finish" target serial))
-      (when (and portal-input--resume portal-input-mode
-                 (memq (current-buffer) (portal-view-buffers))
-                 (not (active-minibuffer-window)))
-        (portal-input-focus)))))
+      ;; Finishing fails once the handoff has ended.  Emacs hiding the view, as
+      ;; showing another buffer in its pane does, ends it silently, and the
+      ;; selected view resumes all the same.  The user ending it sends an
+      ;; escape record first, which a busy command has not read yet.
+      (let ((ended (and serial (not (portal-input--action "finish" target serial)))))
+        (when ended (portal-view--read-records))
+        (when (and portal-input--resume portal-input-mode
+                   (not (and ended (equal portal-input--escaped (list target serial))))
+                   (memq (current-buffer) (portal-view-buffers))
+                   (not (active-minibuffer-window)))
+          (portal-input-focus))))))
 
 (defun portal-input-command ()
   "Read a Portal command while Emacs owns this wrapper buffer."

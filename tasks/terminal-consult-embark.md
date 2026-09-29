@@ -183,9 +183,10 @@ Found while implementing:
 - Hiding a view ends its handoff, as the core's tests require, so a command
   that showed another terminal in the originating pane never resumed a
   terminal, though the prefix map promises to. `portal-input--run` now resumes
-  the selected view unless the user ended the handoff, which already cleared
-  `portal-input--resume` through its `escape` record, or an error or explicit
-  unfocus did. `C-b n` and `C-b w` now resume the terminal they select.
+  the selected view unless the user ended the handoff, or an error or explicit
+  unfocus did. The user ending it sends an `escape` record, which Lisp reads
+  from the pipe when finishing fails, even after a command that read no input
+  (review of PR #46). `C-b n` and `C-b w` now resume the terminal they select.
 - A terminal view closed but kept its buffer, and a quick terminal, are not
   previewed; Consult would otherwise show placeholder text.
 - Consult 3.10 computes a hidden source's items only while it is narrowed to,
@@ -215,9 +216,9 @@ Found while implementing:
   seven runs alone, and the cross-frame one's accept step timed out in three of
   the seven full runs, each time alongside other injection failures. After the
   screen locked, every native-binding injection failed, as it does on `main`.
-  **Before merging:** rerun the graphical suites with Emacs in front and the
-  screen unlocked. A stalled picker test now reports the minibuffer and focus
-  state from before its timeout.
+  With Emacs in front and the screen unlocked, after the review fix, two full
+  runs passed 60 of 61 with the usual skip. A stalled picker test reports the
+  minibuffer and focus state from before its timeout.
 - Every Lisp file, the adapters and the new tests byte-compile without
   warnings.
 

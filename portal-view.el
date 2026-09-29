@@ -81,6 +81,11 @@ RECEIVER must queue interactive work for the command loop, not run it here."
   (setq portal-view--pending
         (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch)))
 
+(defun portal-view--read-records ()
+  "Handle the records already in the pipe, without waiting or running timers."
+  (when (process-live-p portal-view--channel)
+    (accept-process-output portal-view--channel 0 nil 1)))
+
 (defun portal-view--dispatch (record)
   "Call RECORD's handler with its target's buffer current.
 Errors are only reported: the records after this one must still arrive."

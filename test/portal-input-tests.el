@@ -58,6 +58,46 @@
         ;; in its pane, still resumes the selected view.
         (should (eq resumed (eq kind 'hidden)))))))
 
+(ert-deftest portal-input-escape-while-a-busy-command-runs-does-not-resume ()
+  ;; A command that reads no input leaves the user's escape record in the
+  ;; pipe; a hidden origin sends none.  A subprocess writes it, as the native
+  ;; module does, while Emacs stops reading the pipe.
+  (with-temp-buffer
+    (portal-web-mode)
+    (setq-local portal-view--target "web:1")
+    (let* ((buffer (current-buffer))
+           (portal-view--pending "")
+           (portal-view--channel (make-pipe-process :name "portal-input-test" :noquery t
+                                                    :filter #'portal-view--receive))
+           (portal-input--escaped nil)
+           (unread-command-events nil)
+           (busy (lambda (escape)
+                   (lambda ()
+                     (interactive)
+                     (when escape
+                       (stop-process portal-view--channel)
+                       (let ((writer (make-process
+                                      :name "portal-input-test-escape" :noquery t
+                                      :command '("sh" "-c" "printf 'escape web:1 2 0\\n' >&2")
+                                      :stderr portal-view--channel)))
+                         (while (process-live-p writer) (sleep-for 0.01)))
+                       (continue-process portal-view--channel)))))
+           resumed)
+      (unwind-protect
+          (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list buffer)))
+                    ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                    ;; Either way, the handoff has ended by the time it finishes.
+                    ((symbol-function 'portal--input)
+                     (lambda (_target action &rest _) (not (equal action "finish")))))
+            (portal-input--run "web:1" 1 (kbd "C-b") (funcall busy nil))
+            (should resumed)
+            (setq resumed nil)
+            (portal-input--run "web:1" 2 (kbd "C-b") (funcall busy t))
+            (should (equal portal-input--escaped '("web:1" 2)))
+            (should-not resumed)
+            (should (equal (mapcar #'car unread-command-events) '(portal-input-escape))))
+        (delete-process portal-view--channel)))))
+
 (ert-deftest portal-input-escape-ends-a-prefix-without-taking-the-next-event ()
   ;; A native handoff, such as Open in Emacs, escapes a pending prefix before
   ;; its own event arrives; the event must survive for the command loop.
