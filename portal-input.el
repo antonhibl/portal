@@ -158,13 +158,14 @@ The queued event is (EVENT (TARGET SERIAL KEY))."
   (setf (alist-get type portal-view-record-handlers nil nil #'equal)
         (portal-input--queue (intern (concat "portal-input-" type)))))
 
-(defvar portal-input--escaped nil
-  "The handoff the user ended last, as (TARGET SERIAL), from its escape record.")
+(defvar-local portal-input--escaped 0
+  "The serial of this view's latest handoff that the user ended, or 0.
+Its escape record sets it; a view has one handoff at a time.")
 
 (setf (alist-get "escape" portal-view-record-handlers nil nil #'equal)
       (let ((queue (portal-input--queue 'portal-input-escape)))
         (lambda (target serial key)
-          (setq portal-input--escaped (list target (string-to-number serial)))
+          (setq portal-input--escaped (max portal-input--escaped (string-to-number serial)))
           (funcall queue target serial key))))
 
 (defun portal-input--select (event)
@@ -208,7 +209,8 @@ The click already gave the view the keyboard; this makes Emacs agree."
 (defun portal-input--run (target serial trigger binding)
   "Execute BINDING from TARGET, preserving input ownership through SERIAL."
   (let ((portal-input--origin target) (portal-input--serial serial)
-        (portal-input--resume (and serial t)))
+        (portal-input--resume (and serial t))
+        (origin (portal-view--target-buffer target)))
     (unwind-protect
         (condition-case err
             (let* ((resolved (if (keymapp binding)
@@ -230,12 +232,14 @@ The click already gave the view the keyboard; this makes Emacs agree."
                  (message "Portal command: %s" (error-message-string err))))
       ;; Finishing fails once the handoff has ended.  Emacs hiding the view, as
       ;; showing another buffer in its pane does, ends it silently, and the
-      ;; selected view resumes all the same.  The user ending it sends an
-      ;; escape record first, which a busy command has not read yet.
+      ;; selected view resumes all the same.  The user ending it, or a later
+      ;; handoff of the same view, sends an escape record first, which a busy
+      ;; command has not read yet.
       (let ((ended (and serial (not (portal-input--action "finish" target serial)))))
         (when ended (portal-view--read-records))
         (when (and portal-input--resume portal-input-mode
-                   (not (and ended (equal portal-input--escaped (list target serial))))
+                   (not (and ended (buffer-live-p origin)
+                             (>= (buffer-local-value 'portal-input--escaped origin) serial)))
                    (memq (current-buffer) (portal-view-buffers))
                    (not (active-minibuffer-window)))
           (portal-input-focus))))))

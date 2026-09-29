@@ -184,9 +184,9 @@ Found while implementing:
   that showed another terminal in the originating pane never resumed a
   terminal, though the prefix map promises to. `portal-input--run` now resumes
   the selected view unless the user ended the handoff, or an error or explicit
-  unfocus did. The user ending it sends an `escape` record, which Lisp reads
-  from the pipe when finishing fails, even after a command that read no input
-  (review of PR #46). `C-b n` and `C-b w` now resume the terminal they select.
+  unfocus did. The user ending it sends an `escape` record, which each view
+  remembers and Lisp reads from the pipe when finishing fails, even after a
+  command that read no input (review of PR #46). `C-b n` and `C-b w` now resume the terminal they select.
 - A terminal view closed but kept its buffer, and a quick terminal, are not
   previewed; Consult would otherwise show placeholder text.
 - Consult 3.10 computes a hidden source's items only while it is narrowed to,
