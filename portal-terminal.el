@@ -279,11 +279,14 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
               (switch-to-buffer buffer)))
           (redisplay t)
           (with-current-buffer buffer
-            (portal-view-open 'terminal (list :directory directory
-                                              :command command
-                                              :argv argv
-                                              :theme portal-terminal-theme
-                                              :quick (and quick-root t)))
+            ;; A change made while the view opened sent no record, having no
+            ;; target yet, so read the facts once; later changes send records.
+            (portal-terminal--changed
+             (portal-view-open 'terminal (list :directory directory
+                                               :command command
+                                               :argv argv
+                                               :theme portal-terminal-theme
+                                               :quick (and quick-root t))))
             (portal-terminal-focus))
           (setq ready t))
       (unless ready (kill-buffer buffer)))

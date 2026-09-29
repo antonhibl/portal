@@ -156,6 +156,27 @@ a folder, loose, in no project."
       (should-not (portal-terminal-metadata other))
       (should-not (portal-terminal-buffers)))))
 
+(ert-deftest portal-terminal-metadata-reads-changes-made-while-opening ()
+  (portal-metadata-test--environment
+    ;; The native module drops a record sent before its target is open, so a
+    ;; terminal whose program changes something while it opens sends none.
+    (let* ((src (portal-metadata-test--path "one/app/src/"))
+           (terminal
+            (cl-letf* ((open (symbol-function 'portal--open))
+                       ((symbol-function 'portal--open)
+                        (lambda (kind options)
+                          (let ((target (funcall open kind options)))
+                            (puthash target
+                                     (append (list :title "true" :pwd src :exited t)
+                                             (gethash target portal-fake-native--views))
+                                     portal-fake-native--views)
+                            target))))
+              (portal-metadata-test--open "one/app"))))
+      (should (eq (portal-metadata-test--get terminal :exited) t))
+      (should (equal (portal-metadata-test--get terminal :title) "true"))
+      (should (equal (portal-metadata-test--get terminal :directory) src))
+      (should (equal (buffer-local-value 'default-directory terminal) src)))))
+
 (ert-deftest portal-terminal-metadata-reassigns-projects ()
   (portal-metadata-test--environment
     (let ((one (portal-metadata-test--path "one/app/"))

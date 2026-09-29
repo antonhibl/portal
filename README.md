@@ -235,8 +235,8 @@ not silently restarted: use reset when you want a new one.
 Run the buffer/window/project tests with `ctest --test-dir build -R quick-terminal`.
 `ctest --test-dir build -R terminal-metadata` checks terminal names, projects and
 directory reports with the fake native module: names that tell projects named alike
-apart, lookups by root after renames, reports while hidden, ignored directory
-reports, reassignment, exits and kills, completion over every field with Emacs's own
+apart, lookups by root after renames, reports while hidden, changes made while a
+terminal opens, ignored directory reports, reassignment, exits and kills, completion over every field with Emacs's own
 styles, and quick terminals keeping their names and projects.
 The graphical terminal suite also tests a user-configured native prefix binding and a real
 foreground process continuing while the quick panel is hidden.
@@ -1065,7 +1065,8 @@ The platform reports each change of title, working directory or exit with
 other for that view until `portal--inspect` has described it, so a program that
 retitles itself constantly cannot flood the pipe. The texts stay with the platform,
 which reports them in any length; `portal-terminal.el` inspects the view for them
-and caches them in the buffer. On macOS, Ghostty reports an exit as a request to
+and caches them in the buffer. A change reported while the view opens has no target
+yet, so the core drops its record; Lisp inspects every new terminal once. On macOS, Ghostty reports an exit as a request to
 close the surface, at once because Portal turns off its `wait-after-command` and
 counts no exit as a failed launch; Portal keeps the view, and the first key after
 the exit returns the keyboard to Emacs.
