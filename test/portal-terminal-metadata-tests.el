@@ -9,6 +9,9 @@
                                 buffer-file-name))))
 (require 'portal-terminal)
 
+;; Tests kill live shells without asking; the prompt has its own tests.
+(setq portal-terminal-confirm-kill nil)
+
 ;; Real buffers, project detection and completion drive `portal-terminal.el'
 ;; against the fake native module, which sends the `terminal' records a real
 ;; terminal sends when its title, directory or process changes.  The GUI
@@ -202,13 +205,14 @@ a folder, loose, in no project."
     (should-error (with-temp-buffer (portal-terminal-set-project nil)) :type 'user-error)))
 
 (defun portal-metadata-test--matches (query collection &optional styles)
-  "Return COLLECTION's completions of QUERY with completion STYLES.
-By default, use Emacs's own styles and category defaults, with no packages."
+  "Return COLLECTION's terminal completions of QUERY with completion STYLES.
+By default, use Emacs's own styles and category defaults, with no packages.
+The New entries, which carry no terminal, are left out."
   (let* ((completion-styles (or styles (default-toplevel-value 'completion-styles)))
          (completion-category-overrides nil)
          (matches (completion-all-completions query collection nil (length query))))
     (when (consp matches) (setcdr (last matches) nil))
-    matches))
+    (seq-filter (lambda (match) (get-text-property 0 'portal-terminal match)) matches)))
 
 (ert-deftest portal-terminal-metadata-completion-matches-context ()
   (portal-metadata-test--environment
@@ -262,8 +266,7 @@ By default, use Emacs's own styles and category defaults, with no packages."
                      ((symbol-function 'completing-read)
                       (lambda (&rest arguments)
                         (prog1 (apply read arguments) (kill-buffer server)))))
-            (should-error (portal-terminal-choose) :type 'user-error))))
-      (should-error (let ((portal-view--buffers nil)) (portal-terminal-choose)) :type 'user-error))))
+            (should-error (portal-terminal-choose) :type 'user-error)))))))
 
 (ert-deftest portal-terminal-metadata-quick-terminals-keep-their-identity ()
   (portal-metadata-test--environment

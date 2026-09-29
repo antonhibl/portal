@@ -68,6 +68,40 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-metadata-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-metadata PROPERTIES TIMEOUT 30)
+    add_test(NAME terminal-choose
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-choose-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(terminal-choose PROPERTIES TIMEOUT 30)
+    # The optional Consult and Embark adapters are tested against the GNU ELPA
+    # releases the README names, downloaded once and checked by hash.
+    set(elpa_packages
+        "consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
+        "embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
+        "vertico-2.15=5c3492edb1e0020da711d9a4213a3878e90e7af8e2e6375757901f4b399872ff"
+        "orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa")
+    set(elpa_load_path "")
+    foreach(entry IN LISTS elpa_packages)
+        string(REPLACE "=" ";" entry "${entry}")
+        list(GET entry 0 package)
+        list(GET entry 1 hash)
+        set(directory "${CMAKE_BINARY_DIR}/elpa/${package}")
+        if(NOT EXISTS "${directory}")
+            file(DOWNLOAD "https://elpa.gnu.org/packages/${package}.tar"
+                "${CMAKE_BINARY_DIR}/elpa/${package}.tar" EXPECTED_HASH SHA256=${hash})
+            file(ARCHIVE_EXTRACT INPUT "${CMAKE_BINARY_DIR}/elpa/${package}.tar"
+                DESTINATION "${CMAKE_BINARY_DIR}/elpa")
+            file(REMOVE "${CMAKE_BINARY_DIR}/elpa/${package}.tar")
+        endif()
+        list(APPEND elpa_load_path -L "${directory}")
+    endforeach()
+    foreach(adapter consult embark)
+        add_test(NAME terminal-${adapter}
+            COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
+                -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-${adapter}-tests.el"
+                -f ert-run-tests-batch-and-exit)
+        set_tests_properties(terminal-${adapter} PROPERTIES TIMEOUT 30)
+    endforeach()
     add_test(NAME view
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-view-tests.el"

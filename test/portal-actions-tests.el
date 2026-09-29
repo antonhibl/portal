@@ -6,6 +6,9 @@
 (require 'portal-fake-native)
 (require 'portal)
 
+;; Tests kill live shells without asking; the prompt has its own tests.
+(setq portal-terminal-confirm-kill nil)
+
 (when-let* ((program (getenv "PORTAL_TEST_HOST")))
   (setq portal-server-program program))
 

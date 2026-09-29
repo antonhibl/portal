@@ -53,8 +53,10 @@ their scope and registration API.
    using `read-key-sequence-vector`, applies normal command remapping, and
    executes the command outside the process filter.
 4. Completion releases the held trigger and normally focuses the selected
-   Portal view. Explicit unfocus, errors, ordinary buffers, or an invalidated
-   handoff keep Emacs in control.
+   Portal view. Explicit unfocus, errors, ordinary buffers, or the user ending
+   the handoff keep Emacs in control. A command that hides the originating view,
+   such as by showing another terminal in its pane, ends its handoff silently;
+   the selected view still resumes.
 
 Each view's handoff is in one state: idle, awaiting acknowledgement, reading a
 command, or executing it. Whether the view has the keyboard, which the platform

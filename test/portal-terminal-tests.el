@@ -4,6 +4,9 @@
 (require 'ert)
 (require 'json)
 (require 'portal-terminal)
+
+;; Tests kill live shells without asking; the prompt has its own tests.
+(setq portal-terminal-confirm-kill nil)
 (declare-function portal--terminal-text "portal-terminal" (target))
 (declare-function portal--terminal-paste "portal-terminal" (target text &optional enter))
 (declare-function portal--inspect "portal-view" (target))
@@ -463,7 +466,9 @@
           (should (= (length (window-list)) 1))
           (portal-terminal-test--prefix '(6 0 "z"))
           (should (= (length (window-list)) 2))
-          (portal-terminal-test--prefix '(7 0 "x") '(16 0 "y"))
+          ;; The real key answers the real question.
+          (let ((portal-terminal-confirm-kill t))
+            (portal-terminal-test--prefix '(7 0 "x") '(16 0 "y")))
           (should-not (buffer-live-p right))
           (should (= (length (window-list)) 1))
           (should (= (length (portal-view-buffers 'terminal)) 2)))))))

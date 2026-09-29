@@ -219,11 +219,15 @@ The click already gave the view the keyboard; this makes Emacs agree."
           (quit (message "Portal command cancelled"))
           (error (setq portal-input--resume nil)
                  (message "Portal command: %s" (error-message-string err))))
-      (let ((valid (or (null serial) (portal-input--action "finish" target serial))))
-        (when (and valid portal-input--resume portal-input-mode
-                   (memq (current-buffer) (portal-view-buffers))
-                   (not (active-minibuffer-window)))
-          (portal-input-focus))))))
+      ;; Finishing fails once the handoff has ended.  The user ending it sent
+      ;; an escape, which cleared `portal-input--resume'.  Emacs hiding the
+      ;; view, as showing another buffer in its pane does, ended it silently,
+      ;; and the selected view resumes all the same.
+      (when serial (portal-input--action "finish" target serial))
+      (when (and portal-input--resume portal-input-mode
+                 (memq (current-buffer) (portal-view-buffers))
+                 (not (active-minibuffer-window)))
+        (portal-input-focus)))))
 
 (defun portal-input-command ()
   "Read a Portal command while Emacs owns this wrapper buffer."

@@ -105,6 +105,15 @@ C-g cancels.  The current leader repeated sends a literal leader key."
   :type 'keymap
   :group 'portal-terminal)
 
+(defcustom portal-terminal-confirm-kill t
+  "Whether killing a terminal buffer whose program is still running asks first.
+It applies however the buffer is killed: `kill-buffer', Ibuffer and other
+buffer lists, Embark, or `portal-terminal-kill-pane'.  Emacs's own query
+for a buffer's process never asks, as Ghostty's program is not an Emacs
+process.  A terminal whose program has exited is killed without asking."
+  :type 'boolean
+  :group 'portal-terminal)
+
 (define-derived-mode portal-terminal-mode special-mode "Ghostty"
   "A real native Ghostty surface occupies this buffer's displayed pane.
 RET focuses Ghostty.  The configurable leader dispatches Emacs commands.
@@ -114,6 +123,7 @@ Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
               (lambda () (if portal-terminal--quick-root portal-terminal-quick-prefix-map
                            portal-terminal-prefix-map)))
   (add-hook 'kill-buffer-hook #'portal-terminal--dismiss-quick nil t)
+  (add-hook 'kill-buffer-query-functions #'portal-terminal--kill-query nil t)
   (portal-input-mode 1))
 (keymap-set portal-terminal-mode-map "RET" #'portal-terminal-focus)
 (keymap-set portal-terminal-mode-map "C-c C-k" #'portal-terminal-close)
@@ -289,7 +299,8 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
                                                :quick (and quick-root t))))
             (portal-terminal-focus))
           (setq ready t))
-      (unless ready (kill-buffer buffer)))
+      (unless ready
+        (let ((portal-terminal-confirm-kill nil)) (kill-buffer buffer))))
     buffer))
 
 (defun portal-terminal-start (directory program arguments &optional name)
@@ -344,6 +355,14 @@ The originating view gives up the keyboard, which the new terminal takes."
   (portal-terminal--dismiss-quick)
   (portal-view-close))
 
+(defun portal-terminal--kill-query ()
+  "Ask before this terminal's buffer is killed with its program running.
+Return non-nil to kill it.  See `portal-terminal-confirm-kill'."
+  (or (not portal-terminal-confirm-kill)
+      (not (portal-terminal-metadata))
+      portal-terminal--exited
+      (y-or-n-p (format "Kill terminal %s and its running shell? " (buffer-name)))))
+
 (defun portal-terminal--dismiss-quick ()
   "Dismiss the quick panel when it shows this buffer."
   (when-let* ((window (get-buffer-window (current-buffer))))
@@ -389,63 +408,6 @@ The originating view gives up the keyboard, which the new terminal takes."
   (let ((buffer (nth (- last-command-event ?0) (portal-terminal-buffers))))
     (unless buffer (user-error "No terminal at that index"))
     (portal-terminal--switch buffer)))
-(defun portal-terminal--candidates (buffers)
-  "Return completion candidates for BUFFERS, as (STRING BUFFER EXITED).
-Each string holds the terminal's name, project, directory and title, so
-that completion matches any of them, and is unique because its name is.
-EXITED says whether its program has exited."
-  (let* ((data (mapcar #'portal-terminal-metadata buffers))
-         (projects (portal-terminal--project-names
-                    (delq nil (mapcar (lambda (entry) (plist-get entry :project)) data))))
-         (width (apply #'max 0 (mapcar #'string-width (mapcar #'buffer-name buffers)))))
-    (cl-mapcar
-     (lambda (buffer entry)
-       (let ((project (alist-get (plist-get entry :project) projects nil nil #'equal))
-             (title (plist-get entry :title)))
-         (list (concat (truncate-string-to-width (buffer-name buffer) width nil ?\s)
-                       (propertize
-                        (string-join
-                         (delq nil (list "" (or project "-")
-                                         (abbreviate-file-name (plist-get entry :directory))
-                                         (and title (replace-regexp-in-string
-                                                     "[[:cntrl:]]" " " title))))
-                         "  ")
-                        'face 'completions-annotations))
-               buffer (plist-get entry :exited))))
-     buffers data)))
-
-;; Match any part of a candidate, as Emacs does for buffer names, so context
-;; after the name is searchable without extra packages.  Users' overrides win.
-(add-to-list 'completion-category-defaults '(portal-terminal (styles basic substring)))
-
-(defun portal-terminal--read (prompt buffers)
-  "Read one of the terminal BUFFERS with completion, prompting with PROMPT.
-Candidates show each terminal's context, which completion matches, and
-resolve to the buffer, whatever its name.  An exited program is noted."
-  (unless buffers (user-error "No terminal buffers"))
-  (let* ((candidates (portal-terminal--candidates buffers))
-         (choice (completing-read
-                  prompt
-                  (lambda (string predicate action)
-                    (if (eq action 'metadata)
-                        `(metadata
-                          (category . portal-terminal)
-                          (annotation-function
-                           . ,(lambda (candidate)
-                                (when (nth 2 (assoc candidate candidates))
-                                  (propertize "  exited" 'face 'completions-annotations)))))
-                      (complete-with-action action candidates string predicate)))
-                  nil t))
-         (buffer (nth 1 (assoc choice candidates))))
-    (unless (memq buffer (portal-view-buffers 'terminal))
-      (user-error "That terminal has closed"))
-    buffer))
-
-(defun portal-terminal-choose ()
-  "Choose a terminal with Emacs completion.
-Type any part of a terminal's name, project, directory or title."
-  (interactive)
-  (portal-terminal--switch (portal-terminal--read "Terminal: " (portal-terminal-buffers))))
 (defun portal-terminal-rename (name)
   "Rename the current terminal buffer to NAME.
 Portal never renames it again: titles and directory changes leave it."
@@ -486,12 +448,12 @@ argument, the terminal belongs to no project.  Its name stays as it is."
   "Split the pane left/right and start a shell in the right pane."
   (interactive) (portal-terminal--split 'right))
 (defun portal-terminal-kill-pane ()
-  "Confirm, end this shell and remove its Emacs pane when possible."
+  "End this shell and remove its Emacs pane when possible.
+Whether to ask first follows `portal-terminal-confirm-kill'."
   (interactive)
-  (when (y-or-n-p (format "Kill terminal %s and its running shell? " (buffer-name)))
-    (let ((window (selected-window)))
-      (kill-buffer (current-buffer))
-      (unless (one-window-p t) (delete-window window)))))
+  (let ((window (selected-window)))
+    (when (and (kill-buffer (current-buffer)) (window-live-p window) (not (one-window-p t)))
+      (delete-window window))))
 (defun portal-terminal-zoom ()
   "Toggle the selected pane between its layout and a full-frame view."
   (interactive)
@@ -513,6 +475,12 @@ argument, the terminal belongs to no project.  Its name stays as it is."
                                 buffer-file-name))))
 (require 'portal-terminal-quick
          (expand-file-name "portal-terminal-quick"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
+(require 'portal-terminal-choose
+         (expand-file-name "portal-terminal-choose"
                            (file-name-directory
                             (or load-file-name
                                 (bound-and-true-p byte-compile-current-file)

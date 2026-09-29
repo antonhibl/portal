@@ -12,6 +12,9 @@
                                 buffer-file-name))))
 (require 'portal-terminal)
 
+;; Tests kill live shells without asking; the prompt has its own tests.
+(setq portal-terminal-confirm-kill nil)
+
 (defmacro portal-view-test--environment (&rest body)
   "Run BODY in one fresh window, then kill its buffers and check cleanup."
   (declare (indent 0))
@@ -214,6 +217,32 @@ Return the view's target."
         (should (equal (portal-view-target remote) target))
         (should-not (portal-fake-native-calls 'portal--close))
         (should (= (length (portal-fake-native-calls 'portal--open)) 1))))))
+
+(ert-deftest portal-view-follows-a-preview-in-the-minibuffer-origin ()
+  (portal-view-test--environment
+    (portal-fake-native-with-frame other
+      (let* ((target (portal-view-test--open "view"))
+             (buffer (current-buffer))
+             (origin (selected-window))
+             (remote (frame-selected-window other)))
+        (set-window-buffer remote buffer)
+        (switch-to-buffer "*scratch*")
+        ;; Batch Emacs cannot enter the minibuffer, so a window stands in for it.
+        (let ((minibuffer (split-window-below)))
+          (select-window minibuffer)
+          (cl-letf (((symbol-function 'active-minibuffer-window) (lambda () minibuffer))
+                    ((symbol-function 'minibuffer-selected-window) (lambda () origin)))
+            (portal-view-sync)
+            (should (equal (portal-view-target remote) target))
+            ;; A preview in the window the minibuffer returns to shows the view,
+            ;; even from another frame, and ending it puts the view back.
+            (set-window-buffer origin buffer)
+            (portal-view-sync)
+            (should (portal-view-test--shown target origin))
+            (set-window-buffer origin "*scratch*")
+            (portal-view-sync)
+            (should (equal (portal-view-target remote) target))
+            (should (eq (plist-get (portal--inspect target) :frame) other))))))))
 
 (ert-deftest portal-view-frame-deletion-hides-views-without-ending-them ()
   (portal-view-test--environment

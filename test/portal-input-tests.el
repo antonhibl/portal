@@ -34,21 +34,29 @@
       (should portal-input-test--called)
       (should resumed))))
 
-(ert-deftest portal-input-escape-error-and-stale-handoff-do-not-resume ()
-  (dolist (kind '(escape error stale))
+(ert-deftest portal-input-escape-and-error-do-not-resume ()
+  (dolist (kind '(unfocus escape error hidden))
     (with-temp-buffer
       (portal-web-mode)
       (let (resumed
-            (unread-command-events (when (eq kind 'escape) (list ?d))))
+            (unread-command-events (pcase kind
+                                     ('unfocus (list ?d))
+                                     ('escape (list '(portal-input-escape ("web:1" 1 0)))))))
         (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
                   ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                  ;; Once the user or a hidden view ended the handoff, it
+                  ;; cannot be finished.
                   ((symbol-function 'portal--input)
-                   (lambda (_target action &rest _) (not (and (eq kind 'stale) (equal action "finish"))))))
+                   (lambda (_target action &rest _)
+                     (not (and (memq kind '(escape hidden)) (equal action "finish"))))))
           (portal-input--run "web:1" 1 (kbd "C-b")
-                             (pcase kind ('escape (portal-input--map))
+                             (pcase kind
+                               ((or 'unfocus 'escape) (portal-input--map))
                                ('error (lambda () (interactive) (error "Expected failure")))
-                               (_ #'ignore))))
-        (should-not resumed)))))
+                               ('hidden #'ignore))))
+        ;; A command that hid the view, such as by showing another terminal
+        ;; in its pane, still resumes the selected view.
+        (should (eq resumed (eq kind 'hidden)))))))
 
 (ert-deftest portal-input-escape-ends-a-prefix-without-taking-the-next-event ()
   ;; A native handoff, such as Open in Emacs, escapes a pending prefix before

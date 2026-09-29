@@ -5,7 +5,7 @@ Portal shows native macOS views inside Emacs panes, so an Emacs buffer can prese
 ## Views
 
 **Portal view**:
-A native view that an Emacs buffer presents in a pane. A buffer has at most one Portal view, and it appears in the selected pane that shows the buffer, in any frame. The view lives as long as its buffer and is hidden, not ended, while the buffer is not shown.
+A native view that an Emacs buffer presents in a pane. A buffer has at most one Portal view, and it appears in the selected pane that shows the buffer, in any frame; while the minibuffer is selected, that is the pane it returns to. The view lives as long as its buffer and is hidden, not ended, while the buffer is not shown.
 _Avoid_: native pane, surface (in Elisp), widget
 
 **View kind**:
