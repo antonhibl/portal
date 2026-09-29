@@ -49,6 +49,16 @@ Outside a project, the editing directory stands in for the root."
   (cl-find-if (lambda (window) (window-parameter window 'portal-terminal-quick))
               (window-list nil 'no-minibuffer)))
 
+(defun portal-terminal-quick--editing-window ()
+  "Return the selected frame's editing window behind its quick panel.
+That is the window the panel was summoned from, while it is live here, or
+else the most recently used ordinary window."
+  (let ((window (frame-parameter nil 'portal-terminal-quick-return-window)))
+    (if (and (window-live-p window) (eq (window-frame window) (selected-frame))
+             (not (window-parameter window 'portal-terminal-quick)))
+        window
+      (get-mru-window nil nil t))))
+
 (defun portal-terminal-quick--display (buffer)
   "Show BUFFER in the dedicated quick panel, preserving the editing window."
   (unless (portal-terminal-quick--window)
@@ -112,7 +122,8 @@ No global keybinding is installed; bind this command in your configuration."
   (if-let* ((buffer (portal-terminal-quick--buffer root)))
       (when (yes-or-no-p (format "Terminate quick terminal for %s and its running shell? " root))
         (when (get-buffer-window buffer) (portal-terminal-quick-dismiss))
-        (kill-buffer buffer))
+        (let ((portal-terminal-confirm-kill nil)) ; Asked already.
+          (kill-buffer buffer)))
     t))
 
 ;;;###autoload

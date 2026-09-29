@@ -290,7 +290,7 @@ where an Emacs counterpart exists. Every row follows the prefix (`C-b` by defaul
 | `w` | Choose a terminal by name, project, directory or title |
 | `,` | Rename the terminal buffer |
 | `z` | Zoom the pane; repeat to restore the layout |
-| `x` | Confirm, end the shell, and close its pane |
+| `x` | End the shell, asking first while it runs, and close its pane |
 | `d` | Stay in Emacs; keep the shell running |
 | `:` | Run `M-x`, then resume the selected app |
 | `?` | Show the current bindings, including customizations |
@@ -332,13 +332,8 @@ from this host. Portal also ignores one that is not an existing local directory,
 such as a path inside a container, and never lets a report reach TRAMP. Until
 a report arrives, the buffer keeps the directory the terminal started in.
 
-`C-b w` (`portal-terminal-choose`) lists each terminal with its name, project,
-directory and title, and completion matches any of them, out of the box: its
-category, `portal-terminal`, tries the `basic` and `substring` styles before
-your own, as Emacs does for buffers, and `completion-category-overrides` can
-change that. With Orderless, `portal api npm` finds a terminal titled `npm run dev` in project
-`portal`'s `api/` directory. The mode line shows `:exited` once a terminal's
-program ends; the buffer and its last output stay until you kill it.
+The mode line shows `:exited` once a terminal's program ends; the buffer and its
+last output stay until you kill it.
 
 Other packages can use the same facts. `(portal-terminal-buffers PROJECT QUICK)`
 lists terminals in creation order: with PROJECT, a root, only that project's,
@@ -348,6 +343,137 @@ wherever their shells are now, and with QUICK, quick terminals too.
 native terminal reports changes, including while it is hidden. They are only
 facts: a title is whatever a program set, not a process name, and a live shell
 may be busy or idle.
+
+### Choosing terminals
+
+`C-b w`, or `M-x portal-terminal-choose`, lists every terminal.
+`M-x portal-terminal-choose-project` lists the current project's: run from a
+terminal, the project it belongs to, and otherwise the project of the file or
+Dired buffer you are editing, however far its shells have moved. `M-a` switches
+between the two lists and keeps what you typed. Each candidate shows the
+terminal's name, project, directory and title, and completion matches any of
+them, out of the box: its category, `portal-terminal`, tries the `basic` and
+`substring` styles before your own, as Emacs does for buffers, and
+`completion-category-overrides` can change that. With Orderless,
+`portal api npm` finds a terminal titled `npm run dev` in project `portal`'s
+`api/` directory. Exited and quick terminals are annotated.
+
+The terminals you selected most recently come first, and `RET` on empty input
+takes the first; the current terminal comes last. The order is fixed when the
+list opens, and previews never count as selecting. Cycling with `C-b n`, `p`
+and the digits keeps creation order.
+
+The New group starts a terminal at the project's root, or outside a project in
+the current directory; "New named terminal…" asks for a name first, and
+`server` gives `*server: portal*`. Completion requires a listed entry, so typing
+alone never starts a shell. Quick terminals are left out unless
+`portal-terminal-choose-quick` is set, and a chosen one opens in its panel. From
+a quick panel, the choice opens in the editing window behind the panel, which
+stays; cancelling returns to the panel.
+
+Killing a terminal buffer whose program is still running asks first, however it
+is killed: `C-x k`, Ibuffer, Embark or `C-b x`. Ghostty's program is not an
+Emacs process, so Emacs's own question for a running process never comes up.
+Set `portal-terminal-confirm-kill` to nil to kill without asking. A terminal
+whose program exited goes without asking, and quick reset and forget keep their
+own question. `M-x portal-terminal-select` selects a terminal by name, where
+terminals of its kind show.
+
+### Consult and Embark
+
+Two optional adapters use these commands and facts; the rest of Portal needs
+neither package, nor Vertico, Orderless or Marginalia, which work through
+ordinary completion. Enable them in your configuration:
+
+```elisp
+(with-eval-after-load 'consult
+  (require 'portal-terminal-consult)
+  (portal-terminal-consult-mode))
+(with-eval-after-load 'embark
+  (require 'portal-terminal-embark)
+  (portal-terminal-embark-mode))
+(keymap-set project-prefix-map "t" #'portal-terminal-choose-project) ; C-x p t
+```
+
+With `portal-terminal-consult-mode`, the pickers read with Consult, which adds
+preview and narrowing: `t` narrows to terminals and `n` to the New group.
+`consult-buffer` and `consult-project-buffer` gain a Terminal group, hidden
+until you narrow with `t` (type `t SPC`, or your `consult-narrow-key` then
+`t`). There it holds every terminal, or the terminals assigned to Consult's
+project, and the default list still shows each terminal once, as a buffer.
+
+`M-.` previews the terminal at point in the window you started from, or in the
+editing window behind a quick panel. Its live view moves there, even from
+another frame, and goes back when you move on or cancel; nothing counts as
+selected until you accept. The program sees the preview window's size
+meanwhile, which is why preview waits for `M-.` by default. A preview never
+takes the keyboard: typing stays in the minibuffer. Quick terminals are not
+previewed. To preview as you move, or change the narrowing key:
+
+```elisp
+(consult-customize portal-terminal-consult-source portal-terminal-consult-project-source
+                   :preview-key '(:debounce 0.3 any) :narrow ?T)
+```
+
+`consult-buffer`'s own Buffer group previews terminals as it does any buffer,
+following `consult-preview-key`. Marginalia annotates terminal candidates as
+buffers, with their mode and directory, in place of Portal's exited and quick
+notes.
+
+With `portal-terminal-embark-mode`, terminal candidates stay buffer candidates,
+so Embark's buffer actions work, and `E` exports them to Ibuffer. A target that
+is a live terminal, in any prompt, Ibuffer or Embark Collect, also has these
+actions; any other buffer keeps Embark's buffer map:
+
+| Key | Action |
+| --- | --- |
+| `RET` | Select it where terminals of its kind show |
+| `r` | Rename it |
+| `d` | Open Dired in its directory |
+| `c` | Start another shell in its directory: a new shell, not a copy |
+| `W` | Copy its directory |
+| `p` | Assign it to another project, or with `C-u` to none |
+| `k` | End it, asking as killing it asks |
+
+Actions reach the session itself, even after a rename in the same prompt.
+Candidates mixed with the New group export to Embark Collect, as mixed Consult
+lists do; narrow with `t` first for Ibuffer.
+
+Projectile users set both project functions. Consult's current hook is
+`consult-project-function`, which takes MAY-PROMPT; the older
+`consult-project-root-function` no longer exists.
+
+```elisp
+(setq portal-project-function #'projectile-project-root
+      consult-project-function (lambda (_may-prompt) (projectile-project-root)))
+```
+
+While a terminal has the keyboard, `C-b w` chooses a terminal, and `C-b C-x b`
+or `C-b C-x p t` reach your Emacs bindings. Native shortcuts are opt-in, and
+apply in quick terminals too:
+
+```elisp
+(portal-terminal-bind-key portal-terminal-native-map "s-b" #'consult-buffer)
+(portal-terminal-bind-key portal-terminal-native-map "s-t" #'portal-terminal-choose-project)
+```
+
+The chosen terminal gets the keyboard once the minibuffer closes, and cancelling
+returns it to the terminal you came from.
+
+The adapters are tested with GNU ELPA Consult 3.10, Embark 1.2, Vertico 2.15
+and Orderless 1.8, and with MELPA Consult 20260829.1558 and Embark
+20260610.302. They use Consult's source helpers, such as `consult--multi` and
+`consult--buffer-preview`, and Embark's `embark--targets`: internal API,
+confined to `portal-terminal-consult.el` and `portal-terminal-embark.el`.
+
+`ctest --test-dir build -R terminal-choose` checks the pickers with Emacs's own
+completion and the fake native module: recent-use order and creation-order
+cycling, projects by assignment, `M-a`, the New group, quick panels, closed
+terminals and the question before killing. `-R 'terminal-(consult|embark)'`
+checks the adapters against the releases above, which CMake downloads into
+`build/elpa` and verifies by hash. A keyboard macro types into a real
+minibuffer, so Consult's narrowing, preview and lookup, and Embark's targets,
+actions and export to Ibuffer, run as they do for you.
 
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
@@ -1214,13 +1340,22 @@ and shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
+The terminal picker's graphical tests type real keys, one at a time as a person
+types, into Consult, Vertico and Orderless from `build/elpa`, from an ordinary
+buffer, a terminal that has the keyboard and a quick panel. They check that
+`M-.` moves the live terminal into the preview window, including from another
+frame, without the keyboard, that typing stays in the minibuffer and reaches no
+shell, that cancelling puts every view and the keyboard back, and that accepting
+gives the chosen terminal the keyboard once the minibuffer closes.
 
 Build the test-only event injector shown above, then run the suite in a disposable
 graphical Emacs. Batch Emacs has no native window and
 cannot exercise these behaviours:
 
 ```sh
-emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
+emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
+  -L "$PWD/build/elpa/consult-3.10" -L "$PWD/build/elpa/vertico-2.15" \
+  -L "$PWD/build/elpa/orderless-1.8" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-tests.el" \
   -l "$PWD/test/portal-terminal-tests.el" \
@@ -1230,6 +1365,7 @@ emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   -l "$PWD/test/portal-toolbar-gui-tests.el" \
   -l "$PWD/test/portal-markdown-gui-tests.el" \
   -l "$PWD/test/portal-tasks-gui-tests.el" \
+  -l "$PWD/test/portal-terminal-choose-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 

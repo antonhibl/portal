@@ -81,6 +81,11 @@ RECEIVER must queue interactive work for the command loop, not run it here."
   (setq portal-view--pending
         (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch)))
 
+(defun portal-view--read-records ()
+  "Handle the records already in the pipe, without waiting or running timers."
+  (when (process-live-p portal-view--channel)
+    (accept-process-output portal-view--channel 0 nil 1)))
+
 (defun portal-view--dispatch (record)
   "Call RECORD's handler with its target's buffer current.
 Errors are only reported: the records after this one must still arrive."
@@ -173,14 +178,23 @@ With KIND, a symbol such as `terminal', return only views of that kind."
                            (string-prefix-p prefix (buffer-local-value 'portal-view--target buffer))))
              collect buffer)))
 
+(defun portal-view--selected-pane ()
+  "Return the selected pane: the selected window, or the minibuffer's origin.
+While the active minibuffer is selected, the pane is the window it returns
+to, so that a buffer previewed there, such as by Consult, shows its view."
+  (let ((window (selected-window)))
+    (or (and (eq window (active-minibuffer-window)) (minibuffer-selected-window))
+        window)))
+
 (defun portal-view--sync-buffer (buffer)
   "Place BUFFER's view in its chosen window, or hide it when no window shows it.
-The chosen window is the selected window, then the view's current window,
+The chosen window is the selected pane, then the view's current window,
 then any other window showing BUFFER, in any frame.  Placing the view in
 another frame moves it there.  Nothing is sent when nothing moved."
   (with-current-buffer buffer
     (let* ((windows (get-buffer-window-list buffer nil t))
-           (window (cond ((memq (selected-window) windows) (selected-window))
+           (selected (portal-view--selected-pane))
+           (window (cond ((memq selected windows) selected)
                          ((memq portal-view--window windows) portal-view--window)
                          (t (car windows))))
            (frame (and window (window-frame window)))

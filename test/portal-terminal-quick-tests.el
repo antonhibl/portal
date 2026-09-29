@@ -9,6 +9,9 @@
                                 buffer-file-name))))
 (require 'portal-terminal)
 
+;; Tests kill live shells without asking; the prompt has its own tests.
+(setq portal-terminal-confirm-kill nil)
+
 ;; Exercise real Emacs buffers/windows/project detection against the fake
 ;; native module.  PTY and keyboard checks live in the GUI suite.
 (defmacro portal-quick-test--environment (&rest body)

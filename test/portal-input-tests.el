@@ -34,21 +34,78 @@
       (should portal-input-test--called)
       (should resumed))))
 
-(ert-deftest portal-input-escape-error-and-stale-handoff-do-not-resume ()
-  (dolist (kind '(escape error stale))
+(ert-deftest portal-input-escape-and-error-do-not-resume ()
+  (dolist (kind '(unfocus escape error hidden))
     (with-temp-buffer
       (portal-web-mode)
       (let (resumed
-            (unread-command-events (when (eq kind 'escape) (list ?d))))
+            (unread-command-events (pcase kind
+                                     ('unfocus (list ?d))
+                                     ('escape (list '(portal-input-escape ("web:1" 1 0)))))))
         (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
                   ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                  ;; Once the user or a hidden view ended the handoff, it
+                  ;; cannot be finished.
                   ((symbol-function 'portal--input)
-                   (lambda (_target action &rest _) (not (and (eq kind 'stale) (equal action "finish"))))))
+                   (lambda (_target action &rest _)
+                     (not (and (memq kind '(escape hidden)) (equal action "finish"))))))
           (portal-input--run "web:1" 1 (kbd "C-b")
-                             (pcase kind ('escape (portal-input--map))
+                             (pcase kind
+                               ((or 'unfocus 'escape) (portal-input--map))
                                ('error (lambda () (interactive) (error "Expected failure")))
-                               (_ #'ignore))))
-        (should-not resumed)))))
+                               ('hidden #'ignore))))
+        ;; A command that hid the view, such as by showing another terminal
+        ;; in its pane, still resumes the selected view.
+        (should (eq resumed (eq kind 'hidden)))))))
+
+(ert-deftest portal-input-escape-while-a-busy-command-runs-does-not-resume ()
+  ;; A command that reads no input leaves the user's escape records in the
+  ;; pipe; a hidden origin sends none.  A subprocess writes them, as the
+  ;; native module does, while Emacs stops reading the pipe.  Another view's
+  ;; escape, after this one's, must not hide it.
+  (let* ((origin (generate-new-buffer "portal-input-origin"))
+         (other (generate-new-buffer "portal-input-other"))
+         (portal-view--pending "")
+         (portal-view--channel (make-pipe-process :name "portal-input-test" :noquery t
+                                                  :filter #'portal-view--receive))
+         (unread-command-events nil)
+         (busy (lambda (records)
+                 (lambda ()
+                   (interactive)
+                   (when records
+                     (stop-process portal-view--channel)
+                     (let ((writer (make-process
+                                    :name "portal-input-test-escape" :noquery t
+                                    :command (list "sh" "-c" (format "printf '%s' >&2" records))
+                                    :stderr portal-view--channel)))
+                       (while (process-live-p writer) (sleep-for 0.01)))
+                     (continue-process portal-view--channel)))))
+         resumed)
+    (unwind-protect
+        (progn
+          (dolist (view (list (cons origin "web:1") (cons other "web:2")))
+            (with-current-buffer (car view)
+              (portal-web-mode)
+              (setq-local portal-view--target (cdr view))))
+          (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list origin other)))
+                    ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                    ;; Either way, the handoff has ended by the time it finishes.
+                    ((symbol-function 'portal--input)
+                     (lambda (_target action &rest _) (not (equal action "finish")))))
+            (with-current-buffer origin
+              (portal-input--run "web:1" 1 (kbd "C-b") (funcall busy nil))
+              (should resumed)
+              (setq resumed nil)
+              (portal-input--run "web:1" 2 (kbd "C-b")
+                                 (funcall busy "escape web:1 2 0\\nescape web:2 3 0\\n"))
+              (should-not resumed)
+              (should (= (buffer-local-value 'portal-input--escaped origin) 2))
+              (should (= (buffer-local-value 'portal-input--escaped other) 3))
+              (should (equal (mapcar #'car unread-command-events)
+                             '(portal-input-escape portal-input-escape))))))
+      (delete-process portal-view--channel)
+      (kill-buffer origin)
+      (kill-buffer other))))
 
 (ert-deftest portal-input-escape-ends-a-prefix-without-taking-the-next-event ()
   ;; A native handoff, such as Open in Emacs, escapes a pending prefix before
