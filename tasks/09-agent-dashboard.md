@@ -1,5 +1,8 @@
 ---
+id: 09-agent-dashboard
 status: todo
+depends_on:
+  - terminal-buffer-metadata
 ---
 
 # Live agent dashboard in Emacs
@@ -8,17 +11,26 @@ Add `M-x portal-agents`: list tracked Portal terminals with agent, project/path,
 working or idle status, attention, and existing job title. Refresh every second;
 `RET` selects and focuses the terminal, including hidden and quick terminals.
 
+## Blocked by
+
+[Terminal metadata and project ownership](terminal-buffer-metadata.md) supplies
+buffer identity, labels, title, current directory, process state, and assigned
+project. Consume its shared Lisp interface; do not introduce a second metadata
+store or project resolver. This task adds agent tracking, status, and attention
+on top of that foundation.
+
 ## Design
 
 - Use `tabulated-list-mode` in `portal-agents.el`. Provide track/untrack,
   refresh, and a cached snapshot callable from Elisp.
-- Collect Ghostty progress, notification, title, and cwd callbacks in
-  `native/Terminal.swift`; expose cached data through `portal--inspect`.
-  Poll with one timer while the dashboard is visible; keep native collection
-  active while hidden.
+- Collect additional Ghostty progress and notification callbacks in
+  `native/Terminal.swift`; expose cached agent data through `portal--inspect`.
+  Reuse the prerequisite's title and directory updates. Poll with one timer
+  while the dashboard is visible; keep native collection active while hidden.
 - Track terminals explicitly by buffer and native incarnation, never path/title.
-  Ignore pre-registration status; remove closed terminals. Prefer reported cwd,
-  falling back to launch directory, and resolve its project/worktree root.
+  Ignore pre-registration status; remove closed terminals. Read directory and
+  assigned project from the shared metadata interface, including its launch
+  directory fallback. Changing directory must not reassign the terminal's project.
 - Choose one status source per terminal. Missing/stale evidence means unknown.
   Notifications indicate attention only; silence or progress-clear does not
   universally mean idle. Idle never means proven success.
@@ -35,6 +47,9 @@ working or idle status, attention, and existing job title. Refresh every second;
 
 - [ ] Multiple agents, including two in one directory, remain distinct; `RET`
   reaches the correct terminal across frames.
+- [ ] Labels, title, directory, process state, and project come from shared
+  terminal metadata. Renames and directory changes appear without changing
+  tracking identity or implicitly reassigning the project.
 - [ ] Refresh preserves selection, sorting, and focus; hiding/killing the
   dashboard stops its timer.
 - [ ] Test working/idle, input waits, cancellation, retries, compaction, stale
@@ -42,7 +57,7 @@ working or idle status, attention, and existing job title. Refresh every second;
 - [ ] Cover normalization/timer behavior with ERT, verify graphical focus, and
   document setup and supported harnesses.
 
-Follow-up only: session naming, semantic summaries/LLM calls, automatic discovery,
+Follow-up only: semantic summaries/LLM calls, automatic discovery,
 remote/multiplexed terminals, and agent control.
 
 References: [Ghostty progress](https://ghostty.org/docs/vt/osc/conemu),
