@@ -2,7 +2,8 @@
 /* Terminal views: Portal's rules for them, on the platform's terminal
    primitives.  views.c owns their identity and lifecycle, and asks this file
    to check a terminal's options before the platform creates it.  The
-   platform owns the terminal engine, its process and its theme catalog. */
+   platform owns the terminal engine, its process and its theme catalog, and
+   reports changes to what a terminal describes. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,4 +160,9 @@ bool portal_terminals_text(portal_string target, portal_text *text, portal_text 
 {
     portal_view *terminal = portal_views_find(target, PORTAL_TERMINAL, error);
     return terminal && portal_terminal_read_text(terminal, text, error);
+}
+
+void portal_terminal_changed(portal_string target)
+{
+    portal_views_announce(target, PORTAL_TERMINAL, "terminal");
 }

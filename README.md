@@ -193,7 +193,8 @@ and how native events reach Elisp.
 Each project has one quick shell, which you can summon from any Emacs frame.
 The panel and its remembered height belong to each frame, but summoning the
 shell in another frame brings the same shell into that frame's panel. A new
-shell starts at the `project.el` root of the current file or Dired buffer. Help
+shell starts at the project root of the current file or Dired buffer, which
+`portal-project-function` finds, with `project.el` by default. Help
 and other auxiliary buffers use the most recently selected file/Dired directory
 in that frame.
 Outside a project, the file's directory is used; with no editing context,
@@ -232,6 +233,11 @@ this does not provide persistence across Emacs restarts. A shell that exits is
 not silently restarted: use reset when you want a new one.
 
 Run the buffer/window/project tests with `ctest --test-dir build -R quick-terminal`.
+`ctest --test-dir build -R terminal-metadata` checks terminal names, projects and
+directory reports with the fake native module: names that tell projects named alike
+apart, lookups by root after renames, reports while hidden, ignored directory
+reports, reassignment, exits and kills, completion over every field with Emacs's own
+styles, and quick terminals keeping their names and projects.
 The graphical terminal suite also tests a user-configured native prefix binding and a real
 foreground process continuing while the quick panel is hidden.
 
@@ -281,7 +287,7 @@ where an Emacs counterpart exists. Every row follows the prefix (`C-b` by defaul
 | `o` / arrow keys | Next / directional Emacs pane |
 | `n` / `p` / `l` | Next / previous / last terminal buffer |
 | `0`–`9` | Select a terminal by its current creation-order index |
-| `w` | Choose a terminal with Emacs completion |
+| `w` | Choose a terminal by name, project, directory or title |
 | `,` | Rename the terminal buffer |
 | `z` | Zoom the pane; repeat to restore the layout |
 | `x` | Confirm, end the shell, and close its pane |
@@ -299,6 +305,49 @@ Terminals belong to no frame: show a terminal buffer in another frame and its
 view moves there, with the same shell and scrollback. Selection, numbering and
 cycling cover every terminal. Different terminal buffers can display and run
 simultaneously.
+
+### Names, projects and directories
+
+Portal names a terminal buffer once, when it starts: `*terminal: portal*` for a
+shell in project `portal`, `*claude: portal*` for `portal-terminal-start`
+running `claude`, and Emacs adds `<2>` to repeats. Projects whose roots end the
+same way, such as two worktrees both called `portal`, read `research/portal`;
+outside a project, the abbreviated start directory stands in. Rename a
+terminal with `C-b ,` or `rename-buffer`: Portal never renames it again,
+whatever title its programs set.
+
+A terminal belongs to the project of the directory it started in, which
+`portal-project-function` finds. The default uses `project.el`; Projectile
+users can set it to `projectile-project-root`. Changing directory in the shell
+leaves the project alone. `M-x portal-terminal-set-project` assigns another
+project, or none with a prefix argument. Quick terminals always belong to the
+project they were opened for.
+
+When the shell reports its directory, the buffer follows it. Its
+`default-directory` changes, so `C-x C-f`, Dired and new terminals start there,
+and so does `list-buffers-directory`, which Ibuffer and `list-buffers` show.
+Ghostty's bundled shell integration reports the directory at every zsh or bash
+prompt, and any program can report one with OSC 7. Ghostty accepts reports only
+from this host. Portal also ignores one that is not an existing local directory,
+such as a path inside a container, and never lets a report reach TRAMP. Until
+a report arrives, the buffer keeps the directory the terminal started in.
+
+`C-b w` (`portal-terminal-choose`) lists each terminal with its name, project,
+directory and title, and completion matches any of them, out of the box: its
+category, `portal-terminal`, tries the `basic` and `substring` styles before
+your own, as Emacs does for buffers, and `completion-category-overrides` can
+change that. With Orderless, `portal api npm` finds a terminal titled `npm run dev` in project
+`portal`'s `api/` directory. The mode line shows `:exited` once a terminal's
+program ends; the buffer and its last output stay until you kill it.
+
+Other packages can use the same facts. `(portal-terminal-buffers PROJECT QUICK)`
+lists terminals in creation order: with PROJECT, a root, only that project's,
+wherever their shells are now, and with QUICK, quick terminals too.
+`(portal-terminal-metadata BUFFER)` returns a terminal's `:name`, `:project`,
+`:directory`, `:title`, `:exited` and `:quick`. Portal caches these as the
+native terminal reports changes, including while it is hidden. They are only
+facts: a title is whatever a program set, not a process name, and a live shell
+may be busy or idle.
 
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
@@ -354,7 +403,11 @@ rebuilding a module it has already loaded.
 
 The graphical terminal tests exercise a real shell, alternate-screen output,
 native keyboard and clipboard input, focus return, resizing, hidden-session
-continuity, shell termination, and editing/saving a file in Vim. They also exercise
+continuity, shell termination, and editing/saving a file in Vim. A real shell's
+directory reports, percent-encoded and from Ghostty's zsh or bash integration,
+reach the buffer's metadata and `default-directory`; a hidden terminal's title
+arrives without renaming it; and an exit is reported when it happens, keeping the
+buffer, its output and the keyboard until the next key. They also exercise
 rapid native prefix sequences, multiple sessions and splits, live prefix/map
 customization, runtime binding registration/unbinding, quick-only shortcuts,
 shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
@@ -873,9 +926,10 @@ the app sends, in order. Other web views have no bridge.
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
 | `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
-| `portal-terminal.el` | Terminal buffers and tmux shortcuts |
+| `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and tmux shortcuts |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
 | `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
+| `portal-project.el` | Each frame's editing context, and project roots through `portal-project-function` |
 | `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
 | `host/hello.html` | Embedded Hello World page, styles, and JavaScript |
@@ -883,9 +937,9 @@ the app sends, in order. Other web views have no bridge.
 | `host/markdown.css` | Embedded Markdown typography and light/dark colours |
 | `host/bridge.d.ts` | The `portalBridge` interface hosted apps use |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
-| `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, and inspection |
+| `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, inspection, and change announcements |
 | `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
-| `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, and reading text |
+| `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, reading text, and announcing changes |
 | `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, whether it can go back or forward, and the bridge's queue, senders and records |
 | `native/Core/toolbar.c` | Toolbars: each view's buttons and which work, zoom and text size with their limits, the table of contents, the find field and its searches, visibility and colors, and what a click does |
 | `native/Core/scripts/` | Browser scripts every platform's web views share, embedded in the core: local links, and the toolbar's contents and find count |
@@ -897,7 +951,7 @@ the app sends, in order. Other web views have no bridge.
 | `native/WebView.swift` | The web view kind: WebKit pages, storage, loading, what pages report to the core, and the bridge's WebKit glue |
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
 | `native/Views.swift` | The view kind protocol, and `NativeView`: attaching either kind to a frame, and the parking window |
-| `native/Terminal.swift` | The terminal view kind: Ghostty sessions, the terminal primitives, the theme catalog, and terminal input |
+| `native/Terminal.swift` | The terminal view kind: Ghostty sessions, the terminal primitives, the theme catalog, terminal input, and title, directory and exit reports |
 | `portal-toolbar.el` | Toolbar option, face colors, and commands reading the core's toolbar state |
 | `native/Toolbar.swift` | The AppKit strip the core's state draws: buttons, ownership dot, find field, layout and colors, and the view container |
 | `native/WebToolbar.swift` | The WebKit side of the toolbar's primitives: the shared contents script in an isolated world, calls of its functions, and find |
@@ -941,8 +995,9 @@ It tells the core what happened with `portal_notify` and `portal_timer_fired`; f
 input, `portal_input_key` and `portal_input_focus`; for pages, `portal_web_posted`,
 `portal_web_navigating`, `portal_web_committed`, `portal_web_loaded`,
 `portal_web_history`, `portal_web_failed`, `portal_web_found`,
-`portal_web_returned` and `portal_web_headings`; and for toolbars,
-`portal_toolbar_clicked` and `portal_toolbar_typed`. `portal_web_script` hands it the
+`portal_web_returned` and `portal_web_headings`; for toolbars,
+`portal_toolbar_clicked` and `portal_toolbar_typed`; and for terminals,
+`portal_terminal_changed`. `portal_web_script` hands it the
 browser scripts every platform shares.
 
 The notification pipe was the first of Portal's rules in the core,
@@ -994,14 +1049,26 @@ platform keeps the Ghostty types, binding strings such as `select_all` and
 `set_font_size`, and the default theme that follows the system appearance. The
 core keeps each terminal's text size, which starts at `PORTAL_TERMINAL_POINTS`.
 
-A terminal describes its `:ready`, `:title`, `:columns`, `:rows` and `:exited`, which
-every platform reports. Other facts are diagnostics for tests: `:layer`, the class of
-the macOS renderer's layer, and `:focused`, which input owns. A process that exits
-leaves its view open with its last output, and its buffer too, until Lisp closes it;
-nothing restarts the shell. Closing the view, which destroys it, ends the process.
-The core does not react to an exit, so the platform calls nothing new. As for every
-kind, the core never passes a closed terminal to the platform: a stale target fails
-with "No Portal view TARGET", and a theme reaches only open terminals.
+A terminal describes its `:ready`, `:title`, `:pwd`, `:columns`, `:rows` and
+`:exited`, which every platform reports. `:title` and `:pwd` are what the running
+program last set and reported, `""` until it does; Ghostty passes on only working
+directories reported from this host, percent-decoded. Other facts are diagnostics
+for tests: `:layer`, the class of the macOS renderer's layer, and `:focused`, which
+input owns. A process that exits leaves its view open with its last output, and its
+buffer too, until Lisp closes it; nothing restarts the shell. Closing the view,
+which destroys it, ends the process. As for every kind, the core never passes a
+closed terminal to the platform: a stale target fails with "No Portal view TARGET",
+and a theme reaches only open terminals.
+
+The platform reports each change of title, working directory or exit with
+`portal_terminal_changed`. The core sends Emacs one `terminal TARGET` record, and no
+other for that view until `portal--inspect` has described it, so a program that
+retitles itself constantly cannot flood the pipe. The texts stay with the platform,
+which reports them in any length; `portal-terminal.el` inspects the view for them
+and caches them in the buffer. On macOS, Ghostty reports an exit as a request to
+close the surface, at once because Portal turns off its `wait-after-command` and
+counts no exit as a failed launch; Portal keeps the view, and the first key after
+the exit returns the keyboard to Emacs.
 
 Web views' rules live in the core too, in `native/Core/web.c`
 ([details](docs/editor-bridge.md#transport)). It checks each URL Lisp loads,
@@ -1269,7 +1336,9 @@ reaches none, and that a terminal rejecting it stops the change there; that Ente
 follows a paste only when asked and never after a failed paste; that wrong-kind,
 unknown and closed targets reach no platform view; that platform errors and refusals
 reach Lisp; and that a terminal whose process exited stays open and describable until
-closed.
+closed. Records go to a real pipe: a change sends one `terminal` record, later changes
+wait until the view is inspected, and web views, unknown targets and closed terminals
+send none.
 
 `ctest -R toolbar-core` runs `test/portal-toolbar-tests.c`, which drives the core's
 toolbars with the fake platform, answering its finds and script calls by hand. It

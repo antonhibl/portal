@@ -136,6 +136,14 @@ Send the `bridge' record with `portal-fake-native-send'."
 (defun portal--inspect (target)
   (copy-sequence (gethash target portal-fake-native--views)))
 
+(defun portal-fake-native-report (target &rest facts)
+  "Set FACTS, such as :title, :pwd and :exited, in terminal TARGET's state.
+Then send its `terminal' record, as the native module does for a change."
+  (let ((view (portal-fake-native--view target)))
+    (while facts (setq view (plist-put view (pop facts) (pop facts))))
+    (puthash target view portal-fake-native--views))
+  (portal-fake-native-send (format "terminal %s\n" target)))
+
 (defun portal--channel (process)
   (setq portal-fake-native-channel process)
   t)

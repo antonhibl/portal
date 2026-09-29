@@ -30,14 +30,13 @@ Manual resizing is remembered in each frame until it is deleted."
 Ordinary terminal naming, creation and cycling belong to regular terminals.")
 
 (defun portal-terminal-quick--root ()
-  "Resolve the current editing project's canonical root without prompting."
+  "Resolve the current editing project's canonical root without prompting.
+Outside a project, the editing directory stands in for the root."
   (let ((directory (or (portal-project-context) portal-terminal-quick-directory)))
     (when (file-remote-p directory)
       (user-error "Quick terminals require a local project; use ssh inside a terminal"))
-    (let* ((default-directory (file-name-as-directory (expand-file-name directory)))
-           (project (project-current nil default-directory)))
-      (file-name-as-directory
-       (file-truename (if project (project-root project) default-directory))))))
+    (or (portal-project-root directory)
+        (file-name-as-directory (file-truename (expand-file-name directory))))))
 
 (defun portal-terminal-quick--buffer (root)
   "Return the existing quick terminal for ROOT."

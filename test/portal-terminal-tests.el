@@ -264,6 +264,66 @@
     (kill-buffer (current-buffer))
     (should-not (portal-terminal-test--state))))
 
+(ert-deftest portal-terminal-metadata-follows-a-real-shell ()
+  (portal-terminal-test--session
+    (let* ((buffer (current-buffer))
+           (project (plist-get (portal-terminal-metadata) :project))
+           (directory (file-truename (make-temp-file "portal-metadata-" t)))
+           (nested (expand-file-name "a b é" directory))
+           (metadata (lambda (key) (plist-get (portal-terminal-metadata buffer) key))))
+      (make-directory nested)
+      (unwind-protect
+          (progn
+            ;; Shells report their directory as a percent-encoded file URL, as
+            ;; Ghostty's shell integration does at each prompt.
+            (portal-terminal-test--paste
+             (format "cd %s && printf '\\033]7;file://%%s%%s\\007' \"$(hostname)\" %s"
+                     (shell-quote-argument nested)
+                     (shell-quote-argument (concat directory "/a%20b%20%C3%A9")))
+             t)
+            (portal-terminal-test--wait
+             (lambda () (equal (funcall metadata :directory) (file-name-as-directory nested))))
+            (should (equal (buffer-local-value 'default-directory buffer)
+                           (file-name-as-directory nested)))
+            (should (equal (funcall metadata :project) project))
+            ;; Ghostty's bundled integration reports each prompt's directory.
+            (when (member (file-name-nondirectory (or (getenv "SHELL") "")) '("zsh" "bash"))
+              (portal-terminal-test--paste "cd /usr/share" t)
+              (portal-terminal-test--wait
+               (lambda () (equal (funcall metadata :directory) "/usr/share/")))
+              (should (equal (funcall metadata :project) project)))
+            ;; A hidden terminal's title reaches Emacs without renaming it.
+            (portal-terminal-rename "portal-metadata-smoke")
+            (switch-to-buffer (get-buffer-create "*scratch*"))
+            (redisplay t)
+            (should-not (plist-get (portal-terminal-test--state) :visible))
+            (portal-terminal-test--paste "printf '\\033]2;PORTAL hidden title\\007'; sleep 3" t)
+            (portal-terminal-test--wait
+             (lambda () (equal (funcall metadata :title) "PORTAL hidden title")))
+            (should (equal (buffer-name buffer) "portal-metadata-smoke"))
+            ;; The exit is reported when it happens, leaving the buffer, its
+            ;; last output and the keyboard until a key returns it to Emacs.
+            (switch-to-buffer buffer)
+            (portal-terminal-focus)
+            (portal-terminal-test--paste "exit" t)
+            (portal-terminal-test--wait (lambda () (funcall metadata :exited)))
+            (should (equal (buffer-local-value 'mode-line-process buffer) ":exited"))
+            (should (string-match-p "sleep 3" (portal-terminal-test--text)))
+            (should (plist-get (portal-terminal-test--state) :focused))
+            (when (fboundp 'portal-test-native-key)
+              (should (portal-test-native-key 0 0 "a"))
+              (portal-terminal-test--wait
+               (lambda () (not (plist-get (portal-terminal-test--state) :focused)))))
+            (should (memq buffer (portal-terminal-buffers)))
+            ;; Killing it ends only its own session.
+            (portal-terminal-new)
+            (let ((other (portal-view-target)))
+              (kill-buffer buffer)
+              (should-not (portal-terminal-metadata buffer))
+              (should (plist-get (portal-terminal-test--state other) :ready))
+              (should-not (plist-get (portal-terminal-metadata) :exited))))
+        (delete-directory directory t)))))
+
 (ert-deftest portal-terminal-native-keys-clipboard-and-focus ()
   (skip-unless (fboundp 'portal-test-native-key))
   (portal-terminal-test--session
@@ -557,7 +617,7 @@
               (portal-terminal-test--prefix '(12 0 "q"))
               (should (eq (current-buffer) source))
               (should (plist-get (portal-terminal-test--state id) :ready))
-              (should-not (portal-terminal--regular-buffers))
+              (should-not (portal-terminal-buffers))
               (kill-buffer quick)
               (should-not (portal-terminal-test--state id))))
         (portal-terminal-close-all)

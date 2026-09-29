@@ -1,13 +1,32 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The core's terminal rules, native/Core/terminals.c, with the fake
    platform: option checks before creation, the theme catalog and applying a
-   theme to every terminal, paste and Enter, reading text, and what a
-   terminal describes.  The fake counts the primitives the core calls, and
-   any call naming a destroyed view or a view of the wrong kind. */
+   theme to every terminal, paste and Enter, reading text, what a terminal
+   describes, and the records that announce its changes.  The fake counts the
+   primitives the core calls, and any call naming a destroyed view or a view
+   of the wrong kind.  Records go to a real pipe, which the tests read as
+   Emacs would. */
 #define _POSIX_C_SOURCE 200809L
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include "channel.h"
 #include "portal-core-tests.h"
 #include "terminals.h"
+
+static int records = -1; /* The pipe's read end. */
+
+/* Whether the pipe holds exactly EXPECTED now; read it all. */
+static bool sent(const char *expected)
+{
+    static char buffer[1024];
+    ssize_t count = read(records, buffer, sizeof buffer - 1);
+    buffer[count > 0 ? count : 0] = '\0';
+    if (strcmp(buffer, expected))
+        fprintf(stderr, "Expected records \"%s\", got \"%s\"\n", expected, buffer);
+    return !strcmp(buffer, expected);
+}
 
 static portal_option string_option(const char *name, const char *value)
 {
@@ -290,10 +309,13 @@ static void test_a_terminal_describes_itself(void)
     portal_text error = {0};
     char *terminal = open_in("/");
     CHECK(shows(terminal, "\"kind\":\"terminal\",\"visible\":false", "\"ready\":true",
-                "\"title\":\"Fake terminal\"", "\"columns\":80", "\"rows\":24",
-                "\"exited\":false", NULL));
+                "\"title\":\"Fake terminal\"", "\"pwd\":\"\"", "\"columns\":80",
+                "\"rows\":24", "\"exited\":false", NULL));
     /* A process that exits leaves its view open until Lisp closes it. */
     portal_fake_exit(handle(terminal));
+    char expected[64];
+    snprintf(expected, sizeof expected, "terminal %s\n", terminal);
+    CHECK(sent(expected));
     CHECK(shows(terminal, "\"exited\":true", "\"ready\":true", NULL));
     CHECK(portal_views_place(text(terminal), (portal_edges) {0, 0, 10, 10}, text("one"),
                              &error));
@@ -303,8 +325,51 @@ static void test_a_terminal_describes_itself(void)
     CHECK(portal_fake_calls().destroyed == destroyed + 1);
 }
 
+static void test_changes_announce_once_until_inspected(void)
+{
+    portal_text error = {0};
+    char *terminal = open_in("/"), *other = open_in("/");
+    char *web = open_view("web", &error, NULL);
+    char expected[64], expected_other[64];
+    snprintf(expected, sizeof expected, "terminal %s\n", terminal);
+    snprintf(expected_other, sizeof expected_other, "terminal %s\n", other);
+    CHECK(sent(""));
+    /* Text of any length stays with the platform: Emacs inspects for it. */
+    portal_fake_report(handle(terminal), "vim notes.md", "/tmp/a b é");
+    CHECK(sent(expected));
+    /* Until Emacs inspects, later changes send nothing more. */
+    portal_fake_report(handle(terminal), "zsh", "/tmp");
+    portal_fake_exit(handle(terminal));
+    portal_terminal_changed(text(terminal));
+    CHECK(sent(""));
+    CHECK(shows(terminal, "\"title\":\"zsh\"", "\"pwd\":\"/tmp\"", "\"exited\":true",
+                NULL));
+    portal_terminal_changed(text(terminal));
+    CHECK(sent(expected));
+    /* Each terminal announces its own changes. */
+    portal_terminal_changed(text(other));
+    CHECK(sent(expected_other));
+    CHECK(shows(other, "\"exited\":false", NULL));
+    /* Web views, unknown targets and closed terminals announce nothing. */
+    char *closed = strdup(other);
+    close_view(other);
+    const char *silent[] = {web, closed, "terminal:0", "", "terminal"};
+    for (size_t i = 0; i < sizeof silent / sizeof *silent; i++)
+        portal_terminal_changed(text(silent[i]));
+    CHECK(sent(""));
+    free(closed);
+    close_view(terminal);
+    close_view(web);
+    CHECK(!portal_fake_calls().misused);
+}
+
 int main(void)
 {
+    int fds[2];
+    if (pipe(fds) || fcntl(fds[0], F_SETFL, O_NONBLOCK) == -1)
+        abort();
+    records = fds[0];
+    CHECK(portal_channel_connect(fds[1]));
     test_options_are_checked_before_creation();
     test_the_theme_catalog_is_sorted();
     test_a_theme_reaches_every_terminal();
@@ -312,7 +377,10 @@ int main(void)
     test_paste_then_enter();
     test_targets_must_name_open_terminals();
     test_a_terminal_describes_itself();
+    test_changes_announce_once_until_inspected();
     CHECK(!portal_fake_calls().misused);
+    portal_channel_connect(-1);
+    close(records);
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

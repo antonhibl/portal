@@ -44,13 +44,16 @@ private func terminalQuote(_ value: String) -> String {
 
 @MainActor
 private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
-    TerminalSurfaceGridResizeDelegate, TerminalSurfaceLifecycleDelegate,
+    TerminalSurfacePwdDelegate, TerminalSurfaceGridResizeDelegate, TerminalSurfaceLifecycleDelegate,
     TerminalSurfaceCloseDelegate, TerminalSurfaceOpenURLDelegate, NativeSurface {
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
     func handleKeyEvent(_ event: NSEvent) -> Bool { session?.handleKeyEvent(event) ?? false }
-    var terminalTitle = "Terminal"
+    /// What the running program reported, "" until it does. Ghostty passes
+    /// on only working directories reported from this host (OSC 7).
+    var terminalTitle = ""
+    var workingDirectory = ""
     var grid: TerminalGridMetrics?
     var terminalSurface: TerminalSurface?
     /// The process has ended. The view stays, showing its last output.
@@ -63,9 +66,13 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
             workingDirectory: directory,
             envVars: ["INSIDE_EMACS": "portal-ghostty"],
             command: command,
-            waitAfterCommand: true)
+            // Ghostty then reports the exit at once, as a close request,
+            // which leaves the view and its last output.
+            waitAfterCommand: false)
         controller = TerminalController(theme: theme) { builder in
             builder.withFontThicken(false)
+            // Every exit takes that path: none counts as a failed launch.
+            builder.withCustom("abnormal-command-exit-runtime", "0")
             builder.withFontSize(Float(PORTAL_TERMINAL_POINTS))
             // Window/tab actions belong to Emacs, not the embedded engine.
             builder.withCustom("keybind", "super+n=unbind")
@@ -78,15 +85,30 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func terminalDidChangeTitle(_ title: String) { terminalTitle = title }
+    func terminalDidChangeTitle(_ title: String) {
+        guard title != terminalTitle else { return }
+        terminalTitle = title
+        session?.changed()
+    }
+    func terminalDidChangeWorkingDirectory(_ path: String) {
+        guard path != workingDirectory else { return }
+        workingDirectory = path
+        session?.changed()
+    }
     func terminalDidResize(_ size: TerminalGridMetrics) { grid = size }
     func terminalDidAttachSurface(_ surface: TerminalSurface) { terminalSurface = surface }
     func terminalDidDetachSurface() { terminalSurface = nil }
-    /// Ghostty asks to close the surface when its process ends, and also when
-    /// a close is requested while the process still runs.
+    /// Ghostty asks to close the surface when its process ends, at each key
+    /// press after that, and when a close is requested while the process
+    /// still runs. Portal keeps the view: the end is reported, and a key
+    /// after it returns the keyboard to Emacs.
     func terminalDidClose(processAlive: Bool) {
-        if !processAlive { exited = true }
-        session?.returnFocus()
+        if !processAlive && !exited {
+            exited = true
+            session?.changed()
+        } else {
+            session?.returnFocus()
+        }
     }
     func terminalDidRequestOpenURL(_ text: String, kind: TerminalOpenURLKind) {
         guard let url = URL(string: text),
@@ -142,6 +164,7 @@ final class TerminalSession: PortalView {
     func describe() -> [(String, ViewValue)] {
         [("ready", .flag(terminal.terminalSurface != nil)),
          ("title", .string(terminal.terminalTitle)),
+         ("pwd", .string(terminal.workingDirectory)),
          ("exited", .flag(terminal.exited)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
@@ -185,6 +208,9 @@ final class TerminalSession: PortalView {
     }
 
     func returnFocus() { input.host.returnFocus(from: terminal) }
+
+    /// Its title, working directory or exit changed; the core tells Emacs.
+    func changed() { Core.terminalChanged(target) }
 
     /// The core decides what each key does, including text size shortcuts.
     func handleKeyEvent(_ event: NSEvent) -> Bool {

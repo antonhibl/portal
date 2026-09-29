@@ -4,8 +4,9 @@ import PortalCore
 
 // Calls between Swift and the C core outside the Lisp operations: the core's
 // notification pipe, input, what web pages do, what the user does with a
-// toolbar, the shared browser scripts, and the timer primitive, all in
-// native/Core/include/portal.h. The standalone checks compile this file too.
+// toolbar, terminal changes, the shared browser scripts, and the timer
+// primitive, all in native/Core/include/portal.h. The standalone checks
+// compile this file too.
 
 extension String {
     /// A copy of borrowed UTF-8 from the core.
@@ -109,6 +110,11 @@ enum Core {
 
     static func typed(_ target: String, _ query: String) {
         borrowing([target, query]) { portal_toolbar_typed($0[0], $0[1]) }
+    }
+
+    /// What TARGET's terminal describes changed.
+    static func terminalChanged(_ target: String) {
+        borrow(target) { portal_terminal_changed($0) }
     }
 
     /// The shared browser script SCRIPT, started in its world with a report

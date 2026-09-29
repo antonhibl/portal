@@ -196,12 +196,15 @@ bool portal_web_call(portal_view *web, portal_script script, portal_string funct
    at PORTAL_TERMINAL_POINTS, the font size the core resets it to.
 
    A terminal describes itself with "ready", whether its engine can draw and
-   take input; "title", which the running program may set; "columns" and
-   "rows", its grid, 0 until known; and "exited", whether its process has
-   ended.  A process that exits leaves its view open, showing its last
-   output, until Lisp closes it; destroying a view ends its process.  Any
-   other fact a platform describes, such as macOS's "layer", the class of the
-   renderer's layer, is a diagnostic for tests.
+   take input; "title", which the running program may set, "" until it does;
+   "pwd", the working directory the running program last reported from this
+   host, "" until it does; "columns" and "rows", its grid, 0 until known; and
+   "exited", whether its process has ended.  Report each change of title,
+   working directory or exit with portal_terminal_changed, below.  A process
+   that exits leaves its view open, showing its last output, until Lisp
+   closes it; destroying a view ends its process.  Any other fact a platform
+   describes, such as macOS's "layer", the class of the renderer's layer, is
+   a diagnostic for tests.
 
    List the names of the themes the terminal engine offers, in any order:
    *NAMES is an array of *COUNT texts, allocated with malloc like each text,
@@ -357,6 +360,13 @@ bool portal_notify(portal_string type, portal_string target, const portal_string
                    size_t count);
 /* A timer from portal_timer_start has fired. */
 void portal_timer_fired(uint64_t token);
+
+/* What TARGET's terminal describes changed: its title, its working
+   directory or whether it exited.  The core tells Emacs with a "terminal TARGET" record,
+   and sends no other for that view until Emacs has inspected it, so a
+   program that retitles itself constantly never floods the pipe.  The core
+   ignores a call for a target that names no open terminal. */
+void portal_terminal_changed(portal_string target);
 
 /* Modifier keys, as Emacs names them.  Which keys are Meta and Super is the
    platform's business: on macOS, Option and Command. */

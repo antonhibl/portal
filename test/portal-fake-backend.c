@@ -10,8 +10,8 @@
    that text instead, for tests of how the core reads descriptions.
 
    A terminal describes the facts every platform's terminal reports, "ready",
-   "title", "columns", "rows" and "exited", which is true once a test ends
-   its process.  Its "text" is everything pasted into it, with a newline for
+   "title", "pwd", "columns", "rows" and "exited", which is true once a
+   test ends its process.  Its "text" is everything pasted into it, with a newline for
    each Enter, and its "theme" the last one applied, false for the default.
    The engine's themes are those in `themes' below, listed out of order.
 
@@ -279,6 +279,7 @@ bool portal_view_create(portal_kind kind, portal_string target, const portal_opt
     if (kind == PORTAL_TERMINAL) {
         set_flag(view, "ready", true);
         set_string(view, "title", "Fake terminal", 13);
+        set_string(view, "pwd", "", 0);
         set_integer(view, "columns", 80);
         set_integer(view, "rows", 24);
         set_flag(view, "exited", false);
@@ -482,6 +483,14 @@ bool portal_web_post(portal_view *web, portal_string json, uint64_t token, porta
 void portal_fake_exit(portal_view *terminal)
 {
     set_flag(terminal, "exited", true);
+    portal_terminal_changed((portal_string) {terminal->target, strlen(terminal->target)});
+}
+
+void portal_fake_report(portal_view *terminal, const char *title, const char *directory)
+{
+    set_string(terminal, "title", title, strlen(title));
+    set_string(terminal, "pwd", directory, strlen(directory));
+    portal_terminal_changed((portal_string) {terminal->target, strlen(terminal->target)});
 }
 
 /* The engine's themes, not in order.  One needs escaping in JSON. */

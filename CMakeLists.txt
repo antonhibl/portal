@@ -63,6 +63,11 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-quick-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(quick-terminal PROPERTIES TIMEOUT 30)
+    add_test(NAME terminal-metadata
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-metadata-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(terminal-metadata PROPERTIES TIMEOUT 30)
     add_test(NAME view
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-view-tests.el"
