@@ -101,8 +101,9 @@ same state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
 `portal-terminal-text-size-reset`, and in a terminal Command-Plus, Command-Minus
 and Command-0 do the same, with or without a toolbar. Command-F runs `portal-find` in a web view
-with a toolbar, except in passthrough; in Portal's own web buffers, `s-f` also
-runs it while Emacs owns the keyboard. Find opens a field inside the strip; Return
+with a toolbar, and Command-R reloads the page as the Reload button does, except in
+passthrough; in Portal's own web buffers, `s-f` and `s-r` (`portal-web-reload`)
+also work while Emacs owns the keyboard. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
 and redisplaying a pane; reload preserves zoom and the TOC. Killing the buffer
 releases it.
@@ -494,8 +495,8 @@ and returns a complete HTML page with embedded light/dark CSS. Rendering happens
 in memory, without temporary HTML files or additional npm dependencies.
 
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
-anchors are supported. Press `C-b d` or Command-Escape to return to Emacs, then
-`g` (`portal-web-reload`) to reread the file on screen from disk. `g` also starts a
+anchors are supported. Press Command-R to reread the file on screen from disk, or
+from Emacs, `g` (`portal-web-reload`), which also starts a
 stopped host. A loaded preview stays as it is while the host stops or restarts.
 Missing or unreadable files produce an error page.
 
@@ -1204,7 +1205,7 @@ Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout with
 the real core: buttons that keep the keyboard where it was, the ownership dot, back
 and forward in previews, zoom limits, the TOC across hiding and reload, typing into
-the real find field, Return, Shift-Return and Escape, Command-F and passthrough,
+the real find field, Return, Shift-Return and Escape, Command-F, Command-R and passthrough,
 closing find after the keyboard went back to Emacs, live visibility and colors, a
 view without a toolbar filling its pane, and a Markdown preview's Open in Emacs.
 Keys reach the find field through the event loop, as real presses do, since the
@@ -1274,7 +1275,7 @@ closed.
 toolbars with the fake platform, answering its finds and script calls by hand. It
 checks each layout's buttons and which of them work, including views without a
 toolbar and an invalid `:toolbar`; zoom steps and text sizes stopping at their limits,
-and a size the platform refuses; the keyboard's text size and Command-F shortcuts,
+and a size the platform refuses; the keyboard's text size, Command-F and Command-R shortcuts,
 and passthrough; the ownership dot and its clicks; searches running one at a time in
 order, newer text replacing waiting searches, match counting and wrapping; a page
 that loads dropping old results and searching again; the table of contents across

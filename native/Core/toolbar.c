@@ -610,6 +610,8 @@ bool portal_toolbar_shortcut(portal_string target, portal_chord key)
     else if (key.character == 'f' && !toolbars.hidden && web(toolbar)
              && portal_input_owner(target) == PORTAL_OWNER_VIEW)
         button = PORTAL_BUTTON_FIND;
+    else if (key.character == 'r' && web(toolbar) && portal_input_owner(target) == PORTAL_OWNER_VIEW)
+        button = PORTAL_BUTTON_RELOAD;
     else
         return false;
     portal_text error = {0};

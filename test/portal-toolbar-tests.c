@@ -604,6 +604,38 @@ static void test_super_f_opens_find(void)
     close_view(web);
 }
 
+/* Command-R reloads a web view that has the keyboard and whose toolbar has
+   Reload, even while toolbars are hidden, but not in passthrough. */
+static void test_super_r_reloads(void)
+{
+    portal_text error = {0};
+    char *web = open_web("markdown", true), *none = open_web("none", true);
+    enter(web);
+    portal_fake_keys();
+    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    portal_toolbar_show(false);
+    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    portal_toolbar_show(true);
+    CHECK(!strcmp(portal_fake_keys(), "taken s-r, taken s-r"));
+    CHECK(shows(web, "\"history\":\"reload reload\"", NULL));
+    struct portal_fake_calls before = portal_fake_calls();
+    bool done = false;
+    CHECK(portal_input_perform(text(web), text("passthrough"), 0, &done, &error) && done);
+    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    portal_fake_press((portal_chord) {'r', PORTAL_SUPER | PORTAL_SHIFT}, false);
+    char expected[128];
+    snprintf(expected, sizeof expected, "%s s-r, %s s-S-r", web, web);
+    CHECK(!strcmp(portal_fake_keys(), expected));
+    /* Excalidraw's view has no toolbar, so its app keeps Command-R. */
+    enter(none);
+    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    snprintf(expected, sizeof expected, "%s s-r", none);
+    CHECK(!strcmp(portal_fake_keys(), expected));
+    CHECK(portal_fake_calls().went == before.went);
+    close_view(none);
+    close_view(web);
+}
+
 static void test_state_is_kept_and_drawn_only_when_it_changes(void)
 {
     portal_text error = {0};
@@ -737,6 +769,7 @@ int main(void)
     test_the_table_of_contents();
     test_closing_find_keeps_the_users_focus();
     test_super_f_opens_find();
+    test_super_r_reloads();
     test_state_is_kept_and_drawn_only_when_it_changes();
     test_buttons_act_on_the_view();
     test_a_closed_view_hears_nothing();
