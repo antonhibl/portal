@@ -13,8 +13,13 @@ include(CTest)
 # emacs-module.h for the rest of the build.
 add_subdirectory(native/Core)
 
-find_program(BUN NAMES bun HINTS "$ENV{HOME}/.bun/bin" REQUIRED)
-execute_process(COMMAND "${BUN}" -e
+# Bun is invoked by name, so whichever bun is on PATH at build time is used.
+# NO_CACHE re-checks availability on every configure instead of pinning a path.
+find_program(bun_path bun NO_CACHE)
+if(NOT bun_path)
+    message(FATAL_ERROR "Bun not found on PATH")
+endif()
+execute_process(COMMAND bun -e
     "if (typeof Bun.markdown?.html !== 'function') process.exit(1)"
     RESULT_VARIABLE bun_markdown_status)
 if(NOT bun_markdown_status EQUAL 0)
@@ -24,9 +29,9 @@ endif()
 # Publish atomically so a running host can survive a rebuild.
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/portal-host"
-    COMMAND "${BUN}" install --cwd "${CMAKE_SOURCE_DIR}/host" --frozen-lockfile
-    COMMAND "${BUN}" run "${CMAKE_SOURCE_DIR}/host/build-editor.ts"
-    COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
+    COMMAND bun install --cwd "${CMAKE_SOURCE_DIR}/host" --frozen-lockfile
+    COMMAND bun run "${CMAKE_SOURCE_DIR}/host/build-editor.ts"
+    COMMAND bun build "${CMAKE_SOURCE_DIR}/host/server.ts"
         --compile --minify --sourcemap
         --no-compile-autoload-dotenv --no-compile-autoload-bunfig
         --outfile "${CMAKE_BINARY_DIR}/.portal-host"
@@ -35,15 +40,15 @@ add_custom_command(
     DEPENDS host/actions.ts host/server.ts host/hello.html host/markdown.ts host/markdown.css
         host/tasks.ts host/tasks-client.ts host/tasks.css
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
-        host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
+        host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Compiling the standalone Bun UI host"
     VERBATIM)
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
 if(BUILD_TESTING)
-    add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
-    add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
+    add_test(NAME host-actions COMMAND bun test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
+    add_test(NAME host-tasks COMMAND bun test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
