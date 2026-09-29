@@ -56,7 +56,7 @@
             (panel (selected-window)))
         (should (eq (window-parameter panel 'window-side) 'bottom))
         (should (= (window-total-width panel) (frame-width)))
-        (should-not (portal-terminal--regular-buffers))
+        (should-not (portal-terminal-buffers))
         (should-error (portal-terminal-new) :type 'user-error)
         (should-error (portal-terminal-rename "server") :type 'user-error)
         (should-not (lookup-key portal-terminal-quick-prefix-map "c"))

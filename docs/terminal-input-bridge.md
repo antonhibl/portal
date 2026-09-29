@@ -106,7 +106,9 @@ each with the handoff serial and a key field:
 | `escape TARGET SERIAL 0` | Command-Escape cancels a handoff, as does a click that hands off to Emacs or selects the view's pane |
 
 A click that enters a view sends `select TARGET`, and Emacs selects the pane
-showing the view.
+showing the view. A terminal whose title, working directory or process state
+changes sends `terminal TARGET`, and no other until Emacs inspects the view,
+which carries the new text in any length.
 
 Reads do not follow record boundaries: one record can arrive split across two
 reads, and one read can carry several records. `portal-view.el` joins the reads
@@ -117,7 +119,9 @@ run inside the process filter, so they never prompt. `portal-input` registers
 the five input types, and queues each record as an event such as
 `(portal-input-prefix (TARGET SERIAL KEY))`, which the command loop then runs.
 `portal-web` registers the `bridge` type, which announces a hosted app's
-messages ([the bridge](editor-bridge.md)).
+messages ([the bridge](editor-bridge.md)). `portal-terminal` registers the
+`terminal` type, and caches what `portal--inspect` then reports in the
+terminal's buffer.
 
 ## Boundaries and verification
 

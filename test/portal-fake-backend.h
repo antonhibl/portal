@@ -41,8 +41,11 @@ bool portal_fake_request(struct portal_fake_request *request);
 void portal_fake_refuse(bool refuse);
 
 /* End TERMINAL's process, as when its shell exits: it describes itself as
-   "exited", and stays open. */
+   "exited", stays open, and reports the change with portal_terminal_changed. */
 void portal_fake_exit(portal_view *terminal);
+/* TERMINAL's program sets its TITLE and reports its DIRECTORY, as a real
+   one does with escape sequences, and the fake reports the change. */
+void portal_fake_report(portal_view *terminal, const char *title, const char *directory);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);

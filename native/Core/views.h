@@ -50,6 +50,11 @@ enum { PORTAL_ANY_KIND = -1 };
    next lifecycle call. */
 portal_view *portal_views_find(portal_string target, int kind, portal_text *error);
 
+/* Send the record "TYPE TARGET" if TARGET names an open view of KIND, unless
+   the last one this sent for the view is still waiting for Emacs to inspect
+   it: inspecting the view lets the next go. */
+void portal_views_announce(portal_string target, portal_kind kind, const char *type);
+
 /* TARGET's input, if TARGET names an open view; valid until it closes. */
 struct portal_input *portal_views_input(portal_string target);
 

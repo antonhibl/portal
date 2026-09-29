@@ -28,6 +28,7 @@ struct view {
     struct portal_toolbar_state *toolbar; /* Its toolbar (toolbar.c). */
     uint64_t id;
     bool attached;
+    bool announced; /* Its portal_views_announce record waits for an inspection. */
     portal_edges edges; /* Where it is attached, while ATTACHED. */
     struct portal_input input;
     size_t length;
@@ -228,6 +229,8 @@ bool portal_views_inspect(portal_string target, portal_text *state, portal_text 
         *state = (portal_text) {null, 4};
         return true;
     }
+    /* This description shows every change so far; the next one announces. */
+    view->announced = false;
     portal_text described = {0};
     if (!portal_view_describe(view->native, &described, error))
         return false;
@@ -284,6 +287,14 @@ bool portal_views_each(portal_kind kind, bool (*visit)(portal_view *view, void *
         if (view->kind == kind && !visit(view->native, context))
             return false;
     return true;
+}
+
+void portal_views_announce(portal_string target, portal_kind kind, const char *type)
+{
+    struct view *view = find(target, (int) kind, NULL);
+    if (view && !view->announced)
+        view->announced = portal_channel_send((portal_string) {type, strlen(type)}, target,
+                                              NULL, 0);
 }
 
 /* A platform's late record, for a view that is gone or not yet open, would

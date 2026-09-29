@@ -20,6 +20,10 @@ _Avoid_: editor view, preview view, browser
 A Portal view of the terminal kind. It runs a terminal session.
 _Avoid_: shell view
 
+**Terminal project**:
+The project a terminal view's buffer belongs to, by its canonical root: the project it started in, until explicitly reassigned. The shell changing directory never changes it.
+_Avoid_: inferring a terminal's project from its current directory or buffer name
+
 **Quick terminal**:
 A project's scratch terminal view, summoned into a panel at the bottom of the current frame. Each project has one.
 _Avoid_: scratch shell, quick shell
