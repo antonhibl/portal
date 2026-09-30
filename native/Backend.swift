@@ -181,6 +181,13 @@ public func portalWebZoom(_ web: OpaquePointer, _ scale: Double,
     return perform(error) { try session(web, as: WebSession.self).zoom(scale) } != nil
 }
 
+@_cdecl("portal_web_set_appearance")
+public func portalWebSetAppearance(_ web: OpaquePointer, _ appearance: portal_appearance,
+                                   _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web)
+    return perform(error) { try session(web, as: WebSession.self).show(appearance) } != nil
+}
+
 @_cdecl("portal_web_find")
 public func portalWebFind(_ web: OpaquePointer, _ query: portal_string, _ backwards: Bool, _ token: UInt64,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {

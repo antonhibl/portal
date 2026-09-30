@@ -26,6 +26,10 @@
    for the toolbar's Open in Emacs.  It also adds "error" for failures the
    app cannot report, a type apps use too.
 
+   Appearance.  A web view's pages see the system's appearance, following
+   its changes, unless Lisp forces light or dark, at open or later for every
+   web view at once.  The core checks the name; the platform shows it.
+
    Generations.  Each commit starts a new generation.  A message the core
    posts to a page carries the generation it went to as its token, so a
    failed delivery that the platform reports after the page has gone is
@@ -346,6 +350,54 @@ void portal_web_state_free(struct portal_web_state *web)
 }
 
 /* The Lisp functions, for emacs.c. */
+
+/* The appearance NAME means, or the system's for a null NAME; false, with
+   *ERROR set, for any other NAME. */
+static bool appearance(const portal_string *name, portal_appearance *appearance,
+                       portal_text *error)
+{
+    if (!name)
+        *appearance = PORTAL_APPEARANCE_SYSTEM;
+    else if (is(*name, "light"))
+        *appearance = PORTAL_APPEARANCE_LIGHT;
+    else if (is(*name, "dark"))
+        *appearance = PORTAL_APPEARANCE_DARK;
+    else
+        return fail(error, "Unknown web appearance: ", *name);
+    return true;
+}
+
+bool portal_web_views_check(const portal_option *options, size_t count, portal_text *error)
+{
+    const portal_option *found = NULL;
+    for (size_t i = 0; i < count; i++)
+        if (is(options[i].name, "appearance"))
+            found = &options[i];
+    if (!found || (!found->is_string && !found->flag))
+        return true;
+    if (!found->is_string)
+        return fail_with(error, "Option :appearance must be \"light\", \"dark\" or nil");
+    portal_appearance unused;
+    return appearance(&found->string, &unused, error);
+}
+
+struct appear {
+    portal_appearance appearance;
+    portal_text *error;
+};
+
+static bool appear(portal_view *web, void *context)
+{
+    struct appear *appear = context;
+    return portal_web_set_appearance(web, appear->appearance, appear->error);
+}
+
+bool portal_web_views_appearance(const portal_string *name, portal_text *error)
+{
+    struct appear context = {.error = error};
+    return appearance(name, &context.appearance, error)
+        && portal_views_each(PORTAL_WEB, appear, &context);
+}
 
 bool portal_web_views_load(portal_string target, portal_string url, portal_text *error)
 {

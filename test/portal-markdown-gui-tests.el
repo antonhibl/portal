@@ -273,5 +273,43 @@ The folder is `portal-markdown-gui--directory'."
       (portal-preview-open-in-emacs)
       (should (equal buffer-file-name (portal-markdown-gui--file "docs é/arch notes.md"))))))
 
+;; Emacs frames may force an appearance of their own; previews follow the system's.
+(ert-deftest portal-markdown-gui-appearance-follows-the-system-or-the-option ()
+  (let ((original portal-web-appearance)
+        (frame-appearance (frame-parameter nil 'ns-appearance))
+        (system-dark (equal (string-trim
+                             (shell-command-to-string "defaults read -g AppleInterfaceStyle 2>/dev/null"))
+                            "Dark")))
+    (unwind-protect
+        (progn
+          (setq portal-web-appearance nil)
+          (modify-frame-parameters nil `((ns-appearance . ,(if system-dark 'light 'dark))))
+          (portal-markdown-gui--documents
+            (let ((target (portal-view-target))
+                  (dark "matchMedia('(prefers-color-scheme: dark)').matches")
+                  (background "getComputedStyle(document.documentElement).backgroundColor"))
+              (should (eq (plist-get (portal--inspect target) :dark) system-dark))
+              (should (eq (eq (portal-excalidraw-gui--js (format "return %s;" dark)) t) system-dark))
+              ;; The option applies to the open preview without loading it again.
+              (portal-excalidraw-gui--js "window.portalStayed = true; return true;")
+              (setopt portal-web-appearance 'light)
+              (should-not (plist-get (portal--inspect target) :dark))
+              (should (eq (portal-excalidraw-gui--js (format "return %s;" dark)) :false))
+              (should (equal (portal-excalidraw-gui--js (format "return %s;" background))
+                             "rgb(255, 255, 255)"))
+              (setopt portal-web-appearance 'dark)
+              (should (eq (portal-excalidraw-gui--js (format "return %s;" dark)) t))
+              (should (equal (portal-excalidraw-gui--js (format "return %s;" background))
+                             "rgb(21, 25, 31)"))
+              (should (eq (portal-excalidraw-gui--js "return window.portalStayed === true;") t))
+              ;; The next page keeps it.
+              (portal-markdown-gui--link "Other")
+              (portal-test--wait-for-page "other.md")
+              (should (eq (portal-excalidraw-gui--js (format "return %s;" dark)) t))
+              (portal-web-set-appearance nil)
+              (should (eq (plist-get (portal--inspect target) :dark) system-dark)))))
+      (setq portal-web-appearance original)
+      (modify-frame-parameters nil `((ns-appearance . ,frame-appearance))))))
+
 (provide 'portal-markdown-gui-tests)
 ;;; portal-markdown-gui-tests.el ends here

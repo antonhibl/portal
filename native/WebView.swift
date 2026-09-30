@@ -39,6 +39,31 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
 
     private func historyChanged() { Core.history(target, back: canGoBack, forward: canGoForward) }
 
+    /// Follows the system's appearance while the page shows it.
+    private var system: NSKeyValueObservation?
+
+    /// Show the page in APPEARANCE, which WebKit gives it as
+    /// prefers-color-scheme. The view's own appearance overrides its
+    /// window's, which an Emacs frame may force, so even the system's is set
+    /// here, and again whenever it changes.
+    func show(_ choice: portal_appearance) {
+        system = nil
+        switch choice {
+        case PORTAL_APPEARANCE_LIGHT: appearance = NSAppearance(named: .aqua)
+        case PORTAL_APPEARANCE_DARK: appearance = NSAppearance(named: .darkAqua)
+        default:
+            showSystem()
+            system = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+                Task { @MainActor in self?.showSystem() }
+            }
+        }
+    }
+
+    /// NSApp's appearance is the system's: Emacs sets only its windows'.
+    private func showSystem() {
+        appearance = NSAppearance(named: NSApp.effectiveAppearance.isDark ? .darkAqua : .aqua)
+    }
+
     required init?(coder: NSCoder) { nil }
 
     /// Load URL as a new document; a local file may read its directory.
@@ -136,6 +161,10 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     }
 }
 
+extension NSAppearance {
+    var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+}
+
 /// A hosted app's two script message handlers. The page's world gets the
 /// bridge: bootstrap glue defines `portalBridge.postMessage`, the one place
 /// a hosted app's messages meet WebKit's transport. An isolated world, out
@@ -196,11 +225,18 @@ final class WebSession: PortalView {
 
     /// A view with a `:toolbar`, which the core has checked, runs the contents
     /// script. With `:hosted`, the page keeps no data between sessions and
-    /// gets the bridge's scripts.
+    /// gets the bridge's scripts. It starts in its `:appearance`, which the
+    /// core has checked too.
     init(target: String, options: ViewOptions) throws {
         let toolbar = try options.string("toolbar").map { $0 != "none" } ?? false
         let hosted = options.flag("hosted")
         let page = WebPage(target: target, contents: toolbar, hosted: hosted)
+        let appearance = switch try options.string("appearance") {
+        case "light": PORTAL_APPEARANCE_LIGHT
+        case "dark": PORTAL_APPEARANCE_DARK
+        default: PORTAL_APPEARANCE_SYSTEM
+        }
+        page.show(appearance)
         self.page = page
         input = NativeInput(target: target, view: page, host: NativeView.parking) { [weak page] in
             guard let page, !page.isHidden else { return false }
@@ -225,6 +261,8 @@ final class WebSession: PortalView {
 
     func zoom(_ scale: Double) { page.pageZoom = scale }
 
+    func show(_ appearance: portal_appearance) { page.show(appearance) }
+
     func find(_ query: String, backwards: Bool, token: UInt64) {
         WebToolbar.find(page, target: page.target, query: query, backwards: backwards, token: token)
     }
@@ -235,7 +273,8 @@ final class WebSession: PortalView {
     }
 
     func describe() -> [(String, ViewValue)] {
-        var state: [(String, ViewValue)] = [("loading", .flag(page.isLoading))]
+        var state: [(String, ViewValue)] = [("loading", .flag(page.isLoading)),
+                                            ("dark", .flag(page.effectiveAppearance.isDark))]
         if let url = page.url { state.append(("url", .string(url.absoluteString))) }
         if let title = page.title { state.append(("title", .string(title))) }
         if let error = page.loadError { state.append(("error", .string(error))) }

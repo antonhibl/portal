@@ -498,6 +498,85 @@ static void test_an_echoing_app(void)
     close_view(target.data);
 }
 
+static void test_appearance_at_open(void)
+{
+    portal_text error = {0};
+    char *dark = open_view("web", &error, "appearance", "dark", NULL);
+    CHECK(dark && shows(dark, "\"appearance\":\"dark\"", NULL));
+    struct portal_fake_calls before = portal_fake_calls();
+    CHECK(!open_view("web", &error, "appearance", "sepia", NULL));
+    CHECK(says(&error, "Unknown web appearance: sepia"));
+    portal_option flag[] = {{.name = text("appearance"), .flag = true}};
+    portal_text target = {0};
+    CHECK(!portal_views_open(text("web"), flag, 1, &target, &error));
+    CHECK(says(&error, "Option :appearance must be \"light\", \"dark\" or nil"));
+    CHECK(portal_fake_calls().created == before.created);
+    /* Nil, like no option, is the system's; a later duplicate wins. */
+    portal_option options[] = {{.name = text("appearance"), .is_string = true,
+                                .string = text("sepia")},
+                               {.name = text("appearance")}};
+    CHECK(portal_views_open(text("web"), options, 2, &target, &error));
+    CHECK(shows(target.data, "\"appearance\":false", NULL));
+    close_view(target.data);
+    close_view(dark);
+}
+
+static void test_an_appearance_reaches_every_web_view(void)
+{
+    portal_text error = {0};
+    portal_string light = text("light"), dark = text("dark"), sepia = text("sepia");
+    /* A name is checked even with no web view open. */
+    CHECK(!portal_web_views_appearance(&sepia, &error));
+    CHECK(says(&error, "Unknown web appearance: sepia"));
+    CHECK(portal_web_views_appearance(&dark, &error));
+
+    char *terminal = open_view("terminal", &error, "directory", "/", NULL);
+    char *first = open_web(false), *second = open_web(true);
+    struct portal_fake_calls before = portal_fake_calls();
+    CHECK(portal_web_views_appearance(&light, &error));
+    CHECK(portal_fake_calls().appeared == before.appeared + 2);
+    CHECK(shows(first, "\"appearance\":\"light\"", NULL));
+    CHECK(shows(second, "\"appearance\":\"light\"", NULL));
+    char *state = inspect(terminal);
+    CHECK(state && !strstr(state, "\"appearance\""));
+    free(state);
+
+    /* An unknown name touches no view, and nil is the system's. */
+    before = portal_fake_calls();
+    CHECK(!portal_web_views_appearance(&sepia, &error));
+    CHECK(says(&error, "Unknown web appearance: sepia"));
+    CHECK(same_calls(portal_fake_calls(), before));
+    CHECK(portal_web_views_appearance(NULL, &error));
+    CHECK(shows(first, "\"appearance\":false", NULL));
+    CHECK(shows(second, "\"appearance\":false", NULL));
+
+    /* A view that fails stops the rest; the views before it keep theirs. */
+    char *broken = open_view("web", &error, "broken", "WebKit is gone", NULL);
+    char *third = open_web(false);
+    CHECK(!portal_web_views_appearance(&dark, &error));
+    CHECK(says(&error, "WebKit is gone"));
+    CHECK(shows(second, "\"appearance\":\"dark\"", NULL));
+    state = inspect(third);
+    CHECK(state && !strstr(state, "\"appearance\""));
+    free(state);
+    close_view(broken);
+    CHECK(portal_web_views_appearance(&dark, &error));
+    CHECK(shows(third, "\"appearance\":\"dark\"", NULL));
+
+    /* A refusing platform changes nothing. */
+    portal_fake_refuse(true);
+    before = portal_fake_calls();
+    CHECK(!portal_web_views_appearance(&light, &error));
+    CHECK(says(&error, "The fake refuses to run view primitives"));
+    portal_fake_refuse(false);
+    CHECK(same_calls(portal_fake_calls(), before));
+    CHECK(shows(first, "\"appearance\":\"dark\"", NULL));
+    close_view(first);
+    close_view(second);
+    close_view(third);
+    close_view(terminal);
+}
+
 static void test_the_shared_scripts(void)
 {
     portal_script scripts[] = {PORTAL_SCRIPT_LINKS, PORTAL_SCRIPT_CONTENTS};
@@ -531,6 +610,8 @@ int main(void)
     test_a_closed_view_hears_nothing();
     test_an_echoing_app();
     test_the_shared_scripts();
+    test_appearance_at_open();
+    test_an_appearance_reaches_every_web_view();
     CHECK(!portal_fake_calls().misused);
     portal_channel_connect(-1);
     close(records);

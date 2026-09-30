@@ -42,6 +42,43 @@
   "Return the toolbar TARGET opened with."
   (plist-get (plist-get (portal-web-test--state target) :options) :toolbar))
 
+(ert-deftest portal-web-appearance-starts-new-views-and-changes-open-ones ()
+  (portal-web-test--environment
+    (let ((original portal-web-appearance))
+      (unwind-protect
+          (progn
+            ;; The system's appearance passes no option.
+            (setq portal-web-appearance nil)
+            (portal-open-url "https://example.com/")
+            (let ((system (portal-view-target)))
+              (should-not (plist-member (plist-get (portal-web-test--state) :options)
+                                        :appearance))
+              (setq portal-fake-native-log nil)
+              (setopt portal-web-appearance 'dark)
+              (should (equal (portal-fake-native-calls 'portal--web-appearance) '(("dark"))))
+              (portal-open-url "https://example.com/")
+              (should (equal (plist-get (plist-get (portal-web-test--state) :options) :appearance)
+                             "dark"))
+              (should (equal (plist-get (plist-get (portal-web-test--state) :options) :toolbar)
+                             "navigation"))
+              (should-not (equal (portal-view-target) system)))
+            ;; An unknown appearance changes nothing.
+            (setq portal-fake-native-log nil)
+            (should-error (setq portal-web-appearance 'sepia))
+            (should-error (setq portal-web-appearance "light"))
+            (should (eq portal-web-appearance 'dark))
+            (should-error (portal-web-set-appearance 'sepia))
+            (should-not (portal-fake-native-calls 'portal--web-appearance))
+            ;; The command sets the option; "system" is nil.
+            (portal-web-set-appearance 'light)
+            (should (eq portal-web-appearance 'light))
+            (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "system")))
+              (call-interactively #'portal-web-set-appearance))
+            (should-not portal-web-appearance)
+            (should (equal (portal-fake-native-calls 'portal--web-appearance)
+                           '(("light") (nil)))))
+        (setq portal-web-appearance original)))))
+
 (ert-deftest portal-web-open-url-opens-a-new-buffer-each-time ()
   (portal-web-test--environment
     (portal-open-url "https://example.com/page")

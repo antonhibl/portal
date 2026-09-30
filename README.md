@@ -676,6 +676,18 @@ it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
 and returns a complete HTML page with embedded light/dark CSS. Rendering happens
 in memory, without temporary HTML files or additional npm dependencies.
 
+The preview is light or dark with the system's appearance, and switches when
+the system does, even if your Emacs frames force a dark or light title bar with
+`ns-appearance`. To keep previews one way, set `portal-web-appearance`, or run
+`M-x portal-web-set-appearance`:
+
+```elisp
+(setopt portal-web-appearance 'light) ; or 'dark; nil follows the system
+```
+
+This applies to every web view, including the task browser and Excalidraw.
+Open previews change at once, without reloading.
+
 Headings, lists, fenced code, tables, strikethrough, task lists, and heading
 anchors are supported. Press Command-R to reread the file on screen from disk, or
 from Emacs, `g` (`portal-web-reload`), which also starts a
@@ -1024,6 +1036,10 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
   page a hosted app commits, including after Back and Forward, sends a `page`
   message. URLs go over the bridge because a long path would not fit in a
   notification record.
+- Pages see the system's light or dark appearance as CSS's
+  `prefers-color-scheme`, not the appearance an Emacs frame forces with
+  `ns-appearance`. `portal-web-appearance` set to `light` or `dark` overrides it
+  for every web view, open or new.
 - The shared Portal prefix and Command-Escape work while a page has focus.
   Clicking a view to enter it sends a `select TARGET` record, and Emacs selects
   the pane showing it.
@@ -1109,13 +1125,13 @@ explicit error result that becomes a Lisp `error`. Structured results, such as
 `json-parse-string`. The bindings check that argument strings are valid UTF-8, since
 Emacs copies a unibyte string's raw bytes unchanged.
 
-A platform implements these 25 primitives:
+A platform implements these 26 primitives:
 
 | Area | Primitives |
 | --- | --- |
 | Views | `portal_view_create`, `portal_view_destroy`, `portal_view_attach`, `portal_view_detach`, `portal_view_describe` |
 | Input | `portal_view_focus`, `portal_view_unfocus`, `portal_view_replay`, `portal_view_literal` |
-| Web views | `portal_web_parse_url`, `portal_web_load`, `portal_web_go`, `portal_web_post`, `portal_web_zoom`, `portal_web_find`, `portal_web_call` |
+| Web views | `portal_web_parse_url`, `portal_web_load`, `portal_web_go`, `portal_web_post`, `portal_web_zoom`, `portal_web_find`, `portal_web_call`, `portal_web_set_appearance` |
 | Terminals | `portal_terminal_list_themes`, `portal_terminal_apply_theme`, `portal_terminal_paste_text`, `portal_terminal_press_enter`, `portal_terminal_read_text`, `portal_terminal_set_font_size` |
 | Toolbars | `portal_toolbar_draw`, `portal_toolbar_focus` |
 | Timers | `portal_timer_start` |
@@ -1312,7 +1328,9 @@ The Markdown graphical tests use the real app host and real mouse clicks. They
 check that Back and Forward restore reading positions, that a source link hands
 the keyboard to Emacs in one click, that clicking the preview selects its pane,
 that `portal-preview-return` and `RET` return without reloading, and that
-Command-Escape and `C-b d` still return to Emacs.
+Command-Escape and `C-b d` still return to Emacs. In a frame forcing the
+opposite appearance, a preview follows the system's, and `portal-web-appearance`
+turns the page on screen light or dark without reloading it.
 The task browser graphical tests check real list and task pages: Back and
 Forward restore the filter and reading positions, `g` rereads the saved file,
 and `g` loads the page on screen after an app host restart. They also check
@@ -1502,10 +1520,12 @@ and re-arming, and payloads larger than a record. It rejects frames, other pages
 the core's own types, and ordinary pages get no bridge. It checks every navigation
 decision, including claimed origins in user names; that a local link or an edit sends
 `escape` before `bridge`, even with a URL longer than a record; that a delivery failure
-from a page that has gone is ignored; and that a closed view hears nothing.
+from a page that has gone is ignored; and that a closed view hears nothing. It checks
+`:appearance` before a view opens, and that an appearance reaches every open web view,
+oldest first, stopping at one that fails.
 
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
-the 19 functions and their arities, the input functions' conversion of chords and
+the 20 functions and their arities, the input functions' conversion of chords and
 binding JSON, the toolbar theme's conversion of face colors, and the conversion of
 options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,

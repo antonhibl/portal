@@ -133,7 +133,9 @@ bool portal_view_describe(portal_view *view, portal_text *state, portal_text *er
    and runs the bridge and the links script; and :toolbar, which the core has
    checked is "navigation", "contents", "markdown", "none" or false.  A view
    with a toolbar, one that is neither "none" nor false, runs the contents
-   script.  The platform ignores any other option.
+   script.  :appearance, which the core has checked is "light", "dark" or
+   false, starts the view in that portal_appearance, below: false for the
+   system's.  The platform ignores any other option.
 
    Load URL in WEB as a new document, adding it to WEB's history.  The core
    has checked that URL is an absolute http, https, file, data or about URL,
@@ -180,6 +182,19 @@ bool portal_web_find(portal_view *web, portal_string query, bool backwards, uint
    result. */
 bool portal_web_call(portal_view *web, portal_script script, portal_string function,
                      portal_string argument, uint64_t token, portal_text *error);
+/* The appearance a web view's pages see, as CSS's prefers-color-scheme and
+   the colors of their controls: the system's, following its changes, or
+   always light or dark.  The system's is the user's own setting, whatever the
+   window around the view shows: on macOS, an Emacs frame may force its own. */
+typedef enum portal_appearance {
+    PORTAL_APPEARANCE_SYSTEM,
+    PORTAL_APPEARANCE_LIGHT,
+    PORTAL_APPEARANCE_DARK,
+} portal_appearance;
+/* Show WEB's pages in APPEARANCE from now on, including the page on screen,
+   without loading it again. */
+bool portal_web_set_appearance(portal_view *web, portal_appearance appearance,
+                               portal_text *error);
 
 /* Terminal views.  The core implements the terminal Lisp functions with
    these primitives, each on one terminal, and keeps Portal's rules: it checks
