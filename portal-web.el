@@ -71,12 +71,12 @@ queues commands through `unread-command-events'.")
 (define-derived-mode portal-web-mode special-mode "Portal Web"
   "Major mode for a buffer presenting a web view.
 RET or a click enters the page, and Command-Escape returns to Emacs.
+A chord the page does not use reaches Emacs, which runs it in this buffer.
 g or Command-R loads the page again, l and r go back and forward, and
 Command-F finds text in the page, whether Emacs or the page owns the
-keyboard.  q hides the view while the page keeps running, and killing
-the buffer closes it."
+keyboard, unless the page uses those chords itself.  q hides the view
+while the page keeps running, and killing the buffer closes it."
   (setq-local cursor-type nil)
-  (setq-local portal-input--map-function (lambda () portal-web-mode-map))
   (portal-input-mode 1))
 (keymap-set portal-web-mode-map "g" #'portal-web-reload)
 (keymap-set portal-web-mode-map "l" #'portal-web-back)

@@ -187,7 +187,7 @@ static void test_full_pipe_delivers_in_order(void)
     for (int i = 0; i < 40; i++) {
         char serial[16], line[64];
         snprintf(serial, sizeof serial, "%d", i);
-        static const char *const types[] = {"prefix", "binding", "literal", "cancel",
+        static const char *const types[] = {"key", "binding", "literal", "cancel",
                                             "escape", "bridge", "select"};
         const char *type = types[i % 7];
         bool fields = strcmp(type, "bridge") && strcmp(type, "select");
@@ -257,7 +257,7 @@ static void test_reconnecting_cancels_the_retry(void)
     struct pipe first = open_pipe(), second = open_pipe();
     CHECK(portal_channel_connect(first.write));
     fill(first);
-    CHECK(notify("prefix", "web:1", "5", "0", NULL));
+    CHECK(notify("key", "web:1", "5", "0", NULL));
     CHECK(portal_fake_timers() == 1);
     /* The second pipe is full too, so it needs a retry of its own. */
     size_t filled = fill(second);
@@ -270,7 +270,7 @@ static void test_reconnecting_cancels_the_retry(void)
     CHECK(took(second, filled, ""));
     portal_fake_fire_timers();
     CHECK(seam.calls == 1);
-    CHECK(took(second, 0, "prefix web:1 5 0\n"));
+    CHECK(took(second, 0, "key web:1 5 0\n"));
     CHECK(!portal_fake_timers());
 
     /* Disconnecting cancels a retry too: its timer writes nothing. */

@@ -62,7 +62,6 @@
         (should-not (portal-terminal-buffers))
         (should-error (portal-terminal-new) :type 'user-error)
         (should-error (portal-terminal-rename "server") :type 'user-error)
-        (should-not (lookup-key portal-terminal-quick-prefix-map "c"))
         ;; Selecting source must not dismiss. Toggling from there must dismiss.
         (select-window origin)
         (should (window-live-p panel))

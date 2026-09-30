@@ -28,7 +28,7 @@ bool portal_views_open(portal_string kind, const portal_option *options, size_t 
 bool portal_views_place(portal_string target, portal_edges edges, portal_string title,
                         portal_text *error);
 /* Detach TARGET's view if it is attached, keeping its page or session, and
-   end its handoff and passthrough.  If the platform refuses, the view stays
+   end its handoff.  If the platform refuses, the view stays
    attached. */
 bool portal_views_hide(portal_string target, portal_text *error);
 /* Close TARGET, ending its handoff and destroying its platform view once.

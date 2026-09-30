@@ -425,15 +425,6 @@ static bool read_chord(emacs_env *env, emacs_value character, emacs_value modifi
     return returning(env);
 }
 
-LISP_FUNCTION(Finput_prefix)
-{
-    portal_text error = {0};
-    portal_chord prefix;
-    if (!read_chord(env, args[0], args[1], &prefix))
-        return NULL;
-    return done(env, portal_input_prefix(prefix, &error), &error);
-}
-
 /* Whether VALUE's `type-of' is TYPE. */
 static bool of_type(emacs_env *env, emacs_value value, const char *type)
 {
@@ -586,7 +577,6 @@ LISP_FUNCTION(Ftoolbar_theme)
         {"foreground", offsetof(portal_colors, foreground)},
         {"success", offsetof(portal_colors, success)},
         {"accent", offsetof(portal_colors, accent)},
-        {"warning", offsetof(portal_colors, warning)},
     };
     portal_colors colors;
     for (size_t i = 0; i < sizeof roles / sizeof *roles; i++) {
@@ -642,8 +632,6 @@ static const struct export {
      "active."},
     {"portal--terminal-bindings", 1, 1, Fterminal_bindings, NULL,
      "Atomically replace runtime binding profiles from JSON."},
-    {"portal--input-prefix", 2, 2, Finput_prefix, NULL,
-     "Set the native prefix CHARACTER and MODIFIERS: 1 Shift, 2 Control, 4 Meta, 8 Super."},
     {"portal--input", 2, 3, Finput, NULL,
      "Perform ACTION on native TARGET, optionally validating its handoff SERIAL."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},

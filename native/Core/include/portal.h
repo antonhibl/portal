@@ -241,10 +241,11 @@ bool portal_terminal_set_font_size(portal_view *terminal, double points, portal_
 enum { PORTAL_TERMINAL_POINTS = 14 };
 
 /* Input, for a view of any kind.  The core decides what each key press in a
-   view does: the view's app gets it, or it starts a handoff, in which Emacs
-   reads and runs a command (docs/terminal-input-bridge.md).  The platform
-   captures keys, moves the keyboard, and keeps the native events: the core
-   sees only portal_chord values, never replays them.
+   view does (native/Core/input.c): the view's app gets it, one of the view's
+   shortcuts runs, or it starts a handoff, in which Emacs reads and runs a
+   command (docs/terminal-input-bridge.md).  The platform captures keys,
+   moves the keyboard, and keeps the native events: the core sees only
+   portal_chord values, never replays them.
 
    Give VIEW the keyboard, if it is attached; or, if VIEW has the keyboard,
    return it to Emacs.  Either reports what changed with portal_input_focus
@@ -262,6 +263,12 @@ bool portal_view_replay(portal_view *view, bool replay, portal_text *error);
    key where VIEW's keyboard input goes.  The core gives VIEW the keyboard
    first.  Fails if VIEW holds no trigger. */
 bool portal_view_literal(portal_view *view, portal_text *error);
+/* Copy what is selected in VIEW's app to the system clipboard, as the app's
+   own Copy command does; with nothing selected, do nothing.  Paste the
+   system clipboard where VIEW's keyboard input goes, as the app's own Paste
+   command does: a terminal pastes text, bracketed if its program asked. */
+bool portal_view_copy(portal_view *view, portal_text *error);
+bool portal_view_paste(portal_view *view, portal_text *error);
 
 /* Toolbars, for a view of any kind.  The core owns each view's toolbar
    (native/Core/toolbar.c): whether it shows one, which buttons it has and
@@ -287,17 +294,14 @@ typedef struct portal_colors {
     portal_color foreground; /* A button under the pointer, a changed value. */
     portal_color success;    /* The dot while the view has the keyboard. */
     portal_color accent;     /* The dot during a handoff, and a button toggled on. */
-    portal_color warning;    /* The dot in passthrough. */
 } portal_colors;
 
 /* Who has a view's keyboard, which the toolbar's first button shows:
-   Emacs, the view, Emacs handling the view's handoff, or the view in
-   passthrough, which gives its app every key. */
+   Emacs, the view, or Emacs handling the view's handoff. */
 typedef enum portal_owner {
     PORTAL_OWNER_EMACS,
     PORTAL_OWNER_VIEW,
     PORTAL_OWNER_PENDING,
-    PORTAL_OWNER_PASSTHROUGH,
 } portal_owner;
 
 /* A toolbar's buttons.  A click on OWNER moves the keyboard between Emacs
@@ -408,14 +412,33 @@ typedef struct portal_chord {
    repeats, releases and modifier changes alike, without asking the core,
    until portal_view_replay.  While a view holds a trigger, the key events in
    its window are its own, whichever view has the keyboard: the platform asks
-   the core about each press there. */
-typedef enum portal_key { PORTAL_KEY_PASS, PORTAL_KEY_TAKE, PORTAL_KEY_HOLD } portal_key;
+   the core about each press there.
+
+   OFFER: deliver it to the view's app, and hold every key event after it in
+   the view's window, as for HOLD, until the app has handled it.  Only a web
+   view's app is offered keys, as only its page knows whether it uses one.
+   If the app used the press, deliver the held events again, in order, ahead
+   of any new ones, as if they had just happened.  If not, call
+   portal_input_unused with the press, and do what it answers.  An app that
+   never answers, such as a page that stopped responding, used the press. */
+typedef enum portal_key {
+    PORTAL_KEY_PASS,
+    PORTAL_KEY_TAKE,
+    PORTAL_KEY_HOLD,
+    PORTAL_KEY_OFFER,
+} portal_key;
 
 /* CHORD was pressed, or REPEAT-ed, in TARGET's view: the view has the
    keyboard, or holds a trigger in the window where the key was pressed.
    Press and repeat only: a release or a modifier change never needs the
    core. */
 portal_key portal_input_key(portal_string target, portal_chord chord, bool repeat);
+/* The app of TARGET's view did not use CHORD, a press or REPEAT the core
+   answered PORTAL_KEY_OFFER.  The answer is TAKE: drop the press, and
+   deliver what was held after it as for a press the app used; or HOLD: the
+   press is now the view's trigger, and the events held after it stay held
+   as for PORTAL_KEY_HOLD. */
+portal_key portal_input_unused(portal_string target, portal_chord chord, bool repeat);
 
 /* TARGET's view gained or lost the keyboard.  Report each change, whatever
    made it; one the platform makes for the core, before that call returns.

@@ -1,17 +1,32 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* Input handoff: which key presses a view's app gets, which start a handoff
-   to Emacs, and each handoff from its trigger to the end of its command.
+/* Input: who gets each key pressed in a view, and each handoff to Emacs from
+   its trigger to the end of its command.  Emacs is the system and the view
+   an app in it, as a page is in a browser.  A key goes, in order:
+
+   1. With Command-Escape, back to Emacs, which keeps the keyboard.  The
+      platform does this itself (portal_input_focus), so it works even while
+      Emacs or the core is busy.
+   2. To Emacs, when it is the first chord of a native binding: a key the
+      user claimed for Emacs in a terminal.
+   3. To the view's app.  Only a chord can go further: a key that types a
+      character, pressed with Control, Meta or Super.  Plain and Shift keys,
+      and keys that type no character, stay with the app.  A terminal's app
+      never uses a Super chord, and uses every other; a web view's page is
+      offered each chord, and the platform reports one it did not use
+      (portal_input_unused).
+   4. To the view's shortcuts: Super-C copies and Super-V pastes in every
+      view; then the toolbar's (toolbar.c).
+   5. To Emacs, which reads the rest of the key sequence with the view's
+      buffer's keymaps and runs its command.
+
    Records tell Emacs what happened, and Emacs answers with portal--input
    actions.  The platform keeps the native events: this file sees only
    chords, and asks the platform to replay, discard or deliver what it holds.
 
    A focus change the platform reports while Emacs or the core is calling it
    is their own doing.  Any other is the user's: it abandons the view's
-   handoff, and losing the keyboard also ends passthrough.
-
-   A key that the view's app would get may be a toolbar's shortcut instead
-   (toolbar.c), and every change of who has a view's keyboard redraws its
-   toolbar, which shows it. */
+   handoff.  Every change of who has a view's keyboard redraws its toolbar,
+   which shows it. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,18 +40,17 @@
 
 enum { MODIFIERS = PORTAL_SHIFT | PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER };
 
-/* A binding profile: normalized chords, none of them the prefix. */
+/* A binding profile: normalized chords. */
 struct profile {
     portal_binding *bindings;
     size_t count;
 };
 
 static struct {
-    portal_chord prefix; /* Normalized, and no binding's chord. */
     struct profile regular, quick;
     int64_t serials;   /* The last serial given out. */
     unsigned requests; /* How many calls for Emacs or the core are running. */
-} input = {.prefix = {'b', PORTAL_CONTROL}};
+} input;
 
 /* C-g, which cancels the key sequence Emacs is reading. */
 static const portal_chord cancel = {'g', PORTAL_CONTROL};
@@ -60,12 +74,23 @@ static bool same(portal_chord a, portal_chord b)
     return a.character == b.character && a.modifiers == b.modifiers;
 }
 
-/* Whether CHORD can be a first chord: one printable ASCII character and
-   modifiers the core knows, other than Shift alone on punctuation. */
+/* Whether CHORD can be a native binding's first chord: one printable ASCII
+   character and modifiers the core knows, other than Shift alone on
+   punctuation. */
 static bool first_chord(portal_chord chord)
 {
     return chord.character >= ' ' && chord.character <= '~' && chord.modifiers
         && !(chord.modifiers & ~(uint32_t) MODIFIERS) && normalize(chord).modifiers;
+}
+
+/* Whether KEY, normalized, is a chord, which can leave the view's app: a key
+   that types a character, pressed with Control, Meta or Super. */
+static bool is_chord(portal_chord key)
+{
+    uint32_t character = key.character;
+    return character >= ' ' && !(character >= 0x7f && character < 0xa0)
+        && !(character >= 0xd800 && character <= 0xdfff) && character <= 0x10ffff
+        && (key.modifiers & (PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER));
 }
 
 /* The event PROFILE binds normalized KEY to, or 0. */
@@ -84,17 +109,24 @@ static const struct profile *profile(const struct portal_input *view)
                                                      : NULL;
 }
 
+/* Send Emacs the record "TYPE TARGET SERIAL VALUE...", with COUNT values. */
+static bool send_values(const char *type, const struct portal_input *view, int64_t serial,
+                        const int64_t *values, size_t count)
+{
+    char numbers[3][24];
+    portal_string fields[3];
+    for (size_t i = 0; i <= count && i < 3; i++) {
+        int length = snprintf(numbers[i], sizeof numbers[i], "%" PRId64, i ? values[i - 1] : serial);
+        fields[i] = (portal_string) {numbers[i], (size_t) length};
+    }
+    return portal_channel_send((portal_string) {type, strlen(type)}, view->target, fields,
+                               count + 1);
+}
+
 /* Send Emacs the record "TYPE TARGET SERIAL KEY". */
 static bool send(const char *type, const struct portal_input *view, int64_t serial, int64_t key)
 {
-    char numbers[2][24];
-    portal_string fields[2];
-    int64_t values[] = {serial, key};
-    for (size_t i = 0; i < 2; i++) {
-        int length = snprintf(numbers[i], sizeof numbers[i], "%" PRId64, values[i]);
-        fields[i] = (portal_string) {numbers[i], (size_t) length};
-    }
-    return portal_channel_send((portal_string) {type, strlen(type)}, view->target, fields, 2);
+    return send_values(type, view, serial, &key, 1);
 }
 
 /* Free the error of a primitive the platform asked for, which has no one to
@@ -135,6 +167,7 @@ void portal_input_open(struct portal_input *view, portal_view *native, portal_st
     *view = (struct portal_input) {
         .view = native,
         .target = target,
+        .kind = kind,
         .bindings = kind == PORTAL_WEB ? PORTAL_NO_BINDINGS
                   : quick              ? PORTAL_QUICK_BINDINGS
                                        : PORTAL_REGULAR_BINDINGS,
@@ -143,7 +176,6 @@ void portal_input_open(struct portal_input *view, portal_view *native, portal_st
 
 bool portal_input_close(struct portal_input *view, portal_text *error)
 {
-    view->passthrough = false;
     input.requests++;
     bool done = end(view, error);
     input.requests--;
@@ -151,17 +183,75 @@ bool portal_input_close(struct portal_input *view, portal_text *error)
     return done;
 }
 
-/* What VIEW's app does with KEY, a normalized chord. */
-static portal_key decide(struct portal_input *view, portal_chord key, bool repeat)
+/* Start a handoff of VIEW to Emacs, whose record is TYPE with COUNT VALUES
+   after its serial, from KEY, a normalized chord: Emacs reads the rest of
+   its key sequence, and the platform holds it meanwhile. */
+static portal_key start(struct portal_input *view, const char *type, portal_chord key,
+                        const int64_t *values, size_t count)
+{
+    view->serial = ++input.serials;
+    if (!send_values(type, view, view->serial, values, count))
+        return PORTAL_KEY_TAKE;
+    view->handoff = PORTAL_AWAITING;
+    view->trigger = key;
+    view->binding = !strcmp(type, "binding");
+    portal_text error = {0};
+    input.requests++;
+    ignore(portal_view_unfocus(view->view, &error), &error);
+    input.requests--;
+    return PORTAL_KEY_HOLD;
+}
+
+/* Whether KEY, a normalized chord, is one of VIEW's shortcuts, which the core
+   has acted on. */
+static bool shortcut(struct portal_input *view, portal_chord key)
+{
+    if (key.modifiers == PORTAL_SUPER && (key.character == 'c' || key.character == 'v')) {
+        portal_text error = {0};
+        input.requests++;
+        ignore(key.character == 'c' ? portal_view_copy(view->view, &error)
+                                    : portal_view_paste(view->view, &error),
+               &error);
+        input.requests--;
+        return true;
+    }
+    return portal_toolbar_shortcut(view->target, key);
+}
+
+/* What happens to CHORD, pressed in VIEW, which its app did not use: a
+   shortcut, or Emacs.  KEY is CHORD normalized. */
+static portal_key unused(struct portal_input *view, portal_chord key, portal_chord chord,
+                         bool repeat)
+{
+    /* The keyboard moved, or Emacs is already reading a key sequence. */
+    if (!view->focused || view->handoff != PORTAL_IDLE)
+        return PORTAL_KEY_TAKE;
+    if (shortcut(view, key))
+        return PORTAL_KEY_TAKE;
+    /* A held key repeats until its release, which may come after Emacs has
+       finished the handoff; only the press starts one. */
+    if (repeat)
+        return PORTAL_KEY_TAKE;
+    /* Emacs gets the chord as typed: Shift made the character. */
+    int64_t values[] = {chord.character, chord.modifiers & MODIFIERS};
+    return start(view, "key", key, values, 2);
+}
+
+/* What VIEW's app does with KEY, a normalized chord that is CHORD as typed. */
+static portal_key decide(struct portal_input *view, portal_chord key, portal_chord chord,
+                         bool repeat)
 {
     switch (view->handoff) {
     case PORTAL_AWAITING:
         return PORTAL_KEY_HOLD; /* The platform holds these without asking. */
     case PORTAL_READING: {
-        const char *type = view->first && same(key, view->trigger) ? "literal"
-                         : same(key, cancel)                       ? "cancel"
-                                                                   : NULL;
+        const char *type = view->binding && view->first && same(key, view->trigger) ? "literal"
+                         : same(key, cancel)                                        ? "cancel"
+                                                                                    : NULL;
         if (!type) {
+            /* The trigger, held down, repeats for none of the sequence. */
+            if (repeat && same(key, view->trigger))
+                return PORTAL_KEY_TAKE;
             view->first = false;
             return PORTAL_KEY_PASS;
         }
@@ -174,25 +264,16 @@ static portal_key decide(struct portal_input *view, portal_chord key, bool repea
     case PORTAL_IDLE:
         break;
     }
-    int64_t event = 0;
-    if (view->passthrough
-        || (!same(key, input.prefix) && !(event = lookup(profile(view), key))))
+    int64_t event = lookup(profile(view), key);
+    if (event)
+        return repeat ? PORTAL_KEY_TAKE : start(view, "binding", key, &event, 1);
+    if (!is_chord(key))
         return PORTAL_KEY_PASS;
-    /* A held key repeats until its release, which may come after Emacs has
-       finished the handoff; only the press starts one. */
-    if (repeat)
-        return PORTAL_KEY_TAKE;
-    view->serial = ++input.serials;
-    if (!send(event ? "binding" : "prefix", view, view->serial, event))
-        return PORTAL_KEY_TAKE;
-    view->handoff = PORTAL_AWAITING;
-    view->trigger = key;
-    /* Emacs reads the rest; the platform holds it meanwhile. */
-    portal_text error = {0};
-    input.requests++;
-    ignore(portal_view_unfocus(view->view, &error), &error);
-    input.requests--;
-    return PORTAL_KEY_HOLD;
+    if (view->kind == PORTAL_WEB)
+        return PORTAL_KEY_OFFER;
+    if (!(key.modifiers & PORTAL_SUPER))
+        return PORTAL_KEY_PASS;
+    return unused(view, key, chord, repeat);
 }
 
 portal_key portal_input_key(portal_string target, portal_chord chord, bool repeat)
@@ -200,12 +281,17 @@ portal_key portal_input_key(portal_string target, portal_chord chord, bool repea
     struct portal_input *view = portal_views_input(target);
     if (!view)
         return PORTAL_KEY_PASS;
-    portal_chord key = normalize(chord);
-    portal_key result = decide(view, key, repeat);
-    /* Only a view with the keyboard has shortcuts, not one that holds a
-       trigger for Emacs. */
-    if (result == PORTAL_KEY_PASS && view->focused && portal_toolbar_shortcut(target, key))
-        result = PORTAL_KEY_TAKE;
+    portal_key result = decide(view, normalize(chord), chord, repeat);
+    portal_toolbar_refresh(target);
+    return result;
+}
+
+portal_key portal_input_unused(portal_string target, portal_chord chord, bool repeat)
+{
+    struct portal_input *view = portal_views_input(target);
+    if (!view)
+        return PORTAL_KEY_TAKE;
+    portal_key result = unused(view, normalize(chord), chord, repeat);
     portal_toolbar_refresh(target);
     return result;
 }
@@ -216,8 +302,6 @@ void portal_input_focus(portal_string target, bool focused)
     if (!view)
         return;
     view->focused = focused;
-    if (!focused)
-        view->passthrough = false;
     if (!input.requests)
         abandon(view);
     portal_toolbar_refresh(target);
@@ -228,7 +312,6 @@ void portal_input_escape(portal_string target)
     struct portal_input *view = portal_views_input(target);
     if (!view)
         return;
-    view->passthrough = false;
     abandon(view);
     portal_text error = {0};
     input.requests++;
@@ -240,11 +323,10 @@ void portal_input_escape(portal_string target)
 portal_owner portal_input_owner(portal_string target)
 {
     const struct portal_input *view = portal_views_input(target);
-    return !view                             ? PORTAL_OWNER_EMACS
-         : view->handoff != PORTAL_IDLE      ? PORTAL_OWNER_PENDING
-         : !view->focused                    ? PORTAL_OWNER_EMACS
-         : view->passthrough                 ? PORTAL_OWNER_PASSTHROUGH
-                                             : PORTAL_OWNER_VIEW;
+    return !view                        ? PORTAL_OWNER_EMACS
+         : view->handoff != PORTAL_IDLE ? PORTAL_OWNER_PENDING
+         : !view->focused               ? PORTAL_OWNER_EMACS
+                                        : PORTAL_OWNER_VIEW;
 }
 
 void portal_input_request(bool requesting)
@@ -265,19 +347,11 @@ static bool act(struct portal_input *view, portal_string action, int64_t serial,
         *result = view->handoff != PORTAL_IDLE;
     } else if (is(action, "focused")) {
         *result = view->focused;
-    } else if (is(action, "passthrough-p")) {
-        *result = view->passthrough;
     } else if (is(action, "focus")) {
-        view->passthrough = false;
         if (!portal_view_focus(view->view, error))
             return false;
         *result = view->focused;
-    } else if (is(action, "passthrough")) {
-        if (!portal_view_focus(view->view, error))
-            return false;
-        *result = view->passthrough = view->focused;
     } else if (is(action, "unfocus")) {
-        view->passthrough = false;
         if (!end(view, error) || !portal_view_unfocus(view->view, error))
             return false;
         *result = true;
@@ -298,12 +372,12 @@ static bool act(struct portal_input *view, portal_string action, int64_t serial,
             return false;
         *result = true;
     } else if (is(action, "literal")) {
-        if (view->handoff == PORTAL_IDLE)
-            return fail_with(error, "No captured prefix key to send");
+        if (view->handoff == PORTAL_IDLE || !view->binding)
+            return fail_with(error, "No captured native binding key to send");
         if (!portal_view_focus(view->view, error))
             return false;
         if (!view->focused)
-            return fail_with(error, "No captured prefix key to send");
+            return fail_with(error, "No captured native binding key to send");
         if (!portal_view_literal(view->view, error))
             return false;
         *result = true;
@@ -327,17 +401,6 @@ bool portal_input_perform(portal_string target, portal_string action, int64_t se
     return done;
 }
 
-bool portal_input_prefix(portal_chord chord, portal_text *error)
-{
-    if (!first_chord(chord))
-        return fail_with(error, "Expected one modified ASCII prefix");
-    portal_chord key = normalize(chord);
-    if (lookup(&input.regular, key) || lookup(&input.quick, key))
-        return fail_with(error, "Portal prefix conflicts with a native binding");
-    input.prefix = key;
-    return true;
-}
-
 /* Normalize COUNT BINDINGS into *PROFILE, which the caller frees, or say
    why they cannot be a profile. */
 static bool compile(const portal_binding *bindings, size_t count, struct profile *profile,
@@ -350,7 +413,7 @@ static bool compile(const portal_binding *bindings, size_t count, struct profile
         if (!first_chord(bindings[i].chord) || bindings[i].event <= 0)
             return fail_with(error, "Invalid native terminal binding");
         portal_chord key = normalize(bindings[i].chord);
-        if (same(key, input.prefix) || lookup(profile, key))
+        if (lookup(profile, key))
             return fail_with(error, "Conflicting native terminal binding");
         profile->bindings[profile->count++] = (portal_binding) {key, bindings[i].event};
     }

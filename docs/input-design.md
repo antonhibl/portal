@@ -1,5 +1,12 @@
 # Portal input design proposal
 
+> **Superseded on 30 September 2026.** Portal no longer has a prefix or
+> passthrough. Views behave as their apps do outside Emacs, and a chord an app
+> does not use falls through to Emacs; Command-Escape is the one reserved key.
+> See [the input bridge](terminal-input-bridge.md) and
+> [its task](../tasks/input-chord-fall-through.md). This proposal is kept for its
+> research.
+
 Research date: 22 September 2026. This is a proposal, not implemented behavior.
 It is based on the working tree at the research date and the primary sources linked below.
 

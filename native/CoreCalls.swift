@@ -58,6 +58,12 @@ enum Core {
         return borrow(target) { portal_input_key($0, chord, event.isARepeat) }
     }
 
+    /// The app of TARGET's view did not use EVENT, a press the core offered it.
+    static func unused(_ target: String, _ event: NSEvent) -> portal_key {
+        let chord = portal_chord(event)
+        return borrow(target) { portal_input_unused($0, chord, event.isARepeat) }
+    }
+
     /// TARGET's view gained or lost the keyboard.
     static func focus(_ target: String, _ focused: Bool) {
         borrow(target) { portal_input_focus($0, focused) }

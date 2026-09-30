@@ -16,19 +16,6 @@ Manual resizing is remembered in each frame until it is deleted."
   :type 'directory
   :group 'portal-terminal)
 
-(defvar portal-terminal-quick-prefix-map
-  (let ((map (make-sparse-keymap)))
-    (dolist (binding '(("q" . portal-terminal-quick-dismiss)
-                       ("d" . portal-terminal-unfocus)
-                       ("r" . portal-terminal-quick-reset)
-                       ("k" . portal-terminal-quick-forget)
-                       (":" . portal-terminal-command-prompt)
-                       ("?" . portal-terminal-quick-help)))
-      (keymap-set map (car binding) (cdr binding)))
-    map)
-  "Restricted native prefix commands for quick terminals.
-Ordinary terminal naming, creation and cycling belong to regular terminals.")
-
 (defun portal-terminal-quick--root ()
   "Resolve the current editing project's canonical root without prompting.
 Outside a project, the editing directory stands in for the root."
@@ -143,15 +130,6 @@ When a panel is visible, target that panel's project.  Ask before termination."
       (user-error "Quick terminal directory no longer exists: %s" root))
     (when (portal-terminal-quick--forget root)
       (portal-terminal-quick--show root))))
-
-(defun portal-terminal-quick-help ()
-  "Show the quick terminal's restricted prefix commands."
-  (interactive)
-  (portal-terminal-unfocus)
-  (with-help-window "*Quick terminal bindings*"
-    (princ (format "Quick terminal: %s prefix. M-x portal-terminal-toggle shows or dismisses.\n\n"
-                   portal-terminal-prefix))
-    (princ (substitute-command-keys "\\{portal-terminal-quick-prefix-map}"))))
 
 (provide 'portal-terminal-quick)
 ;;; portal-terminal-quick.el ends here

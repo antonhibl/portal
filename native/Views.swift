@@ -55,6 +55,10 @@ protocol PortalView: AnyObject {
     func close()
     /// What only the view knows; `NativeView` adds focus, and the core the rest.
     func describe() -> [(String, ViewValue)]
+    /// Copy the app's selection, and paste the clipboard into it, as its own
+    /// Copy and Paste commands do.
+    func copy() throws
+    func paste() throws
 }
 
 extension PortalView {

@@ -114,6 +114,27 @@ static int64_t handoff(const char *type, const char *target)
 /* The event of TARGET's one binding record since the last call, ending that
    handoff. */
 static int64_t binding(const char *target);
+static bool bindings(const portal_binding *regular, size_t regular_count,
+                     const portal_binding *quick, size_t quick_count, const char *failure);
+
+/* The serial of TARGET's one key record since the last call, whose chord is
+   CHARACTER with MODIFIERS, or 0. */
+static int64_t key_record(const char *target, uint32_t character, uint32_t modifiers)
+{
+    const char *got = received();
+    char format[64], wanted[128];
+    int64_t serial = 0;
+    snprintf(format, sizeof format, "key %s %%" SCNd64, target);
+    if (sscanf(got, format, &serial) != 1)
+        serial = 0;
+    snprintf(wanted, sizeof wanted, "key %s %" PRId64 " %" PRIu32 " %" PRIu32 "\n", target,
+             serial, character, modifiers);
+    if (!serial || strcmp(got, wanted)) {
+        fprintf(stderr, "Expected one key record for %s, got \"%s\"\n", target, got);
+        return 0;
+    }
+    return serial;
+}
 
 /* Perform ACTION on TARGET with SERIAL, which must succeed; its result. */
 static bool act(const char *target, const char *action, int64_t serial)
@@ -157,138 +178,271 @@ static bool same_calls(struct portal_fake_calls a, struct portal_fake_calls b)
     return !memcmp(&a, &b, sizeof a);
 }
 
-static void test_a_handoff_from_the_prefix_to_the_command(void)
+static void test_a_terminal_chord_falls_through(void)
 {
-    char *web = open_view("web", false);
+    char *terminal = open_view("terminal", false);
+    /* The program gets typing, and every chord but Super's: tmux gets C-b.
+       A key that types no character, here Tab, is the program's too. */
     press('x', 0);
+    press('X', SHIFT);
     press('b', C);
-    CHECK(went("%s x, held C-b", web));
-    int64_t serial = handoff("prefix", web);
+    press('x', M);
+    press('\t', S);
+    CHECK(went("%s x, %s S-X, %s C-b, %s M-x, %s s-\t", terminal, terminal, terminal, terminal,
+               terminal));
+    CHECK(sent(""));
+    /* A Super chord goes to Emacs, as typed. */
+    press('x', S);
+    CHECK(went("held s-x"));
+    int64_t serial = key_record(terminal, 'x', S);
     CHECK(serial > 0);
     /* Emacs has the keyboard while it handles the handoff. */
-    CHECK(!act(web, "focused", 0));
-    CHECK(act(web, "pending", serial));
-    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_PENDING);
+    CHECK(!act(terminal, "focused", 0));
+    CHECK(act(terminal, "pending", serial));
+    CHECK(portal_input_owner(text(terminal)) == PORTAL_OWNER_PENDING);
     /* Emacs is slow to acknowledge: everything typed meanwhile waits. */
     press('x', C);
     press('b', 0);
     CHECK(went("held C-x, held b"));
     portal_fake_run();
     CHECK(went(""));
-    CHECK(act(web, "ack", serial));
-    CHECK(!act(web, "ack", serial));
+    CHECK(act(terminal, "ack", serial));
+    CHECK(!act(terminal, "ack", serial));
     portal_fake_run();
     CHECK(went("emacs C-x, emacs b"));
-    CHECK(act(web, "command", serial));
-    CHECK(act(web, "pending", serial));
+    CHECK(act(terminal, "command", serial));
+    CHECK(act(terminal, "pending", serial));
     press('y', 0);
     CHECK(went("emacs y"));
     struct portal_fake_calls before = portal_fake_calls();
-    CHECK(act(web, "finish", serial));
+    CHECK(act(terminal, "finish", serial));
     CHECK(portal_fake_calls().discarded == before.discarded + 1);
-    CHECK(!act(web, "pending", 0));
+    CHECK(!act(terminal, "pending", 0));
     /* Emacs gives the view the keyboard back. */
-    CHECK(act(web, "focus", 0));
-    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_VIEW);
+    CHECK(act(terminal, "focus", 0));
+    CHECK(portal_input_owner(text(terminal)) == PORTAL_OWNER_VIEW);
     press('z', 0);
-    CHECK(went("%s z", web));
+    CHECK(went("%s z", terminal));
+    /* Shift made the character, and the record keeps both. */
+    press('!', S | SHIFT);
+    CHECK(act(terminal, "finish", key_record(terminal, '!', S | SHIFT)));
+    CHECK(act(terminal, "focus", 0));
+    CHECK(went("held s-S-!"));
+    CHECK(sent(""));
+    close_view(terminal);
+}
+
+static void test_a_page_is_offered_chords(void)
+{
+    char *web = open_view("web", false);
+    /* Typing, and keys that type no character, go straight to the page. */
+    press('x', 0);
+    press('X', SHIFT);
+    press('\t', C);
+    CHECK(went("%s x, %s S-X, %s C-\t", web, web, web));
+    /* A chord is offered, and what follows waits for the page's answer. */
+    press('x', C);
+    press('b', 0);
+    press('s', C);
+    CHECK(went("offered C-x, held b, held C-s"));
+    CHECK(sent(""));
+    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_VIEW);
+    /* Unused, it goes to Emacs, and so does what followed it. */
+    portal_fake_answer(false);
+    CHECK(went("unused held C-x"));
+    int64_t serial = key_record(web, 'x', C);
+    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_PENDING);
+    CHECK(act(web, "ack", serial));
+    portal_fake_run();
+    CHECK(went("emacs b, emacs C-s"));
+    CHECK(act(web, "command", serial));
+    CHECK(act(web, "finish", serial));
+    CHECK(act(web, "focus", 0));
+    /* Used, it stays with the page, and so does what followed it. */
+    press('z', S);
+    press('a', 0);
+    CHECK(went("offered s-z, held a"));
+    portal_fake_answer(true);
+    portal_fake_run();
+    CHECK(went("used s-z, %s a", web));
+    /* A chord's repeats are offered too, but never start a handoff. */
+    repeat('z', S);
+    portal_fake_answer(false);
+    CHECK(went("offered s-z repeat, unused taken s-z repeat"));
+    CHECK(sent(""));
+    close_view(web);
+}
+
+static void test_shortcuts_before_emacs(void)
+{
+    char *terminal = open_view("terminal", false);
+    struct portal_fake_calls before = portal_fake_calls();
+    press('c', S);
+    press('v', S);
+    CHECK(went("taken s-c, taken s-v"));
+    CHECK(portal_fake_calls().copied == before.copied + 1);
+    CHECK(portal_fake_calls().pasted == before.pasted + 1);
+    /* Held down, a shortcut repeats. */
+    repeat('v', S);
+    CHECK(went("taken s-v repeat"));
+    CHECK(portal_fake_calls().pasted == before.pasted + 2);
+    /* With other modifiers, it is Emacs's. */
+    press('C', S | SHIFT);
+    CHECK(act(terminal, "finish", key_record(terminal, 'C', S | SHIFT)));
+    CHECK(went("held s-S-C"));
+    close_view(terminal);
+
+    /* A page may use Super-C itself; only an unused one copies. */
+    char *web = open_view("web", false);
+    press('c', S);
+    portal_fake_answer(true);
+    press('c', S);
+    press('x', 0);
+    portal_fake_answer(false);
+    portal_fake_run();
+    CHECK(went("offered s-c, used s-c, offered s-c, held x, unused taken s-c, %s x", web));
+    CHECK(portal_fake_calls().copied == before.copied + 2);
+    CHECK(sent(""));
+    close_view(web);
+}
+
+static void test_the_keyboard_moving_during_an_offer(void)
+{
+    char *web = open_view("web", false);
+    /* Command-Escape before the page answers: the keys typed after the
+       chord follow the keyboard to Emacs, and the chord goes nowhere. */
+    press('x', C);
+    press('y', 0);
+    portal_fake_escape();
+    portal_fake_answer(false);
+    portal_fake_run();
+    CHECK(went("offered C-x, held y, unused taken C-x, emacs y"));
+    CHECK(sent(""));
+    /* Command-Escape with the page using the chord. */
+    CHECK(act(web, "focus", 0));
+    press('x', C);
+    press('y', 0);
+    portal_fake_escape();
+    portal_fake_answer(true);
+    portal_fake_run();
+    CHECK(went("offered C-x, held y, used C-x, emacs y"));
     CHECK(sent(""));
     close_view(web);
 }
 
 static void test_the_trigger_again_goes_to_the_app(void)
 {
-    char *web = open_view("web", false);
-    /* Typed faster than Emacs acknowledges: the prefix, repeated, then the
-       key held down. */
-    press('b', C);
-    press('b', C);
-    repeat('b', C);
+    const portal_binding regular[] = {{{'j', S}, 100}};
+    CHECK(bindings(regular, 1, NULL, 0, NULL));
+    char *terminal = open_view("terminal", false);
+    /* Typed faster than Emacs acknowledges: a native binding's chord,
+       repeated, then the key held down. */
+    press('j', S);
+    press('j', S);
+    repeat('j', S);
     press('x', 0);
-    CHECK(went("held C-b, held C-b, held C-b repeat, held x"));
-    int64_t serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
+    CHECK(went("held s-j, held s-j, held s-j repeat, held x"));
+    int64_t event = 0, serial = handoff_key("binding", terminal, &event);
+    CHECK(event == 100);
+    CHECK(act(terminal, "ack", serial));
     portal_fake_run();
     /* Only the first key of the sequence, and only its press, is literal. */
-    CHECK(went("taken C-b, taken C-b repeat, emacs x"));
-    CHECK(sent("literal %s %" PRId64 " 0\n", web, serial));
-    CHECK(act(web, "command", serial));
-    CHECK(act(web, "literal", serial));
-    CHECK(went("literal C-b"));
-    CHECK(act(web, "focused", 0));
-    CHECK(act(web, "pending", serial)); /* Emacs's own focus is no abandonment. */
-    CHECK(act(web, "finish", serial));
-    /* A key of the sequence after the first is Emacs's, even the trigger,
-       as in C-b C-x C-b. */
-    press('b', C);
-    serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
+    CHECK(went("taken s-j, taken s-j repeat, emacs x"));
+    CHECK(sent("literal %s %" PRId64 " 0\n", terminal, serial));
+    CHECK(act(terminal, "command", serial));
+    CHECK(act(terminal, "literal", serial));
+    CHECK(went("literal s-j"));
+    CHECK(act(terminal, "focused", 0));
+    CHECK(act(terminal, "pending", serial)); /* Emacs's own focus is no abandonment. */
+    CHECK(act(terminal, "finish", serial));
+    /* A key of the sequence after the first is Emacs's, even the trigger. */
+    press('j', S);
+    serial = handoff("binding", terminal);
+    CHECK(act(terminal, "ack", serial));
     press('x', C);
-    press('b', C);
-    CHECK(went("held C-b, emacs C-x, emacs C-b"));
-    CHECK(act(web, "finish", serial));
-    /* Without a trigger, there is nothing to send. */
+    press('j', S);
+    CHECK(went("held s-j, emacs C-x, emacs s-j"));
+    CHECK(act(terminal, "finish", serial));
+    CHECK(act(terminal, "focus", 0));
+    /* After a chord that fell through, the trigger again is Emacs's, as in
+       C-x C-x; only its repeats are dropped. */
+    press('x', S);
+    serial = key_record(terminal, 'x', S);
+    CHECK(act(terminal, "ack", serial));
+    press('x', S);
+    repeat('x', S);
+    CHECK(went("held s-x, emacs s-x, taken s-x repeat"));
+    CHECK(sent(""));
+    /* There is no literal to send. */
     portal_text error = {0};
     bool result;
-    CHECK(!portal_input_perform(text(web), text("literal"), 0, &result, &error));
-    CHECK(error.data && !strcmp(error.data, "No captured prefix key to send"));
+    CHECK(!portal_input_perform(text(terminal), text("literal"), serial, &result, &error));
+    CHECK(error.data && !strcmp(error.data, "No captured native binding key to send"));
+    free(error.data);
+    CHECK(act(terminal, "finish", serial));
+    /* Without a trigger, there is nothing to send either. */
+    error = (portal_text) {0};
+    CHECK(!portal_input_perform(text(terminal), text("literal"), 0, &result, &error));
+    CHECK(error.data && !strcmp(error.data, "No captured native binding key to send"));
     free(error.data);
     CHECK(sent(""));
-    close_view(web);
+    close_view(terminal);
+    CHECK(bindings(NULL, 0, NULL, 0, NULL));
 }
 
 static void test_cancelling_a_handoff(void)
 {
-    char *web = open_view("web", false);
+    char *terminal = open_view("terminal", false);
     /* C-g while Emacs reads. */
-    press('b', C);
-    int64_t serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
+    press('x', S);
+    int64_t serial = key_record(terminal, 'x', S);
+    CHECK(act(terminal, "ack", serial));
     press('g', C);
     repeat('g', C);
-    CHECK(went("held C-b, taken C-g, taken C-g repeat"));
-    CHECK(sent("cancel %s %" PRId64 " 0\n", web, serial));
-    CHECK(act(web, "finish", serial));
+    CHECK(went("held s-x, taken C-g, taken C-g repeat"));
+    CHECK(sent("cancel %s %" PRId64 " 0\n", terminal, serial));
+    CHECK(act(terminal, "finish", serial));
 
     /* Command-Escape, before Emacs acknowledges: what the view held is
        dropped, and a late acknowledgement does nothing. */
-    CHECK(act(web, "focus", 0));
-    press('b', C);
+    CHECK(act(terminal, "focus", 0));
+    press('x', S);
     press('x', 0);
-    serial = handoff("prefix", web);
+    serial = key_record(terminal, 'x', S);
     portal_fake_escape();
-    CHECK(sent("escape %s %" PRId64 " 0\n", web, serial));
-    CHECK(!act(web, "pending", 0));
-    CHECK(!act(web, "ack", serial));
+    CHECK(sent("escape %s %" PRId64 " 0\n", terminal, serial));
+    CHECK(!act(terminal, "pending", 0));
+    CHECK(!act(terminal, "ack", serial));
     portal_fake_run();
     press('y', 0);
-    CHECK(went("held C-b, held x, emacs y"));
+    CHECK(went("held s-x, held x, emacs y"));
 
     /* Command-Escape while the view has the keyboard only returns it. */
-    CHECK(act(web, "focus", 0));
+    CHECK(act(terminal, "focus", 0));
     portal_fake_escape();
-    CHECK(!act(web, "focused", 0));
+    CHECK(!act(terminal, "focused", 0));
     CHECK(sent(""));
 
     /* Emacs's unfocus ends a handoff silently: Emacs asked for it. */
-    CHECK(act(web, "focus", 0));
-    press('b', C);
-    serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
-    CHECK(act(web, "unfocus", 0));
-    CHECK(!act(web, "pending", serial));
-    CHECK(!act(web, "finish", serial));
-    press('b', C);
-    CHECK(went("held C-b, emacs C-b"));
+    CHECK(act(terminal, "focus", 0));
+    press('x', S);
+    serial = key_record(terminal, 'x', S);
+    CHECK(act(terminal, "ack", serial));
+    CHECK(act(terminal, "unfocus", 0));
+    CHECK(!act(terminal, "pending", serial));
+    CHECK(!act(terminal, "finish", serial));
+    press('x', S);
+    CHECK(went("held s-x, emacs s-x"));
     CHECK(sent(""));
-    close_view(web);
+    close_view(terminal);
 }
 
 static void test_a_click_abandons_a_handoff_first(void)
 {
     char *web = open_view("web", false);
-    press('b', C);
-    int64_t serial = handoff("prefix", web);
+    press('x', C);
+    portal_fake_answer(false);
+    int64_t serial = key_record(web, 'x', C);
     CHECK(act(web, "ack", serial));
     /* Emacs reads the escape before the select, so it does not read the
        select as the next key. */
@@ -297,7 +451,7 @@ static void test_a_click_abandons_a_handoff_first(void)
     CHECK(act(web, "focused", 0));
     CHECK(!act(web, "finish", serial));
     press('x', 0);
-    CHECK(went("held C-b, %s x", web));
+    CHECK(went("offered C-x, unused held C-x, %s x", web));
     /* A click in the view that has the keyboard selects nothing. */
     CHECK(portal_fake_click(web));
     CHECK(sent(""));
@@ -306,15 +460,15 @@ static void test_a_click_abandons_a_handoff_first(void)
 
 static void test_emacs_moving_the_keyboard_keeps_the_handoff(void)
 {
-    char *web = open_view("web", false);
-    char *other = open_view("web", false);
-    press('b', C);
-    int64_t serial = handoff("prefix", other);
+    char *terminal = open_view("terminal", false);
+    char *other = open_view("terminal", false);
+    press('x', S);
+    int64_t serial = key_record(other, 'x', S);
     CHECK(act(other, "ack", serial));
     CHECK(act(other, "command", serial));
-    /* The command gives views the keyboard, as C-b s-f and C-b o do. */
+    /* The command gives views the keyboard, as other-window does. */
     portal_input_request(true);
-    CHECK(act(web, "focus", 0));
+    CHECK(act(terminal, "focus", 0));
     portal_input_focus(text(other), true);
     portal_input_request(false);
     CHECK(act(other, "pending", serial));
@@ -322,34 +476,34 @@ static void test_emacs_moving_the_keyboard_keeps_the_handoff(void)
     CHECK(sent(""));
     /* The same report from the user abandons it. */
     CHECK(act(other, "focus", 0));
-    press('b', C);
-    serial = handoff("prefix", other);
+    press('x', S);
+    serial = key_record(other, 'x', S);
     portal_input_focus(text(other), true);
     CHECK(sent("escape %s %" PRId64 " 0\n", other, serial));
-    CHECK(went("held C-b, held C-b"));
+    CHECK(went("held s-x, held s-x"));
     close_view(other);
-    close_view(web);
+    close_view(terminal);
 }
 
 static void test_serials_name_one_handoff(void)
 {
-    char *web = open_view("web", false);
-    char *other = open_view("web", false);
-    press('b', C);
-    int64_t first = handoff("prefix", other);
+    char *terminal = open_view("terminal", false);
+    char *other = open_view("terminal", false);
+    press('x', S);
+    int64_t first = key_record(other, 'x', S);
     CHECK(act(other, "ack", first));
     CHECK(act(other, "finish", first));
     CHECK(act(other, "focus", 0));
-    press('b', C);
-    int64_t second = handoff("prefix", other);
+    press('x', S);
+    int64_t second = key_record(other, 'x', S);
     CHECK(second != first);
     /* A finished handoff's serial, or another view's, does nothing. */
     struct portal_fake_calls before = portal_fake_calls();
     const char *actions[] = {"pending", "ack", "command", "finish", "literal", "focus",
-                             "unfocus", "passthrough", "unknown"};
+                             "unfocus", "unknown"};
     for (size_t i = 0; i < sizeof actions / sizeof *actions; i++) {
         CHECK(!act(other, actions[i], first));
-        CHECK(!act(web, actions[i], second));
+        CHECK(!act(terminal, actions[i], second));
     }
     CHECK(same_calls(portal_fake_calls(), before));
     CHECK(act(other, "pending", second));
@@ -359,91 +513,54 @@ static void test_serials_name_one_handoff(void)
     CHECK(!act("web:0", "unknown", 0));
     bool result = true;
     portal_text error = {0};
-    CHECK(!portal_input_perform(text(web), text("unknown"), 0, &result, &error));
+    CHECK(!portal_input_perform(text(terminal), text("unknown"), 0, &result, &error));
     CHECK(error.data && !strcmp(error.data, "Unknown Portal input action: unknown"));
     free(error.data);
-    CHECK(went("held C-b, held C-b"));
+    /* Passthrough is gone. */
+    error = (portal_text) {0};
+    CHECK(!portal_input_perform(text(terminal), text("passthrough"), 0, &result, &error));
+    free(error.data);
+    CHECK(went("held s-x, held s-x"));
     close_view(other);
-    close_view(web);
+    close_view(terminal);
 }
 
 static void test_hiding_or_closing_ends_a_handoff(void)
 {
-    char *web = open_view("web", false);
-    press('b', C);
-    int64_t serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
+    char *terminal = open_view("terminal", false);
+    press('x', S);
+    int64_t serial = key_record(terminal, 'x', S);
+    CHECK(act(terminal, "ack", serial));
     press('x', 0);
     struct portal_fake_calls before = portal_fake_calls();
     portal_text error = {0};
-    CHECK(portal_views_hide(text(web), &error));
+    CHECK(portal_views_hide(text(terminal), &error));
     CHECK(portal_fake_calls().discarded == before.discarded + 1);
-    CHECK(!act(web, "pending", 0));
-    CHECK(!act(web, "finish", serial));
+    CHECK(!act(terminal, "pending", 0));
+    CHECK(!act(terminal, "finish", serial));
     /* A hidden view cannot have the keyboard. */
-    CHECK(!act(web, "focus", 0));
+    CHECK(!act(terminal, "focus", 0));
     CHECK(sent(""));
-    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 100, 100}, text("frame"), &error));
-    CHECK(act(web, "focus", 0));
+    CHECK(portal_views_place(text(terminal), (portal_edges) {0, 0, 100, 100}, text("frame"),
+                             &error));
+    CHECK(act(terminal, "focus", 0));
 
     /* Closing before Emacs acknowledges: the late acknowledgement and
        completion reach no view, and no later view takes the serial. */
-    press('b', C);
+    press('x', S);
     press('y', 0);
-    serial = handoff("prefix", web);
-    char *closed = strdup(web);
-    close_view(web);
+    serial = key_record(terminal, 'x', S);
+    char *closed = strdup(terminal);
+    close_view(terminal);
     CHECK(!act(closed, "ack", serial));
     CHECK(!act(closed, "finish", serial));
-    char *next = open_view("web", false);
+    char *next = open_view("terminal", false);
     CHECK(!act(next, "ack", serial));
     press('y', 0);
-    CHECK(went("held C-b, emacs x, held C-b, held y, %s y", next));
+    CHECK(went("held s-x, emacs x, held s-x, held y, %s y", next));
     CHECK(sent(""));
     free(closed);
     close_view(next);
-}
-
-static void test_passthrough_gives_the_app_every_key(void)
-{
-    char *web = open_view("web", false);
-    CHECK(act(web, "passthrough", 0));
-    CHECK(act(web, "passthrough-p", 0));
-    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_PASSTHROUGH);
-    press('b', C);
-    press('g', C);
-    CHECK(went("%s C-b, %s C-g", web, web));
-    /* Until the view loses the keyboard. */
-    portal_fake_escape();
-    CHECK(!act(web, "passthrough-p", 0));
-    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_EMACS);
-    CHECK(act(web, "focus", 0));
-    press('b', C);
-    CHECK(went("held C-b"));
-    int64_t serial = handoff("prefix", web);
-    /* M-x portal-input-passthrough, run from the prefix. */
-    CHECK(act(web, "ack", serial));
-    CHECK(act(web, "command", serial));
-    CHECK(act(web, "passthrough", 0));
-    CHECK(act(web, "finish", serial));
-    CHECK(act(web, "passthrough-p", 0));
-    press('b', C);
-    CHECK(went("%s C-b", web));
-    /* Emacs's focus ends it, and so does another view taking the keyboard. */
-    CHECK(act(web, "focus", 0));
-    CHECK(!act(web, "passthrough-p", 0));
-    char *other = open_view("web", false);
-    CHECK(act(web, "passthrough", 0));
-    CHECK(act(other, "focus", 0));
-    CHECK(!act(web, "passthrough-p", 0));
-    /* A view Emacs cannot focus is not in passthrough. */
-    portal_text error = {0};
-    CHECK(portal_views_hide(text(web), &error));
-    CHECK(!act(web, "passthrough", 0));
-    CHECK(!act(web, "passthrough-p", 0));
-    CHECK(sent(""));
-    close_view(other);
-    close_view(web);
 }
 
 static bool bindings(const portal_binding *regular, size_t regular_count,
@@ -451,18 +568,6 @@ static bool bindings(const portal_binding *regular, size_t regular_count,
 {
     portal_text error = {0};
     bool done = portal_input_bindings(regular, regular_count, quick, quick_count, &error);
-    bool expected = failure ? !done && error.data && !strcmp(error.data, failure) : done;
-    if (!expected)
-        fprintf(stderr, "Expected %s, got %s\n", failure ? failure : "success",
-                error.data ? error.data : "success");
-    free(error.data);
-    return expected;
-}
-
-static bool prefix(portal_chord chord, const char *failure)
-{
-    portal_text error = {0};
-    bool done = portal_input_prefix(chord, &error);
     bool expected = failure ? !done && error.data && !strcmp(error.data, failure) : done;
     if (!expected)
         fprintf(stderr, "Expected %s, got %s\n", failure ? failure : "success",
@@ -481,15 +586,16 @@ static int64_t binding(const char *target)
 
 static void test_native_bindings_by_profile(void)
 {
-    const portal_binding regular[] = {{{'j', S}, 100}, {{'!', S}, 101}, {{'J', S | SHIFT}, 102}};
-    const portal_binding quick[] = {{{'`', S}, 200}, {{'j', S}, 100}};
+    const portal_binding regular[] = {{{'j', C}, 100}, {{'!', S}, 101}, {{'J', S | SHIFT}, 102}};
+    const portal_binding quick[] = {{{'`', S}, 200}, {{'j', C}, 100}};
     CHECK(bindings(regular, 3, quick, 2, NULL));
     char *terminal = open_view("terminal", false);
-    press('`', S);
-    CHECK(went("%s s-`", terminal));
+    /* A binding claims a chord the program would get. */
+    press('j', C);
+    CHECK(binding(terminal) == 100);
     /* Shift that made the punctuation is no modifier; on a letter it is. */
     press('!', S | SHIFT);
-    CHECK(went("held s-S-!"));
+    CHECK(went("held C-j, held s-S-!"));
     int64_t event, serial = handoff_key("binding", terminal, &event);
     CHECK(event == 101);
     CHECK(act(terminal, "ack", serial));
@@ -500,23 +606,25 @@ static void test_native_bindings_by_profile(void)
     CHECK(act(terminal, "focus", 0));
     press('J', S | SHIFT);
     CHECK(binding(terminal) == 102);
-    press('j', S);
+    press('J', C);
     CHECK(binding(terminal) == 100);
-    press('J', S);
-    CHECK(binding(terminal) == 100);
-    CHECK(went("held s-S-J, held s-j, held s-J"));
+    CHECK(went("held s-S-J, held C-J"));
+    /* Not the quick profile's: it falls through. */
+    press('`', S);
+    CHECK(act(terminal, "finish", key_record(terminal, '`', S)));
     close_view(terminal);
 
     char *quick_terminal = open_view("terminal", true);
     press('`', S);
     CHECK(binding(quick_terminal) == 200);
-    press('j', S);
+    press('j', C);
     CHECK(binding(quick_terminal) == 100);
     close_view(quick_terminal);
+    /* Web views have none. */
     char *web = open_view("web", false);
-    press('j', S);
-    press('j', 0);
-    CHECK(went("held s-`, held s-j, %s s-j, %s j", web, web));
+    press('j', C);
+    portal_fake_answer(true);
+    CHECK(went("held s-`, held s-`, held C-j, offered C-j, used C-j"));
     close_view(web);
     CHECK(bindings(NULL, 0, NULL, 0, NULL));
 }
@@ -534,52 +642,37 @@ static void test_configuration_changes_atomically(void)
         CHECK(bindings(invalid[i], 1, NULL, 0, "Invalid native terminal binding"));
         CHECK(bindings(working, 1, invalid[i], 1, "Invalid native terminal binding"));
     }
-    const portal_binding prefix_binding[] = {{{'B', C}, 1}};
     const portal_binding duplicate[] = {{{'k', S}, 1}, {{'K', S}, 2}};
-    CHECK(bindings(prefix_binding, 1, NULL, 0, "Conflicting native terminal binding"));
     CHECK(bindings(working, 1, duplicate, 2, "Conflicting native terminal binding"));
-    /* A prefix that is a binding's chord, or not one modified ASCII
-       character, changes nothing either. */
-    CHECK(prefix((portal_chord) {'J', S}, "Portal prefix conflicts with a native binding"));
-    const portal_chord bad[] = {{'a', 0}, {'!', SHIFT}, {0x7f, C}, {'a', 16}, {0, C}, {0x3bb, C}};
-    for (size_t i = 0; i < sizeof bad / sizeof *bad; i++)
-        CHECK(prefix(bad[i], "Expected one modified ASCII prefix"));
     char *terminal = open_view("terminal", false);
-    press('b', C);
-    CHECK(act(terminal, "finish", handoff("prefix", terminal)));
-    CHECK(act(terminal, "focus", 0));
     press('j', S);
     CHECK(act(terminal, "finish", handoff("binding", terminal)));
     CHECK(act(terminal, "focus", 0));
-    /* A new prefix takes over at once. */
-    CHECK(prefix((portal_chord) {'a', C}, NULL));
-    press('b', C);
-    press('A', C | SHIFT);
-    CHECK(went("held C-b, held s-j, %s C-b, %s C-S-A", terminal, terminal));
-    press('a', C);
-    CHECK(went("held C-a"));
-    CHECK(act(terminal, "finish", handoff("prefix", terminal)));
-    CHECK(prefix((portal_chord) {'b', C}, NULL));
+    CHECK(went("held s-j"));
     CHECK(bindings(NULL, 0, NULL, 0, NULL));
+    /* Without the binding, the chord falls through. */
+    press('j', S);
+    CHECK(act(terminal, "finish", key_record(terminal, 'j', S)));
+    CHECK(went("held s-j"));
     close_view(terminal);
 }
 
-static void test_a_held_prefix_takes_one_handoff(void)
+static void test_a_held_chord_takes_one_handoff(void)
 {
-    char *web = open_view("web", false);
-    /* The prefix's own repeats, before and after it starts a handoff. */
-    repeat('b', C);
-    CHECK(went("taken C-b repeat"));
+    char *terminal = open_view("terminal", false);
+    /* A chord's own repeats, before and after it starts a handoff. */
+    repeat('x', S);
+    CHECK(went("taken s-x repeat"));
     CHECK(sent(""));
-    press('b', C);
-    repeat('b', C);
-    int64_t serial = handoff("prefix", web);
-    CHECK(act(web, "ack", serial));
+    press('x', S);
+    repeat('x', S);
+    int64_t serial = key_record(terminal, 'x', S);
+    CHECK(act(terminal, "ack", serial));
     portal_fake_run();
-    CHECK(went("held C-b, held C-b repeat, taken C-b repeat"));
+    CHECK(went("held s-x, held s-x repeat, taken s-x repeat"));
     CHECK(sent(""));
-    CHECK(act(web, "finish", serial));
-    close_view(web);
+    CHECK(act(terminal, "finish", serial));
+    close_view(terminal);
 }
 
 int main(void)
@@ -588,17 +681,19 @@ int main(void)
     if (pipe(fds) || fcntl(fds[0], F_SETFL, O_NONBLOCK) == -1 || !portal_channel_connect(fds[1]))
         abort();
     records = fds[0];
-    test_a_handoff_from_the_prefix_to_the_command();
+    test_a_terminal_chord_falls_through();
+    test_a_page_is_offered_chords();
+    test_shortcuts_before_emacs();
+    test_the_keyboard_moving_during_an_offer();
     test_the_trigger_again_goes_to_the_app();
     test_cancelling_a_handoff();
     test_a_click_abandons_a_handoff_first();
     test_emacs_moving_the_keyboard_keeps_the_handoff();
     test_serials_name_one_handoff();
     test_hiding_or_closing_ends_a_handoff();
-    test_passthrough_gives_the_app_every_key();
     test_native_bindings_by_profile();
     test_configuration_changes_atomically();
-    test_a_held_prefix_takes_one_handoff();
+    test_a_held_chord_takes_one_handoff();
     CHECK(!portal_fake_calls().misused);
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);

@@ -233,8 +233,7 @@ static bool same_colors(const portal_colors *a, const portal_colors *b)
 {
     return same_color(a->background, b->background) && same_color(a->border, b->border)
         && same_color(a->shadow, b->shadow) && same_color(a->foreground, b->foreground)
-        && same_color(a->success, b->success) && same_color(a->accent, b->accent)
-        && same_color(a->warning, b->warning);
+        && same_color(a->success, b->success) && same_color(a->accent, b->accent);
 }
 
 static bool same_snapshot(const portal_toolbar *a, const portal_toolbar *b)
@@ -532,7 +531,6 @@ static bool own(struct portal_toolbar_state *toolbar, portal_text *error)
     case PORTAL_OWNER_EMACS:
         return portal_view_focus(toolbar->native, error);
     case PORTAL_OWNER_VIEW:
-    case PORTAL_OWNER_PASSTHROUGH:
         break;
     }
     portal_input_escape(toolbar->target);

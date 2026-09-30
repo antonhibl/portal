@@ -136,11 +136,11 @@
           (with-current-buffer other (portal-excalidraw--close) (set-buffer-modified-p nil))
           (kill-buffer other))))))
 
-(ert-deftest portal-excalidraw-gui-emacs-prefix-keeps-fast-followup-keys ()
+(ert-deftest portal-excalidraw-gui-unused-chord-keeps-fast-followup-keys ()
+  ;; The drawing does not use C-x, so C-x C-s reaches Emacs whole, typed at once.
   (portal-excalidraw-gui--document
     (select-frame-set-input-focus (selected-frame))
     (portal-view-focus)
-    (portal-test-native-key 11 (ash 1 18) "\C-b")
     (portal-test-native-key 7 (ash 1 18) "\C-x")
     (portal-test-native-key 1 (ash 1 18) "\C-s")
     ;; Exercise the command loop's keymap lookup, not just a direct dispatch.

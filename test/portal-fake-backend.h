@@ -15,6 +15,7 @@ struct portal_fake_calls {
     size_t created, destroyed, attached, detached, described, misused;
     size_t loaded, went, posted; /* Web pages loaded, history steps, and messages posted. */
     size_t focused, unfocused, replayed, discarded;
+    size_t copied, pasted; /* Copy and Paste commands given to views' apps. */
     size_t listed, themed, entered; /* Theme lists, themes applied, and Enters tried. */
     size_t fields;   /* Find fields given the keyboard. */
     size_t appeared; /* Web appearances set. */
@@ -54,9 +55,12 @@ size_t portal_fake_timers(void);
 void portal_fake_fire_timers(void);
 
 /* A user presses CHORD, or it repeats, in the fake's one window.  It goes to
-   the view holding a trigger, if any, else the view with the keyboard, else
-   Emacs, and the fake logs where it went. */
+   the view holding a trigger or offering a press, if any, else the view with
+   the keyboard, else Emacs, and the fake logs where it went. */
 void portal_fake_press(portal_chord chord, bool repeat);
+/* The page of the view offering a press to it has handled the press: it
+   USED it, or reports it unused to the core. */
+void portal_fake_answer(bool used);
 /* Run the event loop: deliver the presses the core replayed, in order. */
 void portal_fake_run(void);
 /* The user presses Command-Escape. */
@@ -64,9 +68,11 @@ void portal_fake_escape(void);
 /* The user clicks in TARGET's view, which sends a select record and gives it
    the keyboard.  False if TARGET names no attached view. */
 bool portal_fake_click(const char *target);
-/* Where each press went since the last call, such as "held C-b, emacs x":
-   to Emacs, a view's app, by its target, held, taken, or its trigger
-   delivered as a literal.  Valid until the next call. */
+/* Where each press went since the last call, such as "held s-x, emacs x":
+   to Emacs, a view's app, by its target, held, taken, offered to its page,
+   or its trigger delivered as a literal; and a page's answer, "used" or
+   "unused", and what the core did with an unused press, such as "unused
+   held s-x".  Valid until the next call. */
 const char *portal_fake_keys(void);
 
 #endif

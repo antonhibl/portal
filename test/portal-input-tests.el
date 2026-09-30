@@ -3,45 +3,55 @@
 (require 'ert)
 (require 'portal)
 
-(ert-deftest portal-input-shared-map-keeps-legacy-terminal-commands ()
-  (with-temp-buffer
-    (portal-terminal-mode)
-    (let ((map (portal-input--map)))
-      (should (eq (lookup-key map "d") #'portal-input-unfocus))
-      (should (eq (lookup-key map "o") #'other-window))
-      (should (eq (lookup-key map "c") #'portal-terminal-new))
-      (should (eq (lookup-key map "mc") #'portal-terminal-new))
-      (should (equal (lookup-key map (kbd "C-x")) (key-binding (kbd "C-x")))))
-    (setq portal-terminal--quick-root "/tmp/")
-    (let ((map (portal-input--map)))
-      (should (eq (lookup-key map "o") #'other-window))
-      (should-not (lookup-key map "c")))))
+(ert-deftest portal-input-chords-become-emacs-events ()
+  ;; The core sends a chord as typed: Shift made the character.
+  (dolist (case '((?x 8 "s-x") (?A 9 "s-A") (?! 9 "s-!") (?A 3 "C-S-a") (?x 2 "C-x")
+                  (?x 4 "M-x") (?\s 9 "S-s-SPC") (?\s 2 "C-SPC") (?é 4 "M-é")))
+    (should (equal (key-description (vector (portal-input--event (nth 0 case) (nth 1 case))))
+                   (nth 2 case)))))
 
 (defvar portal-input-test--called nil)
 (defun portal-input-test--save () (interactive) (setq portal-input-test--called t))
 
-(ert-deftest portal-input-gateway-respects-command-remapping-and-resumes ()
-  (with-temp-buffer
-    (portal-web-mode)
+(defmacro portal-input-test--in (mode &rest body)
+  "Run BODY in a buffer in MODE, as a native view's, with a fake module."
+  (declare (indent 1))
+  `(with-temp-buffer
+     (,mode)
+     (let (resumed actions)
+       (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
+                 ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
+                 ((symbol-function 'portal--input)
+                  (lambda (_target action &rest _) (push action actions) t)))
+         ,@body))))
+
+(ert-deftest portal-input-chord-reads-the-buffer-keymaps-and-resumes ()
+  ;; C-x C-s, as typed in the buffer: its remapping of save-buffer applies.
+  (portal-input-test--in portal-web-mode
     (use-local-map (make-sparse-keymap))
     (define-key (current-local-map) [remap save-buffer] #'portal-input-test--save)
-    (let ((portal-input-test--called nil) resumed
-          (unread-command-events (list ?\C-x ?\C-s)))
-      (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
-                ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
-                ((symbol-function 'portal--input) (lambda (&rest _) t)))
-        (portal-input--run "web:1" 1 (kbd "C-b") (portal-input--map)))
+    (let ((portal-input-test--called nil) (unread-command-events (list ?\C-s)))
+      (portal-input--run "web:1" 1 (kbd "C-x") nil)
       (should portal-input-test--called)
-      (should resumed))))
+      (should resumed)
+      (should (equal (reverse actions) '("ack" "command" "finish"))))))
+
+(ert-deftest portal-input-a-chord-alone-can-be-the-command ()
+  (portal-input-test--in portal-terminal-mode
+    (local-set-key (kbd "s-j") #'portal-input-test--save)
+    (let ((portal-input-test--called nil) (unread-command-events nil))
+      (portal-input--run "terminal:1" 1 (kbd "s-j") nil)
+      (should portal-input-test--called)
+      (should resumed)
+      (should-not unread-command-events))))
 
 (ert-deftest portal-input-escape-and-error-do-not-resume ()
   (dolist (kind '(unfocus escape error hidden))
     (with-temp-buffer
       (portal-web-mode)
       (let (resumed
-            (unread-command-events (pcase kind
-                                     ('unfocus (list ?d))
-                                     ('escape (list '(portal-input-escape ("web:1" 1 0)))))))
+            (unread-command-events (when (eq kind 'escape)
+                                     (list '(portal-input-escape ("web:1" 1 0))))))
         (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
                   ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
                   ;; Once the user or a hidden view ended the handoff, it
@@ -49,11 +59,13 @@
                   ((symbol-function 'portal--input)
                    (lambda (_target action &rest _)
                      (not (and (memq kind '(escape hidden)) (equal action "finish"))))))
-          (portal-input--run "web:1" 1 (kbd "C-b")
-                             (pcase kind
-                               ((or 'unfocus 'escape) (portal-input--map))
-                               ('error (lambda () (interactive) (error "Expected failure")))
-                               ('hidden #'ignore))))
+          (pcase kind
+            ('escape (portal-input--run "web:1" 1 (kbd "C-x") nil))
+            (_ (portal-input--run "web:1" 1 (kbd "s-j")
+                                  (pcase kind
+                                    ('unfocus #'portal-input-unfocus)
+                                    ('error (lambda () (interactive) (error "Expected failure")))
+                                    ('hidden #'ignore))))))
         ;; A command that hid the view, such as by showing another terminal
         ;; in its pane, still resumes the selected view.
         (should (eq resumed (eq kind 'hidden)))))))
@@ -93,10 +105,10 @@
                     ((symbol-function 'portal--input)
                      (lambda (_target action &rest _) (not (equal action "finish")))))
             (with-current-buffer origin
-              (portal-input--run "web:1" 1 (kbd "C-b") (funcall busy nil))
+              (portal-input--run "web:1" 1 (kbd "s-j") (funcall busy nil))
               (should resumed)
               (setq resumed nil)
-              (portal-input--run "web:1" 2 (kbd "C-b")
+              (portal-input--run "web:1" 2 (kbd "s-j")
                                  (funcall busy "escape web:1 2 0\\nescape web:2 3 0\\n"))
               (should-not resumed)
               (should (= (buffer-local-value 'portal-input--escaped origin) 2))
@@ -107,38 +119,42 @@
       (kill-buffer origin)
       (kill-buffer other))))
 
-(ert-deftest portal-input-escape-ends-a-prefix-without-taking-the-next-event ()
-  ;; A native handoff, such as Open in Emacs, escapes a pending prefix before
-  ;; its own event arrives; the event must survive for the command loop.
-  (with-temp-buffer
-    (portal-web-mode)
+(ert-deftest portal-input-escape-ends-a-sequence-without-taking-the-next-event ()
+  ;; A native handoff, such as Open in Emacs, escapes a key sequence Emacs is
+  ;; reading before its own event arrives; the event must survive for the
+  ;; command loop.
+  (portal-input-test--in portal-web-mode
     (let* ((edit '(portal-web-edit ("web:1")))
-           (unread-command-events (list '(portal-input-escape ("web:1" 1 0)) edit))
-           resumed)
-      (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
-                ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
-                ((symbol-function 'portal--input) (lambda (&rest _) t)))
-        (portal-input--run "web:1" 1 (kbd "C-b") (portal-input--map)))
+           (unread-command-events (list '(portal-input-escape ("web:1" 1 0)) edit)))
+      (portal-input--run "web:1" 1 (kbd "C-x") nil)
       (should-not resumed)
       (should (equal unread-command-events (list edit))))))
 
-(ert-deftest portal-input-old-prefix-setting-updates-shared-wrapper-map ()
-  (let ((original portal-input-prefix))
-    (unwind-protect
-        (progn
-          (setq portal-terminal-prefix "C-a")
-          (should (equal portal-input-prefix "C-a"))
-          (should (eq (lookup-key portal-input-mode-map (kbd "C-a")) #'portal-input-command))
-          (should-not (lookup-key portal-input-mode-map (kbd "C-b"))))
-      (setq portal-input-prefix original))))
+(ert-deftest portal-input-cancel-and-undefined-sequences-never-reach-the-view ()
+  (dolist (key (list '(portal-input-cancel ("web:1" 1 0)) ?~))
+    (portal-input-test--in portal-web-mode
+      (let ((unread-command-events (list key)))
+        (portal-input--run "web:1" 1 (kbd "C-x") nil)
+        (should resumed)
+        (should-not unread-command-events)
+        (should-not (member "literal" actions))))))
 
-(ert-deftest portal-input-prefix-descriptions-use-portal-modifiers ()
+(ert-deftest portal-input-native-binding-maps-send-their-trigger ()
+  ;; A native binding's prefix map: its trigger again goes to the app.
+  (portal-input-test--in portal-terminal-mode
+    (let ((map (make-sparse-keymap)) (unread-command-events (list ?\s-j)))
+      (keymap-set map "x" #'portal-input-test--save)
+      (portal-input--run "terminal:1" 1 (kbd "s-j") map)
+      (should (member "literal" actions))
+      (should resumed))))
+
+(ert-deftest portal-input-native-binding-chords-use-portal-modifiers ()
   ;; The native module's values, not a platform's key flags.
   (dolist (case '(("C-b" "b" 2) ("C-S-b" "b" 3) ("M-a" "a" 4) ("s-e" "e" 8)
                   ("s-!" "!" 8) ("s-J" "j" 9) ("C-M-s-SPC" " " 14)))
-    (should (equal (portal-input--prefix-description (car case)) (cdr case))))
+    (should (equal (portal-input--chord (car case)) (cdr case))))
   (dolist (bad '("b" "C-b x" "<f5>" "s-S-1" "C-é"))
-    (should-error (portal-input--prefix-description bad))))
+    (should-error (portal-input--chord bad))))
 
 (ert-deftest portal-input-wrapper-controls-work-with-evil ()
   (skip-unless (locate-library "evil"))
@@ -148,28 +164,22 @@
       (cl-letf (((symbol-function 'portal-excalidraw--start) #'ignore))
         (funcall mode))
       (evil-local-mode 1)
-      (let ((original portal-input-prefix))
-        (unwind-protect
-            (dolist (prefix '("C-b" "C-a"))
-              (setq portal-input-prefix prefix)
-              (dolist (state '(normal motion insert))
-                (evil-change-state state)
-                (should (eq (key-binding (kbd prefix)) #'portal-input-command))
-                (should (eq (key-binding (kbd "RET")) #'portal-input-focus))
-                (should (eq (key-binding (kbd "s-<escape>")) #'portal-input-unfocus))))
-          (setq portal-input-prefix original))))))
+      (dolist (state '(normal motion insert))
+        (evil-change-state state)
+        (should (eq (key-binding (kbd "RET")) #'portal-input-focus))
+        (should (eq (key-binding (kbd "s-<escape>")) #'portal-input-unfocus))))))
 
-(ert-deftest portal-input-cancel-and-unknown-prefix-never-reach-guest ()
-  (dolist (key '(?\C-g ?~))
-    (with-temp-buffer
-      (portal-web-mode)
-      (let ((unread-command-events (list key)) actions resumed)
-        (cl-letf (((symbol-function 'portal-view-buffers) (lambda (&rest _) (list (current-buffer))))
-                  ((symbol-function 'portal-input-focus) (lambda () (setq resumed t)))
-                  ((symbol-function 'portal--input)
-                   (lambda (_target action &rest _) (push action actions) t)))
-          (portal-input--run "web:1" 1 (kbd "C-b") (portal-input--map)))
-        (should resumed)
-        (should-not (member "literal" actions))))))
+(ert-deftest portal-input-chords-use-evil-state-keymaps ()
+  ;; A chord runs what it would in the buffer, Evil's state keymaps included.
+  (skip-unless (locate-library "evil"))
+  (require 'evil)
+  (portal-input-test--in portal-web-mode
+    (evil-local-mode 1)
+    (evil-normal-state)
+    (evil-local-set-key 'normal (kbd "C-c a") #'portal-input-test--save)
+    (let ((portal-input-test--called nil) (unread-command-events (list ?a)))
+      (portal-input--run "web:1" 1 (kbd "C-c") nil)
+      (should portal-input-test--called)
+      (should resumed))))
 
 (provide 'portal-input-tests)

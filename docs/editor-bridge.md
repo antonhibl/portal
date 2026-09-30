@@ -54,7 +54,8 @@ with the URL of each page a hosted view commits, including after Back and
 Forward, and `error` when a load fails or the web process stops. A click on a
 local `file:` link sends `follow` with its URL, and a Markdown preview's
 **Open in Emacs** sends `edit`; both first give Emacs the keyboard, ending any
-prefix it is reading, so the `escape` record comes before the `bridge` record.
+key sequence it is reading, so the `escape` record comes before the `bridge`
+record.
 `portal-web.el` handles `page`, `follow` and `edit` for every hosted app,
 tracking the page on screen and visiting linked files, and never passes them
 to the buffer's bridge function. URLs travel this way, not in records,
@@ -110,11 +111,11 @@ failed write keeps the buffer modified.
 The page's Save button and Command-S send `save`, which queues an Emacs save
 for the drawing's buffer. The page still has the keyboard at that point, so the
 save first returns focus to Emacs, which can then ask for a file name, and
-focuses the page again afterwards. Keyboard input uses the shared Portal
-prefix: `C-b C-x C-s` runs the normal Emacs save command, including the mode's
-remapping, and returns focus after the save and any file name prompt finish.
-`C-b d` and Command-Escape leave control with Emacs. Escape, Control-G and bare
-Control-X belong to the page.
+focuses the page again afterwards. The drawing does not use Control-X, so it
+reaches Emacs like any chord a page does not use: `C-x C-s` runs the normal
+Emacs save command, including the mode's remapping, and returns focus after the
+save and any file name prompt finish. Command-Escape leaves control with
+Emacs. Escape, and the chords the drawing uses, belong to the page.
 
 The buffer holds the latest synchronized JSON even if WebKit stops.
 `portal-excalidraw-reopen` rebuilds the view from that buffer; it never
@@ -152,5 +153,5 @@ The graphical tests need a disposable graphical Emacs with the test event
 module from the README loaded. Load `test/portal-excalidraw-gui-tests.el`, then
 run `M-x ert` with selector `^portal-excalidraw-gui-`. They exercise the real
 WKWebView, offline fonts, paste, image round trips, several drawings, revert,
-hidden views keeping their state, and rapid shared-prefix handoff. The
+hidden views keeping their state, and a rapid `C-x C-s` reaching Emacs. The
 test-only JavaScript evaluator is not part of the production module.

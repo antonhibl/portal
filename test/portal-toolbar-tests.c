@@ -264,7 +264,6 @@ static void test_each_layout_has_its_buttons(void)
 
 static void test_zoom_and_text_size_stop_at_their_limits(void)
 {
-    portal_text error = {0};
     char *web = open_web("navigation", false);
     const double steps[] = {110, 125, 150, 175, 200, 250, 300};
     for (size_t i = 0; i < sizeof steps / sizeof *steps; i++) {
@@ -310,7 +309,7 @@ static void test_zoom_and_text_size_stop_at_their_limits(void)
     close_view(failing);
 
     /* The keyboard's shortcuts take the same steps, in a terminal with the
-       keyboard, with or without a toolbar, and even in passthrough. */
+       keyboard, with or without a toolbar. */
     char *quick = open_terminal(true);
     enter(terminal);
     portal_fake_keys();
@@ -318,25 +317,22 @@ static void test_zoom_and_text_size_stop_at_their_limits(void)
     portal_fake_press((portal_chord) {'+', PORTAL_SUPER | PORTAL_SHIFT}, true);
     CHECK(!strcmp(portal_fake_keys(), "taken s-=, taken s-S-+ repeat"));
     CHECK(drawn(terminal).value == 16);
-    bool done = false;
-    CHECK(portal_input_perform(text(terminal), text("passthrough"), 0, &done, &error) && done);
     portal_fake_press((portal_chord) {'-', PORTAL_SUPER}, false);
-    portal_fake_press((portal_chord) {'-', PORTAL_SUPER | PORTAL_CONTROL}, false);
     portal_fake_press((portal_chord) {'0', PORTAL_SUPER | PORTAL_SHIFT}, false);
     CHECK(drawn(terminal).value == 14);
-    char expected[128];
-    snprintf(expected, sizeof expected, "taken s--, %s C-s--, taken s-S-0", terminal);
-    CHECK(!strcmp(portal_fake_keys(), expected));
+    CHECK(!strcmp(portal_fake_keys(), "taken s--, taken s-S-0"));
     enter(quick);
     portal_fake_press((portal_chord) {'=', PORTAL_SUPER}, false);
     CHECK(shows(quick, "\"font-size\":15", NULL));
-    /* A web view has no text size shortcut. */
+    /* A web view has no text size shortcut: what its page does not use is
+       Emacs's. */
     enter(web);
     portal_fake_keys();
     portal_fake_press((portal_chord) {'=', PORTAL_SUPER}, false);
-    snprintf(expected, sizeof expected, "%s s-=", web);
-    CHECK(!strcmp(portal_fake_keys(), expected));
+    portal_fake_answer(false);
+    CHECK(!strcmp(portal_fake_keys(), "offered s-=, unused held s-="));
     CHECK(drawn(web).value == 100);
+    drain();
     close_view(quick);
     close_view(terminal);
     close_view(web);
@@ -351,16 +347,17 @@ static void test_the_dot_shows_and_moves_the_keyboard(void)
     CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
     click(web, OWNER);
     CHECK(drawn(web).owner == PORTAL_OWNER_VIEW);
-    bool done = false;
-    CHECK(portal_input_perform(text(web), text("passthrough"), 0, &done, &error) && done);
-    CHECK(drawn(web).owner == PORTAL_OWNER_PASSTHROUGH);
     click(web, OWNER);
     CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
+    bool done = false;
     CHECK(portal_input_perform(text(web), text("focus"), 0, &done, &error) && done);
     CHECK(drawn(web).owner == PORTAL_OWNER_VIEW && (drawn(web).enabled & bits(1, OWNER)));
     drain();
+    /* While the page decides on a chord, the view still has the keyboard. */
+    portal_fake_press((portal_chord) {'x', PORTAL_CONTROL}, false);
+    CHECK(drawn(web).owner == PORTAL_OWNER_VIEW);
     /* While Emacs reads a command, the dot says so and does nothing. */
-    portal_fake_press((portal_chord) {'b', PORTAL_CONTROL}, false);
+    portal_fake_answer(false);
     CHECK(drawn(web).owner == PORTAL_OWNER_PENDING && !(drawn(web).enabled & bits(1, OWNER)));
     struct portal_fake_calls before = portal_fake_calls();
     click(web, OWNER);
@@ -567,36 +564,45 @@ static void test_closing_find_keeps_the_users_focus(void)
     close_view(web);
 }
 
+/* A Super chord that a web view's page does not use goes to its shortcuts,
+   and then to Emacs, whose handoff ends here. */
+static void unused(const char *target, char character, uint32_t modifiers, const char *keys)
+{
+    portal_fake_keys();
+    portal_fake_press((portal_chord) {(unsigned char) character, modifiers}, false);
+    portal_fake_answer(false);
+    CHECK(!strcmp(portal_fake_keys(), keys));
+    if (portal_input_owner(text(target)) == PORTAL_OWNER_PENDING) {
+        portal_fake_escape();
+        enter(target);
+    }
+    drain();
+}
+
 /* Command-F, as macOS spells Super-f, opens a visible find field in a web
-   view that has the keyboard, but not in passthrough. */
+   view that has the keyboard, when its page does not use it. */
 static void test_super_f_opens_find(void)
 {
-    portal_text error = {0};
     char *web = open_web("contents", false), *none = open_web("none", false);
     enter(web);
-    portal_fake_keys();
-    portal_fake_press((portal_chord) {'f', PORTAL_SUPER}, false);
-    CHECK(!strcmp(portal_fake_keys(), "taken s-f") && drawn(web).finding);
+    unused(web, 'f', PORTAL_SUPER, "offered s-f, unused taken s-f");
+    CHECK(drawn(web).finding);
     CHECK(performs(web, "close-find", NULL));
     answer(web, "", false, 0, false);
-    bool done = false;
-    CHECK(portal_input_perform(text(web), text("passthrough"), 0, &done, &error) && done);
+    /* A page that uses it keeps it. */
+    portal_fake_keys();
     portal_fake_press((portal_chord) {'f', PORTAL_SUPER}, false);
-    portal_fake_press((portal_chord) {'f', PORTAL_SUPER | PORTAL_SHIFT}, false);
-    char expected[128];
-    snprintf(expected, sizeof expected, "%s s-f, %s s-S-f", web, web);
-    CHECK(!strcmp(portal_fake_keys(), expected) && !drawn(web).finding);
+    portal_fake_answer(true);
+    CHECK(!strcmp(portal_fake_keys(), "offered s-f, used s-f") && !drawn(web).finding);
+    unused(web, 'f', PORTAL_SUPER | PORTAL_SHIFT, "offered s-S-f, unused held s-S-f");
+    CHECK(!drawn(web).finding);
     enter(none);
-    portal_fake_press((portal_chord) {'f', PORTAL_SUPER}, false);
-    snprintf(expected, sizeof expected, "%s s-f", none);
-    CHECK(!strcmp(portal_fake_keys(), expected));
+    unused(none, 'f', PORTAL_SUPER, "offered s-f, unused held s-f");
     CHECK(refuses(none, "find", "No toolbar controls for this native view"));
     /* Hidden toolbars have no find field. */
     enter(web);
     portal_toolbar_show(false);
-    portal_fake_press((portal_chord) {'f', PORTAL_SUPER}, false);
-    snprintf(expected, sizeof expected, "%s s-f", web);
-    CHECK(!strcmp(portal_fake_keys(), expected));
+    unused(web, 'f', PORTAL_SUPER, "offered s-f, unused held s-f");
     CHECK(refuses(web, "find", "Find needs a visible web toolbar"));
     portal_toolbar_show(true);
     CHECK(nothing_asked());
@@ -605,32 +611,21 @@ static void test_super_f_opens_find(void)
 }
 
 /* Command-R reloads a web view that has the keyboard and whose toolbar has
-   Reload, even while toolbars are hidden, but not in passthrough. */
+   Reload, even while toolbars are hidden, when its page does not use it. */
 static void test_super_r_reloads(void)
 {
-    portal_text error = {0};
     char *web = open_web("markdown", true), *none = open_web("none", true);
     enter(web);
-    portal_fake_keys();
-    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    unused(web, 'r', PORTAL_SUPER, "offered s-r, unused taken s-r");
     portal_toolbar_show(false);
-    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
+    unused(web, 'r', PORTAL_SUPER, "offered s-r, unused taken s-r");
     portal_toolbar_show(true);
-    CHECK(!strcmp(portal_fake_keys(), "taken s-r, taken s-r"));
     CHECK(shows(web, "\"history\":\"reload reload\"", NULL));
     struct portal_fake_calls before = portal_fake_calls();
-    bool done = false;
-    CHECK(portal_input_perform(text(web), text("passthrough"), 0, &done, &error) && done);
-    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
-    portal_fake_press((portal_chord) {'r', PORTAL_SUPER | PORTAL_SHIFT}, false);
-    char expected[128];
-    snprintf(expected, sizeof expected, "%s s-r, %s s-S-r", web, web);
-    CHECK(!strcmp(portal_fake_keys(), expected));
-    /* Excalidraw's view has no toolbar, so its app keeps Command-R. */
+    unused(web, 'r', PORTAL_SUPER | PORTAL_SHIFT, "offered s-S-r, unused held s-S-r");
+    /* Excalidraw's view has no toolbar, so Emacs gets Command-R. */
     enter(none);
-    portal_fake_press((portal_chord) {'r', PORTAL_SUPER}, false);
-    snprintf(expected, sizeof expected, "%s s-r", none);
-    CHECK(!strcmp(portal_fake_keys(), expected));
+    unused(none, 'r', PORTAL_SUPER, "offered s-r, unused held s-r");
     CHECK(portal_fake_calls().went == before.went);
     close_view(none);
     close_view(web);

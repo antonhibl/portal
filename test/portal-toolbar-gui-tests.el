@@ -81,6 +81,18 @@
       (portal-terminal-test--wait (lambda () (eql (portal-toolbar-gui--state 'match) 2)))
       (should (portal-test-native-post-key 36 (ash 1 17) "\r"))
       (portal-terminal-test--wait (lambda () (eql (portal-toolbar-gui--state 'match) 1)))
+      ;; Command-V pastes into the field, which has the keyboard.
+      (let ((saved (gui-get-selection 'CLIPBOARD)))
+        (unwind-protect
+            (progn
+              (gui-set-selection 'CLIPBOARD " two")
+              (should (portal-test-native-key 9 (ash 1 20) "v"))
+              (portal-terminal-test--wait
+               (lambda () (equal (portal-toolbar-gui--state 'query) "needle two")))
+              (portal-terminal-test--wait (lambda () (eql (portal-toolbar-gui--state 'matches) 1)))
+              (dotimes (_ 4) (should (portal-test-native-post-key 51 0 "\d")))
+              (portal-terminal-test--wait (lambda () (eql (portal-toolbar-gui--state 'matches) 3))))
+          (when saved (gui-set-selection 'CLIPBOARD saved))))
       ;; Escape closes find, and the page keeps the keyboard.
       (should (portal-test-native-post-key 53 0 "\e"))
       (portal-terminal-test--wait (lambda () (not (portal-toolbar-gui--state 'find))))

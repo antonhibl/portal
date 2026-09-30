@@ -121,7 +121,7 @@ Return what PROBE recorded."
          (event (aref keys 0))
          (portal-choose-gui--probe-function probe))
     (should (eq (car-safe event) 'portal-input-binding))
-    (portal-choose-gui--typing strokes (lambda () (portal-terminal--dispatch event)))))
+    (portal-choose-gui--typing strokes (lambda () (portal-input--dispatch event)))))
 
 (defun portal-choose-gui--open (name)
   "Start a terminal named NAME in the selected window; return its buffer."
