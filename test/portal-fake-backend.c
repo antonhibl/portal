@@ -22,7 +22,7 @@
    option's string as the message; attaching to a frame whose title starts
    with "deleted" fails, as the frame is gone; every terminal primitive on a
    terminal created with the option :broken fails, with that option's string
-   as the message; and while a test says so, every view and terminal
+   as the message, as does setting the appearance of such a web view; and while a test says so, every view and terminal
    primitive refuses to run, as on the wrong thread.  Timers fire only when a
    test fires them.  A destroyed view's memory is kept, marked destroyed, so a
    later call that names it is counted instead of reading freed memory
@@ -654,6 +654,28 @@ bool portal_web_zoom(portal_view *web, double scale, portal_text *error)
     struct property *entry = property(web, "zoom", 4);
     entry->kind = REAL;
     entry->real = scale;
+    return true;
+}
+
+/* A web view describes the "appearance" it was last set to, "light" or
+   "dark", or false for the system's; before any, its :appearance option.  A
+   web view created with :broken refuses one, with that option's string as
+   the message. */
+bool portal_web_set_appearance(portal_view *web, portal_appearance appearance,
+                               portal_text *error)
+{
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
+        return false;
+    const struct property *broken = get(web, "broken");
+    if (broken && broken->kind == STRING)
+        return fail(error, "%.*s", (int) broken->string.length, broken->string.data);
+    calls.appeared++;
+    if (appearance == PORTAL_APPEARANCE_SYSTEM)
+        set_flag(web, "appearance", false);
+    else if (appearance == PORTAL_APPEARANCE_LIGHT)
+        set_string(web, "appearance", "light", 5);
+    else
+        set_string(web, "appearance", "dark", 4);
     return true;
 }
 

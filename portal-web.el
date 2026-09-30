@@ -23,6 +23,37 @@
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--web-send "portal-web" (target json))
 (declare-function portal--web-receive "portal-web" (target))
+(declare-function portal--web-appearance "portal-web" (appearance))
+
+(defun portal-web--appearance-changed (_symbol value operation _where)
+  "Check appearance VALUE and show every web view in it, on OPERATION `set'."
+  (when (eq operation 'set)
+    (unless (memq value '(nil light dark))
+      (error "Web view appearance must be nil, `light' or `dark'"))
+    (when (fboundp 'portal--web-appearance)
+      (portal--web-appearance (and value (symbol-name value))))))
+
+(defcustom portal-web-appearance nil
+  "Whether web views, such as Markdown previews, look light or dark.
+Nil follows the system's light or dark appearance as it changes, even when
+Emacs frames force their own with the `ns-appearance' frame parameter.
+`light' or `dark' keeps every web view so.  A page sees it as CSS's
+prefers-color-scheme.  Changes with `setq', `setopt' or Customize, or with
+`portal-web-set-appearance', apply to open web views without reloading."
+  :type '(choice (const :tag "System appearance" nil)
+                 (const :tag "Light" light)
+                 (const :tag "Dark" dark))
+  :group 'portal)
+(add-variable-watcher 'portal-web-appearance #'portal-web--appearance-changed)
+
+;;;###autoload
+(defun portal-web-set-appearance (appearance)
+  "Show every web view in APPEARANCE: `light', `dark', or nil for the system's.
+This sets `portal-web-appearance'."
+  (interactive
+   (list (cdr (assoc (completing-read "Web view appearance: " '("system" "light" "dark") nil t)
+                     '(("light" . light) ("dark" . dark))))))
+  (setq portal-web-appearance appearance))
 
 (defvar-local portal-web--target nil "This buffer's web view target, or nil.")
 (defvar-local portal-web--url nil
@@ -83,9 +114,13 @@ outside the app host opens in the default browser instead."
     (portal-web--load-hosted)))
 
 (defun portal-web--open (url options)
-  "Open a web view with OPTIONS for the current buffer, and load URL in it."
+  "Open a web view with OPTIONS for the current buffer, and load URL in it.
+The view starts in `portal-web-appearance'."
   (portal-input--connect)
-  (let ((target (portal-view-open 'web options))
+  (let ((target (portal-view-open
+                 'web (if portal-web-appearance
+                          (append (list :appearance (symbol-name portal-web-appearance)) options)
+                        options)))
         ready)
     (unwind-protect
         (progn

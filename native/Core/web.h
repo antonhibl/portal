@@ -17,6 +17,15 @@
    http, https, file, data or about URL.  On failure the view keeps the
    address it had. */
 bool portal_web_views_load(portal_string target, portal_string url, portal_text *error);
+/* Check a web view's OPTIONS before the platform creates it: :appearance
+   must be "light", "dark" or nil.  A later duplicate option wins, and other
+   options pass; toolbar.c checks :toolbar. */
+bool portal_web_views_check(const portal_option *options, size_t count, portal_text *error);
+/* Show every open web view's pages in APPEARANCE, "light" or "dark", or the
+   system's for a null APPEARANCE, oldest first.  Any other APPEARANCE
+   changes none.  If a view fails, the error is its own, the views before it
+   keep the new appearance, and it and those after it keep their old one. */
+bool portal_web_views_appearance(const portal_string *appearance, portal_text *error);
 /* Pass the JSON object JSON to hosted web view TARGET's app over its bridge. */
 bool portal_web_views_send(portal_string target, portal_string json, portal_text *error);
 /* Return, as a JSON array, the messages waiting on hosted web view TARGET's

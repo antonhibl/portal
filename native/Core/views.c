@@ -99,6 +99,8 @@ bool portal_views_open(portal_string kind_name, const portal_option *options, si
         return fail(error, "Unknown Portal view kind: ", kind_name);
     if (kind == PORTAL_TERMINAL && !portal_terminals_check(options, count, error))
         return false;
+    if (kind == PORTAL_WEB && !portal_web_views_check(options, count, error))
+        return false;
     /* An open that gets this far spends its ID even if it fails, so no two
        opens share one. */
     uint64_t id = ++views.ids;

@@ -367,6 +367,20 @@ LISP_FUNCTION(Fterminal_theme)
     return result;
 }
 
+LISP_FUNCTION(Fweb_appearance)
+{
+    portal_text name = {0}, error = {0};
+    emacs_value result = NULL;
+    bool named = env->is_not_nil(env, args[0]);
+    if (!named || read_text(env, args[0], &name)) {
+        portal_string borrowed = borrow(name);
+        result =
+            done(env, portal_web_views_appearance(named ? &borrowed : NULL, &error), &error);
+    }
+    free(name.data);
+    return result;
+}
+
 LISP_FUNCTION(Fterminal_paste)
 {
     portal_text target = {0}, text = {0}, error = {0};
@@ -615,6 +629,8 @@ static const struct export {
      "Send the JSON object JSON to hosted web view TARGET's app over its bridge."},
     {"portal--web-receive", 1, 1, STRINGS_FUNCTION(web_receive, RESULT_STRING),
      "Return the messages hosted web view TARGET's app sent over its bridge, as a JSON array."},
+    {"portal--web-appearance", 1, 1, Fweb_appearance, NULL,
+     "Show every web view in APPEARANCE, \"light\" or \"dark\"; nil follows the system's."},
     {"portal--terminal-theme", 1, 1, Fterminal_theme, NULL,
      "Apply named THEME to all terminals; nil restores system appearance defaults."},
     {"portal--terminal-themes", 0, 0, STRINGS_FUNCTION(terminal_themes, RESULT_JSON),

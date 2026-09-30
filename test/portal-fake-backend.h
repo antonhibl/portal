@@ -16,7 +16,8 @@ struct portal_fake_calls {
     size_t loaded, went, posted; /* Web pages loaded, history steps, and messages posted. */
     size_t focused, unfocused, replayed, discarded;
     size_t listed, themed, entered; /* Theme lists, themes applied, and Enters tried. */
-    size_t fields; /* Find fields given the keyboard. */
+    size_t fields;   /* Find fields given the keyboard. */
+    size_t appeared; /* Web appearances set. */
 };
 struct portal_fake_calls portal_fake_calls(void);
 

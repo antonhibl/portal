@@ -19,12 +19,13 @@
   '((portal--open 2 . 2) (portal--place 3 . 3) (portal--hide 1 . 1) (portal--close 1 . 1)
     (portal--inspect 1 . 1) (portal--channel 1 . 1)
     (portal--web-load 2 . 2) (portal--web-send 2 . 2) (portal--web-receive 1 . 1)
+    (portal--web-appearance 1 . 1)
     (portal--terminal-paste 2 . 3) (portal--terminal-text 1 . 1)
     (portal--terminal-theme 1 . 1) (portal--terminal-themes 0 . 0)
     (portal--terminal-bindings 1 . 1)
     (portal--input 2 . 3) (portal--input-prefix 2 . 2)
     (portal--toolbar 1 . 1) (portal--toolbar-theme 1 . 1) (portal--toolbar-action 2 . 2))
-  "The 19 exports of docs/adr/0002 and their arities.")
+  "The 20 exports of docs/adr/0002 and their arities.")
 
 (defun portal-module-tests--next-id ()
   "Open and close a view; return the ID the backend gives the next one."
@@ -173,6 +174,22 @@
       (should-not (plist-get state :theme)))
     (should-error (portal--terminal-theme 'Alpha) :type 'wrong-type-argument)
     (portal--close terminal)))
+
+(ert-deftest portal-module-sets-web-appearance ()
+  (let ((web (portal--open "web" '(:appearance "dark"))))
+    (should (equal (plist-get (portal--inspect web) :appearance) "dark"))
+    (should (eq (portal--web-appearance "light") t))
+    (should (equal (plist-get (portal--inspect web) :appearance) "light"))
+    (should (eq (portal--web-appearance nil) t))
+    (let ((state (portal--inspect web)))
+      (should (plist-member state :appearance))
+      (should-not (plist-get state :appearance)))
+    (should-error (portal--web-appearance 'dark) :type 'wrong-type-argument)
+    (should (equal (should-error (portal--web-appearance "sepia"))
+                   '(error "Unknown web appearance: sepia")))
+    (should (equal (should-error (portal--open "web" '(:appearance t)))
+                   '(error "Option :appearance must be \"light\", \"dark\" or nil")))
+    (portal--close web)))
 
 (ert-deftest portal-module-returns-backend-results ()
   ;; The core sorts the platform's names.

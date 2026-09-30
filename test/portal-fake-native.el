@@ -172,6 +172,9 @@ Then send its `terminal' record, as the native module does for a change."
 (defun portal--input-prefix (_character _flags) t)
 (defun portal--terminal-bindings (_json) t)
 (defun portal--terminal-theme (_theme) t)
+(defun portal--web-appearance (appearance)
+  (portal-fake-native--call 'portal--web-appearance appearance)
+  t)
 
 (provide 'portal-native-module)
 (provide 'portal-fake-native)
