@@ -5,8 +5,10 @@ Recorded: 2026-09-17. Status: decision deferred.
 ## Current behaviour
 
 `./build.sh` uses CMake to build the native Emacs module and compile the
-TypeScript server into `build/portal-host`. CMake currently requires `bun` on
-`PATH` and invokes it by name.
+TypeScript server into `build/portal-host`. CMake currently requires an
+installed Bun executable. It records the absolute path of the `bun` found on
+`PATH`, searches again if that file disappears, and accepts
+`-DBUN=/absolute/path/to/bun` to select one explicitly.
 
 Bun is a **build dependency**, but users running the compiled host do not need
 to install it. The host executable contains the Bun runtime, server code, and
@@ -33,8 +35,8 @@ Proposed implementation:
 - Verify the archive checksum before extraction and execution.
 - Invoke the downloaded executable directly, without modifying `PATH`, shell
   configuration, or a global Bun installation.
-- Cache it for subsequent builds and fall back to `bun` on `PATH` for
-  development and offline builds.
+- Cache it for subsequent builds and retain the explicit `BUN` path override
+  for development and offline builds.
 
 Bun provides direct executable downloads for macOS Apple Silicon and Intel.
 See the [installation documentation](https://bun.com/docs/installation).
