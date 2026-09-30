@@ -29,8 +29,11 @@ emacs -Q -l "$PWD/portal.el" \
 The single build command produces `build/portal.bundle` and
 `build/portal-host`. The bundle contains the one native Emacs module at
 `Contents/MacOS/portal.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
-or HTML changes. Set `-DBUN=/absolute/path/to/bun` through `./build.sh` or CMake
-if Bun is not discoverable. Both binaries are built for the current Mac.
+or HTML changes. CMake records the path of the `bun` found on `PATH` and
+searches again if that file disappears. Set `-DBUN=/absolute/path/to/bun`
+through `./build.sh` or CMake to select another Bun, or run
+`cmake --fresh --preset dev` to rediscover every tool. Both binaries are built
+for the current Mac.
 
 Or load `portal.el` in graphical Emacs and run `M-x portal-hello`.
 Run `M-x portal-preview-markdown` to preview the current Markdown file or

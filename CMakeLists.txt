@@ -13,7 +13,13 @@ include(CTest)
 # emacs-module.h for the rest of the build.
 add_subdirectory(native/Core)
 
-find_program(BUN NAMES bun HINTS "$ENV{HOME}/.bun/bin" REQUIRED)
+# Record Bun's absolute path so the Bun validated here is the one the build and
+# tests run. Search again if the recorded executable was removed or moved.
+if(DEFINED CACHE{BUN} AND NOT EXISTS "${BUN}")
+    message(STATUS "Recorded Bun ${BUN} no longer exists; searching PATH again")
+    unset(BUN CACHE)
+endif()
+find_program(BUN NAMES bun REQUIRED)
 execute_process(COMMAND "${BUN}" -e
     "if (typeof Bun.markdown?.html !== 'function') process.exit(1)"
     RESULT_VARIABLE bun_markdown_status)
