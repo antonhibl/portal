@@ -628,13 +628,14 @@ The detail is narrowed to all of that task."
       (portal-tasks-back)
       (should (eq (window-buffer) view))
       (should (equal (portal-tasks-view-test--at view) "Second"))
-      ;; Without the view, Back makes another.
-      (portal-tasks-view-test--goto view "First")
+      ;; Without the view, Back makes another, listing all tasks again.
+      (portal-tasks-view-test--goto view "Second")
       (portal-tasks-open)
       (kill-buffer view)
       (portal-tasks-back)
       (should (equal (buffer-local-value 'portal-tasks--file (window-buffer)) file))
-      (should (equal (portal-tasks-view-test--at (window-buffer)) "First")))))
+      (should (equal (car (portal-tasks-view-test--titles (window-buffer))) "Actionable (2)"))
+      (should (equal (portal-tasks-view-test--at (window-buffer)) "Second")))))
 
 (ert-deftest portal-tasks-detail-edits-the-file-buffer ()
   (portal-tasks-view-test--environment

@@ -776,7 +776,8 @@ that task in the detail, from `project.org` or its archives. So does a blocker's
 link in the view. Org follows every other link as usual. `M-,`, wherever
 `xref-go-back` is bound, goes back: to the task whose link you followed, where
 you were in it, and finally to the view, on the task you opened. The view is
-redrawn on the way back, so its readiness reflects your edits. The project has
+redrawn on the way back, so its readiness reflects your edits. If you killed
+the view meanwhile, Back makes it again, listing all tasks if it did. The project has
 one detail, reused for each task. Tasks are found again by their file and
 `CUSTOM_ID` each time, across `project.org` and its archives. A task without a
 `CUSTOM_ID`, or one that shares it, opens in its file instead, as in Org's
@@ -1385,7 +1386,7 @@ that tasks without a unique `CUSTOM_ID` open in their file and links to a
 shared one are refused; that task links,
 archived tasks and blockers' links in the view show their task, and `M-,` goes
 back to each link's place and to the view on its task, even after another pane
-moved the view, or the view was killed; that typing, `C-c C-t`, undo and
+moved the view, or the All tasks view was killed; that typing, `C-c C-t`, undo and
 saving there change the file's buffer, unsaved edits surviving the way back
 and a reopened detail; and that closed tasks reopen and blocked tasks change
 state.

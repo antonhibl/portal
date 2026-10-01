@@ -271,11 +271,14 @@ choice of tasks.  This needs the org-ql package."
     (with-current-buffer buffer (portal-tasks--update))
     buffer))
 
-(defun portal-tasks--view (file)
-  "Return the task view of FILE, a project.org, making it if there is none."
+(defun portal-tasks--view (file &optional all)
+  "Return the task view of FILE, a project.org, making it if there is none.
+A view it makes lists all tasks if ALL, and else the actionable ones."
   (or (seq-find (lambda (buffer) (equal (buffer-local-value 'portal-tasks--file buffer) file))
                 (buffer-list))
-      (portal-tasks--create file)))
+      (with-current-buffer (portal-tasks--create file)
+        (setq portal-tasks--all all)
+        (current-buffer))))
 
 (defun portal-tasks--project-file ()
   "Return the project.org of the project being edited, or signal an error.
@@ -491,7 +494,8 @@ FROM is the CUSTOM_ID of the task on the button's line, where Back returns."
 
 (defun portal-tasks--push-link (link)
   "Show the task of LINK, (ID . FROM) from `portal-tasks--link', in the detail."
-  (portal-tasks--show portal-tasks--file (car link) (list (cons 'view (cdr link)))))
+  (portal-tasks--show portal-tasks--file (car link)
+                      (list (list 'view (cdr link) portal-tasks--all))))
 
 (defun portal-tasks--insert (tasks)
   "Insert the lines of TASKS this view lists."
@@ -576,8 +580,9 @@ PREDICATE gets the heading as a marker.  Return nil if no line's does."
 
 (defvar-local portal-tasks--trail nil
   "Where Back goes from this task detail, the latest place first.
-A place is (view . ID), the task view on the task with CUSTOM_ID ID, or
-\(detail ID . MARKER), the detail on that task at MARKER.")
+A place is (view ID ALL), the task view on the task with CUSTOM_ID ID,
+listing all tasks if ALL should it be made again, or (detail ID . MARKER),
+the detail on that task at MARKER.")
 
 (defvar-keymap portal-tasks-detail-mode-map
   :doc "Keys of a task detail, over Org's."
@@ -608,7 +613,7 @@ when it has none or shares it, opens in its file, as in Org's agenda."
   (let* ((heading (get-text-property (line-beginning-position) 'org-hd-marker))
          (id (and (markerp heading) (org-entry-get heading "CUSTOM_ID"))))
     (if (equal (portal-tasks--locate portal-tasks--file id) (list heading))
-        (portal-tasks--show portal-tasks--file id (list (cons 'view id)))
+        (portal-tasks--show portal-tasks--file id (list (list 'view id portal-tasks--all)))
       (org-agenda-switch-to))))
 
 (defun portal-tasks-back ()
@@ -621,7 +626,7 @@ view, on the task the detail was opened from and redrawn if it changed."
         (place (pop portal-tasks--trail)))
     (if (eq (car place) 'detail)
         (portal-tasks--show file (cadr place) portal-tasks--trail (cddr place))
-      (portal-tasks--return file (cdr place)))))
+      (apply #'portal-tasks--return file (cdr place)))))
 
 (defun portal-tasks--follow ()
   "Show the task a CUSTOM_ID link at point names, if it names one.
@@ -692,10 +697,11 @@ marker POSITION if that is in it.  Back from there retraces TRAIL."
                    position
                  (point-min)))))
 
-(defun portal-tasks--return (file id)
+(defun portal-tasks--return (file &optional id all)
   "Show the task view of FILE in the selected pane, redrawn if it changed.
-Move to the task with CUSTOM_ID ID, if ID finds it and the view lists it."
-  (pop-to-buffer-same-window (portal-tasks--view file))
+Move to the task with CUSTOM_ID ID, if ID finds it and the view lists it.
+Without a view, make one that lists all tasks if ALL."
+  (pop-to-buffer-same-window (portal-tasks--view file all))
   (portal-tasks--update)
   (pcase (portal-tasks--locate file id)
     (`(,task) (when-let* ((line (portal-tasks--search (lambda (heading) (equal heading task)))))

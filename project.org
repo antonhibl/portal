@@ -216,6 +216,9 @@ Decisions made during implementation:
   of a task folded in the file edits folded text, so Org prints "Unfolding
   invisible region" or, with =org-fold-catch-invisible-edits= set to =error=,
   refuses.
+- Back's place in the view records whether it listed all tasks. A view killed
+  meanwhile comes back that way, so a blocked task's line can be found; a
+  live view keeps the choice its user made.
 - Org follows links that name no task, such as a section's =CUSTOM_ID=.
 - Reopening and cancelling change only the keyword. Portal adds no logging or
   hooks, so Org's own logging settings decide what is recorded.
