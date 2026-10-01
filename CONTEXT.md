@@ -55,3 +55,7 @@ _Avoid_: ready task, unblocked task
 **Task view**:
 The Org agenda buffer of a project's tasks that `portal-tasks` shows: the actionable ones, or all of them with why each is not actionable.
 _Avoid_: task browser, which is the hosted app for Markdown tasks
+
+**Task detail**:
+A project's one indirect Org buffer, narrowed to the task it shows, where Org edits that task. `RET` in the task view and links to tasks show a task there; Back retraces them to the task view.
+_Avoid_: task page, which is the task browser's

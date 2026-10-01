@@ -745,9 +745,10 @@ Closed tasks have a done keyword. Prerequisites can also be in the file's Org
 archives, such as `project.org_archive`, where `org-archive-subtree` moves
 finished tasks; the view does not list archived tasks.
 
-Each line is an Org agenda line, so Org's agenda keys act on its task: `RET`
-goes to it and `t` changes its state, for example. `g` redraws the view, and
-`q` leaves it.
+`RET` shows a task in its [detail](#task-detail). Each line is an Org agenda
+line, so Org's other agenda keys act on its task: `t` changes its state and
+`TAB` goes to it in its file, for example. `g` redraws the view, and `q`
+leaves it.
 
 The project is the one being edited, as for
 [quick terminals](#quick-project-terminal): in a terminal, the terminal's
@@ -757,6 +758,33 @@ keeps its choice of actionable or all tasks. The view reads the buffers of
 `project.org` and its archives, saved or not. It is redrawn when its pane is
 selected, or shows it again, after a change or on a new day; when one of those
 files is saved; and on `g`. Each pane stays on its task.
+
+### Task detail
+
+`RET` on a task shows it in the project's task detail, such as
+`*task: ~/src/app*`, in the same pane. The detail is an Org indirect buffer of
+the task's file, narrowed to the task and showing all of it, as `C-c C-x b`
+shows a subtree. It has folds of its own, so the file's buffer stays folded as
+it was. Everything else is Org: type into the task, fold it, follow and insert
+links, tick checkboxes, schedule it, and change its state with `C-c C-t`. Any
+state can be set by hand, whether or not the task is actionable. Saving and
+undo act on the file's buffer, and edits not yet saved stay there when you
+leave the detail.
+
+A link to a task's `CUSTOM_ID`, such as `[[#search-index][the index]]`, shows
+that task in the detail, from `project.org` or its archives. So does a blocker's
+link in the view. Org follows every other link as usual. `M-,`, wherever
+`xref-go-back` is bound, goes back: to the task whose link you followed, where
+you were in it, and finally to the view, on the task you opened. The view is
+redrawn on the way back, so its readiness reflects your edits. The project has
+one detail, reused for each task. Tasks are found again by their file and
+`CUSTOM_ID` each time. A task without a `CUSTOM_ID`, or one that shares it,
+opens in its file instead, as in Org's agenda.
+
+`DONE` and `CANCELLED` tasks stay in the view's Closed group. Reopen one by
+setting it back to `TODO` in its detail or with `t`. Reopening or cancelling
+changes only the keyword, so the task's sections stay. Cancelling a task does
+not stop a terminal working on it.
 
 ## Task browser
 
@@ -1348,7 +1376,17 @@ two projects apart; readiness from unsaved edits, a cancelled prerequisite,
 missing, shared and untagged IDs, cycles, a keyword other than `TODO`, and
 archived prerequisites; schedules from yesterday to tomorrow, deadlines and
 ordering; links to blockers; `g`, saving, a new day and returning, each pane
-keeping its task; the empty list; and Org's agenda keys on a line.
+keeping its task; the empty list; and Org's agenda keys on a line. Task detail
+tests check that `RET` shows the whole task with its own folds, the file's
+staying folded and typing at the task's end touching no folded text, and
+reuses one detail; that keys other than `M-,` are Org's;
+that tasks without a unique `CUSTOM_ID` open in their file; that task links,
+archived tasks and blockers' links in the view show their task, and `M-,` goes
+back to each link's place and to the view on its task, even after another pane
+moved the view, or the view was killed; that typing, `C-c C-t`, undo and
+saving there change the file's buffer, unsaved edits surviving the way back
+and a reopened detail; and that closed tasks reopen and blocked tasks change
+state.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise
@@ -1396,8 +1434,10 @@ and shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
-The task view's graphical test checks that redisplay redraws a view after an
-edit once its pane is selected again or shows it again.
+The task view's graphical tests check that redisplay redraws a view after an
+edit once its pane is selected again or shows it again, and that typing `RET`
+and `M-,` shows a task while another pane keeps the file folded, then returns
+to the redrawn view on that task.
 The terminal picker's graphical tests type real keys, one at a time as a person
 types, into Consult, Vertico and Orderless from `build/elpa`, from an ordinary
 buffer, a terminal that has the keyboard and a quick panel. They check that

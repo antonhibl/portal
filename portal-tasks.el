@@ -204,16 +204,26 @@ and a hidden page refreshes once it is shown."
 (declare-function org-agenda-mode "org-agenda" ())
 (declare-function org-agenda-finalize "org-agenda" ())
 (declare-function org-agenda-reset-markers "org-agenda" ())
+(declare-function org-agenda-switch-to "org-agenda" (&optional delete-other-windows))
 (declare-function org-all-archive-files "org-archive" ())
+(declare-function org-element-context "org-element" (&optional element))
+(declare-function org-element-lineage "org-element-ast" (datum &optional types with-self))
 (declare-function org-element-property "org-element-ast"
                   (property node &optional dflt force-undefer))
-(declare-function org-fold-show-context "org-fold" (&optional key))
+(declare-function org-entry-get "org"
+                  (epom property &optional inherit literal-nil))
+(declare-function org-fold-show-all "org-fold" (&optional types))
+(declare-function org-fold-show-subtree "org-fold" ())
+(declare-function org-narrow-to-subtree "org" (&optional element))
 (declare-function org-timestamp-to-time "org" (timestamp &optional end))
 (declare-function org-today "org" ())
 (defvar org-agenda-mode-map)
+(defvar org-cycle-hook)
+(defvar org-open-at-point-functions)
 (defvar org-priority-default)
 
 (defvar-local portal-tasks--file nil "The project.org this task view lists.")
+(defvar-local portal-tasks--detail nil "The project.org whose tasks this task detail shows.")
 (defvar-local portal-tasks--all nil "Whether this task view lists every task.")
 (defvar-local portal-tasks--drawn nil
   "What this task view was drawn from: the day, and each source and its tick.")
@@ -225,6 +235,7 @@ and a hidden page refreshes once it is shown."
 
 (defvar-keymap portal-tasks-view-map
   :doc "Keys of a task view, over Org's agenda keys."
+  "RET" #'portal-tasks-open
   "g" #'portal-tasks-refresh
   "r" #'portal-tasks-refresh
   "v" #'portal-tasks-toggle-all
@@ -242,7 +253,9 @@ names by CUSTOM_ID are all DONE, and it is not scheduled after today.  The
 view orders them by priority, then nearest deadline, then file order.
 \\<portal-tasks-view-map>
 \\[portal-tasks-toggle-all] switches to all tasks, which says why each one is not
-actionable and links to its blockers.  Org's agenda keys act on the task
+actionable and links to its blockers.  \\[portal-tasks-open] shows the task on a line in the
+project's task detail, where Org edits it; see `portal-tasks-detail-mode'.
+A blocker's link shows that task.  Org's other agenda keys act on the task
 on a line.
 
 The view reads the file's buffer, saved or not.  It is redrawn when shown
@@ -253,19 +266,21 @@ choice of tasks.  This needs the org-ql package."
   (unless (and (require 'org-ql nil t) (require 'org-ql-view nil t))
     (user-error "The task view needs the org-ql package"))
   (require 'org-archive)
-  (let* ((file (portal-tasks--project-file))
-         (buffer (or (seq-find (lambda (buffer)
-                                 (equal (buffer-local-value 'portal-tasks--file buffer) file))
-                               (buffer-list))
-                     (portal-tasks--create file))))
+  (let ((buffer (portal-tasks--view (portal-tasks--project-file))))
     (pop-to-buffer-same-window buffer)
     (with-current-buffer buffer (portal-tasks--update))
     buffer))
 
+(defun portal-tasks--view (file)
+  "Return the task view of FILE, a project.org, making it if there is none."
+  (or (seq-find (lambda (buffer) (equal (buffer-local-value 'portal-tasks--file buffer) file))
+                (buffer-list))
+      (portal-tasks--create file)))
+
 (defun portal-tasks--project-file ()
   "Return the project.org of the project being edited, or signal an error.
-A task view's is its own, and a terminal's is its project's."
-  (or portal-tasks--file
+A task view's or task detail's is its own, and a terminal's is its project's."
+  (or portal-tasks--file portal-tasks--detail
       (let* ((terminal (portal-terminal-metadata))
              (root (if terminal
                        (plist-get terminal :project)
@@ -337,8 +352,7 @@ deselected; by then WINDOW may show another buffer, which is left alone."
 (defun portal-tasks--draw ()
   "Draw this task view from its file's buffer, keeping the task in each pane."
   (portal-tasks--check)
-  (let* ((source (or (find-buffer-visiting portal-tasks--file)
-                     (find-file-noselect portal-tasks--file)))
+  (let* ((source (portal-tasks--visiting portal-tasks--file))
          (archives (portal-tasks--archives source))
          (tasks (portal-tasks--judge-all source archives))
          (windows (get-buffer-window-list nil nil t))
@@ -359,10 +373,14 @@ deselected; by then WINDOW may show another buffer, which is left alone."
              windows (cdr places))
     (setq portal-tasks--drawn (portal-tasks--state (cons source archives)))))
 
+(defun portal-tasks--visiting (file)
+  "Return the buffer visiting FILE, visiting it if none does."
+  (or (find-buffer-visiting file) (find-file-noselect file)))
+
 (defun portal-tasks--archives (source)
   "Return buffers visiting the Org archive files of SOURCE, other than itself."
   (with-current-buffer source
-    (mapcar (lambda (file) (or (find-buffer-visiting file) (find-file-noselect file)))
+    (mapcar #'portal-tasks--visiting
             (seq-remove (lambda (file) (file-equal-p file buffer-file-name))
                         (org-all-archive-files)))))
 
@@ -424,15 +442,13 @@ scheduled after TODAY is deferred."
           (`(,target)
            (let ((state (org-element-property :todo-keyword target)))
              (unless (equal state "DONE")
-               (push (format "waiting for %s (%s)" (portal-tasks--link prerequisite target)
+               (push (format "waiting for %s (%s)" (portal-tasks--link prerequisite id)
                              (or state "no keyword"))
                      blockers))))
           (_ (push (format "%s is not unique" prerequisite) blockers))))
       (when cycle
         (push (concat "dependency cycle through "
-                      (mapconcat (lambda (prerequisite)
-                                   (portal-tasks--link prerequisite
-                                                       (car (gethash prerequisite ids))))
+                      (mapconcat (lambda (prerequisite) (portal-tasks--link prerequisite id))
                                  cycle ", "))
               blockers))
       (let ((later (and scheduled
@@ -468,19 +484,14 @@ A task without a priority has DEFAULT, as in Org.  Equal tasks keep file order."
                  (time-less-p (org-timestamp-to-time deadline-a)
                               (org-timestamp-to-time deadline-b))))))))
 
-(defun portal-tasks--link (id task)
-  "Return ID as a button that goes to TASK's heading."
-  (buttonize id #'portal-tasks--visit (org-element-property :org-hd-marker task)
-             "Go to this task"))
+(defun portal-tasks--link (id from)
+  "Return ID, a CUSTOM_ID, as a button that shows its task in the task detail.
+FROM is the CUSTOM_ID of the task on the button's line, where Back returns."
+  (buttonize id #'portal-tasks--push-link (cons id from) "Show this task"))
 
-(defun portal-tasks--visit (marker)
-  "Go to the task heading at MARKER, as RET does for the task on a line."
-  (unless (marker-buffer marker)
-    (user-error "That task's buffer was killed; press g"))
-  (pop-to-buffer-same-window (marker-buffer marker))
-  (unless (<= (point-min) marker (point-max)) (widen))
-  (goto-char marker)
-  (org-fold-show-context 'agenda))
+(defun portal-tasks--push-link (link)
+  "Show the task of LINK, (ID . FROM) from `portal-tasks--link', in the detail."
+  (portal-tasks--show portal-tasks--file (car link) (list (cons 'view (cdr link)))))
 
 (defun portal-tasks--insert (tasks)
   "Insert the lines of TASKS this view lists."
@@ -525,16 +536,22 @@ A task without a priority has DEFAULT, as in Org.  Equal tasks keep file order."
 
 (defun portal-tasks--find (place)
   "Return the start of the line of PLACE's task, or else of its line."
+  (or (and (car place)
+           (portal-tasks--search (lambda (heading) (eql (marker-position heading) (car place)))))
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line (1- (cdr place)))
+        (point))))
+
+(defun portal-tasks--search (predicate)
+  "Return the start of the first line whose task's heading satisfies PREDICATE.
+PREDICATE gets the heading as a marker.  Return nil if no line's does."
   (save-excursion
     (goto-char (point-min))
-    (or (and (car place)
-             (cl-loop for marker = (get-text-property (point) 'org-hd-marker)
-                      when (and (markerp marker) (eql (marker-position marker) (car place)))
-                      return (point)
-                      while (zerop (forward-line))))
-        (progn (goto-char (point-min))
-               (forward-line (1- (cdr place)))
-               (point)))))
+    (cl-loop for heading = (get-text-property (point) 'org-hd-marker)
+             when (and (markerp heading) (funcall predicate heading))
+             return (point)
+             while (zerop (forward-line)))))
 
 (defun portal-tasks--saved ()
   "Refresh the task views and task browser pages drawn from this saved buffer."
@@ -547,6 +564,139 @@ A task without a priority has DEFAULT, as in Org.  Equal tasks keep file order."
             (portal-tasks--update)))))))
 
 (add-hook 'after-save-hook #'portal-tasks--saved)
+
+;;; The task detail
+
+;; A project's task detail shows one of its tasks at a time: an indirect
+;; buffer of the task's Org file, narrowed to the task.  Org edits, saves
+;; and undoes it as the file, and the file's own buffer keeps its folds.  A
+;; task is found again each time by its project.org and CUSTOM_ID, in that
+;; file or its archives, as DEPENDS_ON names it.  Links to tasks show them
+;; in the detail, and Back retraces them to the view.
+
+(defvar-local portal-tasks--trail nil
+  "Where Back goes from this task detail, the latest place first.
+A place is (view . ID), the task view on the task with CUSTOM_ID ID, or
+\(detail ID . MARKER), the detail on that task at MARKER.")
+
+(defvar-keymap portal-tasks-detail-mode-map
+  :doc "Keys of a task detail, over Org's."
+  "<remap> <xref-go-back>" #'portal-tasks-back)
+
+(define-minor-mode portal-tasks-detail-mode
+  "Minor mode of a project's task detail, which shows one task in Org.
+\\<portal-tasks-view-map>\\[portal-tasks-open] in the task view shows the task on a line here: an indirect
+buffer of its Org file, narrowed to the task, with folds of its own.  It
+is Org, so its keys edit the task, and saving or undoing there is the
+file's.  Leaving it keeps unsaved edits in the file's buffer.
+
+A link to a task's CUSTOM_ID shows that task here, and \\<portal-tasks-detail-mode-map>\\[portal-tasks-back] goes back,
+through the tasks shown before it, to the task view.  Org follows other
+links.  Each project has one task detail."
+  :interactive nil
+  :keymap portal-tasks-detail-mode-map
+  (if portal-tasks-detail-mode
+      (add-hook 'org-open-at-point-functions #'portal-tasks--follow nil t)
+    (remove-hook 'org-open-at-point-functions #'portal-tasks--follow t)))
+
+(defun portal-tasks-open ()
+  "Show the task on this line in the project's task detail.
+See `portal-tasks-detail-mode'.  A task its CUSTOM_ID does not find, as
+when it has none or shares it, opens in its file, as in Org's agenda."
+  (interactive)
+  (portal-tasks--check)
+  (let* ((heading (get-text-property (line-beginning-position) 'org-hd-marker))
+         (id (and (markerp heading) (org-entry-get heading "CUSTOM_ID"))))
+    (if (and id (equal (portal-tasks--locate portal-tasks--file id) heading))
+        (portal-tasks--show portal-tasks--file id (list (cons 'view id)))
+      (org-agenda-switch-to))))
+
+(defun portal-tasks-back ()
+  "Go back from this task detail to where its task was shown from.
+That is the task whose link showed it, where it was, or else the task
+view, on the task the detail was opened from and redrawn if it changed."
+  (interactive)
+  (unless portal-tasks--detail (user-error "Not a task detail"))
+  (let ((file portal-tasks--detail)
+        (place (pop portal-tasks--trail)))
+    (if (eq (car place) 'detail)
+        (portal-tasks--show file (cadr place) portal-tasks--trail (cddr place))
+      (portal-tasks--return file (cdr place)))))
+
+(defun portal-tasks--follow ()
+  "Show the task a CUSTOM_ID link at point names, if it names one.
+For `org-open-at-point-functions'.  Back returns to point."
+  (when-let* ((link (org-element-lineage (org-element-context) 'link t))
+              ((equal (org-element-property :type link) "custom-id"))
+              (id (org-element-property :path link))
+              ((portal-tasks--locate portal-tasks--detail id)))
+    (portal-tasks--show portal-tasks--detail id
+                        (cons `(detail ,(org-entry-get (point-min) "CUSTOM_ID")
+                                       . ,(set-marker (make-marker) (point) (buffer-base-buffer)))
+                              portal-tasks--trail))
+    t))
+
+(defun portal-tasks--locate (file id)
+  "Return the heading of the task with CUSTOM_ID ID in FILE's project, or nil.
+FILE is a project.org.  The task is the first with ID in FILE, or else in
+its archives, and its heading is a marker."
+  (when id
+    (let ((source (portal-tasks--visiting file)))
+      (seq-some (lambda (buffer)
+                  (seq-some (lambda (task)
+                              (and (equal (org-element-property :CUSTOM_ID task) id)
+                                   (org-element-property :org-hd-marker task)))
+                            (portal-tasks--select buffer)))
+                (cons source (portal-tasks--archives source))))))
+
+(defun portal-tasks--show (file id trail &optional position)
+  "Show the task with CUSTOM_ID ID in the detail of FILE, a project.org.
+Show the detail in the selected pane, narrowed to the task and at the
+marker POSITION if that is in it.  Back from there retraces TRAIL."
+  (let* ((heading (or (portal-tasks--locate file id)
+                      (user-error "No task %s in %s" id (abbreviate-file-name file))))
+         (base (marker-buffer heading))
+         (detail (seq-find (lambda (buffer)
+                             (equal (buffer-local-value 'portal-tasks--detail buffer) file))
+                           (buffer-list))))
+    ;; An indirect buffer keeps its base, and an archived task has another.
+    ;; Unsaved edits belong to the base, so they stay.
+    (when (and detail (not (eq (buffer-base-buffer detail) base)))
+      (kill-buffer detail)
+      (setq detail nil))
+    (unless detail
+      (setq detail (make-indirect-buffer
+                    base
+                    (generate-new-buffer-name
+                     (format "*task: %s*"
+                             (abbreviate-file-name (directory-file-name (file-name-directory file)))))
+                    t))
+      (with-current-buffer detail
+        (setq portal-tasks--detail file)
+        (portal-tasks-detail-mode)))
+    (pop-to-buffer-same-window detail)
+    (setq portal-tasks--trail trail)
+    (widen)
+    (goto-char heading)
+    ;; Show it all, as `org-tree-to-indirect-buffer' shows a subtree, with
+    ;; the newline after it, so typing at its end edits no folded text.
+    (org-fold-show-subtree)
+    (org-narrow-to-subtree)
+    (org-fold-show-all '(drawers blocks))
+    (run-hook-with-args 'org-cycle-hook 'all)
+    (goto-char (if (and position (eq (marker-buffer position) base)
+                        (<= (point-min) position (point-max)))
+                   position
+                 (point-min)))))
+
+(defun portal-tasks--return (file id)
+  "Show the task view of FILE in the selected pane, redrawn if it changed.
+Move to the task with CUSTOM_ID ID, if the view lists it."
+  (pop-to-buffer-same-window (portal-tasks--view file))
+  (portal-tasks--update)
+  (when-let* ((line (and id (portal-tasks--search
+                             (lambda (heading) (equal (org-entry-get heading "CUSTOM_ID") id))))))
+    (goto-char line)))
 
 (provide 'portal-tasks)
 ;;; portal-tasks.el ends here

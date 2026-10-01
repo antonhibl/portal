@@ -49,8 +49,9 @@
   "Return an Org timestamp DAYS after today."
   (format "<%s>" (org-read-date nil nil (format "%+dd" days))))
 
-(cl-defun portal-tasks-view-test--task (heading &key id depends planning)
-  "Return a task HEADING with planning line PLANNING, CUSTOM_ID ID and DEPENDS."
+(cl-defun portal-tasks-view-test--task (heading &key id depends planning body)
+  "Return a task HEADING with planning line PLANNING, CUSTOM_ID ID and DEPENDS.
+BODY follows its properties."
   (concat "** " heading " :task:\n"
           (if planning (concat planning "\n") "")
           (if (or id depends)
@@ -58,7 +59,8 @@
                       (if id (format ":CUSTOM_ID: %s\n" id) "")
                       (if depends (format ":DEPENDS_ON: %s\n" depends) "")
                       ":END:\n")
-            "")))
+            "")
+          (or body "")))
 
 (defun portal-tasks-view-test--project (name &rest tasks)
   "Make project NAME whose project.org holds TASKS under one area; return it.
@@ -112,6 +114,30 @@ The file declares TODO, DONE and CANCELLED."
     (when-let* ((window (get-buffer-window view)))
       (set-window-point window (point)))))
 
+(defun portal-tasks-view-test--detail ()
+  "Return the title of the task the selected pane's task detail shows, or nil.
+The detail is narrowed to all of that task."
+  (with-current-buffer (window-buffer)
+    (when portal-tasks-detail-mode
+      (save-excursion
+        (goto-char (point-min))
+        (should (org-at-heading-p))
+        (should (= (point-max) (save-excursion (save-restriction
+                                                 (widen)
+                                                 (org-end-of-subtree t t)
+                                                 (if (eobp) (point) (1- (point)))))))
+        (org-get-heading t t t t)))))
+
+(defun portal-tasks-view-test--hidden-p (buffer text)
+  "Return non-nil if Org folds away TEXT in BUFFER."
+  (with-current-buffer buffer
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (search-forward text)
+        (invisible-p (match-beginning 0))))))
+
 (defun portal-tasks-view-test--set (file title keyword)
   "Give the task TITLE in FILE's buffer KEYWORD, leaving the buffer unsaved."
   (with-current-buffer (find-buffer-visiting file)
@@ -160,8 +186,9 @@ The file declares TODO, DONE and CANCELLED."
       (should (equal header-line-format (format "Actionable tasks in %s" (abbreviate-file-name file))))
       (should (eq (key-binding "g") #'portal-tasks-refresh))
       (should (eq (key-binding "v") #'portal-tasks-toggle-all))
-      ;; Org's own keys stay: RET goes to the task.
-      (should (eq (key-binding (kbd "RET")) #'org-agenda-switch-to))
+      ;; RET shows the task in its detail; Org's other keys stay.
+      (should (eq (key-binding (kbd "RET")) #'portal-tasks-open))
+      (should (eq (key-binding "t") #'org-agenda-todo))
       ;; Priority, with Org's default for none, then nearest deadline, then file order.
       (should (equal (portal-tasks-view-test--titles view)
                      '("Urgent" "Overdue" "Due soon" "Due later" "Plain" "Today" "Yesterday" "Low")))
@@ -216,15 +243,15 @@ The file declares TODO, DONE and CANCELLED."
                        "TODO Second — waiting for first (CANCELLED) :task:"
                        "TODO Third — waiting for first (CANCELLED); waiting for second (TODO) :task:"
                        "Closed (1)" "CANCELLED First :task:")))
-      ;; A blocker's link goes to its heading.
+      ;; A blocker's link shows it in the task detail.
       (with-current-buffer view
         (goto-char (button-start (next-button (point-min))))
         (should (equal (button-label (button-at (point))) "first"))
         (should (equal (portal-tasks-view-test--at view) "Second"))
         (push-button))
       (with-current-buffer (window-buffer)
-        (should (eq (current-buffer) (find-buffer-visiting file)))
-        (should (equal (org-get-heading t t t t) "First"))))))
+        (should (eq (buffer-base-buffer) (find-buffer-visiting file)))
+        (should (equal (portal-tasks-view-test--detail) "First"))))))
 
 (ert-deftest portal-tasks-view-blocks-tasks-in-invalid-graphs ()
   (portal-tasks-view-test--environment
@@ -311,8 +338,8 @@ The file declares TODO, DONE and CANCELLED."
         (goto-char (button-start (next-button (point-min))))
         (push-button))
       (with-current-buffer (window-buffer)
-        (should (equal buffer-file-name (concat file "_archive")))
-        (should (equal (org-get-heading t t t t) "Shelved"))))))
+        (should (equal (buffer-file-name (buffer-base-buffer)) (concat file "_archive")))
+        (should (equal (portal-tasks-view-test--detail) "Shelved"))))))
 
 (ert-deftest portal-tasks-view-belongs-to-the-current-project ()
   (portal-tasks-view-test--environment
@@ -447,6 +474,236 @@ The file declares TODO, DONE and CANCELLED."
                       (org-agenda-new-marker (point-min)))))
         (kill-buffer view)
         (should (marker-buffer marker))))))
+
+(ert-deftest portal-tasks-detail-shows-one-task-in-org ()
+  (portal-tasks-view-test--environment
+    (let* ((file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "TODO First" :id "first"
+                                                :body "First's body.\n*** Notes\nA note.\n")
+                  (portal-tasks-view-test--task "TODO Second" :id "second" :body "Second's body.\n")
+                  (portal-tasks-view-test--task "TODO Anonymous" :body "No ID.\n")
+                  (portal-tasks-view-test--task "TODO Twin one" :id "twin")
+                  (portal-tasks-view-test--task "TODO Twin two" :id "twin")))
+           (view (portal-tasks-view-test--open file))
+           (source (find-buffer-visiting file))
+           (keys (mapcar #'kbd '("a" "RET" "TAB" "C-c C-t" "C-c C-o" "C-c C-s" "C-c C-c"
+                                 "C-c C-x C-b" "C-x C-s" "C-/"))))
+      (with-current-buffer source (org-overview))
+      (portal-tasks-view-test--goto view "First")
+      (portal-tasks-open)
+      (let ((detail (window-buffer)))
+        (should (equal (buffer-name detail)
+                       (format "*task: %s*" (abbreviate-file-name
+                                             (directory-file-name (file-name-directory file))))))
+        (should (eq (buffer-base-buffer detail) source))
+        ;; The whole task, at its heading, with folds of its own.
+        (should (equal (portal-tasks-view-test--detail) "First"))
+        (should (= (window-point) (point-min)))
+        (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                       (concat "** TODO First :task:\n:PROPERTIES:\n:CUSTOM_ID: first\n:END:\n"
+                               "First's body.\n*** Notes\nA note.")))
+        (should-not (portal-tasks-view-test--hidden-p detail "A note."))
+        (should-not (portal-tasks-view-test--hidden-p detail ":CUSTOM_ID:"))
+        (should (portal-tasks-view-test--hidden-p source "First's body."))
+        ;; Typing at its end edits no folded text.
+        (goto-char (point-max))
+        (let ((org-fold-catch-invisible-edits 'error))
+          (execute-kbd-macro (kbd "!")))
+        (should (string-suffix-p "A note.!" (buffer-string)))
+        (delete-char -1)
+        (goto-char (point-min))
+        ;; Keys are Org's, but for Back.
+        (should (derived-mode-p 'org-mode))
+        (dolist (key keys)
+          (should (eq (key-binding key) (with-current-buffer source (key-binding key)))))
+        (should (eq (key-binding (kbd "M-,")) #'portal-tasks-back))
+        ;; Back shows the view on the task; the next task reuses the detail.
+        (portal-tasks-back)
+        (should (eq (window-buffer) view))
+        (should (equal (portal-tasks-view-test--at view) "First"))
+        (portal-tasks-view-test--goto view "Second")
+        (portal-tasks-open)
+        (should (eq (window-buffer) detail))
+        (should (equal (portal-tasks-view-test--detail) "Second"))
+        (should (portal-tasks-view-test--hidden-p source "Second's body."))
+        ;; The detail's project is its own.
+        (should (eq (portal-tasks) view))
+        ;; A task its CUSTOM_ID does not find opens in its file, as in Org.
+        (portal-tasks-toggle-all)
+        (dolist (title '("Anonymous" "Twin two"))
+          (portal-tasks-view-test--goto view title)
+          (portal-tasks-open)
+          (should (eq (window-buffer) source))
+          (should (equal (org-get-heading t t t t) title))
+          (switch-to-buffer view))
+        (portal-tasks-view-test--goto view "Twin one")
+        (portal-tasks-open)
+        (should (eq (window-buffer) detail))
+        (should (equal (portal-tasks-view-test--detail) "Twin one"))))))
+
+(ert-deftest portal-tasks-detail-follows-task-links-and-goes-back ()
+  (portal-tasks-view-test--environment
+    (let* ((file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "TODO First" :id "first")
+                  (portal-tasks-view-test--task
+                   "TODO Second" :id "second" :depends "first"
+                   :body (concat "*** Blocked by\n[[#first][The first task]], once "
+                                 "[[#archived][the archived one]] was done.\n"
+                                 "See [[#second-notes][the notes]].\n"
+                                 "*** Notes\n:PROPERTIES:\n:CUSTOM_ID: second-notes\n:END:\n"
+                                 "Notes.\n"))
+                  (portal-tasks-view-test--task "TODO Third" :id "third")))
+           (archive (concat file "_archive"))
+           (view nil) (detail nil) (name nil) (link nil))
+      (with-temp-file archive
+        (insert "#    -*- mode: org -*-\n#+TODO: TODO | DONE CANCELLED\n"
+                "* DONE Archived :task:\n:PROPERTIES:\n:CUSTOM_ID: archived\n:END:\nDone long ago.\n"))
+      (setq view (portal-tasks-view-test--open file))
+      (portal-tasks-toggle-all)
+      (portal-tasks-view-test--goto view "Second")
+      (portal-tasks-open)
+      (setq detail (window-buffer) name (buffer-name detail))
+      ;; A task's link shows it, and Back returns to the link.
+      (search-forward "first task")
+      (setq link (point))
+      (org-open-at-point)
+      (should (eq (window-buffer) detail))
+      (should (equal (portal-tasks-view-test--detail) "First"))
+      (portal-tasks-back)
+      (should (equal (portal-tasks-view-test--detail) "Second"))
+      (should (= (window-point) link))
+      ;; An archived task shows in the same detail, and unsaved edits stay.
+      (insert " Edited")
+      (search-forward "archived one")
+      (setq link (point))
+      (org-open-at-point)
+      (should (equal (portal-tasks-view-test--detail) "Archived"))
+      (should (equal (buffer-file-name (buffer-base-buffer)) archive))
+      (should (equal (buffer-name) name))
+      (portal-tasks-back)
+      (should (equal (portal-tasks-view-test--detail) "Second"))
+      (should (equal (buffer-file-name (buffer-base-buffer)) file))
+      (should (= (window-point) link))
+      (should (search-backward "first task Edited]], once" nil t))
+      (should (buffer-modified-p (buffer-base-buffer)))
+      (goto-char link)
+      ;; Org follows a link to a heading that is not a task.
+      (search-forward "the notes")
+      (org-open-at-point)
+      (should (equal (portal-tasks-view-test--detail) "Second"))
+      (should (looking-at-p "\\*\\*\\* Notes"))
+      ;; Back reaches the view, on the task the detail was opened from,
+      ;; though another pane has moved in the view since.
+      (setq detail (window-buffer))
+      (let ((other (split-window)))
+        (set-window-buffer other view)
+        (with-selected-window other (portal-tasks-view-test--goto view "Third"))
+        (portal-tasks-back)
+        (delete-window other))
+      (should (eq (window-buffer) view))
+      (should (equal (portal-tasks-view-test--at view) "Second"))
+      (should (equal (car (portal-tasks-view-test--titles view)) "Actionable (2)"))
+      ;; A blocker's button in the view comes back to its line.
+      (portal-tasks-view-test--goto view "Third")
+      (portal-tasks-view-test--goto view "Second")
+      (goto-char (button-start (next-button (point))))
+      (push-button)
+      (should (eq (window-buffer) detail))
+      (should (equal (portal-tasks-view-test--detail) "First"))
+      (portal-tasks-back)
+      (should (eq (window-buffer) view))
+      (should (equal (portal-tasks-view-test--at view) "Second"))
+      ;; Without the view, Back makes another.
+      (portal-tasks-view-test--goto view "First")
+      (portal-tasks-open)
+      (kill-buffer view)
+      (portal-tasks-back)
+      (should (equal (buffer-local-value 'portal-tasks--file (window-buffer)) file))
+      (should (equal (portal-tasks-view-test--at (window-buffer)) "First")))))
+
+(ert-deftest portal-tasks-detail-edits-the-file-buffer ()
+  (portal-tasks-view-test--environment
+    (let* ((file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "TODO First" :id "first" :body "Body.\n")
+                  (portal-tasks-view-test--task "TODO Second" :id "second" :depends "first")))
+           (view (portal-tasks-view-test--open file))
+           (source (find-buffer-visiting file))
+           (text (with-current-buffer source (buffer-string))))
+      (portal-tasks-view-test--goto view "First")
+      (execute-kbd-macro (kbd "RET"))
+      ;; Typing and Org's keys edit the task in the file's buffer, unsaved.
+      (goto-char (point-max))
+      (execute-kbd-macro (kbd "RET A d d e d . M-< C-c C-t"))
+      (should (equal (portal-tasks-view-test--detail) "First"))
+      (should (string-suffix-p "Body.\nAdded." (buffer-string)))
+      (should (string-prefix-p "** DONE First" (buffer-string)))
+      ;; Back redraws the view, which reads the unsaved buffer.
+      (execute-kbd-macro (kbd "M-,"))
+      (should (eq (window-buffer) view))
+      (should (equal (portal-tasks-view-test--titles view) '("Second")))
+      (should (buffer-modified-p source))
+      (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string)) text))
+      ;; The task keeps its edits when shown again, and undo is the file's.
+      (portal-tasks-toggle-all)
+      (portal-tasks-view-test--goto view "First")
+      (execute-kbd-macro (kbd "RET"))
+      (should (string-prefix-p "** DONE First" (buffer-string)))
+      (should (string-suffix-p "Added." (buffer-string)))
+      (execute-kbd-macro (kbd "C-/"))
+      (should (string-prefix-p "** TODO First" (buffer-string)))
+      (with-current-buffer source
+        (goto-char (point-min))
+        (should (re-search-forward "^\\*\\* TODO First" nil t)))
+      ;; Saving there saves the file, and redraws the view.
+      (execute-kbd-macro (kbd "C-x C-s"))
+      (should-not (buffer-modified-p source))
+      (should (string-match-p "Body\\.\nAdded\\.\n"
+                              (with-temp-buffer (insert-file-contents file) (buffer-string))))
+      (should (equal (portal-tasks-view-test--titles view)
+                     '("Actionable (1)" "First" "Blocked (1)" "Second"))))))
+
+(ert-deftest portal-tasks-detail-changes-any-state-and-reopens-closed-tasks ()
+  (portal-tasks-view-test--environment
+    (let* ((file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "DONE Shipped" :id "shipped"
+                                                :body "*** Outcome\nIt shipped.\n")
+                  (portal-tasks-view-test--task "CANCELLED Dropped" :id "dropped"
+                                                :body "*** Outcome\nNot needed.\n")
+                  (portal-tasks-view-test--task "TODO After" :id "after" :depends "dropped")
+                  (portal-tasks-view-test--task "TODO Waiting" :id "waiting" :depends "after")))
+           (view (portal-tasks-view-test--open file))
+           (org-inhibit-logging t))
+      (portal-tasks-toggle-all)
+      (should (equal (portal-tasks-view-test--titles view)
+                     '("Blocked (2)" "After" "Waiting" "Closed (2)" "Shipped" "Dropped")))
+      ;; Closed tasks reopen in their detail, keeping their sections.
+      (dolist (title '("Shipped" "Dropped"))
+        (portal-tasks-view-test--goto view title)
+        (portal-tasks-open)
+        (org-todo "TODO")
+        (should (equal (portal-tasks-view-test--detail) title))
+        (should (string-match-p "\\*\\*\\* Outcome\n" (buffer-string)))
+        (portal-tasks-back))
+      (should (equal (portal-tasks-view-test--titles view)
+                     '("Actionable (2)" "Shipped" "Dropped" "Blocked (2)" "After" "Waiting")))
+      ;; Readiness never stops a state change: a blocked task can be done.
+      (portal-tasks-view-test--goto view "Waiting")
+      (portal-tasks-open)
+      (org-todo "DONE")
+      (portal-tasks-back)
+      ;; Cancelling a task blocks its dependents again.
+      (portal-tasks-view-test--goto view "Dropped")
+      (portal-tasks-open)
+      (org-todo "CANCELLED")
+      (portal-tasks-back)
+      (should (equal (portal-tasks-view-test--lines view)
+                     '("Actionable (1)" "TODO Shipped :task:"
+                       "Blocked (1)" "TODO After — waiting for dropped (CANCELLED) :task:"
+                       "Closed (2)" "CANCELLED Dropped :task:" "DONE Waiting :task:"))))))
 
 (provide 'portal-tasks-view-tests)
 ;;; portal-tasks-view-tests.el ends here

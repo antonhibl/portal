@@ -76,4 +76,71 @@
             (kill-buffer buffer)))
         (delete-directory root t)))))
 
+(defun portal-tasks-view-gui--at (view)
+  "Return the title of the task on the line at point in VIEW's selected pane."
+  (with-current-buffer view
+    (when-let* ((marker (get-text-property (line-beginning-position) 'org-hd-marker)))
+      (org-with-point-at marker (org-get-heading t t t t)))))
+
+(defun portal-tasks-view-gui--hidden-p (buffer text)
+  "Return non-nil if Org folds away TEXT in BUFFER."
+  (with-current-buffer buffer
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (search-forward text)
+        (invisible-p (match-beginning 0))))))
+
+(ert-deftest portal-tasks-view-gui-detail-and-back-keep-the-task ()
+  (let* ((root (file-name-as-directory (file-truename (make-temp-file "portal-tasks-view-gui-" t))))
+         (file (expand-file-name "project.org" root))
+         (initial-buffers (buffer-list)))
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (make-directory (expand-file-name ".git" root))
+            (with-temp-file file
+              (insert "* Area\n"
+                      "** TODO First :task:\n:PROPERTIES:\n:CUSTOM_ID: first\n:END:\nFirst's body.\n"
+                      "** TODO Second :task:\n:PROPERTIES:\n:CUSTOM_ID: second\n:END:\n"
+                      "Second's body.\n"
+                      "** TODO Third :task:\n:PROPERTIES:\n:CUSTOM_ID: third\n:END:\n"))
+            (delete-other-windows)
+            (find-file file)
+            (org-overview)
+            (let* ((source (current-buffer))
+                   (view (portal-tasks))
+                   (other (split-window)))
+              (set-window-buffer other source)
+              (redisplay t)
+              (with-current-buffer view
+                (goto-char (point-min))
+                (forward-line 1)
+                (set-window-point (selected-window) (point)))
+              (should (equal (portal-tasks-view-gui--at view) "Second"))
+              ;; RET shows the whole task, while the file's pane keeps its folds.
+              (execute-kbd-macro (kbd "RET"))
+              (redisplay t)
+              (should (eq (buffer-base-buffer (window-buffer)) source))
+              (should-not (portal-tasks-view-gui--hidden-p (window-buffer) "Second's body."))
+              (should (portal-tasks-view-gui--hidden-p source "Second's body."))
+              (should (eq (window-buffer other) source))
+              ;; An edit there redraws the view on Back, still on the task.
+              (goto-char (point-max))
+              (execute-kbd-macro (kbd "RET N o t e d ."))
+              (execute-kbd-macro (kbd "M-,"))
+              (redisplay t)
+              (should (eq (window-buffer) view))
+              (should (equal (portal-tasks-view-gui--at view) "Second"))
+              (should (equal (portal-tasks-view-gui--tasks view) '("First" "Second" "Third")))
+              (should (portal-tasks-view-gui--hidden-p source "Second's body."))))
+        (dolist (buffer (sort (cl-set-difference (buffer-list) initial-buffers)
+                              :key (lambda (buffer)
+                                     (if (buffer-local-value 'portal-tasks--file buffer) 0 1))))
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer)))
+        (delete-directory root t)))))
+
 ;;; portal-tasks-view-gui-tests.el ends here
