@@ -205,6 +205,7 @@ and a hidden page refreshes once it is shown."
 (declare-function org-agenda-finalize "org-agenda" ())
 (declare-function org-agenda-reset-markers "org-agenda" ())
 (declare-function org-agenda-switch-to "org-agenda" (&optional delete-other-windows))
+(declare-function evil-define-key* "evil-core" (state keymap key def &rest bindings))
 (declare-function org-all-archive-files "org-archive" ())
 (declare-function org-element-context "org-element" (&optional element))
 (declare-function org-element-lineage "org-element-ast" (datum &optional types with-self))
@@ -242,6 +243,17 @@ and a hidden page refreshes once it is shown."
   "q" #'quit-window)
 (with-eval-after-load 'org-agenda
   (set-keymap-parent portal-tasks-view-map org-agenda-mode-map))
+;; evil-collection shows agenda buffers in Evil's normal state, whose agenda
+;; keys outrank this map.  There Portal's commands take evil-collection's
+;; keys for them, and its other agenda keys still act on a task.
+(with-eval-after-load 'evil
+  (evil-define-key* 'normal portal-tasks-view-map
+    (kbd "RET") #'portal-tasks-open
+    (kbd "<return>") #'portal-tasks-open
+    "gr" #'portal-tasks-refresh
+    "gR" #'portal-tasks-refresh
+    "v" #'portal-tasks-toggle-all
+    "q" #'quit-window))
 
 ;;;###autoload
 (defun portal-tasks ()
@@ -260,6 +272,8 @@ on a line.
 
 The view reads the file's buffer, saved or not.  It is redrawn when shown
 again after a change, when the file is saved, and on \\[portal-tasks-refresh].
+In Evil's normal state, as evil-collection shows it, gr redraws it, and
+RET, v and q are as here.
 Each pane keeps its task.  Each project has one view, which keeps its
 choice of tasks.  This needs the org-ql package."
   (interactive)

@@ -750,6 +750,13 @@ line, so Org's other agenda keys act on its task: `t` changes its state and
 `TAB` goes to it in its file, for example. `g` redraws the view, and `q`
 leaves it.
 
+With [evil-collection](https://github.com/emacs-evil/evil-collection), the view
+is in Evil's normal state, where evil-collection's agenda keys come before the
+view's. There `RET`, `v` and `q` work as above, and `gr` or `gR` redraws the
+view. Its other agenda keys still act on a task, such as `t`, and `r`, which
+refiles it. This is tested with Evil 1.15.0 and evil-collection 3.0.3, and
+with MELPA's 20260728.1438 and 20260818.145.
+
 The project is the one being edited, as for
 [quick terminals](#quick-project-terminal): in a terminal, the terminal's
 own project; elsewhere, the project of the file or Dired buffer the frame
@@ -1371,14 +1378,16 @@ refreshes only the loaded views of its root. One test runs the real app host,
 and `ctest -R actions` sends status changes, a repeated change, a refusal and
 Edit in Emacs from the compiled host through Emacs's command loop.
 Batch task view tests run with `ctest --test-dir build -R tasks-view`, against
-org-ql 0.8.10 and the libraries it loads that Emacs lacks, which CMake downloads
-into `build/elpa` from their release tags and verifies by hash. They cover the
+org-ql 0.8.10 and the libraries it loads that Emacs lacks, and Evil 1.15.0 and
+evil-collection 3.0.3, which CMake downloads into `build/elpa` from NonGNU ELPA
+and release tags and verifies by hash. They cover the
 project from a file, an auxiliary buffer, a terminal and the view itself, and
 two projects apart; readiness from unsaved edits, a cancelled prerequisite,
 missing, shared and untagged IDs, cycles, a keyword other than `TODO`, and
 archived prerequisites; schedules from yesterday to tomorrow, deadlines and
 ordering; links to blockers; `g`, saving, a new day and returning, each pane
-keeping its task; the empty list; and Org's agenda keys on a line. Task detail
+keeping its task; the empty list; Org's agenda keys on a line; and typing the
+view's keys in evil-collection's normal state, its other keys staying. Task detail
 tests check that `RET` shows the whole task with its own folds, the file's
 staying folded and typing at the task's end touching no folded text, and
 reuses one detail; that keys other than `M-,` are Org's;
