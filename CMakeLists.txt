@@ -85,7 +85,8 @@ if(BUILD_TESTING)
         "consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
         "embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
         "vertico-2.15=5c3492edb1e0020da711d9a4213a3878e90e7af8e2e6375757901f4b399872ff"
-        "orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa")
+        "orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa"
+        "dash-2.20.0=28f84b0905f84520163f5dd2087e47cac042bd27b7ec34eeb293f1ada7d36cb2")
     set(elpa_load_path "")
     foreach(entry IN LISTS elpa_packages)
         string(REPLACE "=" ";" entry "${entry}")
@@ -101,6 +102,38 @@ if(BUILD_TESTING)
         endif()
         list(APPEND elpa_load_path -L "${directory}")
     endforeach()
+    # The task view is tested with org-ql 0.8.10 and the other libraries it
+    # loads that Emacs lacks, from their release tags: MELPA Stable keeps
+    # only each package's latest release.  Dash comes from GNU ELPA above.
+    set(github_packages
+        "alphapapa/org-ql=v0.8.10=1a0b416f47bcfb1f45345f62ad5fa89f15c7758941adeb0076db76217078607d"
+        "alphapapa/org-super-agenda=v1.3=0ef83a5c42188d571ff977edd54415f09bc833e048b087f1781d492d05a853f7"
+        "alphapapa/ts.el=0.3=c79efa802fde5c84fecca01f7b80fbb54b29b792067b5f1a1e517181f2176cc6"
+        "emacsorphanage/ov=1.0.6=f2a8bb7bd5077542fa31de38323a9cc31142df0c7864a0f43196cde2722fe336"
+        "magnars/s.el=1.13.1=807b9a29f26b5b3ded8e9bba979201b6714cb275286306c32fb72b8098073999"
+        "Wilfred/ht.el=2.3=1a85a4659f603f7e2199f82198e7be2f78c32a195cbdd8402435c22f3b233a4b")
+    foreach(entry IN LISTS github_packages)
+        string(REPLACE "=" ";" entry "${entry}")
+        list(GET entry 0 repository)
+        list(GET entry 1 tag)
+        list(GET entry 2 hash)
+        # GitHub names the folder after the repository and the tag, without a v.
+        get_filename_component(name "${repository}" NAME)
+        string(REGEX REPLACE "^v" "" version "${tag}")
+        set(directory "${CMAKE_BINARY_DIR}/elpa/${name}-${version}")
+        if(NOT EXISTS "${directory}")
+            file(DOWNLOAD "https://codeload.github.com/${repository}/tar.gz/refs/tags/${tag}"
+                "${directory}.tar.gz" EXPECTED_HASH SHA256=${hash})
+            file(ARCHIVE_EXTRACT INPUT "${directory}.tar.gz" DESTINATION "${CMAKE_BINARY_DIR}/elpa")
+            file(REMOVE "${directory}.tar.gz")
+        endif()
+        list(APPEND elpa_load_path -L "${directory}")
+    endforeach()
+    add_test(NAME tasks-view
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
+            -l "${CMAKE_SOURCE_DIR}/test/portal-tasks-view-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(tasks-view PROPERTIES TIMEOUT 30)
     foreach(adapter consult embark)
         add_test(NAME terminal-${adapter}
             COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}

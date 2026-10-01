@@ -13,8 +13,8 @@ its subtree in an indirect buffer. Task headings carry the =task= tag; org-ql
 can query this file directly without adding it to a global agenda.
 
 Each task has a stable Org =ID= and a readable =CUSTOM_ID= preserving its previous
-Portal task ID. =DEPENDS_ON= lists prerequisite CUSTOM_IDs in this file; the
-existing dependency descriptions link to those tasks. This is explicit metadata,
+Portal task ID. =DEPENDS_ON= lists prerequisite CUSTOM_IDs in this file or its
+archive, =project.org_archive=; the existing dependency descriptions link to those tasks. This is explicit metadata,
 not built-in Org enforcement. Groups and prose links imply no dependencies.
 =SOURCE= records the original Markdown path. Existing states and checkbox marks
 are preserved independently; completion dates have not been invented.
@@ -83,9 +83,9 @@ References: [[https://ghostty.org/docs/vt/osc/conemu][Ghostty progress]],
 * Task management :tasks:
 Org workflow design: three implementation tasks, in order below. Keep the UI in
 Org and org-ql; Portal adds project scope, readiness, navigation, and launch.
-Design only for now. Implementation and completion are tracked in these subtrees.
+Implementation and completion are tracked in these subtrees.
 
-** TODO Show actionable project tasks with org-ql :task:
+** DONE Show actionable project tasks with org-ql :task:
 :PROPERTIES:
 :CUSTOM_ID: org-task-actionable-view
 :ID: 3083ff1e-835b-4ea9-9d82-5196bd07790e
@@ -107,8 +107,49 @@ All tasks also shows blocked, deferred, and closed work.
   selection and query. No global agenda setup.
 
 *** Acceptance
-- [ ] Verify project isolation, dependency changes, cancellation, invalid graphs,
+- [X] Verify project isolation, dependency changes, cancellation, invalid graphs,
   future schedules, ordering, refresh, and an empty actionable list.
+
+*** Outcome
+=M-x portal-tasks= opens one =org-agenda-mode= buffer per project, such as
+=*tasks: ~/workspace/portal*=, and =v= switches it between Actionable and All
+tasks. The Markdown browser's command became =portal-tasks-browser=. org-ql
+selects the =(tags-local "task")= headings of the =project.org= buffer and formats
+each as an agenda line, so Org's agenda keys work on rows. Portal judges each task
+in Lisp and draws the buffer itself. All tasks groups Actionable, Blocked,
+Deferred and Closed. Before the tags, each blocked or deferred row gives its
+reasons, with buttons that go to its blockers. org-ql loads on first use, so Portal
+still loads without it.
+
+Decisions made during implementation:
+- =DEPENDS_ON= also resolves in the file's Org archives (=org-all-archive-files=).
+  The agent dashboard depends on =terminal-buffer-metadata=, which is archived in
+  =project.org_archive=. Archived tasks are not listed, and an ID used in both
+  files is shared.
+- A task's own missing or shared =CUSTOM_ID=, or a keyword other than =TODO=, blocks
+  it. A TODO task on a dependency cycle is blocked, even when the cycle passes
+  through a DONE task; a dependent of that DONE task is not.
+- A task without a priority sorts at Org's default priority, as Org does.
+- Redraws keep each pane on its task by its heading's position, and fall back to the
+  same line. A view is redrawn on return only when the day or a source buffer
+  changed. Killing the view leaves other agendas' markers alone.
+
+*** Verification
+Verified on 2026-10-01 (macOS 27.0, Emacs 31.1, Org 9.8.7):
+- =./build.sh= and =ctest --test-dir build --output-on-failure= (24 of 24) pass,
+  with =bun run --cwd host check= and =typecheck=. The new =tasks-view= suite runs
+  against org-ql 0.8.10, its libraries pinned by hash in =build/elpa=. It also
+  passes against MELPA org-ql 20250421.133.
+  Mutations (CANCELLED counted as done, no redraw, no pane restore, the agenda
+  marker reset kept) each fail it.
+- =portal-tasks.el= byte-compiles without warnings, with and without org-ql.
+- The combined graphical suite passes 63 of 64; =portal-terminal-start-uses-shell-startup=
+  is skipped without =PORTAL_TEST_SHELL_DIRECTORY=. New:
+  =portal-tasks-view-gui-redraws-when-shown-again=, which fails when the window
+  change hooks are removed. The renamed task browser tests all pass.
+- On this file, with this task DONE, the view lists the agent dashboard and the
+  detail-navigation task as actionable, and the Claude launch task as blocked by
+  that task.
 
 ** TODO Enter task details and return using native Org editing :task:
 :PROPERTIES:

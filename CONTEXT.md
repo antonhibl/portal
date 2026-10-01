@@ -41,3 +41,17 @@ _Avoid_: UI host, Bun host, server, host (unqualified)
 **Bridge**:
 The message channel between a hosted app and the buffer that presents it. Only hosted apps get a bridge; other web content never does.
 _Avoid_: editor channel, event pipe
+
+## Tasks
+
+**Task**:
+A heading in a project's `project.org` with its own `task` tag, identified by its `CUSTOM_ID`. Its `DEPENDS_ON` property names its prerequisites.
+_Avoid_: ticket, issue
+
+**Actionable task**:
+A `TODO` task whose prerequisites are all `DONE` and that is not scheduled after today.
+_Avoid_: ready task, unblocked task
+
+**Task view**:
+The Org agenda buffer of a project's tasks that `portal-tasks` shows: the actionable ones, or all of them with why each is not actionable.
+_Avoid_: task browser, which is the hosted app for Markdown tasks

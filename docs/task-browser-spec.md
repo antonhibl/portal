@@ -12,13 +12,14 @@ Emacs remains the editor: v1 reads files and never writes task content or status
 ## Entry point and launch flow
 
 The user-facing entry point is a new interactive Elisp function, `portal-tasks`,
-in `portal-tasks.el`, loaded by `portal.el`. After loading Portal, users can run
-`M-x portal-tasks` or call `(portal-tasks)` from Lisp. It follows the same hosted-app
+in `portal-tasks.el`, loaded by `portal.el`; it is now `portal-tasks-browser`, as
+`portal-tasks` lists `project.org` tasks with org-ql. After loading Portal, users
+can run `M-x portal-tasks-browser` or call `(portal-tasks-browser)` from Lisp. It follows the same hosted-app
 launch pattern as [`portal-excalidraw`](../portal-excalidraw.el): an Emacs command
 opens an embedded Portal web view served by the bundled Bun app host.
 
 ```text
-M-x portal-tasks / (portal-tasks)
+M-x portal-tasks-browser / (portal-tasks-browser)
   resolve the current Emacs project and its configured task root
   open or reuse that root's task buffer and Portal web view
   start the shared app host if needed; load /tasks when it is ready
@@ -453,7 +454,8 @@ buttons, automatic refresh, comments, executable mock-up previews, cross-project
 aggregation, cross-branch reconciliation, and migration of existing documents
 are outside this implementation; [task operations](#task-operations) later
 added status buttons and refresh. The repository tasks were subsequently migrated
-to the default `tasks/` root with status front matter; browse them with `M-x portal-tasks`.
+to the default `tasks/` root with status front matter; browse them with
+`M-x portal-tasks-browser`.
 
 ## Research basis
 

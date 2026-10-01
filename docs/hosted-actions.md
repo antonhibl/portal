@@ -114,7 +114,7 @@ standalone Ghostty app's configuration file.
 The command is supplied at surface creation, with no delayed paste or simulated
 typing. Missing programs are reported by the shell inside the terminal, whose
 last output stays visible after exit. Hidden terminals continue running;
-closing their buffers ends their sessions. Closing the task view does not close
+closing their buffers ends their sessions. Closing the task browser does not close
 a launched terminal. The raw native `:command` option remains available for
 callers that intentionally replace the normal shell.
 
@@ -126,7 +126,7 @@ native operation or process protocol.
 
 ## Task operations
 
-A task view registers two more operations, which change nothing but the one
+A task browser registers two more operations, which change nothing but the one
 task file and never move the keyboard unless asked to:
 
 - `task.status` with `file`, `start`, `end`, `text` and `before`: replace bytes
