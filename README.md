@@ -778,8 +778,9 @@ link in the view. Org follows every other link as usual. `M-,`, wherever
 you were in it, and finally to the view, on the task you opened. The view is
 redrawn on the way back, so its readiness reflects your edits. The project has
 one detail, reused for each task. Tasks are found again by their file and
-`CUSTOM_ID` each time. A task without a `CUSTOM_ID`, or one that shares it,
-opens in its file instead, as in Org's agenda.
+`CUSTOM_ID` each time, across `project.org` and its archives. A task without a
+`CUSTOM_ID`, or one that shares it, opens in its file instead, as in Org's
+agenda, and a link to a shared `CUSTOM_ID` says so rather than pick a task.
 
 `DONE` and `CANCELLED` tasks stay in the view's Closed group. Reopen one by
 setting it back to `TODO` in its detail or with `t`. Reopening or cancelling
@@ -1380,7 +1381,8 @@ keeping its task; the empty list; and Org's agenda keys on a line. Task detail
 tests check that `RET` shows the whole task with its own folds, the file's
 staying folded and typing at the task's end touching no folded text, and
 reuses one detail; that keys other than `M-,` are Org's;
-that tasks without a unique `CUSTOM_ID` open in their file; that task links,
+that tasks without a unique `CUSTOM_ID` open in their file and links to a
+shared one are refused; that task links,
 archived tasks and blockers' links in the view show their task, and `M-,` goes
 back to each link's place and to the view on its task, even after another pane
 moved the view, or the view was killed; that typing, `C-c C-t`, undo and

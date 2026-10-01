@@ -484,7 +484,7 @@ The detail is narrowed to all of that task."
                   (portal-tasks-view-test--task "TODO Second" :id "second" :body "Second's body.\n")
                   (portal-tasks-view-test--task "TODO Anonymous" :body "No ID.\n")
                   (portal-tasks-view-test--task "TODO Twin one" :id "twin")
-                  (portal-tasks-view-test--task "TODO Twin two" :id "twin")))
+                  (portal-tasks-view-test--task "TODO Twin two" :id "twin" :depends "first")))
            (view (portal-tasks-view-test--open file))
            (source (find-buffer-visiting file))
            (keys (mapcar #'kbd '("a" "RET" "TAB" "C-c C-t" "C-c C-o" "C-c C-s" "C-c C-c"
@@ -529,18 +529,24 @@ The detail is narrowed to all of that task."
         (should (portal-tasks-view-test--hidden-p source "Second's body."))
         ;; The detail's project is its own.
         (should (eq (portal-tasks) view))
-        ;; A task its CUSTOM_ID does not find opens in its file, as in Org.
+        ;; A task its CUSTOM_ID does not find, as it has none or shares it,
+        ;; opens in its file, as in Org.
         (portal-tasks-toggle-all)
-        (dolist (title '("Anonymous" "Twin two"))
+        (dolist (title '("Anonymous" "Twin one" "Twin two"))
           (portal-tasks-view-test--goto view title)
           (portal-tasks-open)
           (should (eq (window-buffer) source))
           (should (equal (org-get-heading t t t t) title))
           (switch-to-buffer view))
-        (portal-tasks-view-test--goto view "Twin one")
-        (portal-tasks-open)
+        ;; Back from its blocker returns to its line, not to its twin's.
+        (portal-tasks-view-test--goto view "Twin two")
+        (goto-char (button-start (next-button (point))))
+        (push-button)
         (should (eq (window-buffer) detail))
-        (should (equal (portal-tasks-view-test--detail) "Twin one"))))))
+        (should (equal (portal-tasks-view-test--detail) "First"))
+        (portal-tasks-back)
+        (should (eq (window-buffer) view))
+        (should (equal (portal-tasks-view-test--at view) "Twin two"))))))
 
 (ert-deftest portal-tasks-detail-follows-task-links-and-goes-back ()
   (portal-tasks-view-test--environment
@@ -551,15 +557,18 @@ The detail is narrowed to all of that task."
                    "TODO Second" :id "second" :depends "first"
                    :body (concat "*** Blocked by\n[[#first][The first task]], once "
                                  "[[#archived][the archived one]] was done.\n"
+                                 "Not [[#twin][a twin]].\n"
                                  "See [[#second-notes][the notes]].\n"
                                  "*** Notes\n:PROPERTIES:\n:CUSTOM_ID: second-notes\n:END:\n"
                                  "Notes.\n"))
-                  (portal-tasks-view-test--task "TODO Third" :id "third")))
+                  (portal-tasks-view-test--task "TODO Third" :id "third")
+                  (portal-tasks-view-test--task "TODO Twin" :id "twin")))
            (archive (concat file "_archive"))
            (view nil) (detail nil) (name nil) (link nil))
       (with-temp-file archive
         (insert "#    -*- mode: org -*-\n#+TODO: TODO | DONE CANCELLED\n"
-                "* DONE Archived :task:\n:PROPERTIES:\n:CUSTOM_ID: archived\n:END:\nDone long ago.\n"))
+                "* DONE Archived :task:\n:PROPERTIES:\n:CUSTOM_ID: archived\n:END:\nDone long ago.\n"
+                "* DONE Twin before :task:\n:PROPERTIES:\n:CUSTOM_ID: twin\n:END:\n"))
       (setq view (portal-tasks-view-test--open file))
       (portal-tasks-toggle-all)
       (portal-tasks-view-test--goto view "Second")
@@ -589,6 +598,10 @@ The detail is narrowed to all of that task."
       (should (search-backward "first task Edited]], once" nil t))
       (should (buffer-modified-p (buffer-base-buffer)))
       (goto-char link)
+      ;; A CUSTOM_ID two tasks share, here and in the archive, shows neither.
+      (search-forward "a twin")
+      (should-error (org-open-at-point) :type 'user-error)
+      (should (equal (portal-tasks-view-test--detail) "Second"))
       ;; Org follows a link to a heading that is not a task.
       (search-forward "the notes")
       (org-open-at-point)

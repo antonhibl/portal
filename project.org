@@ -203,9 +203,11 @@ Decisions made during implementation:
 - Back is =M-,= because Org leaves it free: =xref-go-back= is Emacs's way back
   from a followed reference, and the remap follows the user's binding for it.
   Org binds every other natural key, such as =C-c C-b= and =C-c &=.
-- A task whose =CUSTOM_ID= does not find it, because it has none or shares
-  one, opens in its file through Org's =org-agenda-switch-to=. Only broken
-  tasks in All tasks are affected; every actionable task has a unique ID.
+- A =CUSTOM_ID= finds a task only when exactly one task in the file and its
+  archives has it, as =DEPENDS_ON= resolves. A task without a =CUSTOM_ID=, or
+  with a shared one, opens in its file through Org's =org-agenda-switch-to=,
+  and a link to a shared one is refused. Only broken tasks in All tasks are
+  affected; every actionable task has a unique ID.
 - An archived task's base buffer differs, so showing it kills the detail and
   makes it again under the same name. Unsaved edits belong to the base, so
   they survive.
@@ -224,8 +226,8 @@ Verified on 2026-10-02 (macOS 27.0, Emacs 31.1, Org 9.8.7):
   =bun run --cwd host check= and =typecheck= pass. =tasks-view= has four new
   detail tests. Each of these mutations fails one: no subtree shown, the
   trailing newline left folded, no link hook, no base check, no return
-  position, no redraw or task search on return, no unique-ID check, and no
-  view place.
+  position, no redraw or task search on return, no unique-ID check, the first
+  of a shared ID taken on return, and no view place.
 - =portal-tasks.el= byte-compiles without warnings, with and without org-ql.
 - The combined graphical suite passes 63 of 65, with
   =portal-terminal-start-uses-shell-startup= skipped without

@@ -607,7 +607,7 @@ when it has none or shares it, opens in its file, as in Org's agenda."
   (portal-tasks--check)
   (let* ((heading (get-text-property (line-beginning-position) 'org-hd-marker))
          (id (and (markerp heading) (org-entry-get heading "CUSTOM_ID"))))
-    (if (and id (equal (portal-tasks--locate portal-tasks--file id) heading))
+    (if (equal (portal-tasks--locate portal-tasks--file id) (list heading))
         (portal-tasks--show portal-tasks--file id (list (cons 'view id)))
       (org-agenda-switch-to))))
 
@@ -625,7 +625,8 @@ view, on the task the detail was opened from and redrawn if it changed."
 
 (defun portal-tasks--follow ()
   "Show the task a CUSTOM_ID link at point names, if it names one.
-For `org-open-at-point-functions'.  Back returns to point."
+For `org-open-at-point-functions'.  Back returns to point.  A CUSTOM_ID
+that several tasks share is an error, rather than a choice of one."
   (when-let* ((link (org-element-lineage (org-element-context) 'link t))
               ((equal (org-element-property :type link) "custom-id"))
               (id (org-element-property :path link))
@@ -637,24 +638,26 @@ For `org-open-at-point-functions'.  Back returns to point."
     t))
 
 (defun portal-tasks--locate (file id)
-  "Return the heading of the task with CUSTOM_ID ID in FILE's project, or nil.
-FILE is a project.org.  The task is the first with ID in FILE, or else in
-its archives, and its heading is a marker."
+  "Return the headings of the tasks with CUSTOM_ID ID in FILE's project.
+FILE is a project.org, and the tasks are in it and its archives.  Each
+heading is a marker.  ID finds a task only when this returns just one."
   (when id
     (let ((source (portal-tasks--visiting file)))
-      (seq-some (lambda (buffer)
-                  (seq-some (lambda (task)
-                              (and (equal (org-element-property :CUSTOM_ID task) id)
-                                   (org-element-property :org-hd-marker task)))
-                            (portal-tasks--select buffer)))
-                (cons source (portal-tasks--archives source))))))
+      (seq-keep (lambda (task)
+                  (and (equal (org-element-property :CUSTOM_ID task) id)
+                       (org-element-property :org-hd-marker task)))
+                (seq-mapcat #'portal-tasks--select
+                            (cons source (portal-tasks--archives source)))))))
 
 (defun portal-tasks--show (file id trail &optional position)
   "Show the task with CUSTOM_ID ID in the detail of FILE, a project.org.
 Show the detail in the selected pane, narrowed to the task and at the
 marker POSITION if that is in it.  Back from there retraces TRAIL."
-  (let* ((heading (or (portal-tasks--locate file id)
-                      (user-error "No task %s in %s" id (abbreviate-file-name file))))
+  (let* ((heading (pcase (portal-tasks--locate file id)
+                    (`(,heading) heading)
+                    ('nil (user-error "No task %s in %s" id (abbreviate-file-name file)))
+                    (_ (user-error "Tasks in %s share CUSTOM_ID %s"
+                                   (abbreviate-file-name file) id))))
          (base (marker-buffer heading))
          (detail (seq-find (lambda (buffer)
                              (equal (buffer-local-value 'portal-tasks--detail buffer) file))
@@ -691,12 +694,12 @@ marker POSITION if that is in it.  Back from there retraces TRAIL."
 
 (defun portal-tasks--return (file id)
   "Show the task view of FILE in the selected pane, redrawn if it changed.
-Move to the task with CUSTOM_ID ID, if the view lists it."
+Move to the task with CUSTOM_ID ID, if ID finds it and the view lists it."
   (pop-to-buffer-same-window (portal-tasks--view file))
   (portal-tasks--update)
-  (when-let* ((line (and id (portal-tasks--search
-                             (lambda (heading) (equal (org-entry-get heading "CUSTOM_ID") id))))))
-    (goto-char line)))
+  (pcase (portal-tasks--locate file id)
+    (`(,task) (when-let* ((line (portal-tasks--search (lambda (heading) (equal heading task)))))
+                (goto-char line)))))
 
 (provide 'portal-tasks)
 ;;; portal-tasks.el ends here
