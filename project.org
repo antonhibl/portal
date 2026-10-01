@@ -4,8 +4,8 @@
 #+STARTUP: show2levels
 #+COLUMNS: %65ITEM(Task) %TODO(State) %CUSTOM_ID(Task ID)
 
-All 24 tasks from =tasks/= are collected here: 1 TODO and 23 DONE. Detailed plans,
-acceptance checklists, decisions, and verification records remain with their task.
+The initial import from =tasks/= preserved 24 tasks: 1 TODO and 23 DONE. New work
+is authored here. Plans, checklists, decisions, and verification stay with each task.
 The Markdown originals are retained for comparison with the current task browser.
 
 Use TAB to fold a task, C-c C-t to change its state, and C-c C-x b to edit just
@@ -1220,6 +1220,104 @@ before implementation.
 So emacs can be the default markdown file viewer
 
 * Task management :tasks:
+Org workflow design: three implementation tasks, in order below. Keep the UI in
+Org and org-ql; Portal adds project scope, readiness, navigation, and launch.
+Design only for now. Implementation and completion are tracked in these subtrees.
+
+** TODO Show actionable project tasks with org-ql :task:
+:PROPERTIES:
+:CUSTOM_ID: org-task-actionable-view
+:ID: 3083ff1e-835b-4ea9-9d82-5196bd07790e
+:END:
+=M-x portal-tasks= opens the project's =project.org= in an Actionable org-ql view.
+All tasks also shows blocked, deferred, and closed work.
+
+*** UX and rules
+- Scope queries to the current project, including from its terminal. Select only
+  headings with a local =task= tag; keep native Org priorities, dates, and tags.
+- Actionable means =TODO=, every =DEPENDS_ON= target is literally =DONE=, and no
+  future =SCHEDULED= timestamp. A deadline affects urgency, not eligibility.
+  Order by priority, nearest deadline, then file order.
+- =CANCELLED= prerequisites keep dependents blocked until the dependency changes.
+  Missing/duplicate IDs and cycles also block affected tasks. All tasks shows
+  reasons and links to blockers. Portal resolves =DEPENDS_ON=; org-ql's built-in
+  =blocked= predicate does not understand it.
+- Use current buffer contents. Refresh on return, save, or =g=, preserving task
+  selection and query. No global agenda setup.
+
+*** Acceptance
+- [ ] Verify project isolation, dependency changes, cancellation, invalid graphs,
+  future schedules, ordering, refresh, and an empty actionable list.
+
+** TODO Enter task details and return using native Org editing :task:
+:PROPERTIES:
+:CUSTOM_ID: org-task-detail-navigation
+:ID: 64151693-37b0-4cf6-ba13-8acf5350de5c
+:DEPENDS_ON: org-task-actionable-view
+:END:
+=RET= opens an editable indirect Org buffer narrowed to the task. Reuse that
+detail buffer; keep the base file's visibility intact.
+
+*** Blocked by
+[[#org-task-actionable-view][The project task view]] supplies identity and the return location.
+
+*** UX and rules
+- Back restores the previous view and task, refreshing readiness. Preserve
+  ordinary text insertion and Org keys.
+- Use native folding, links, checkboxes, scheduling, and =C-c C-t=. Add
+  =TODO | DONE CANCELLED= to file keywords and authoring guidance; all states
+  remain manually editable.
+  Readiness must not prevent a user from changing state directly in Org.
+- Use normal Org save/undo; leaving detail keeps unsaved edits. Preserve history
+  on reopening or cancellation. Cancelling does not stop a terminal process.
+- Blocker links open that task's detail. Locate tasks by file plus =CUSTOM_ID=.
+
+*** Acceptance
+- [ ] List -> detail -> blocker -> Back returns through the same locations.
+- [ ] Source edits, state changes, and unsaved changes survive navigation.
+- [ ] DONE and CANCELLED remain discoverable in All tasks and can be reopened.
+
+** TODO Launch Claude with exactly one task as its initial brief :task:
+:PROPERTIES:
+:CUSTOM_ID: org-task-claude-launch
+:ID: 5fbf0f3e-e2ff-4d91-997e-aa42ecb54678
+:DEPENDS_ON: org-task-detail-navigation
+:END:
+=portal-tasks-implement= works from a row or inside its subtree. Open Claude in
+a task-named =portal-terminal= at the captured project directory. Reuse configured
+program/arguments as literal arguments through =portal-terminal-start=.
+
+*** Blocked by
+[[#org-task-detail-navigation][Task detail navigation]] supplies identity from either view.
+
+*** Initial handoff
+- Resolve the task again and recheck readiness. Offer to save modified source;
+  abort on cancelled save, external edit conflict, or non-actionable task.
+- Snapshot exactly the saved subtree and child sections. Include project/source
+  path, =CUSTOM_ID=, line range, and source digest. This unique, immutable file is
+  disposable launch context; retain it while the launched terminal exists.
+- The initial prompt names that exact snapshot as the task brief to read first,
+  and instructs Claude to implement that task under the repository's instructions.
+  Keep prerequisite bodies out of this initial brief; resolve task and file
+  links relative to the original =project.org= for later lookup.
+- Update authoritative =project.org= by task ID; snapshot line numbers are only
+  provenance. Verify Claude can read the snapshot through its normal access rules.
+- First-read targeting is the scope of v1. Later agent reads, session monitoring,
+  worktree automation, and removal of the Markdown browser are deferred. In the
+  same Emacs instance and project, offer the task's existing launch terminal on
+  repeated invocation; starting another run should be explicit.
+
+*** Completion
+Launch leaves state unchanged. Instruct the agent to mark =DONE= and record
+verification after the work and checks pass, normally in the implementation PR.
+Other worktrees receive that update through Git; no shared in-progress status.
+
+*** Acceptance
+- [ ] A real Claude launch reads the selected task's immutable brief from either
+  view; cover large neighboring tasks and spaces/quotes in paths.
+- [ ] Save/launch failures preserve task state and edits; repeated launch does not
+  accidentally create another run. Document the commands and initial-read contract.
+
 ** DONE Launch Claude from task details through hosted app actions :task:
 :PROPERTIES:
 :CUSTOM_ID: implement-tasks-with-claude
