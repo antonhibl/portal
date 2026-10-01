@@ -98,7 +98,8 @@ Found while implementing:
   no key after the trigger, and the redisplay before it gave the view the
   keyboard back took them in, so they ran in the buffer behind the resumed
   view. Emacs now keeps the keyboard while any wait. Agreed with the user in
-  review on 2026-10-01.
+  review on 2026-10-01. It keeps it too while a command leaves a prefix
+  argument or a transient keymap, as `universal-argument` and isearch do.
 - WebKit hands back a key a page did not use by sending the same event
   through `[NSApp sendEvent:]`, which Portal already saw and discarded. It sends
   the next queued key to the page first, so Portal holds keys after a chord

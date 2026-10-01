@@ -62,6 +62,23 @@
         (should-not resumed)
         (should (equal unread-command-events '(?x)))))))
 
+(defun portal-input-test--transient ()
+  (interactive)
+  (set-transient-map (make-sparse-keymap)))
+
+(ert-deftest portal-input-an-unfinished-command-keeps-emacs-in-control ()
+  ;; A prefix argument, or a transient keymap, waits for the user's next key.
+  (dolist (command '(universal-argument portal-input-test--transient))
+    (portal-input-test--in portal-web-mode
+      (use-local-map (make-sparse-keymap))
+      (local-set-key (kbd "C-u") command)
+      (let ((unread-command-events nil) (prefix-arg nil)
+            (overriding-terminal-local-map nil) (pre-command-hook nil))
+        (portal-input--run "web:1" 1 (kbd "C-u") nil)
+        (should overriding-terminal-local-map)
+        (should (equal prefix-arg (and (eq command 'universal-argument) '(4))))
+        (should-not resumed)))))
+
 (ert-deftest portal-input-escape-and-error-do-not-resume ()
   (dolist (kind '(unfocus escape error hidden))
     (with-temp-buffer

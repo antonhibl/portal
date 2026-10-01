@@ -109,12 +109,14 @@ The native input machinery is shared by terminal and web views.
    Portal view. Keys typed after the trigger are Emacs's. Those its key
    sequence and command did not read, as after a chord that is a whole
    command, are its next command, so Emacs keeps the keyboard while any
-   wait. Explicit unfocus, errors, ordinary buffers, or the user ending the
-   handoff keep Emacs in control too. A command that hides the originating
-   view, such as by showing another terminal in its pane, ends its handoff
-   silently; the selected view still resumes. When finishing fails, Lisp
-   first reads the records already in the pipe, so an `escape` sent while a
-   command ran, even one that read no input, keeps Emacs in control.
+   wait. It keeps it too while a prefix argument or a transient keymap, as
+   `universal-argument` and isearch leave, waits for the next key. Explicit
+   unfocus, errors, ordinary buffers, or the user ending the handoff keep
+   Emacs in control as well. A command that hides the originating view, such
+   as by showing another terminal in its pane, ends its handoff silently; the
+   selected view still resumes. When finishing fails, Lisp first reads the
+   records already in the pipe, so an `escape` sent while a command ran, even
+   one that read no input, keeps Emacs in control.
 
 Each view's handoff is in one state: idle, awaiting acknowledgement, reading a
 command, or executing it. Whether the view has the keyboard, which the platform
@@ -197,7 +199,8 @@ shortcuts, the keyboard moving during an offer, delayed acknowledgement, rapid
 tails, repeated triggers, literal delivery, cancellation, stale serials, and
 hiding or closing during a handoff), batch [Lisp input
 tests](../test/portal-input-tests.el) (key sequences read with the buffer's
-keymaps, Evil's included, escape, cancel and type-ahead), batch [record dispatch
+keymaps, Evil's included, escape, cancel, type-ahead, prefix arguments and
+transient keymaps), batch [record dispatch
 tests](../test/portal-view-tests.el) (split, batched and unknown-target
 records), [pipe tests](../test/portal-channel-tests.c) (a full pipe,
 reconnects, malformed records and a closed reader), and graphical
