@@ -1,6 +1,6 @@
 #+TITLE: Portal project
 #+CATEGORY: portal
-#+TODO: TODO(t) | DONE(d)
+#+TODO: TODO(t) | DONE(d) CANCELLED(c)
 #+STARTUP: show2levels
 #+COLUMNS: %65ITEM(Task) %TODO(State) %CUSTOM_ID(Task ID)
 
@@ -9,8 +9,9 @@ is authored here. Plans, checklists, decisions, and verification stay with each 
 The Markdown originals are retained for comparison with the current task browser.
 
 Use TAB to fold a task, C-c C-t to change its state, and C-c C-x b to edit just
-its subtree in an indirect buffer. Task headings carry the =task= tag; org-ql
-can query this file directly without adding it to a global agenda.
+its subtree in an indirect buffer; =RET= in =M-x portal-tasks= does the same.
+Task headings carry the =task= tag; org-ql can query this file directly without
+adding it to a global agenda. =CANCELLED= closes a task without completing it.
 
 Each task has a stable Org =ID= and a readable =CUSTOM_ID= preserving its previous
 Portal task ID. =DEPENDS_ON= lists prerequisite CUSTOM_IDs in this file or its
@@ -151,7 +152,7 @@ Verified on 2026-10-01 (macOS 27.0, Emacs 31.1, Org 9.8.7):
   detail-navigation task as actionable, and the Claude launch task as blocked by
   that task.
 
-** TODO Enter task details and return using native Org editing :task:
+** DONE Enter task details and return using native Org editing :task:
 :PROPERTIES:
 :CUSTOM_ID: org-task-detail-navigation
 :ID: 64151693-37b0-4cf6-ba13-8acf5350de5c
@@ -175,9 +176,72 @@ detail buffer; keep the base file's visibility intact.
 - Blocker links open that task's detail. Locate tasks by file plus =CUSTOM_ID=.
 
 *** Acceptance
-- [ ] List -> detail -> blocker -> Back returns through the same locations.
-- [ ] Source edits, state changes, and unsaved changes survive navigation.
-- [ ] DONE and CANCELLED remain discoverable in All tasks and can be reopened.
+- [X] List -> detail -> blocker -> Back returns through the same locations.
+- [X] Source edits, state changes, and unsaved changes survive navigation.
+- [X] DONE and CANCELLED remain discoverable in All tasks and can be reopened.
+
+*** Outcome
+=RET= in =M-x portal-tasks= shows the task in the project's detail, such as
+=*task: ~/workspace/portal*=, in the same pane: an indirect buffer of the task's
+file, cloned so it has folds of its own, narrowed to the task and fully shown
+as =org-tree-to-indirect-buffer= shows a subtree. The minor mode
+=portal-tasks-detail-mode= adds only Back, a remap of =xref-go-back= (=M-,=),
+and a buffer-local =org-open-at-point-functions= entry. All other keys are
+Org's, and saving and undo act on the file's buffer. The project has one
+detail, reused for each task.
+
+A blocker's button in the view, and a =[[#id]]= link to a task in a detail,
+show that task. Back retraces the trail: to the earlier task at the link's
+position, then to the view, redrawn if needed, on the task it was opened
+from. Tasks are found each time by project.org plus =CUSTOM_ID= over the file
+and its archives, using the view's own =(tags-local "task")= selection, as
+=DEPENDS_ON= resolves. The file and its archives now declare
+=TODO(t) | DONE(d) CANCELLED(c)=, and the author-tasks skill covers
+cancelling.
+
+Decisions made during implementation:
+- Back is =M-,= because Org leaves it free: =xref-go-back= is Emacs's way back
+  from a followed reference, and the remap follows the user's binding for it.
+  Org binds every other natural key, such as =C-c C-b= and =C-c &=.
+- A =CUSTOM_ID= finds a task only when exactly one task in the file and its
+  archives has it, as =DEPENDS_ON= resolves. A task without a =CUSTOM_ID=, or
+  with a shared one, opens in its file through Org's =org-agenda-switch-to=,
+  and a link to a shared one is refused. Only broken tasks in All tasks are
+  affected; every actionable task has a unique ID.
+- An archived task's base buffer differs, so showing it kills the detail and
+  makes it again under the same name. Unsaved edits belong to the base, so
+  they survive.
+- The detail unfolds the task's whole subtree before narrowing, including the
+  newline after it. Org's =C-c C-x b= does not. Otherwise, typing at the end
+  of a task folded in the file edits folded text, so Org prints "Unfolding
+  invisible region" or, with =org-fold-catch-invisible-edits= set to =error=,
+  refuses.
+- Back's place in the view records whether it listed all tasks. A view killed
+  meanwhile comes back that way, so a blocked task's line can be found; a
+  live view keeps the choice its user made.
+- Org follows links that name no task, such as a section's =CUSTOM_ID=.
+- Reopening and cancelling change only the keyword. Portal adds no logging or
+  hooks, so Org's own logging settings decide what is recorded.
+
+*** Verification
+Verified on 2026-10-02 (macOS 27.0, Emacs 31.1, Org 9.8.7):
+- =./build.sh=, =ctest --test-dir build --output-on-failure= (24 of 24),
+  =bun run --cwd host check= and =typecheck= pass. =tasks-view= has four new
+  detail tests. Each of these mutations fails one: no subtree shown, the
+  trailing newline left folded, no link hook, no base check, no return
+  position, no redraw or task search on return, no unique-ID check, the first
+  of a shared ID taken on return, and no view place.
+- =portal-tasks.el= byte-compiles without warnings, with and without org-ql.
+- The combined graphical suite passes 63 of 65, with
+  =portal-terminal-start-uses-shell-startup= skipped without
+  =PORTAL_TEST_SHELL_DIRECTORY=. =portal-choose-gui-preview-from-emacs-and-another-frame=
+  lost its typed keys once while another app was in front, then passed alone.
+  New: =portal-tasks-view-gui-detail-and-back-keep-the-task=. Both task view
+  graphical tests pass again after the trailing-newline change.
+- On a copy of this file: =RET= on this task, its =Blocked by= link, and Back
+  twice return to the link, then to this task's line, with the file's buffer
+  still folded. The Claude launch task's blocker button and Back return to
+  its line.
 
 ** TODO Launch Claude with exactly one task as its initial brief :task:
 :PROPERTIES:

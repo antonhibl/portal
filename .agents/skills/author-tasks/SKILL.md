@@ -27,8 +27,9 @@ is the durable locator.
 ## Author a task
 
 Use level-one headings for areas and level-two headings for tasks. Each task
-has a `TODO` or `DONE` keyword, an outcome title, and a local `:task:` tag.
-Use deeper headings for the task's sections. For example:
+has a keyword from the file's `#+TODO: TODO(t) | DONE(d) CANCELLED(c)`, an
+outcome title, and a local `:task:` tag. Use deeper headings for the task's
+sections. For example:
 
 ```org
 * Task management :tasks:
@@ -86,6 +87,12 @@ After implementation and the required checks pass, change the task keyword to
 checkboxes according to the evidence; existing DONE tasks may contain historical
 unchecked boxes. Keep completed tasks and their IDs in place. Reopening a task
 sets it to `TODO` while retaining its completion history.
+
+To drop a task, set it to `CANCELLED` and record why in its subtree; keep its
+sections and IDs. Its dependents stay blocked until their `DEPENDS_ON` changes.
+Cancelling changes only the keyword: it does not stop an agent or terminal
+working on the task. Any keyword can be set by hand, whatever the task's
+readiness.
 
 Check that IDs remain unique, dependencies resolve without cycles, and internal
 links reach their intended tasks. Use `org-lint` to check Org structure. Scope
