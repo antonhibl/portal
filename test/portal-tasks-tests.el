@@ -88,7 +88,7 @@ makes the app host ready."
   (portal-tasks-test--message target "page" (concat portal-tasks-test--host path)))
 
 (ert-deftest portal-tasks-is-a-command-once-portal-is-loaded ()
-  (should (commandp #'portal-tasks))
+  (should (commandp #'portal-tasks-browser))
   (should (custom-variable-p 'portal-tasks-directory))
   (should (equal (default-value 'portal-tasks-directory) "tasks/"))
   (should (funcall (get 'portal-tasks-directory 'safe-local-variable) "backlog/")))
@@ -97,7 +97,7 @@ makes the app host ready."
   (portal-tasks-test--environment
     (let ((project (portal-tasks-test--project directory "one")))
       (portal-tasks-test--edit (expand-file-name "src/main.el" project))
-      (let* ((buffer (portal-tasks))
+      (let* ((buffer (portal-tasks-browser))
              (target (portal-view-target))
              (root (expand-file-name "tasks" project)))
         (should (eq buffer (current-buffer)))
@@ -124,19 +124,19 @@ makes the app host ready."
       (make-symbolic-link (directory-file-name one) link)
       ;; A symbolic link in the path resolves; the task root need not exist.
       (portal-tasks-test--edit (expand-file-name "src/a.el" link))
-      (let ((first (portal-tasks)))
+      (let ((first (portal-tasks-browser)))
         (should (equal portal-tasks--root (expand-file-name "tasks" one)))
         ;; An auxiliary buffer elsewhere uses the last file's project, and
         ;; browsing a root again keeps its buffer, view and page.
         (portal-tasks-test--auxiliary "/")
         (setq portal-fake-native-log nil)
-        (should (eq (portal-tasks) first))
+        (should (eq (portal-tasks-browser) first))
         (should-not portal-fake-native-log)
         ;; The other project's directory-local option wins, even from an
         ;; auxiliary buffer; both roots have their own view.
         (portal-tasks-test--edit (expand-file-name "src/b.el" two))
         (portal-tasks-test--auxiliary "/")
-        (let ((second (portal-tasks)))
+        (let ((second (portal-tasks-browser)))
           (should-not (eq second first))
           (should (equal portal-tasks--root (expand-file-name "work/todo" two)))
           (should (equal (portal-tasks-test--url)
@@ -146,14 +146,14 @@ makes the app host ready."
           ;; An absolute option is used as it is.
           (let ((portal-tasks-directory (expand-file-name "shared" link)))
             (portal-tasks-test--edit (expand-file-name "src/c.el" one))
-            (should (equal (buffer-local-value 'portal-tasks--root (portal-tasks))
+            (should (equal (buffer-local-value 'portal-tasks--root (portal-tasks-browser))
                            (expand-file-name "shared" one))))
           ;; A prefix argument chooses the root.
           (portal-tasks-test--edit (expand-file-name "src/d.el" two))
           (cl-letf (((symbol-function 'read-directory-name)
                      (lambda (&rest _) (file-name-as-directory link))))
             (let ((current-prefix-arg '(4)))
-              (call-interactively #'portal-tasks)))
+              (call-interactively #'portal-tasks-browser)))
           (should (equal portal-tasks--root (directory-file-name one)))
           (should (= (length (portal-view-buffers 'web)) 4)))))))
 
@@ -164,19 +164,19 @@ makes the app host ready."
       (portal-tasks-test--edit (expand-file-name "notes.txt" directory))
       (cl-letf (((symbol-function 'read-directory-name)
                  (lambda (&rest _) (cl-incf prompts) folder)))
-        (portal-tasks)
+        (portal-tasks-browser)
         (should (= prompts 1))
         (should (equal portal-tasks--root folder)))
-      (should-error (portal-tasks "/ssh:example:/work/tasks") :type 'user-error)
+      (should-error (portal-tasks-browser "/ssh:example:/work/tasks") :type 'user-error)
       (portal-tasks-test--edit "/ssh:example:/work/src/main.el")
-      (should-error (portal-tasks) :type 'user-error)
+      (should-error (portal-tasks-browser) :type 'user-error)
       (should (= (length (portal-fake-native-calls 'portal--open)) 1)))))
 
 (ert-deftest portal-tasks-keep-the-page-on-screen-for-reload-and-restart ()
   (portal-tasks-test--environment
     (setq host portal-tasks-test--host)
     (let* ((root (directory-file-name directory))
-           (buffer (portal-tasks root))
+           (buffer (portal-tasks-browser root))
            (target (portal-view-target))
            (list (portal-tasks-test--path root))
            (detail (concat list "&task=epic%2Ffix%20search%20%C3%A9&view=execution&show=all")))
@@ -197,7 +197,7 @@ makes the app host ready."
       (portal-tasks-test--page target list)
       (should (equal portal-web--hosted-path list))
       (switch-to-buffer "*scratch*")
-      (should (eq (portal-tasks root) buffer))
+      (should (eq (portal-tasks-browser root) buffer))
       (should (equal (portal-tasks-test--url target) (concat host detail))))))
 
 (ert-deftest portal-tasks-hand-attachments-to-another-pane ()
@@ -205,7 +205,7 @@ makes the app host ready."
     (setq host portal-tasks-test--host)
     (let* ((display-buffer-alist nil)
            (file (expand-file-name "fix search/mockup notes.txt" directory))
-           (buffer (portal-tasks (directory-file-name directory)))
+           (buffer (portal-tasks-browser (directory-file-name directory)))
            (target (portal-view-target))
            (origin (selected-window)))
       (make-directory (file-name-directory file))
@@ -264,7 +264,7 @@ makes the app host ready."
       (let ((coding-system-for-write 'no-conversion))
         (write-region text nil file))
       (let ((visiting (find-file-noselect file))
-            (target (progn (portal-tasks root) (portal-view-target))))
+            (target (progn (portal-tasks-browser root) (portal-view-target))))
         (setq portal-fake-native-log nil)
         (should (equal (portal-tasks--status-action (portal-tasks-test--plan file "done"))
                        (list :file file)))
@@ -294,7 +294,7 @@ makes the app host ready."
             (with-temp-file file (insert text))
             (let ((plan (portal-tasks-test--plan file "done"))
                   (visiting (find-file-noselect file)))
-              (portal-tasks root)
+              (portal-tasks-browser root)
               ;; Unsaved changes stay unsaved, and nothing is written.
               (with-current-buffer visiting
                 (goto-char (point-max))
@@ -364,7 +364,7 @@ makes the app host ready."
         (with-current-buffer visiting
           (goto-char (point-max))
           (insert "Draft.\n"))
-        (let* ((tasks (portal-tasks root))
+        (let* ((tasks (portal-tasks-browser root))
                (target (portal-view-target))
                (origin (selected-window)))
           (portal-view-sync)
@@ -400,8 +400,8 @@ makes the app host ready."
            (two (expand-file-name "two" directory)))
       (make-directory one)
       (make-directory two)
-      (let ((target (progn (portal-tasks one) (portal-view-target))))
-        (portal-tasks two)
+      (let ((target (progn (portal-tasks-browser one) (portal-view-target))))
+        (portal-tasks-browser two)
         ;; A view still waiting for the app host will load saved files anyway.
         (portal-tasks-test--save (expand-file-name "task.md" one))
         (should-not (portal-fake-native-calls 'portal--web-send))
@@ -446,7 +446,7 @@ makes the app host ready."
               (insert "---\nstatus: todo\ndepends_on: [fix-search]\n---\n# Follow up\n"))
             (should-not (portal-server-url))
             (portal-tasks-test--edit (expand-file-name "src/main.el" project))
-            (portal-tasks)
+            (portal-tasks-browser)
             (portal-tasks-test--wait #'portal-server-url)
             (should (equal (portal-tasks-test--url)
                            (concat (portal-server-url) (portal-tasks-test--path tasks))))

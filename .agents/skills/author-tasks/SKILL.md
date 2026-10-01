@@ -67,13 +67,16 @@ Search finds a task by its stable ID or words in its title.
 ## Dependencies
 
 `DEPENDS_ON` contains space-separated prerequisite `CUSTOM_ID` values from this
-file. Omit the property when there are none. Every target must be a task, with
+file or its archive, `project.org_archive`, where archived tasks keep their IDs.
+Omit the property when there are none. Every target must be a task, with
 no duplicate edges, self-dependencies, or cycles. Explain each prerequisite
 under `Blocked by` and link to its heading.
 
 Only `DEPENDS_ON` defines dependency edges; area membership and prose links do
-not. A TODO task is ready when all its prerequisites are DONE. This property
-does not enforce blocking in Org: inspect prerequisite states before starting
+not. A TODO task is actionable when all its prerequisites are DONE, not
+CANCELLED, and it is not scheduled after today. `M-x portal-tasks` lists the
+actionable tasks; its All tasks view says why each other task is not. Org itself
+does not enforce `DEPENDS_ON`: inspect prerequisite states before starting
 dependent work.
 
 ## Complete and verify

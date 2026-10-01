@@ -63,7 +63,7 @@
   (skip-unless (file-executable-p portal-server-program))
   (portal-actions-test--environment
    (let ((portal-tasks-claude-program "/bin/echo"))
-     (portal-tasks (expand-file-name "tasks" directory)))
+     (portal-tasks-browser (expand-file-name "tasks" directory)))
    (portal-actions-test--wait #'portal-server-url)
    (let* ((source (current-buffer))
           (target portal-view--target)
@@ -105,7 +105,7 @@
   (portal-actions-test--environment
    (let ((root (expand-file-name "tasks" directory))
          (file (expand-file-name "tasks/task.md" directory)))
-     (portal-tasks root)
+     (portal-tasks-browser root)
      (portal-actions-test--wait #'portal-server-url)
      (let* ((tasks (current-buffer))
             (target portal-view--target)
@@ -146,7 +146,7 @@
                    ((symbol-function 'portal-start-server) #'ignore))
            (process-put process 'url "http://127.0.0.1:1/abcd")
            (process-put process 'requests (make-hash-table :test #'equal))
-           (portal-tasks (expand-file-name "tasks" directory))
+           (portal-tasks-browser (expand-file-name "tasks" directory))
            (let* ((source (current-buffer))
                   (target portal-view--target)
                   (request (list :type "request" :id "one" :context target

@@ -37,8 +37,8 @@ for the current Mac.
 
 Or load `portal.el` in graphical Emacs and run `M-x portal-hello`.
 Run `M-x portal-preview-markdown` to preview the current Markdown file or
-select another local file, and `M-x portal-tasks` to browse the project's
-[tasks](#task-browser).
+select another local file, and `M-x portal-tasks` to list the project's
+actionable [tasks](#task-view).
 To distribute this layout, include all `portal*.el` files at the package root,
 `build/portal-host`, and the complete `build/portal.bundle`;
 the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
@@ -612,7 +612,7 @@ does not hot-reload that library.
 ## Bun UI host
 
 Loading the Lisp package or native module does not start a server. The first
-`portal-hello`, `portal-preview-markdown`, `portal-tasks`, or drawing buffer starts one shared
+`portal-hello`, `portal-preview-markdown`, `portal-tasks-browser`, or drawing buffer starts one shared
 child process asynchronously. Hello, the Markdown preview and the task browser are hosted apps: each opens its
 web view at once, at `about:blank`, and loads its page as soon as the host sends
 its readiness message. Opening external URLs does not require the server.
@@ -721,17 +721,57 @@ Raw HTML is displayed as text, and a page-specific Content Security Policy
 blocks scripts. Bun currently marks its Markdown API unstable; it is tested
 here with the Bun version listed above.
 
+## Task view
+
+`M-x portal-tasks` lists the actionable tasks in the current project's
+`project.org`. It needs [org-ql](https://github.com/alphapapa/org-ql) from
+MELPA, and is tested with org-ql 0.8.10 and MELPA's 20250421.133. The rest of
+Portal works without it.
+
+Tasks are the headings with their own `:task:` tag, as the
+[author-tasks skill](.agents/skills/author-tasks/SKILL.md) describes. A task is
+actionable when its keyword is `TODO`, every task its `DEPENDS_ON` property
+names by `CUSTOM_ID` is `DONE`, and it is not scheduled after today. They are
+listed by priority, where none counts as Org's default, then nearest deadline,
+then file order. A deadline makes a task urgent, never eligible.
+
+`v` switches to all tasks, grouped as Actionable, Blocked, Deferred and Closed.
+After its title, a blocked or deferred task says why: each prerequisite it waits
+for, with its state and a link to it; a prerequisite that does not exist or
+whose `CUSTOM_ID` another task shares; a missing or shared `CUSTOM_ID` of its
+own; a dependency cycle; a keyword other than `TODO`; or a date it is scheduled
+for. A `CANCELLED` prerequisite blocks like any other that is not `DONE`.
+Closed tasks have a done keyword. Prerequisites can also be in the file's Org
+archives, such as `project.org_archive`, where `org-archive-subtree` moves
+finished tasks; the view does not list archived tasks.
+
+Each line is an Org agenda line, so Org's agenda keys act on its task: `RET`
+goes to it and `t` changes its state, for example. `g` redraws the view, and
+`q` leaves it.
+
+The project is the one being edited, as for
+[quick terminals](#quick-project-terminal): in a terminal, the terminal's
+own project; elsewhere, the project of the file or Dired buffer the frame
+selected last. Each project has one view, such as `*tasks: ~/src/app*`, which
+keeps its choice of actionable or all tasks. The view reads the buffers of
+`project.org` and its archives, saved or not. It is redrawn when its pane is
+selected, or shows it again, after a change or on a new day; when one of those
+files is saved; and on `g`. Each pane stays on its task.
+
 ## Task browser
 
-`M-x portal-tasks`, or `(portal-tasks)` from Lisp, lists the current project's
-saved Markdown tasks in a web view with the navigation toolbar. The view opens
+`M-x portal-tasks-browser`, or `(portal-tasks-browser)` from Lisp, lists the
+current project's saved Markdown tasks in a web view with the navigation
+toolbar. The view opens
 at once and loads the list when the app host is ready, starting the host first
 if needed. Click a task to read it in the same view; the **Tasks** link returns
 to the list. Emacs stays the editor: the page shows saved files, and every
 change to a task is saved by Emacs. Nothing moves or deletes task files.
 
-This repository keeps its tasks in `tasks/`, using the default root; browse them
-in the dashboard. Agents use the [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
+This repository now writes its tasks in `project.org`, for the
+[task view](#task-view); the Markdown originals stay in `tasks/`, the default
+root, for comparison. Agents use the
+[author-tasks skill](.agents/skills/author-tasks/SKILL.md).
 
 ### Completing and editing tasks
 
@@ -760,8 +800,8 @@ a task is independent of the main checkout's.
 buffer that visits it, unsaved changes and all, and gives Emacs the keyboard.
 The task page and its history stay; `M-x portal-preview-return` comes back.
 
-Saving any file in the task folder in Emacs refreshes the task views of that
-folder in place, from the saved files: the address, history, view, filter,
+Saving any file in the task folder in Emacs refreshes the task browser pages
+of that folder in place, from the saved files: the address, history, view, filter,
 folds, reading position and keyboard focus stay, and Emacs keeps the keyboard.
 A hidden view refreshes once it is shown again, and a page that Back or Forward
 shows again is checked the same way. Completing a row that the filter hides
@@ -775,7 +815,7 @@ Click **Implement with Claude** on a task detail to open a dedicated native
 terminal in another pane. Claude starts in the project root with
 `--dangerously-skip-permissions` and an initial prompt such as
 `implement @tasks/fix-search.md`. Folder tasks use their actual `content.md`
-path. The project is captured when the task view opens; selecting another
+path. The project is captured when the task browser opens; selecting another
 project later does not change the launch directory.
 
 The task page submits a normal form to the app host, which resolves the current
@@ -785,7 +825,7 @@ Errors appear on the detail page. A task folder with no known project remains
 browsable but cannot launch Claude.
 
 Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` before
-opening a task view to choose the executable or adjust its arguments. The
+opening a task browser to choose the executable or adjust its arguments. The
 program defaults to `claude`; arguments default to
 `("--dangerously-skip-permissions")`. The terminal starts your interactive login
 shell, loads its startup files, and resolves `claude` on that shell's PATH.
@@ -815,7 +855,7 @@ The project is the one being edited. From a terminal, a web view or another
 auxiliary buffer, it is the project of the file or Dired buffer the frame
 selected last, as for [quick terminals](#quick-project-terminal), and that
 project's directory-local settings apply. Outside a project, the command asks
-for a task folder, and `C-u M-x portal-tasks` chooses any local folder. Remote
+for a task folder, and `C-u M-x portal-tasks-browser` chooses any local folder. Remote
 folders are rejected, and symbolic links in the path are resolved.
 
 Each task root has one buffer, such as `*portal: tasks ~/src/app/tasks*`.
@@ -968,7 +1008,7 @@ with either filter. Its folders, above the page, lead back to the list or to
 a parent task's page.
 
 To complete a task, press **Complete** on its row or page, or edit
-`status: todo` to `status: done` in Emacs and save. Either way the task view
+`status: todo` to `status: done` in Emacs and save. Either way the task browser
 refreshes; `g` rereads the page on screen from the saved files, including
 after an app host restart.
 
@@ -1300,6 +1340,15 @@ failed saves (leaving no temporary file) and files outside the root. Edit in Ema
 refreshes only the loaded views of its root. One test runs the real app host,
 and `ctest -R actions` sends status changes, a repeated change, a refusal and
 Edit in Emacs from the compiled host through Emacs's command loop.
+Batch task view tests run with `ctest --test-dir build -R tasks-view`, against
+org-ql 0.8.10 and the libraries it loads that Emacs lacks, which CMake downloads
+into `build/elpa` from their release tags and verifies by hash. They cover the
+project from a file, an auxiliary buffer, a terminal and the view itself, and
+two projects apart; readiness from unsaved edits, a cancelled prerequisite,
+missing, shared and untagged IDs, cycles, a keyword other than `TODO`, and
+archived prerequisites; schedules from yesterday to tomorrow, deadlines and
+ordering; links to blockers; `g`, saving, a new day and returning, each pane
+keeping its task; the empty list; and Org's agenda keys on a line.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise
@@ -1347,6 +1396,8 @@ and shared input tests, plus
 coexistence checks for both startup orders, real keyboard handoff, WebKit key-up
 delivery alongside terminals, independent cleanup, and shared-frame deletion.
 They do not assert Lisp caches, hook names, or implementation call counts.
+The task view's graphical test checks that redisplay redraws a view after an
+edit once its pane is selected again or shows it again.
 The terminal picker's graphical tests type real keys, one at a time as a person
 types, into Consult, Vertico and Orderless from `build/elpa`, from an ordinary
 buffer, a terminal that has the keyboard and a quick panel. They check that
@@ -1362,7 +1413,10 @@ cannot exercise these behaviours:
 ```sh
 emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -L "$PWD/build/elpa/consult-3.10" -L "$PWD/build/elpa/vertico-2.15" \
-  -L "$PWD/build/elpa/orderless-1.8" -l "$PWD/portal.el" \
+  -L "$PWD/build/elpa/orderless-1.8" -L "$PWD/build/elpa/org-ql-0.8.10" \
+  -L "$PWD/build/elpa/org-super-agenda-1.3" -L "$PWD/build/elpa/ts.el-0.3" \
+  -L "$PWD/build/elpa/ov-1.0.6" -L "$PWD/build/elpa/s.el-1.13.1" \
+  -L "$PWD/build/elpa/ht.el-2.3" -L "$PWD/build/elpa/dash-2.20.0" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
   -l "$PWD/test/portal-tests.el" \
   -l "$PWD/test/portal-terminal-tests.el" \
@@ -1372,11 +1426,13 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -l "$PWD/test/portal-toolbar-gui-tests.el" \
   -l "$PWD/test/portal-markdown-gui-tests.el" \
   -l "$PWD/test/portal-tasks-gui-tests.el" \
+  -l "$PWD/test/portal-tasks-view-gui-tests.el" \
   -l "$PWD/test/portal-terminal-choose-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
-The Lisp tests use only Emacs's built-in libraries. A standalone AppKit check
+Apart from the packages in `build/elpa`, the Lisp tests use only Emacs's
+built-in libraries. A standalone AppKit check
 also verifies guest Escape retains focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
