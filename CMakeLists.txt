@@ -79,22 +79,26 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-choose-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-choose PROPERTIES TIMEOUT 30)
-    # The optional Consult and Embark adapters are tested against the GNU ELPA
-    # releases the README names, downloaded once and checked by hash.
+    # The optional Consult and Embark adapters, and the task view under Evil,
+    # are tested against the GNU and NonGNU ELPA releases the README names,
+    # downloaded once and checked by hash.
     set(elpa_packages
-        "consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
-        "embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
-        "vertico-2.15=5c3492edb1e0020da711d9a4213a3878e90e7af8e2e6375757901f4b399872ff"
-        "orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa"
-        "dash-2.20.0=28f84b0905f84520163f5dd2087e47cac042bd27b7ec34eeb293f1ada7d36cb2")
+        "elpa.gnu.org/packages/consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
+        "elpa.gnu.org/packages/embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
+        "elpa.gnu.org/packages/vertico-2.15=5c3492edb1e0020da711d9a4213a3878e90e7af8e2e6375757901f4b399872ff"
+        "elpa.gnu.org/packages/orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa"
+        "elpa.gnu.org/packages/dash-2.20.0=28f84b0905f84520163f5dd2087e47cac042bd27b7ec34eeb293f1ada7d36cb2"
+        "elpa.nongnu.org/nongnu/evil-1.15.0=1840cc67172a0d7cfbc58dc25eca95dff1375e6a06ddf7bc0ce9034c5ba32f32"
+        "elpa.nongnu.org/nongnu/goto-chg-1.7.5=5e6dbb79355e0db5e3b5e5b8643da0738a7b69b9c0b787982b06edc0369abbc8")
     set(elpa_load_path "")
     foreach(entry IN LISTS elpa_packages)
         string(REPLACE "=" ";" entry "${entry}")
-        list(GET entry 0 package)
+        list(GET entry 0 path)
         list(GET entry 1 hash)
+        get_filename_component(package "${path}" NAME)
         set(directory "${CMAKE_BINARY_DIR}/elpa/${package}")
         if(NOT EXISTS "${directory}")
-            file(DOWNLOAD "https://elpa.gnu.org/packages/${package}.tar"
+            file(DOWNLOAD "https://${path}.tar"
                 "${CMAKE_BINARY_DIR}/elpa/${package}.tar" EXPECTED_HASH SHA256=${hash})
             file(ARCHIVE_EXTRACT INPUT "${CMAKE_BINARY_DIR}/elpa/${package}.tar"
                 DESTINATION "${CMAKE_BINARY_DIR}/elpa")
@@ -103,15 +107,17 @@ if(BUILD_TESTING)
         list(APPEND elpa_load_path -L "${directory}")
     endforeach()
     # The task view is tested with org-ql 0.8.10 and the other libraries it
-    # loads that Emacs lacks, from their release tags: MELPA Stable keeps
-    # only each package's latest release.  Dash comes from GNU ELPA above.
+    # loads that Emacs lacks, and with evil-collection, from their release
+    # tags: MELPA Stable keeps only each package's latest release.  Dash and
+    # Evil come from GNU and NonGNU ELPA above.
     set(github_packages
         "alphapapa/org-ql=v0.8.10=1a0b416f47bcfb1f45345f62ad5fa89f15c7758941adeb0076db76217078607d"
         "alphapapa/org-super-agenda=v1.3=0ef83a5c42188d571ff977edd54415f09bc833e048b087f1781d492d05a853f7"
         "alphapapa/ts.el=0.3=c79efa802fde5c84fecca01f7b80fbb54b29b792067b5f1a1e517181f2176cc6"
         "emacsorphanage/ov=1.0.6=f2a8bb7bd5077542fa31de38323a9cc31142df0c7864a0f43196cde2722fe336"
         "magnars/s.el=1.13.1=807b9a29f26b5b3ded8e9bba979201b6714cb275286306c32fb72b8098073999"
-        "Wilfred/ht.el=2.3=1a85a4659f603f7e2199f82198e7be2f78c32a195cbdd8402435c22f3b233a4b")
+        "Wilfred/ht.el=2.3=1a85a4659f603f7e2199f82198e7be2f78c32a195cbdd8402435c22f3b233a4b"
+        "emacs-evil/evil-collection=3.0.3=d2fddb2689bded204f4ad1b24a06e3c41af12cbb59c1f8b6a2fee1d8ad68d333")
     foreach(entry IN LISTS github_packages)
         string(REPLACE "=" ";" entry "${entry}")
         list(GET entry 0 repository)

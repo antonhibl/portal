@@ -21,6 +21,9 @@
 ;; Tests kill live shells without asking.
 (setq portal-terminal-confirm-kill nil)
 
+;; One test loads evil-collection, which needs Evil without its own keys.
+(defvar evil-want-keybinding nil)
+
 (defvar portal-tasks-view-test--directory nil "This test's temporary directory.")
 
 (defmacro portal-tasks-view-test--environment (&rest body)
@@ -474,6 +477,42 @@ The detail is narrowed to all of that task."
                       (org-agenda-new-marker (point-min)))))
         (kill-buffer view)
         (should (marker-buffer marker))))))
+
+(ert-deftest portal-tasks-view-keys-work-with-evil-collection ()
+  ;; evil-collection shows agenda buffers in Evil's normal state, whose
+  ;; agenda keys outrank the view's own.
+  (require 'evil)
+  (require 'evil-collection)
+  (evil-collection-init 'org-agenda)
+  (portal-tasks-view-test--environment
+    (let* ((file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "TODO First" :id "first")
+                  (portal-tasks-view-test--task "TODO Second" :id "second" :depends "first")))
+           (view (portal-tasks-view-test--open file)))
+      (evil-local-mode 1)
+      (should (eq evil-state 'normal))
+      ;; Portal's commands have evil-collection's keys for them; the other
+      ;; keys stay evil-collection's and Evil's.
+      (dolist (binding '(("RET" . portal-tasks-open) ("<return>" . portal-tasks-open)
+                         ("gr" . portal-tasks-refresh) ("gR" . portal-tasks-refresh)
+                         ("v" . portal-tasks-toggle-all) ("q" . quit-window)
+                         ("t" . org-agenda-todo) ("r" . org-agenda-refile)
+                         ("gj" . org-agenda-next-item) ("gg" . evil-goto-first-line)))
+        (should (eq (key-binding (kbd (car binding))) (cdr binding))))
+      (execute-kbd-macro (kbd "v"))
+      (should (equal (portal-tasks-view-test--titles view)
+                     '("Actionable (1)" "First" "Blocked (1)" "Second")))
+      (portal-tasks-view-test--goto view "First")
+      (execute-kbd-macro (kbd "RET"))
+      (should (equal (portal-tasks-view-test--detail) "First"))
+      (switch-to-buffer view)
+      (portal-tasks-view-test--set file "First" "DONE")
+      (execute-kbd-macro (kbd "gr"))
+      (should (equal (portal-tasks-view-test--titles view)
+                     '("Actionable (1)" "Second" "Closed (1)" "First")))
+      (execute-kbd-macro (kbd "q"))
+      (should-not (eq (window-buffer) view)))))
 
 (ert-deftest portal-tasks-detail-shows-one-task-in-org ()
   (portal-tasks-view-test--environment
