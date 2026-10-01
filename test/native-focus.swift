@@ -29,8 +29,8 @@ struct CheckFocus {
         // as WebKit's internal text input views.
         let input = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 40))
         web.addSubview(input)
+        // A chord such as C-g is the page's only if it uses it (portal-input-gui-tests.el).
         for (code, flags, characters) in [(UInt16(53), NSEvent.ModifierFlags(), "\u{1b}"),
-                                          (UInt16(5), .control, "g"),
                                           (UInt16(53), .command, "\u{1b}")] {
             check(window.makeFirstResponder(input))
             let event = require(NSEvent.keyEvent(with: .keyDown, location: .zero,
@@ -49,7 +49,7 @@ struct CheckFocus {
         try Views.hide(target)
         check(window.firstResponder === editor, "Hiding did not restore focus")
         try Views.close(target)
-        print("Guest Escape/C-g retain focus; Command-Escape and hiding restore Emacs focus")
+        print("Guest Escape retains focus; Command-Escape and hiding restore Emacs focus")
         try checkHosted(window: window)
         try checkBridge(window: window)
         try checkLinks(window: window, editor: editor)

@@ -215,8 +215,8 @@ The folder is `portal-markdown-gui--directory'."
         (should (portal-input--action "focused" target))
         (should (= (portal-markdown-gui--scroll) scroll))
         (should (equal (portal-excalidraw-gui--js "return window.marker;") "kept"))
-        ;; C-b d and RET still work.
-        (portal-input-gui--prefix '(2 0 "d"))
+        ;; RET re-enters after Command-Escape.
+        (portal-test-native-key 53 (ash 1 20) "\e")
         (should-not (portal-input--action "focused" target))
         (call-interactively (key-binding (kbd "RET")))
         (should (portal-input--action "focused" target))
@@ -232,19 +232,20 @@ The folder is `portal-markdown-gui--directory'."
         (should (eq major-mode 'dired-mode))
         (should (equal (portal-excalidraw-gui--js "return window.marker;") "kept"))))))
 
-(ert-deftest portal-markdown-gui-link-click-ends-a-pending-prefix ()
+(ert-deftest portal-markdown-gui-link-click-ends-a-pending-sequence ()
   (portal-markdown-gui--documents
     (let ((target (portal-view-target))
           (point (portal-markdown-gui--link-point "Source")))
       (portal-input-focus)
-      (portal-test-native-key 11 (ash 1 18) "\C-b")
-      (let ((event (aref (with-timeout (5 (ert-fail "No prefix event"))
+      ;; The page does not use C-x, so Emacs reads a key sequence from it.
+      (portal-test-native-key 7 (ash 1 18) "\C-x")
+      (let ((event (aref (with-timeout (5 (ert-fail "No key event"))
                            (read-key-sequence-vector nil))
                          0)))
-        (should (eq (car-safe event) 'portal-input-prefix))
-        ;; The click comes while Emacs reads the rest of the prefix.
+        (should (eq (car-safe event) 'portal-input-key))
+        ;; The click comes while Emacs reads the rest of the sequence.
         (run-at-time 0.2 nil (lambda () (portal-test-native-click (aref point 0) (aref point 1))))
-        (with-timeout (5 (ert-fail "The click did not end the prefix"))
+        (with-timeout (5 (ert-fail "The click did not end the sequence"))
           (portal-input--dispatch event)))
       (should-not (portal-input--action "pending" target))
       (portal-markdown-gui--event 'portal-input-select)

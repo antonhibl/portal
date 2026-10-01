@@ -74,11 +74,6 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
             // Every exit takes that path: none counts as a failed launch.
             builder.withCustom("abnormal-command-exit-runtime", "0")
             builder.withFontSize(Float(PORTAL_TERMINAL_POINTS))
-            // Window/tab actions belong to Emacs, not the embedded engine.
-            builder.withCustom("keybind", "super+n=unbind")
-            builder.withCustom("keybind", "super+t=unbind")
-            builder.withCustom("keybind", "super+w=unbind")
-            builder.withCustom("keybind", "super+q=unbind")
         }
     }
 
@@ -185,6 +180,15 @@ final class TerminalSession: PortalView {
         guard terminal.paste(text: text) else { throw NativeError.message("No terminal accepting input") }
     }
 
+    /// Ghostty copies only a selection, and does nothing without one.
+    func copy() throws { terminal.performBindingAction("copy_to_clipboard") }
+
+    func paste() throws {
+        guard terminal.performBindingAction("paste_from_clipboard") else {
+            throw NativeError.message("No terminal accepting input")
+        }
+    }
+
     func pressEnter() throws {
         guard terminal.sendKey(.enter) else { throw NativeError.message("No terminal accepting input") }
     }
@@ -213,6 +217,8 @@ final class TerminalSession: PortalView {
     func changed() { Core.terminalChanged(target) }
 
     /// The core decides what each key does, including text size shortcuts.
+    /// Ghostty gets the rest, which never includes a Super chord: the core
+    /// hands those to Emacs or to the view's shortcuts.
     func handleKeyEvent(_ event: NSEvent) -> Bool {
         if input.handleKeyEvent(event) { return true }
         switch event.type {

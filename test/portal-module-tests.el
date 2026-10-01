@@ -23,9 +23,9 @@
     (portal--terminal-paste 2 . 3) (portal--terminal-text 1 . 1)
     (portal--terminal-theme 1 . 1) (portal--terminal-themes 0 . 0)
     (portal--terminal-bindings 1 . 1)
-    (portal--input 2 . 3) (portal--input-prefix 2 . 2)
+    (portal--input 2 . 3)
     (portal--toolbar 1 . 1) (portal--toolbar-theme 1 . 1) (portal--toolbar-action 2 . 2))
-  "The 20 exports of docs/adr/0002 and their arities.")
+  "The 19 exports of docs/adr/0002 and their arities.")
 
 (defun portal-module-tests--next-id ()
   "Open and close a view; return the ID the backend gives the next one."
@@ -199,20 +199,18 @@
   (let ((terminal (portal--open "terminal" '(:directory "/"))))
     (should (eq (portal--input terminal "pending") nil))
     (portal--close terminal))
-  ;; Portal's modifiers, not a platform's: 2 is Control.
-  (should (eq (portal--input-prefix "c" 2) t))
-  (should-error (portal--input-prefix "c" "1") :type 'wrong-type-argument)
   (let ((binding "{\"regular\":[{\"character\":\"%s\",\"modifiers\":%d,\"event\":3}],\"quick\":[]}"))
-    ;; The core compares a binding with the prefix it has.
-    (should (equal (should-error (portal--terminal-bindings (format binding "C" 2)))
+    ;; Portal's modifiers, not a platform's: 2 is Control, and the core
+    ;; compares Control-C with Control-c.
+    (should (equal (should-error
+                    (portal--terminal-bindings
+                     (concat "{\"regular\":[{\"character\":\"c\",\"modifiers\":2,\"event\":3},"
+                             "{\"character\":\"C\",\"modifiers\":2,\"event\":4}],\"quick\":[]}")))
                    '(error "Conflicting native terminal binding")))
     ;; Only ASCII first chords: the code point crosses, not a byte of it.
     (should (equal (should-error (portal--terminal-bindings (format binding "é" 8)))
                    '(error "Invalid native terminal binding")))
-    (should (eq (portal--input-prefix "b" 2) t))
-    (should (eq (portal--terminal-bindings (format binding "c" 2)) t))
-    (should (equal (should-error (portal--input-prefix "C" 2))
-                   '(error "Portal prefix conflicts with a native binding"))))
+    (should (eq (portal--terminal-bindings (format binding "c" 2)) t)))
   (should (eq (portal--terminal-bindings "{\"regular\":[],\"quick\":[]}") t))
   (let ((page (portal--open "web" '(:toolbar "navigation"))))
     (should (eq (portal--toolbar nil) nil))
@@ -273,10 +271,6 @@
                     ((portal--terminal-bindings
                       "{\"regular\":[],\"quick\":[{\"character\":\"x\",\"flags\":2,\"event\":120}]}")
                      . "Invalid native terminal binding")
-                    ((portal--input-prefix "cc" 1) . "Expected one modified ASCII prefix")
-                    ((portal--input-prefix "" 2) . "Expected one modified ASCII prefix")
-                    ((portal--input-prefix "c" 262144) . "Expected one modified ASCII prefix")
-                    ((portal--input-prefix "c" -1) . "Expected one modified ASCII prefix")
                     ((portal--input ,web "unknown") . "Unknown Portal input action: unknown")
                     ((portal--open "web" (:toolbar t))
                      . "A web view's :toolbar must be \"navigation\", \"contents\", \"markdown\" or \"none\"")

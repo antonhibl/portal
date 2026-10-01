@@ -4,7 +4,6 @@
 (require 'cl-lib)
 (require 'json)
 (require 'seq)
-(require 'windmove)
 
 (defgroup portal-terminal nil
   "Native Ghostty terminals in Emacs panes."
@@ -40,10 +39,8 @@ never by the shell changing directory.")
   "The terminal's working directory: the last its shell reported, or its start.")
 (defvar-local portal-terminal--title nil "The title its program set last, or nil.")
 (defvar-local portal-terminal--exited nil "Whether its program has exited.")
-(defvar portal-terminal-quick-prefix-map)
 (defvar portal-terminal--native-maps)
 (declare-function portal-terminal-refresh-bindings "portal-terminal-bindings" ())
-(declare-function portal-terminal--validate-native-prefix "portal-terminal-bindings" (description))
 (declare-function portal-terminal-quick--display "portal-terminal-quick" (buffer))
 (declare-function portal-terminal-quick--window "portal-terminal-quick" ())
 (declare-function portal-terminal-quick-dismiss "portal-terminal-quick" ())
@@ -73,38 +70,6 @@ the name is validated when the native module is available."
   (portal-view--load)
   (portal--terminal-themes))
 
-(defcustom portal-terminal-prefix-map
-  (let ((map (make-sparse-keymap)))
-    (dolist (binding '(("c" . portal-terminal-new)
-                       ("\"" . portal-terminal-split-below)
-                       ("%" . portal-terminal-split-right)
-                       ("o" . portal-terminal-next-pane)
-                       ("<up>" . windmove-up) ("<down>" . windmove-down)
-                       ("<left>" . windmove-left) ("<right>" . windmove-right)
-                       ("n" . portal-terminal-next)
-                       ("p" . portal-terminal-previous)
-                       ("l" . portal-terminal-last)
-                       ("w" . portal-terminal-choose)
-                       ("," . portal-terminal-rename)
-                       ("x" . portal-terminal-kill-pane)
-                       ("z" . portal-terminal-zoom)
-                       ("d" . portal-terminal-unfocus)
-                       (":" . portal-terminal-command-prompt)
-                       ("?" . portal-terminal-help)))
-      (keymap-set map (car binding) (cdr binding)))
-    (dotimes (index 10)
-      (define-key map (number-to-string index) #'portal-terminal-select-index))
-    map)
-  "Commands read by Emacs after `portal-terminal-prefix'.
-Defaults follow tmux where there is an Emacs counterpart: terminal buffers
-are windows, Emacs windows are panes.  This is not a tmux session manager.
-Use `keymap-set' to add commands, including ordinary Emacs commands and
-nested prefix maps.  Commands resume a selected terminal after returning;
-call `portal-terminal-unfocus' to stay in Emacs instead.
-C-g cancels.  The current leader repeated sends a literal leader key."
-  :type 'keymap
-  :group 'portal-terminal)
-
 (defcustom portal-terminal-confirm-kill t
   "Whether killing a terminal buffer whose program is still running asks first.
 It applies however the buffer is killed: `kill-buffer', Ibuffer and other
@@ -116,12 +81,10 @@ process.  A terminal whose program has exited is killed without asking."
 
 (define-derived-mode portal-terminal-mode special-mode "Ghostty"
   "A real native Ghostty surface occupies this buffer's displayed pane.
-RET focuses Ghostty.  The configurable leader dispatches Emacs commands.
-Command-Escape always returns focus to Emacs.  Scrollback belongs to Ghostty."
+RET focuses Ghostty.  The shell gets typing and Control and Meta chords; a
+Super chord reaches Emacs, which runs it in this buffer.  Command-Escape
+always returns focus to Emacs.  Scrollback belongs to Ghostty."
   (setq-local cursor-type nil)
-  (setq-local portal-input--map-function
-              (lambda () (if portal-terminal--quick-root portal-terminal-quick-prefix-map
-                           portal-terminal-prefix-map)))
   (add-hook 'kill-buffer-hook #'portal-terminal--dismiss-quick nil t)
   (add-hook 'kill-buffer-query-functions #'portal-terminal--kill-query nil t)
   (portal-input-mode 1))
@@ -279,7 +242,7 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
             (let ((inhibit-read-only t))
               (insert "Native Ghostty terminal\n\n"
                       "RET or a click focuses Ghostty. Command-Escape returns to Emacs.\n"
-                      "Use the configured prefix then ? for terminal commands.\n"
+                      "Super chords, such as your s- bindings, reach Emacs from Ghostty.\n"
                       "This buffer has one live view, which follows its selected pane.\n")))
           (if quick-root
               (portal-terminal-quick--display buffer)
@@ -375,8 +338,6 @@ Return non-nil to kill it.  See `portal-terminal-confirm-kill'."
   (dolist (buffer (portal-view-buffers 'terminal))
     (with-current-buffer buffer (portal-terminal-close))))
 
-(defalias 'portal-terminal--dispatch #'portal-input--dispatch)
-(defalias 'portal-terminal-send-prefix #'portal-input-send-prefix)
 
 (defun portal-terminal--switch (buffer)
   "Select terminal BUFFER and remember the previously selected terminal."
@@ -403,9 +364,10 @@ Return non-nil to kill it.  See `portal-terminal-confirm-kill'."
     (user-error "No previous terminal"))
   (portal-terminal--switch portal-terminal--last-buffer))
 (defun portal-terminal-select-index ()
-  "Select terminal 0 through 9 in creation order."
+  "Select terminal 0 through 9 in creation order, by the digit of the key
+that ran this command, such as s-1."
   (interactive)
-  (let ((buffer (nth (- last-command-event ?0) (portal-terminal-buffers))))
+  (let ((buffer (nth (- (event-basic-type last-command-event) ?0) (portal-terminal-buffers))))
     (unless buffer (user-error "No terminal at that index"))
     (portal-terminal--switch buffer)))
 (defun portal-terminal-rename (name)
@@ -432,9 +394,6 @@ argument, the terminal belongs to no project.  Its name stays as it is."
                            (user-error "No project contains %s" directory))))
   (message "Terminal project: %s"
            (if portal-terminal--project (abbreviate-file-name portal-terminal--project) "none")))
-(defun portal-terminal-next-pane ()
-  "Select the next Emacs pane, as tmux prefix o does."
-  (interactive) (other-window 1))
 (defun portal-terminal--split (side)
   "Split toward SIDE and start a new independent shell there."
   (let ((configuration (current-window-configuration)))
@@ -463,8 +422,6 @@ Whether to ask first follows `portal-terminal-confirm-kill'."
                (set-window-configuration configuration))
       (set-frame-parameter nil 'portal-terminal-zoom (current-window-configuration))
       (delete-other-windows))))
-(defalias 'portal-terminal-command-prompt #'execute-extended-command)
-(defalias 'portal-terminal-help #'portal-input-help)
 
 (provide 'portal-terminal)
 (require 'portal-terminal-bindings

@@ -13,8 +13,62 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     private var toolbar: WebToolbar?
     private var observations: [NSKeyValueObservation] = []
 
-    /// The core decides what each key does, including the toolbar's Command-F.
+    /// The core decides what each key does: the page gets typing, and is
+    /// offered each chord (`offer`), which the toolbar's Command-F or Emacs
+    /// gets if the page does not use it.
     func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) == true }
+
+    /// The press offered to the page, until it answers, and whether the key
+    /// script has seen it reach the page.
+    private var offered: NSEvent?
+    private var seen = false
+    private var offerTimer: Timer?
+
+    /// Give the page EVENT, a key press the core offers it, and tell the input
+    /// whether the page used it. WebKit hands back a press the page did not
+    /// use, which the input sees again. It is known to have used one once the
+    /// key script (`KeyReports`) reports the press reached the page, and
+    /// WebKit has then finished with every key it had: typed into editable
+    /// content, a press reaches WebKit's queue only after the input method
+    /// is done with it. A page that never answers used the press if it saw
+    /// it, as when the page hangs in its handler; if not, as when the view
+    /// has no page yet, the press was never the page's.
+    func offer(_ event: NSEvent) {
+        offered = event
+        seen = false
+        offerTimer?.invalidate()
+        offerTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let event = self.offered else { return }
+                self.answer(event, used: self.seen)
+            }
+        }
+        keyDown(with: event)
+    }
+
+    /// The key script saw a press with these modifiers reach the page.
+    fileprivate func saw(control: Bool, option: Bool, command: Bool) {
+        guard let event = offered, !seen else { return }
+        let flags = event.modifierFlags
+        guard flags.contains(.control) == control, flags.contains(.option) == option,
+              flags.contains(.command) == command else { return }
+        seen = true
+        let selector = NSSelectorFromString("_doAfterProcessingAllPendingKeyEvents:")
+        guard responds(to: selector) else { return answer(event, used: true) }
+        let done: @convention(block) () -> Void = { [weak self] in
+            MainActor.assumeIsolated { self?.answer(event, used: true) }
+        }
+        perform(selector, with: unsafeBitCast(done, to: AnyObject.self))
+    }
+
+    /// The page USED EVENT, or not, unless WebKit already handed it back.
+    private func answer(_ event: NSEvent, used: Bool) {
+        guard offered === event else { return }
+        offered = nil
+        offerTimer?.invalidate()
+        offerTimer = nil
+        input?.settle(event, used: used)
+    }
 
     var loadError: String?
     /// The view's target, which names it in every call to the core.
@@ -28,6 +82,7 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
         super.init(frame: .zero, configuration: configuration)
         if contents { toolbar = WebToolbar(web: self, target: target) }
         if hosted { PageMessages.install(in: self) }
+        KeyReports.install(in: self)
         navigationDelegate = self
         uiDelegate = self
         observations = [observe(\.canGoBack) { page, _ in
@@ -140,6 +195,7 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { Core.loaded(target) }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if let offered { answer(offered, used: seen) }
         Core.failed(target, token: 0, message: "The page's web process stopped.")
     }
 
@@ -163,6 +219,37 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
 
 extension NSAppearance {
     var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+}
+
+/// The key script, in every frame of every page, in its own world out of the
+/// page's reach. It reports each real key press with Control, Option or
+/// Command that reaches the page, before the page's own handlers see it, so
+/// a page knows when a press offered to it has arrived (`WebPage.offer`).
+@MainActor
+private final class KeyReports: NSObject, WKScriptMessageHandler {
+    private static let script = """
+        addEventListener("keydown", (event) => {
+          if (event.isTrusted && (event.ctrlKey || event.altKey || event.metaKey)
+              && !["Control", "Alt", "Meta", "Shift", "CapsLock", "Fn", "AltGraph"].includes(event.key))
+            window.webkit.messageHandlers.key.postMessage([event.ctrlKey, event.altKey, event.metaKey]);
+        }, true);
+        """
+    private weak var page: WebPage?
+
+    static func install(in page: WebPage) {
+        let reports = KeyReports()
+        reports.page = page
+        let world = WKContentWorld.world(name: "portal-keys")
+        let controller = page.configuration.userContentController
+        controller.add(reports, contentWorld: world, name: "key")
+        controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: false, in: world))
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let flags = message.body as? [Bool], flags.count == 3 else { return }
+        page?.saw(control: flags[0], option: flags[1], command: flags[2])
+    }
 }
 
 /// A hosted app's two script message handlers. The page's world gets the
@@ -243,6 +330,7 @@ final class WebSession: PortalView {
             return page.window?.makeFirstResponder(page) ?? false
         }
         page.input = input
+        input.offer = { [weak page] event in page?.offer(event) }
     }
 
     func close() {
@@ -260,6 +348,15 @@ final class WebSession: PortalView {
     func post(_ json: String, token: UInt64) throws { try page.post(json, token: token) }
 
     func zoom(_ scale: Double) { page.pageZoom = scale }
+
+    func copy() throws { NSApp.sendAction(#selector(NSText.copy(_:)), to: keyboard, from: nil) }
+
+    func paste() throws { NSApp.sendAction(#selector(NSText.paste(_:)), to: keyboard, from: nil) }
+
+    /// Where the view's keyboard input goes: the page, or its find field.
+    private var keyboard: NSResponder {
+        input.host.ownsFocus(page) ? page.window?.firstResponder ?? page : page
+    }
 
     func show(_ appearance: portal_appearance) { page.show(appearance) }
 

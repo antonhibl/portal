@@ -28,20 +28,13 @@
                  (vectorp (plist-get scene :elements)))
       (user-error "This is not an Excalidraw drawing"))))
 
-(defvar portal-excalidraw-command-map
-  (let ((map (make-sparse-keymap)))
-    (keymap-set map "s" #'portal-excalidraw-save)
-    (keymap-set map "r" #'portal-excalidraw-reopen)
-    map)
-  "Drawing commands below the shared Portal prefix and m.")
-
 ;;;###autoload
 (define-derived-mode portal-excalidraw-mode fundamental-mode "Excalidraw"
   "Edit a local Excalidraw drawing in a web view.
 The buffer contains the drawing's JSON for normal Emacs saving and auto-save.
-The Portal prefix followed by C-x C-s saves.  Command-Escape returns to Emacs,
-and RET returns to the drawing.  The view follows this buffer's selected pane,
-and keeps its undo history while hidden."
+Command-S or C-x C-s saves; a chord the drawing does not use reaches Emacs.
+Command-Escape returns to Emacs, and RET returns to the drawing.  The view
+follows this buffer's selected pane, and keeps its undo history while hidden."
   (when (and buffer-file-name (file-remote-p buffer-file-name))
     (user-error "Excalidraw currently supports local files only"))
   (when (= (buffer-size) 0)
@@ -55,7 +48,6 @@ and keeps its undo history while hidden."
   (setq-local require-final-newline t)
   (setq-local buffer-file-coding-system 'utf-8-unix)
   (setq-local buffer-offer-save t)
-  (setq-local portal-input--map-function (lambda () portal-excalidraw-command-map))
   (portal-input-mode 1)
   (setq portal-excalidraw--saved (unless (buffer-modified-p) (buffer-string)))
   ;; Emacs deliberately catches before-save-hook errors and may still write.

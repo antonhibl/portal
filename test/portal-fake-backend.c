@@ -71,7 +71,9 @@ struct portal_view {
     bool focused;          /* It has the keyboard. */
     bool triggered;        /* It holds TRIGGER. */
     struct press trigger;
-    bool holding;          /* It holds the presses in HELD, after TRIGGER. */
+    bool offering;         /* Its page has OFFERED, and has not answered. */
+    struct press offered;
+    bool holding;          /* It holds the presses in HELD, after TRIGGER or OFFERED. */
     struct press held[MAX_KEYS];
     size_t held_count;
     portal_toolbar toolbar; /* The last drawn, whose query is QUERY. */
@@ -763,6 +765,8 @@ static void log_key(const char *where, struct press press)
     snprintf(key_log + used, sizeof key_log - used, "%s%s %s", used ? ", " : "", where, name);
 }
 
+static void release(struct portal_view *view);
+
 bool portal_view_replay(portal_view *view, bool replay, portal_text *error)
 {
     if (!usable(view, -1, error) || refused(error))
@@ -770,17 +774,29 @@ bool portal_view_replay(portal_view *view, bool replay, portal_text *error)
     if (replay) {
         calls.replayed++;
         /* Ahead of presses posted before, as NSApp.postEvent(atStart:). */
-        if (posted_count + view->held_count > MAX_KEYS)
-            abort();
-        memmove(posted + view->held_count, posted, posted_count * sizeof *posted);
-        memcpy(posted, view->held, view->held_count * sizeof *posted);
-        posted_count += view->held_count;
+        release(view);
     } else {
         calls.discarded++;
         view->triggered = false;
     }
     view->holding = false;
     view->held_count = 0;
+    return true;
+}
+
+bool portal_view_copy(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.copied++;
+    return true;
+}
+
+bool portal_view_paste(portal_view *view, portal_text *error)
+{
+    if (!usable(view, -1, error) || refused(error))
+        return false;
+    calls.pasted++;
     return true;
 }
 
@@ -796,13 +812,26 @@ bool portal_view_literal(portal_view *view, portal_text *error)
     return true;
 }
 
-/* The view whose window's keys are its own: the one holding a trigger. */
+/* The view whose window's keys are its own: the one holding a trigger, or
+   offering a press to its page. */
 static struct portal_view *capturing(void)
 {
     for (size_t i = 0; i < view_count; i++)
-        if (!all[i]->destroyed && all[i]->triggered)
+        if (!all[i]->destroyed && (all[i]->triggered || all[i]->offering))
             return all[i];
     return NULL;
+}
+
+/* Deliver VIEW's held presses again, ahead of those posted before. */
+static void release(struct portal_view *view)
+{
+    if (posted_count + view->held_count > MAX_KEYS)
+        abort();
+    memmove(posted + view->held_count, posted, posted_count * sizeof *posted);
+    memcpy(posted, view->held, view->held_count * sizeof *posted);
+    posted_count += view->held_count;
+    view->holding = false;
+    view->held_count = 0;
 }
 
 static struct portal_view *focused(void)
@@ -848,6 +877,40 @@ void portal_fake_press(portal_chord chord, bool repeat)
         }
         log_key("held", press);
         break;
+    case PORTAL_KEY_OFFER:
+        view->offering = view->holding = true;
+        view->offered = press;
+        log_key("offered", press);
+        break;
+    }
+}
+
+void portal_fake_answer(bool used)
+{
+    struct portal_view *view = NULL;
+    for (size_t i = 0; i < view_count && !view; i++)
+        if (!all[i]->destroyed && all[i]->offering)
+            view = all[i];
+    if (!view)
+        abort();
+    view->offering = false;
+    if (used) {
+        log_key("used", view->offered);
+        release(view);
+        return;
+    }
+    switch (portal_input_unused(target_of(view), view->offered.chord, view->offered.repeat)) {
+    case PORTAL_KEY_HOLD:
+        log_key("unused held", view->offered);
+        view->triggered = true;
+        view->trigger = view->offered;
+        break;
+    case PORTAL_KEY_TAKE:
+        log_key("unused taken", view->offered);
+        release(view);
+        break;
+    default:
+        abort(); /* The core answers an unused press TAKE or HOLD only. */
     }
 }
 

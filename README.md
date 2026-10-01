@@ -67,27 +67,34 @@ view while the page keeps running. Killing the buffer closes the page.
 
 ## Shared keyboard controls
 
-Terminal, Excalidraw, and HTML/Markdown views use `portal-input-prefix`
-(default `C-b`). The app receives ordinary keys, including Escape and `C-g`.
-The prefix temporarily gives a command to Emacs:
+Emacs is the system, and each native view an app running in it, as a page runs
+in a browser. Terminal, Excalidraw, and HTML/Markdown views behave as their apps
+do outside Emacs, and a chord the app does not use reaches Emacs:
 
-| Keys | Action |
+| Keys in a view | Where they go |
 | --- | --- |
-| `C-b ?` | Show shared and feature bindings |
-| `C-b d` or Command-Escape | Return to Emacs and stay there |
-| `C-b o` | Select the next Emacs pane |
-| `C-b :` or `C-b M-x` | Run an Emacs command |
-| `C-b C-x …`, `C-b C-c …`, `C-b C-h …` | Use your existing Emacs bindings |
-| `C-b m …` | Feature commands; existing terminal shortcuts also work directly |
-| `C-b C-b` | Send a literal Control-B to the app |
-| `C-g` after the prefix | Cancel the prefix |
-| `RET` while Emacs owns a Portal buffer | Enter the app |
+| Typing: plain and Shift keys, arrows, Return, Tab, Escape | The app, always |
+| A chord (Control, Option or Command with a key that types a character) the app uses | The app |
+| Command-C, Command-V | Copy and paste, in every view |
+| Command-F, Command-R | Find and reload, in a web view with a toolbar |
+| Any other chord | Emacs, as if typed in the view's buffer; Emacs reads the rest of its key sequence |
+| Command-Escape | Return to Emacs and stay there |
+| `RET`, or a click, while Emacs owns a Portal buffer | Enter the app |
 
-The prefix has no timeout. Commands finish their minibuffer interaction before
-returning to the selected native view; explicit unfocus, errors, and selecting
-an ordinary buffer leave Emacs in control. The native toolbar's ownership dot
-is hollow when Emacs owns the keyboard, green when the view owns it, blue while
-an Emacs prefix is pending, and amber in passthrough. Click the dot to enter or
+So `s-x`, or any Emacs binding of yours on Command, works inside a terminal
+without leaving it, and `C-x b` works on a page that does not use Control-X.
+A terminal's program gets every Control and Option chord: tmux keeps `C-b`.
+A page gets each chord first, as it would in a browser, and keeps those it uses.
+Plain keys never reach Emacs, since Emacs binds single keys too; for an Evil
+Space leader, bind a chord to it as well, such as `(evil-set-leader 'normal
+(kbd "s-'"))`. Splits, buffers and switching stay Emacs's job: views have no
+tab or split keys.
+
+Commands finish their minibuffer interaction before returning to the selected
+native view; explicit unfocus, errors, and selecting an ordinary buffer leave
+Emacs in control. `C-g` cancels a key sequence Emacs is reading. The native
+toolbar's ownership dot is hollow when Emacs owns the keyboard, green when the
+view owns it, and blue while Emacs reads a command. Click the dot to enter or
 return to Emacs. No global physical keybinding is installed in ordinary buffers.
 
 The 28 pixel toolbar reserves space above the content. Web pages have back,
@@ -104,23 +111,16 @@ same state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
 `portal-terminal-text-size-reset`, and in a terminal Command-Plus, Command-Minus
 and Command-0 do the same, with or without a toolbar. Command-F runs `portal-find` in a web view
-with a toolbar, and Command-R reloads the page as the Reload button does, except in
-passthrough; in Portal's own web buffers, `s-f` and `s-r` (`portal-web-reload`)
-also work while Emacs owns the keyboard. Find opens a field inside the strip; Return
+with a toolbar, and Command-R reloads the page as the Reload button does, unless
+the page uses those chords itself; in Portal's own web buffers, `s-f` and `s-r`
+(`portal-web-reload`) also work while Emacs owns the keyboard. Find opens a field inside the strip; Return
 and Shift-Return navigate matches, and Escape closes it. State survives hiding
 and redisplaying a pane; reload preserves zoom and the TOC. Killing the buffer
 releases it.
 
-Use `M-x portal-input-passthrough` to release even the prefix and optional
-native shortcuts to an app. Command-Escape leaves passthrough and returns to
-Emacs; the next entry uses the normal prefix again. This does not bypass
-macOS shortcuts or the embedded app's own input handling.
-
-Set `(setq portal-input-prefix "C-a")` to change the prefix for all views.
-`portal-terminal-prefix` remains an alias, so existing configuration works.
-Customize shared operations in `portal-command-map`; they take precedence over
-feature shortcuts. The native first chord accepts modified ASCII, with Meta =
-Option and Super = Command. The rest of a sequence uses normal Emacs keys.
+A terminal's native bindings can claim a chord its program would otherwise
+get, such as a Control chord (see [the input bridge](docs/terminal-input-bridge.md)).
+macOS's own shortcuts, such as Command-Space, still come first.
 
 Click inside a page or press `RET` to interact. A click that enters a view also
 selects the Emacs pane showing it, so the selected pane and the keyboard always
@@ -131,15 +131,15 @@ Restart Emacs after rebuilding the native module to try these controls.
 
 ## Local Excalidraw drawings
 
-Run `M-x portal-excalidraw` for a new drawing, then `C-b C-x C-s` to choose its
-filename and save. Open existing `.excalidraw` files normally with `C-x C-f`
+Run `M-x portal-excalidraw` for a new drawing, then Command-S or `C-x C-s` to
+choose its filename and save. Open existing `.excalidraw` files normally with `C-x C-f`
 or Dired; they enter `portal-excalidraw-mode` automatically. A prefix argument
 to `portal-excalidraw` prompts for an existing or new file.
 
 - Draw, type, paste text/images, and use the normal Excalidraw editing tools.
-- `C-b C-x C-s`, Command-S, and the drawing's **Save** button save through Emacs.
-  Bare `C-x` belongs to the app while the webview has focus. In Emacs input,
-  the usual `C-x C-s` still works. `C-b m s` also saves; `C-b m r` reopens.
+- Command-S, `C-x C-s` and the drawing's **Save** button save through Emacs.
+  The drawing does not use `C-x`, so `C-x C-s` reaches Emacs even while the
+  drawing has the keyboard. `C-c C-r` in the buffer reopens the drawing.
 - Command-Escape returns keyboard focus to Emacs; `RET` re-enters the drawing.
   Bare Escape remains available for drawing/text editing.
 - Each drawing buffer has one web view running the Excalidraw hosted app. It
@@ -177,21 +177,13 @@ whatever Emacs key sequence you prefer. For example, in your own configuration:
 
 ```elisp
 (keymap-global-set "s-`" #'portal-terminal-toggle)
-(portal-terminal-bind-key portal-terminal-quick-native-map
-                          "s-`" #'portal-terminal-toggle)
 ```
 
-The second binding handles Command-backtick while Ghostty has keyboard focus.
-It applies immediately, including to hidden quick terminals. Both bindings are
-optional user configuration. You can instead use the existing terminal prefix:
-
-```elisp
-(keymap-set portal-terminal-quick-prefix-map "t" #'portal-terminal-toggle)
-```
-
-That example runs the command after your terminal prefix followed by `t`.
-See [the input bridge](docs/terminal-input-bridge.md) for runtime binding APIs
-and how native events reach Elisp.
+A Command chord reaches Emacs from a terminal, so the same key dismisses the
+panel while Ghostty has keyboard focus. See [the input
+bridge](docs/terminal-input-bridge.md) for how native events reach Elisp, and
+for native bindings, which claim a chord such as a Control chord that the
+terminal's program would otherwise get.
 
 Each project has one quick shell, which you can summon from any Emacs frame.
 The panel and its remembered height belong to each frame, but summoning the
@@ -210,21 +202,13 @@ Reopening never sends `cd` or starts a replacement shell. A command such as
 Switching files or projects does not automatically change an already visible
 panel. Dismiss it, then summon again to select the new project's quick shell.
 
-Quick terminals inherit the shared controls and add these feature shortcuts:
-
-| Key | Action |
-| --- | --- |
-| `q` | Dismiss without ending the shell |
-| `d` | Return keyboard control to Emacs, leaving the panel visible |
-| `r` | Confirm and reset to a fresh shell at this project's root |
-| `k` | Confirm and forget this project's quick shell |
-| `:` | Run an Emacs command with `M-x` |
-| `?` | Show quick-terminal bindings |
-
-The corresponding commands are `portal-terminal-quick-dismiss`,
-`portal-terminal-quick-reset`, and `portal-terminal-quick-forget`. Reset/forget
-target the visible panel when there is one, otherwise the current editing
-project. Bare Escape, `q`, and `C-g` remain terminal input. Clicking into the
+Quick terminals have these commands, which you can bind to Command chords:
+`portal-terminal-quick-dismiss` dismisses without ending the shell,
+`portal-terminal-quick-reset` confirms and resets to a fresh shell at this
+project's root, and `portal-terminal-quick-forget` confirms and forgets this
+project's quick shell. Reset/forget target the visible panel when there is
+one, otherwise the current editing project. Escape, `q`, and `C-g` remain
+terminal input. Clicking into the
 editor leaves the panel visible. Its initial height is controlled by
 `portal-terminal-quick-height` (default `0.5`); dismissal remembers manual resizing.
 
@@ -241,8 +225,8 @@ directory reports with the fake native module: names that tell projects named al
 apart, lookups by root after renames, reports while hidden, changes made while a
 terminal opens, ignored directory reports, reassignment, exits and kills, completion over every field with Emacs's own
 styles, and quick terminals keeping their names and projects.
-The graphical terminal suite also tests a user-configured native prefix binding and a real
-foreground process continuing while the quick panel is hidden.
+The graphical terminal suite also tests a Command chord toggling the panel from inside
+it, and a real foreground process continuing while the quick panel is hidden.
 
 ## Native Ghostty terminal
 
@@ -265,12 +249,11 @@ commands, Vim and other TUIs use the real terminal protocol engine. It does not
 convert output to Emacs text or use WebKit or the Bun server.
 
 - Click the terminal or press `RET` in its buffer to give it keyboard focus.
-- Press **`C-b`**, then a command from the table below. A prompt in the echo
-  area shows that Emacs is reading a command. There is no prefix timeout.
-- **`C-b d`**, `Command-Escape`, or clicking **Return to Emacs** leaves keyboard
-  control with Emacs. Use normal Emacs bindings, then `RET` to re-enter Ghostty.
-- **`C-b C-b`** sends a literal Control-B. `C-g` cancels a pending prefix;
-  ordinary Escape, `C-g`, `C-c`, and other terminal keys otherwise go to the shell.
+- The shell gets typing and every Control and Option chord, including Escape,
+  `C-g`, `C-c` and tmux's `C-b`. A Command chord reaches Emacs, which runs it in
+  the terminal's buffer, then gives the terminal the keyboard back.
+- `Command-Escape`, or clicking **Return to Emacs**, leaves keyboard control
+  with Emacs. Use normal Emacs bindings, then `RET` to re-enter Ghostty.
 - Select with the mouse and use `Command-C` / `Command-V` for the macOS clipboard.
   Scroll with the trackpad or mouse wheel. Non-Latin IME composition has not
   been manually verified.
@@ -280,28 +263,32 @@ convert output to Emacs text or use WebKit or the Bun server.
   buffer or running `portal-terminal-close` in it ends that shell.
   `portal-terminal-close-all` ends all embedded shells.
 
-Defaults follow [tmux's key bindings](https://man.openbsd.org/tmux#DEFAULT_KEY_BINDINGS)
-where an Emacs counterpart exists. Every row follows the prefix (`C-b` by default):
+Terminals come with these commands, and no keys: bind the ones you use in
+Emacs, on Command chords to reach them from inside a terminal too.
 
-| Key | Action |
+| Command | Action |
 | --- | --- |
-| `c` | New independent terminal buffer |
-| `"` / `%` | Split below / right with a new shell |
-| `o` / arrow keys | Next / directional Emacs pane |
-| `n` / `p` / `l` | Next / previous / last terminal buffer |
-| `0`–`9` | Select a terminal by its current creation-order index |
-| `w` | Choose a terminal by name, project, directory or title |
-| `,` | Rename the terminal buffer |
-| `z` | Zoom the pane; repeat to restore the layout |
-| `x` | End the shell, asking first while it runs, and close its pane |
-| `d` | Stay in Emacs; keep the shell running |
-| `:` | Run `M-x`, then resume the selected app |
-| `?` | Show the current bindings, including customizations |
-| repeated prefix | Send the actual prefix keystroke to the shell |
+| `portal-terminal-new` | New independent terminal buffer |
+| `portal-terminal-split-below` / `-split-right` | Split below / right with a new shell |
+| `portal-terminal-next` / `-previous` / `-last` | Next / previous / last terminal buffer |
+| `portal-terminal-select-index` | Select a terminal by the digit of its key, such as `s-1` |
+| `portal-terminal-choose` | Choose a terminal by name, project, directory or title |
+| `portal-terminal-rename` | Rename the terminal buffer |
+| `portal-terminal-zoom` | Zoom the pane; repeat to restore the layout |
+| `portal-terminal-kill-pane` | End the shell, asking first while it runs, and close its pane |
+
+```elisp
+(keymap-global-set "s-n" #'portal-terminal-new)
+(keymap-global-set "s-]" #'portal-terminal-next)
+(keymap-global-set "s-[" #'portal-terminal-previous)
+(keymap-global-set "s-w" #'portal-terminal-choose)
+```
 
 These are Emacs operations: terminal buffers stand in for tmux windows and Emacs
-windows stand in for panes. There are no tmux session servers, saved per-terminal
-pane layouts, or tmux copy mode. Each terminal buffer has one Portal view,
+windows stand in for panes. Splits, buffers and switching stay Emacs's job, and
+a terminal has no tab or split keys of its own. For tmux itself, run it inside
+a terminal: it gets its `C-b`. There are no saved per-terminal pane layouts or
+tmux copy mode. Each terminal buffer has one Portal view,
 which appears in the selected pane showing the buffer; other panes showing the
 same buffer display only its text ([ADR 0001](docs/adr/0001-one-portal-view-per-buffer.md)).
 Terminals belong to no frame: show a terminal buffer in another frame and its
@@ -316,7 +303,7 @@ shell in project `portal`, `*claude: portal*` for `portal-terminal-start`
 running `claude`, and Emacs adds `<2>` to repeats. Projects whose roots end the
 same way, such as two worktrees both called `portal`, read `research/portal`;
 outside a project, the abbreviated start directory stands in. Rename a
-terminal with `C-b ,` or `rename-buffer`: Portal never renames it again,
+terminal with `portal-terminal-rename` or `rename-buffer`: Portal never renames it again,
 whatever title its programs set.
 
 A terminal belongs to the project of the directory it started in, which
@@ -349,7 +336,7 @@ may be busy or idle.
 
 ### Choosing terminals
 
-`C-b w`, or `M-x portal-terminal-choose`, lists every terminal.
+`M-x portal-terminal-choose` lists every terminal.
 `M-x portal-terminal-choose-project` lists the current project's: run from a
 terminal, the project it belongs to, and otherwise the project of the file or
 Dired buffer you are editing, however far its shells have moved. `M-a` switches
@@ -363,8 +350,8 @@ them, out of the box: its category, `portal-terminal`, tries the `basic` and
 
 The terminals you selected most recently come first, and `RET` on empty input
 takes the first; the current terminal comes last. The order is fixed when the
-list opens, and previews never count as selecting. Cycling with `C-b n`, `p`
-and the digits keeps creation order.
+list opens, and previews never count as selecting. Cycling with
+`portal-terminal-next`, `-previous` and `-select-index` keeps creation order.
 
 The New group starts a terminal at the project's root, or outside a project in
 the current directory; "New named terminal…" asks for a name first, and
@@ -375,7 +362,7 @@ a quick panel, the choice opens in the editing window behind the panel, which
 stays; cancelling returns to the panel.
 
 Killing a terminal buffer whose program is still running asks first, however it
-is killed: `C-x k`, Ibuffer, Embark or `C-b x`. Ghostty's program is not an
+is killed: `C-x k`, Ibuffer, Embark or `portal-terminal-kill-pane`. Ghostty's program is not an
 Emacs process, so Emacs's own question for a running process never comes up.
 Set `portal-terminal-confirm-kill` to nil to kill without asking. A terminal
 whose program exited goes without asking, and quick reset and forget keep their
@@ -451,13 +438,12 @@ Projectile users set both project functions. Consult's current hook is
       consult-project-function (lambda (_may-prompt) (projectile-project-root)))
 ```
 
-While a terminal has the keyboard, `C-b w` chooses a terminal, and `C-b C-x b`
-or `C-b C-x p t` reach your Emacs bindings. Native shortcuts are opt-in, and
-apply in quick terminals too:
+While a terminal has the keyboard, your Command bindings for these commands
+reach Emacs, in quick terminals too:
 
 ```elisp
-(portal-terminal-bind-key portal-terminal-native-map "s-b" #'consult-buffer)
-(portal-terminal-bind-key portal-terminal-native-map "s-t" #'portal-terminal-choose-project)
+(keymap-global-set "s-b" #'consult-buffer)
+(keymap-global-set "s-t" #'portal-terminal-choose-project)
 ```
 
 The chosen terminal gets the keyboard once the minibuffer closes, and cancelling
@@ -481,11 +467,7 @@ actions and export to Ibuffer, run as they do for you.
 Configure in Lisp after loading `portal.el` (changes apply to running terminals):
 
 ```elisp
-(setq portal-input-prefix "C-a") ; default: "C-b"; applies to every Portal view
 (setq portal-terminal-theme "Dracula") ; nil follows system light/dark appearance
-(keymap-set portal-terminal-prefix-map "v" #'portal-terminal-split-right)
-(keymap-set portal-terminal-prefix-map "b" #'switch-to-buffer)
-(keymap-set portal-terminal-prefix-map "e" #'portal-terminal-unfocus)
 ```
 
 `portal-terminal-theme` accepts an exact, case-sensitive name from
@@ -495,21 +477,22 @@ hidden ones, and apply to new terminals without restarting existing shells.
 Set it to `nil` to restore Alabaster in light mode and Afterglow in dark mode.
 Named themes stay fixed across system appearance changes.
 
-The prefix accepts one modified ASCII key in `kbd` notation; Meta means Option
-and Super means Command. Customize the map or add nested prefix maps with normal
-Emacs keymap functions. Commands finish their minibuffer interaction before focus
-returns to the selected terminal. Switching to an ordinary buffer keeps Emacs in
-control. A custom command can call `portal-terminal-unfocus` to stay in Emacs even
-when a terminal is selected. Errors also leave focus in Emacs.
+A Command chord from a terminal runs in its buffer, with its keymaps. Commands
+finish their minibuffer interaction before focus returns to the selected
+terminal. Switching to an ordinary buffer keeps Emacs in control. A custom
+command can call `portal-terminal-unfocus` to stay in Emacs even when a terminal
+is selected. Errors also leave focus in Emacs.
 
 `portal-terminal-native-map` adds opt-in standalone or nested shortcuts to all
-terminals; `portal-terminal-quick-native-map` overlays it for quick terminals.
+terminals, claiming chords their programs would otherwise get, such as Control
+chords; `portal-terminal-quick-native-map` overlays it for quick terminals.
 Use `portal-terminal-bind-key` / `portal-terminal-unbind-key` for live changes,
 or call `portal-terminal-refresh-bindings` after direct keymap edits. These maps
-start empty and do not install global shortcuts. First chords use the same
-modified ASCII syntax as the leader; prefix tails use normal Emacs keys.
+start empty and do not install global shortcuts. First chords are one modified
+ASCII key in `kbd` notation, where Meta means Option and Super means Command;
+the rest of a sequence uses normal Emacs keys.
 
-The module's C core catches registered first chords and notifies Emacs through the
+The module's C core catches Command chords and registered first chords, and notifies Emacs through the
 notification pipe that every Portal view shares
 ([details](docs/terminal-input-bridge.md#the-notification-pipe)). It holds fast follow-up keys until Lisp is ready, and Lisp reads the keymap and runs the
 command. Ordinary terminal input and output stay native; there is no polling timer
@@ -518,7 +501,8 @@ or terminal redraw through Lisp.
 The terminal uses the pinned [GhosttyTerminal Swift wrapper](https://github.com/Lakr233/libghostty-spm/tree/1.6.20260909)
 and its Ghostty build. Themes come from the wrapper's bundled catalog; standalone
 Ghostty preferences are not loaded. Ghostty's
-app-level window/tab commands are not implemented here. The Emacs buffer contains
+app-level window/tab commands are not implemented here, and its own Command-key
+bindings never apply: the core gives Command chords to Portal's shortcuts or Emacs. The Emacs buffer contains
 instructions, not live terminal text, so ordinary Emacs search and movement do not
 operate on the terminal. The native view still shares Emacs's main thread for
 input and presentation; this is not a guarantee of latency parity during Emacs GC
@@ -537,9 +521,10 @@ directory reports, percent-encoded and from Ghostty's zsh or bash integration,
 reach the buffer's metadata and `default-directory`; a hidden terminal's title
 arrives without renaming it; and an exit is reported when it happens, keeping the
 buffer, its output and the keyboard until the next key. They also exercise
-rapid native prefix sequences, multiple sessions and splits, live prefix/map
-customization, runtime binding registration/unbinding, quick-only shortcuts,
-shifted characters, literal prefix bytes, cancellation, and minibuffer focus.
+Command chords running Emacs commands with rapid follow-up keys, `C-b` and `C-a`
+reaching the shell, multiple sessions and splits, runtime binding
+registration/unbinding, quick-only shortcuts, shifted characters, literal
+binding bytes, cancellation, and minibuffer focus.
 Batch binding tests run with `ctest --test-dir build -R terminal-bindings`, and
 batch tests of the view lifecycle (opening, splits, selection, `quit-window`,
 showing the buffer elsewhere, moving between frames, deleting a frame and
@@ -1040,7 +1025,8 @@ relative scripts, styles, and images can load. JavaScript is enabled by default.
   `prefers-color-scheme`, not the appearance an Emacs frame forces with
   `ns-appearance`. `portal-web-appearance` set to `light` or `dark` overrides it
   for every web view, open or new.
-- The shared Portal prefix and Command-Escape work while a page has focus.
+- A chord the page does not use reaches Emacs, and Command-Escape works, while a
+  page has focus.
   Clicking a view to enter it sends a `select TARGET` record, and Emacs selects
   the pane showing it.
 - This is a URL viewer, without an address bar, downloads, popup windows, or
@@ -1070,8 +1056,8 @@ the app sends, in order. Other web views have no bridge.
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
-| `portal-input.el` | Shared prefix commands, Emacs gateways, focus policy, and input notifications |
-| `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and tmux shortcuts |
+| `portal-input.el` | Chords that fall through to Emacs, read with the view's buffer's keymaps; focus policy and input notifications |
+| `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
 | `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
 | `portal-project.el` | Each frame's editing context, and project roots through `portal-project-function` |
@@ -1083,7 +1069,7 @@ the app sends, in order. Other web views have no bridge.
 | `host/bridge.d.ts` | The `portalBridge` interface hosted apps use |
 | `native/Core/emacs.c` | The Emacs module: function registration, argument and result conversion, and errors |
 | `native/Core/views.c` | The view registry: targets, kind checks, attachment bookkeeping, closing, inspection, and change announcements |
-| `native/Core/input.c` | Input handoff: prefix and binding matching, handoff states and serials, literal and cancel decisions, passthrough |
+| `native/Core/input.c` | Who gets each key: the app, a view shortcut or Emacs; binding matching, offers to pages, handoff states and serials, literal and cancel decisions |
 | `native/Core/terminals.c` | Terminal rules: option checks, the sorted theme catalog, themes for every terminal, paste and Enter, reading text, and announcing changes |
 | `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, whether it can go back or forward, and the bridge's queue, senders and records |
 | `native/Core/toolbar.c` | Toolbars: each view's buttons and which work, zoom and text size with their limits, the table of contents, the find field and its searches, visibility and colors, and what a click does |
@@ -1328,7 +1314,7 @@ The Markdown graphical tests use the real app host and real mouse clicks. They
 check that Back and Forward restore reading positions, that a source link hands
 the keyboard to Emacs in one click, that clicking the preview selects its pane,
 that `portal-preview-return` and `RET` return without reloading, and that
-Command-Escape and `C-b d` still return to Emacs. In a frame forcing the
+Command-Escape still returns to Emacs, and `RET` re-enters. In a frame forcing the
 opposite appearance, a preview follows the system's, and `portal-web-appearance`
 turns the page on screen light or dark without reloading it.
 The task browser graphical tests check real list and task pages: Back and
@@ -1351,7 +1337,7 @@ its button; Edit in Emacs handing the keyboard to the source pane; a save
 refreshing the page while Emacs keeps the keyboard, including a hidden page
 once it is shown; Back showing the list without a task completed on its page;
 and an action refused over unsaved changes.
-The graphical toolbar tests type into the real find field and step through matches
+The graphical toolbar tests type and paste into the real find field and step through matches
 with real keys, check that closing find leaves the keyboard with Emacs once the user
 returned there, that web state survives buffer switches, reload and a theme change,
 that a terminal's grid follows its text size and live toolbar visibility, and that
@@ -1391,7 +1377,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
 ```
 
 The Lisp tests use only Emacs's built-in libraries. A standalone AppKit check
-also verifies guest Escape/`C-g` retain focus, while Command-Escape and
+also verifies guest Escape retains focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
@@ -1430,7 +1416,7 @@ Replace `test/native-focus.swift` and `build/check-focus` with
 `test/native-toolbar.swift` and `build/check-toolbar` to check toolbar layout with
 the real core: buttons that keep the keyboard where it was, the ownership dot, back
 and forward in previews, zoom limits, the TOC across hiding and reload, typing into
-the real find field, Return, Shift-Return and Escape, Command-F, Command-R and passthrough,
+the real find field, Return, Shift-Return and Escape, Command-F and Command-R after the page,
 closing find after the keyboard went back to Emacs, live visibility and colors, a
 view without a toolbar filling its pane, and a Markdown preview's Open in Emacs.
 Keys reach the find field through the event loop, as real presses do, since the
@@ -1475,16 +1461,22 @@ calls nor a late record from the platform reach it.
 `ctest -R input-core` runs `test/portal-input-tests.c`, which presses keys as a
 user would through the fake platform. The fake routes each press as the macOS
 platform does, holding what the core says to hold and replaying it when the test
-runs its event loop, and plays Emacs's side with `portal--input` actions. It
-checks a handoff from the prefix to the command; that keys typed before Emacs
-acknowledges are held and replayed in order; that only the first key of a
-sequence, when it repeats the trigger, goes to the app, and a key's repeats
-send no records; C-g, Command-Escape and Emacs's unfocus; that a click abandons
-a handoff before it selects the pane, while Emacs's own focus changes do not;
-that serials of finished or abandoned handoffs, or another view's, do nothing;
-that hiding or closing ends a handoff; passthrough and when it ends; binding
-profiles, with Shift and punctuation; and that an invalid or colliding prefix or
-binding leaves the previous configuration working.
+runs its event loop, and plays a page's answers and Emacs's side with
+`portal--input` actions. It checks who gets each key: a terminal's program gets
+typing and every chord but Super's, which falls through to Emacs as typed; a
+page is offered each chord, and keeps those it uses, while an unused one goes
+to the view's shortcuts or Emacs, with the keys typed after it; Super-C and
+Super-V copy and paste; and the keyboard moving while a page decides. It also
+checks that keys typed before Emacs acknowledges are held and replayed in
+order, and stay with Emacs when its command never read them;
+that only the first key after a native binding's chord, when it repeats it,
+goes to the app, while after a chord that fell through the trigger is
+Emacs's and its repeats are dropped; C-g, Command-Escape and Emacs's unfocus;
+that a click abandons a handoff before it selects the pane, while Emacs's own
+focus changes do not; that serials of finished or abandoned handoffs, or another
+view's, do nothing; that hiding or closing ends a handoff; binding profiles,
+with Shift and punctuation; and that an invalid or colliding binding leaves the
+previous configuration working.
 
 `ctest -R terminals` runs `test/portal-terminals-tests.c`, which drives the core's
 terminal rules with the same fake platform. It checks that invalid options, including
@@ -1503,7 +1495,7 @@ toolbars with the fake platform, answering its finds and script calls by hand. I
 checks each layout's buttons and which of them work, including views without a
 toolbar and an invalid `:toolbar`; zoom steps and text sizes stopping at their limits,
 and a size the platform refuses; the keyboard's text size, Command-F and Command-R shortcuts,
-and passthrough; the ownership dot and its clicks; searches running one at a time in
+which a page that uses those chords keeps; the ownership dot and its clicks; searches running one at a time in
 order, newer text replacing waiting searches, match counting and wrapping; a page
 that loads dropping old results and searching again; the table of contents across
 pages; closing find only returning the keyboard to a view that has it; state kept

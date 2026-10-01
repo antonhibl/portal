@@ -419,159 +419,167 @@
         (when (file-exists-p file) (delete-file file))))))
 
 (provide 'portal-terminal-tests)
-(defun portal-terminal-test--prefix (&rest strokes)
-  "Send native prefix and follow-up STROKES through the real event channel."
+(defvar portal-terminal-test--keys (make-sparse-keymap)
+  "Emacs bindings the chord tests give every buffer, as a user's config does.")
+
+(defmacro portal-terminal-test--with-keys (bindings &rest body)
+  "Run BODY with BINDINGS, (KEY . COMMAND) pairs, active in every buffer."
+  (declare (indent 1))
+  `(let ((portal-terminal-test--keys (make-sparse-keymap)))
+     (dolist (binding ,bindings)
+       (keymap-set portal-terminal-test--keys (car binding) (cdr binding)))
+     (let ((emulation-mode-map-alists
+            (cons `((t . ,portal-terminal-test--keys)) emulation-mode-map-alists)))
+       ,@body)))
+
+(defun portal-terminal-test--chord (trigger &rest strokes)
+  "Send TRIGGER, a Super chord, and STROKES through the real event channel.
+The terminal does not use TRIGGER, so Emacs reads it, and STROKES after it."
   (select-frame-set-input-focus (selected-frame))
   (portal-terminal-focus)
-  (should (portal-test-native-key (if (equal portal-terminal-prefix "C-a") 0 11)
-                                  (ash 1 18) (if (equal portal-terminal-prefix "C-a") "\C-a" "\C-b") t))
+  (should (apply #'portal-test-native-key trigger))
   ;; Deliver immediately, before Lisp processes the notification. This catches
   ;; races that slower, individually evaluated synthetic keys would conceal.
   (dolist (stroke strokes) (should (apply #'portal-test-native-key stroke)))
-  (let* ((keys (with-timeout (3 (ert-fail "Native prefix did not wake Emacs"))
+  (let* ((keys (with-timeout (3 (ert-fail "The chord did not wake Emacs"))
                  (read-key-sequence-vector nil)))
          (event (aref keys 0)))
     (ert-info ((format "Received keys: %S" keys))
-      (should (eq (car-safe event) 'portal-input-prefix)))
+      (should (eq (car-safe event) 'portal-input-key)))
     (should (eq (key-binding keys) #'portal-input--dispatch))
-    (with-timeout (3 (ert-fail "Prefix command did not finish"))
-      (portal-terminal--dispatch event))))
+    (with-timeout (3 (ert-fail "The chord's command did not finish"))
+      (portal-input--dispatch event))))
 
-(ert-deftest portal-terminal-prefix-creates-splits-and-switches ()
-  (portal-terminal-test--session
-    (let ((first (current-buffer))
-          (first-id (portal-view-target)))
-      (portal-terminal-test--prefix '(8 0 "c"))
-      (let ((second (current-buffer)))
-        (should-not (eq second first))
-        (should (= (length (portal-view-buffers 'terminal)) 2))
-        (should (plist-get (portal-terminal-test--state (portal-view-target)) :focused))
-        (should-not (plist-get (portal-terminal-test--state first-id) :visible))
-        (portal-terminal-test--prefix '(35 0 "p"))
-        (should (eq (current-buffer) first))
-        (portal-terminal-test--prefix '(45 0 "n"))
-        (should (eq (current-buffer) second))
-        (portal-terminal-test--prefix '(37 0 "l"))
-        (should (eq (current-buffer) first))
-        (portal-terminal-test--prefix (list 23 (ash 1 17) "%"))
-        (should (= (length (window-list)) 2))
-        (should (= (length (portal-view-buffers 'terminal)) 3))
-        (should (plist-get (portal-terminal-test--state first-id) :visible))
-        (let ((right (current-buffer)))
-          (portal-terminal-test--prefix '(31 0 "o"))
+(defconst portal-terminal-test--super (ash 1 20))
+
+(ert-deftest portal-terminal-chords-run-emacs-commands ()
+  (portal-terminal-test--with-keys
+      '(("s-n" . portal-terminal-new) ("s-p" . portal-terminal-previous)
+        ("s-]" . portal-terminal-next) ("s-l" . portal-terminal-last)
+        ("s-%" . portal-terminal-split-right) ("s-o" . other-window)
+        ("s-z" . portal-terminal-zoom) ("s-k" . portal-terminal-kill-pane))
+    (portal-terminal-test--session
+      (let ((first (current-buffer))
+            (first-id (portal-view-target))
+            (super portal-terminal-test--super))
+        (portal-terminal-test--chord (list 45 super "n"))
+        (let ((second (current-buffer)))
+          (should-not (eq second first))
+          (should (= (length (portal-view-buffers 'terminal)) 2))
+          (should (plist-get (portal-terminal-test--state (portal-view-target)) :focused))
+          (should-not (plist-get (portal-terminal-test--state first-id) :visible))
+          (portal-terminal-test--chord (list 35 super "p"))
           (should (eq (current-buffer) first))
-          (portal-terminal-test--prefix '(124 0 "\uf703"))
-          (should (eq (current-buffer) right))
-          (portal-terminal-test--prefix '(6 0 "z"))
-          (should (= (length (window-list)) 1))
-          (portal-terminal-test--prefix '(6 0 "z"))
+          (portal-terminal-test--chord (list 30 super "]"))
+          (should (eq (current-buffer) second))
+          (portal-terminal-test--chord (list 37 super "l"))
+          (should (eq (current-buffer) first))
+          (portal-terminal-test--chord (list 23 (+ super (ash 1 17)) "%"))
           (should (= (length (window-list)) 2))
-          ;; The real key answers the real question.
-          (let ((portal-terminal-confirm-kill t))
-            (portal-terminal-test--prefix '(7 0 "x") '(16 0 "y")))
-          (should-not (buffer-live-p right))
-          (should (= (length (window-list)) 1))
-          (should (= (length (portal-view-buffers 'terminal)) 2)))))))
+          (should (= (length (portal-view-buffers 'terminal)) 3))
+          (should (plist-get (portal-terminal-test--state first-id) :visible))
+          (let ((right (current-buffer)))
+            (portal-terminal-test--chord (list 31 super "o"))
+            (should (eq (current-buffer) first))
+            (should (plist-get (portal-terminal-test--state first-id) :focused))
+            (portal-terminal-test--chord (list 31 super "o"))
+            (should (eq (current-buffer) right))
+            (portal-terminal-test--chord (list 6 super "z"))
+            (should (= (length (window-list)) 1))
+            (portal-terminal-test--chord (list 6 super "z"))
+            (should (= (length (window-list)) 2))
+            ;; The real key answers the real question.
+            (let ((portal-terminal-confirm-kill t))
+              (portal-terminal-test--chord (list 40 super "k") '(16 0 "y")))
+            (should-not (buffer-live-p right))
+            (should (= (length (window-list)) 1))
+            (should (= (length (portal-view-buffers 'terminal)) 2))))))))
 
-(ert-deftest portal-terminal-prefix-literal-and-live-customization ()
-  (portal-terminal-test--session
-    (let ((original portal-terminal-prefix)
-          (directory (make-temp-file "portal-prefix-" t)))
-      (unwind-protect
-          (dolist (prefix '("C-b" "C-a"))
-            (setq portal-terminal-prefix prefix)
-            (let ((ready (expand-file-name (concat prefix "-ready") directory))
-                  (receipt (expand-file-name prefix directory)))
-              (portal-terminal-test--paste
-               (format "old=$(stty -g); stty -icanon -echo min 1 time 0; touch %s; dd bs=1 count=1 2>/dev/null | od -An -tu1 > %s; stty \"$old\""
-                       (shell-quote-argument ready) (shell-quote-argument receipt)) t)
-              (portal-terminal-test--wait (lambda () (file-exists-p ready)))
-              ;; Neither unknown commands nor cancellation may leak a byte.
-              (portal-terminal-test--prefix '(50 0 "`"))
-              (portal-terminal-test--prefix (list 5 (ash 1 18) "\C-g"))
-              (portal-terminal-test--prefix
-               (list (if (equal prefix "C-a") 0 11) (ash 1 18)
-                     (if (equal prefix "C-a") "\C-a" "\C-b")))
-              (portal-terminal-test--wait
-               (lambda () (and (file-exists-p receipt) (> (file-attribute-size (file-attributes receipt)) 0))))
-              (should (= (with-temp-buffer (insert-file-contents receipt)
-                                          (string-to-number (buffer-string)))
-                         (if (equal prefix "C-a") 1 2)))
-              (should (plist-get (portal-terminal-test--state) :focused))))
-        (setq portal-terminal-prefix original)
-        (delete-directory directory t)))))
+(ert-deftest portal-terminal-control-chords-reach-the-shell ()
+  ;; tmux's prefix is the shell's, and a Super chord never leaks into it.
+  (portal-terminal-test--with-keys '(("s-j" . undefined))
+    (portal-terminal-test--session
+      (dolist (chord '((11 "\C-b" 2) (0 "\C-a" 1)))
+        (portal-terminal-test--raw-byte
+         (lambda ()
+           (portal-terminal-test--chord (list 38 portal-terminal-test--super "j"))
+           (should (plist-get (portal-terminal-test--state) :focused))
+           (should (portal-test-native-key (nth 0 chord) (ash 1 18) (nth 1 chord) t)))
+         (nth 2 chord))))))
 
 (defvar portal-terminal-test--answer nil)
 (defun portal-terminal-test--prompt ()
   (interactive)
   (setq portal-terminal-test--answer (read-string "Answer: ")))
 
-(ert-deftest portal-terminal-prefix-minibuffer-cancel-and-emacs-mode ()
-  (portal-terminal-test--session
-    (let ((portal-terminal-prefix-map (copy-keymap portal-terminal-prefix-map)))
-      (keymap-set portal-terminal-prefix-map "e" #'portal-terminal-test--prompt)
-      (setq portal-terminal-test--answer nil)
-      (portal-terminal-test--prefix '(14 0 "e") '(4 0 "h") '(34 0 "i") '(36 0 "\r"))
-      (should (equal portal-terminal-test--answer "hi"))
-      (should-not (active-minibuffer-window))
-      (should (plist-get (portal-terminal-test--state) :focused))
-      ;; M-x completes before returning input to the selected native app.
-      (portal-terminal-test--prefix
-       (list 41 (ash 1 17) ":") '(34 0 "i") '(5 0 "g") '(45 0 "n")
-       '(31 0 "o") '(15 0 "r") '(14 0 "e") '(36 0 "\r"))
-      (should-not (active-minibuffer-window))
-      (should (plist-get (portal-terminal-test--state) :focused))
-      (portal-terminal-test--prefix '(50 0 "`"))
-      (should (plist-get (portal-terminal-test--state) :focused))
-      (portal-terminal-test--prefix (list 5 (ash 1 18) "\C-g"))
-      (should (plist-get (portal-terminal-test--state) :focused))
-      (portal-test-native-key 53 (ash 1 20) "\e")
-      (should-not (plist-get (portal-terminal-test--state) :focused))
-      (portal-terminal-test--prefix '(2 0 "d"))
-      (should-not (plist-get (portal-terminal-test--state) :focused))
-      (portal-test-native-post-key 7 (ash 1 18) "\C-x")
-      (portal-test-native-post-key 11 0 "b")
-      (should (equal (with-timeout (3 (ert-fail "Detached editor did not receive C-x b"))
-                       (read-key-sequence-vector nil))
-                     (vconcat (kbd "C-x b")))))))
+(ert-deftest portal-terminal-chord-minibuffer-cancel-and-escape ()
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "a" #'ignore)
+    (portal-terminal-test--with-keys
+        `(("s-e" . portal-terminal-test--prompt) ("s-x" . execute-extended-command)
+          ("s-y" . ,map))
+      (portal-terminal-test--session
+        (let ((super portal-terminal-test--super))
+          (setq portal-terminal-test--answer nil)
+          (portal-terminal-test--chord (list 14 super "e") '(4 0 "h") '(34 0 "i") '(36 0 "\r"))
+          (should (equal portal-terminal-test--answer "hi"))
+          (should-not (active-minibuffer-window))
+          (should (plist-get (portal-terminal-test--state) :focused))
+          ;; M-x completes before returning input to the selected native app.
+          (portal-terminal-test--chord
+           (list 7 super "x") '(34 0 "i") '(5 0 "g") '(45 0 "n")
+           '(31 0 "o") '(15 0 "r") '(14 0 "e") '(36 0 "\r"))
+          (should-not (active-minibuffer-window))
+          (should (plist-get (portal-terminal-test--state) :focused))
+          ;; C-g cancels a sequence Emacs is reading.
+          (portal-terminal-test--chord (list 16 super "y") (list 5 (ash 1 18) "\C-g"))
+          (should (plist-get (portal-terminal-test--state) :focused))
+          (portal-test-native-key 53 super "\e")
+          (should-not (plist-get (portal-terminal-test--state) :focused))
+          (portal-test-native-post-key 7 (ash 1 18) "\C-x")
+          (portal-test-native-post-key 11 0 "b")
+          (should (equal (with-timeout (3 (ert-fail "Detached editor did not receive C-x b"))
+                           (read-key-sequence-vector nil))
+                         (vconcat (kbd "C-x b")))))))))
 
-(ert-deftest portal-terminal-prefix-follows-native-pane-and-keeps-shells-independent ()
-  (portal-terminal-test--session
-    (let ((left (current-buffer))
-          (left-id (portal-view-target))
-          (left-window (selected-window))
-          (directory (make-temp-file "portal-sessions-" t)))
-      (unwind-protect
-          (progn
-            (portal-terminal-split-right)
-            (let ((right (current-buffer))
-                  (right-id (portal-view-target))
-                  (left-file (expand-file-name "left" directory))
-                  (right-file (expand-file-name "right" directory)))
-              (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument left-file)) t left-id)
-              (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument right-file)) t right-id)
-              (portal-terminal-test--wait
-               (lambda () (and (file-exists-p left-file) (file-exists-p right-file))))
-              (should-not
-               (equal (with-temp-buffer (insert-file-contents left-file) (buffer-string))
-                      (with-temp-buffer (insert-file-contents right-file) (buffer-string))))
-              ;; A click can focus a native pane without selecting its Emacs
-              ;; window. The notification must carry the actual session ID.
-              (should (portal--input left-id "focus"))
-              (should (eq (current-buffer) right))
-              (portal-test-native-key 11 (ash 1 18) "\C-b" t)
-              (portal-test-native-key 8 0 "c")
-              (let ((event (aref (with-timeout (3 (ert-fail "No clicked-pane prefix"))
-                                  (read-key-sequence-vector nil)) 0)))
-                (with-timeout (3 (ert-fail "Clicked-pane command stalled"))
-                  (portal-terminal--dispatch event)))
-              (should (eq (selected-window) left-window))
-              (should-not (memq (current-buffer) (list left right)))
-              (should (plist-get (portal-terminal-test--state right-id) :visible))
-              (kill-buffer right)
-              (should-not (portal-terminal-test--state right-id))
-              (should (plist-get (portal-terminal-test--state left-id) :ready))))
-        (delete-directory directory t)))))
+(ert-deftest portal-terminal-chord-follows-native-pane-and-keeps-shells-independent ()
+  (portal-terminal-test--with-keys '(("s-n" . portal-terminal-new))
+    (portal-terminal-test--session
+      (let ((left (current-buffer))
+            (left-id (portal-view-target))
+            (left-window (selected-window))
+            (directory (make-temp-file "portal-sessions-" t)))
+        (unwind-protect
+            (progn
+              (portal-terminal-split-right)
+              (let ((right (current-buffer))
+                    (right-id (portal-view-target))
+                    (left-file (expand-file-name "left" directory))
+                    (right-file (expand-file-name "right" directory)))
+                (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument left-file)) t left-id)
+                (portal-terminal-test--paste (format "echo $$ > %s" (shell-quote-argument right-file)) t right-id)
+                (portal-terminal-test--wait
+                 (lambda () (and (file-exists-p left-file) (file-exists-p right-file))))
+                (should-not
+                 (equal (with-temp-buffer (insert-file-contents left-file) (buffer-string))
+                        (with-temp-buffer (insert-file-contents right-file) (buffer-string))))
+                ;; A click can focus a native pane without selecting its Emacs
+                ;; window. The notification must carry the actual session ID.
+                (should (portal--input left-id "focus"))
+                (should (eq (current-buffer) right))
+                (portal-test-native-key 45 portal-terminal-test--super "n" t)
+                (let ((event (aref (with-timeout (3 (ert-fail "No clicked-pane chord"))
+                                    (read-key-sequence-vector nil))
+                                   0)))
+                  (with-timeout (3 (ert-fail "Clicked-pane command stalled"))
+                    (portal-input--dispatch event)))
+                (should (eq (selected-window) left-window))
+                (should-not (memq (current-buffer) (list left right)))
+                (should (plist-get (portal-terminal-test--state right-id) :visible))
+                (kill-buffer right)
+                (should-not (portal-terminal-test--state right-id))
+                (should (plist-get (portal-terminal-test--state left-id) :ready))))
+          (delete-directory directory t))))))
 
 ;;; portal-terminal-tests.el ends here
 
@@ -598,11 +606,9 @@
                (format "export PORTAL_QUICK_VALUE=preserved; cd /; printf '%%s' \"$$\" > %s; sleep 1; printf 'done' > %s"
                        (shell-quote-argument receipt) (shell-quote-argument finished)) t id)
               (portal-terminal-test--wait (lambda () (file-exists-p receipt)))
-              ;; Users can bind the command to any sequence in the prefix map.
-              (let ((portal-terminal-quick-prefix-map
-                     (copy-keymap portal-terminal-quick-prefix-map)))
-                (keymap-set portal-terminal-quick-prefix-map "t" #'portal-terminal-toggle)
-                (portal-terminal-test--prefix '(17 0 "t")))
+              ;; A Super chord bound in Emacs toggles from inside the panel.
+              (portal-terminal-test--with-keys '(("s-t" . portal-terminal-toggle))
+                (portal-terminal-test--chord (list 17 portal-terminal-test--super "t")))
               (should (eq (current-buffer) source))
               (should-not (plist-get (portal-terminal-test--state id) :visible))
               (should-not (plist-get (portal-terminal-test--state id) :focused))
@@ -618,8 +624,9 @@
               (should (equal (with-temp-buffer (insert-file-contents resumed) (buffer-string))
                              (concat (with-temp-buffer (insert-file-contents receipt) (buffer-string))
                                      ":preserved:/")))
-              ;; The restricted native prefix also dismisses without killing.
-              (portal-terminal-test--prefix '(12 0 "q"))
+              ;; Dismissing, from a chord too, keeps the shell.
+              (portal-terminal-test--with-keys '(("s-w" . portal-terminal-quick-dismiss))
+                (portal-terminal-test--chord (list 13 portal-terminal-test--super "w")))
               (should (eq (current-buffer) source))
               (should (plist-get (portal-terminal-test--state id) :ready))
               (should-not (portal-terminal-buffers))
@@ -652,7 +659,7 @@
     (should (eq (car-safe event) 'portal-input-binding))
     (should (eq (key-binding keys) #'portal-input--dispatch))
     (with-timeout (3 (ert-fail "Native binding command did not finish"))
-      (portal-terminal--dispatch event))))
+      (portal-input--dispatch event))))
 
 (defun portal-terminal-test--raw-byte (sender expected)
   "Use a real raw-mode PTY to check that SENDER delivers exactly EXPECTED."

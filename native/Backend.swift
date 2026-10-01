@@ -272,6 +272,18 @@ public func portalViewReplay(_ view: OpaquePointer, _ replay: Bool,
     return perform(error) { replay ? view.kind.input.replay() : view.kind.input.discard() } != nil
 }
 
+@_cdecl("portal_view_copy")
+public func portalViewCopy(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { try view.kind.copy() } != nil
+}
+
+@_cdecl("portal_view_paste")
+public func portalViewPaste(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let view = native(view)
+    return perform(error) { try view.kind.paste() } != nil
+}
+
 @_cdecl("portal_view_literal")
 public func portalViewLiteral(_ view: OpaquePointer, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let view = native(view)

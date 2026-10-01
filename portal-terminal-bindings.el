@@ -7,6 +7,8 @@
 
 (defvar portal-terminal-native-map (make-sparse-keymap)
   "Opt-in native shortcuts shared by all Portal terminals.
+Each claims a chord for Emacs that the terminal's program would otherwise
+get, such as a Control chord; a Super chord reaches Emacs anyway.
 Initially empty.  Use `portal-terminal-bind-key' and
 `portal-terminal-unbind-key' for live changes.  For direct edits, use
 `portal-terminal-refresh-bindings'.
@@ -29,8 +31,8 @@ Initially empty; this map never installs global Emacs shortcuts.")
                  binding)
       found)))
 
-(defun portal-terminal--compile-native-map (map prefix)
-  "Validate MAP against PREFIX, returning (SNAPSHOT . NATIVE-ENTRIES)."
+(defun portal-terminal--compile-native-map (map)
+  "Validate MAP, returning (SNAPSHOT . NATIVE-ENTRIES)."
   (let ((snapshot (make-sparse-keymap)) seen entries chords)
     (map-keymap
      (lambda (key _value)
@@ -43,10 +45,7 @@ Initially empty; this map never installs global Emacs shortcuts.")
              (when (portal-terminal--nonempty-binding-p binding)
                (unless (integerp key)
                  (user-error "Native first chords must be modified ASCII keys: %s" key))
-               (let ((chord (portal-terminal--prefix-description (key-description (vector key)))))
-                 (when (equal chord prefix)
-                   (user-error "Native binding conflicts with portal-terminal-prefix: %s"
-                               (key-description (vector key))))
+               (let ((chord (portal-input--chord (key-description (vector key)))))
                  (when (member chord chords)
                    (user-error "Duplicate native chord: %s" (key-description (vector key))))
                  (push chord chords)
@@ -57,11 +56,6 @@ Initially empty; this map never installs global Emacs shortcuts.")
      map)
     (cons snapshot (vconcat (nreverse entries)))))
 
-(defun portal-terminal--validate-native-prefix (description)
-  "Reject a new legacy prefix DESCRIPTION colliding with registered bindings."
-  (portal-terminal--compile-native-map (car portal-terminal--native-maps) description)
-  (portal-terminal--compile-native-map (cdr portal-terminal--native-maps) description))
-
 ;;;###autoload
 (defun portal-terminal-refresh-bindings ()
   "Apply native keymap edits to existing and future terminal sessions.
@@ -69,11 +63,10 @@ Only first chords cross the native boundary; commands and prefix maps stay in
 Elisp.  Invalid edits leave the last registered bindings active.  This does not
 load the native module or create a terminal."
   (interactive)
-  (let* ((prefix (portal-terminal--prefix-description portal-terminal-prefix))
-         (regular (portal-terminal--compile-native-map portal-terminal-native-map prefix))
+  (let* ((regular (portal-terminal--compile-native-map portal-terminal-native-map))
          (quick (portal-terminal--compile-native-map
                  (make-composed-keymap (list portal-terminal-quick-native-map
-                                             portal-terminal-native-map)) prefix))
+                                             portal-terminal-native-map))))
          (payload (json-encode `((regular . ,(cdr regular)) (quick . ,(cdr quick))))))
     (cond ((fboundp 'portal--terminal-bindings) (portal--terminal-bindings payload))
           ((featurep 'portal-native-module)

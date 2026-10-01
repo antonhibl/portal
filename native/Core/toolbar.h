@@ -53,13 +53,13 @@ void portal_views_each_toolbar(void (*visit)(struct portal_toolbar_state *toolba
 /* For input.c and web.c: draw TARGET's toolbar again if anything it shows
    has changed.  A TARGET that names no open view does nothing. */
 void portal_toolbar_refresh(portal_string target);
-/* For input.c: whether KEY, a normalized chord that TARGET's view got while
-   it has the keyboard, is a toolbar's shortcut, which the core has acted
-   on.  A terminal's Super-= or Super-+, Super-- and Super-0 change its
-   text size, with or without a toolbar; Super-f opens the find field of a
-   web view's toolbar that shows, and Super-r reloads a web view whose
-   toolbar has Reload, even while toolbars are hidden; neither works in
-   passthrough. */
+/* For input.c: whether KEY, a normalized chord that the app of TARGET's
+   view did not use while the view has the keyboard, is a toolbar's
+   shortcut, which the core has acted on.  A terminal's Super-= or Super-+,
+   Super-- and Super-0 change its text size, with or without a toolbar;
+   Super-f opens the find field of a web view's toolbar that shows, and
+   Super-r reloads a web view whose toolbar has Reload, even while toolbars
+   are hidden. */
 bool portal_toolbar_shortcut(portal_string target, portal_chord key);
 /* For web.c: web view TARGET committed a page, which has shown no headings
    yet. */

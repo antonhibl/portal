@@ -5,6 +5,8 @@ import PortalCore
 extension portal_chord {
     /// EVENT's key as the core sees it: the character it types with Shift but
     /// no other modifier, and Portal's modifiers. Option is Meta, Command Super.
+    /// A key that types no character, such as an arrow, whose character AppKit
+    /// gives from the private-use range, is 0.
     @MainActor init(_ event: NSEvent) {
         let scalars = (event.charactersIgnoringModifiers ?? "").unicodeScalars
         let flags = event.modifierFlags
@@ -13,14 +15,15 @@ extension portal_chord {
                                  (.option, PORTAL_META), (.command, PORTAL_SUPER)] where flags.contains(flag) {
             modifiers |= modifier.rawValue
         }
-        self.init(character: scalars.count == 1 ? scalars.first!.value : 0, modifiers: modifiers)
+        let character = scalars.count == 1 ? scalars.first!.value : 0
+        self.init(character: (0xF700...0xF8FF).contains(character) ? 0 : character, modifiers: modifiers)
     }
 }
 
 /// One view's native input, for Ghostty and WebKit alike. The core decides
 /// what each key press does (native/Core/input.c); this keeps the native
-/// events it holds, replays them, and tells the core when the view gains or
-/// loses the keyboard.
+/// events it holds, replays them, offers a press to the view's app when the
+/// core says so, and tells the core when the view gains or loses the keyboard.
 @MainActor
 final class NativeInput: NativeInputHandler {
     nonisolated static let modifiers: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
@@ -29,10 +32,17 @@ final class NativeInput: NativeInputHandler {
     weak var view: NSView?
     var host: NativeHost
     let focusView: () -> Bool
-    /// The key press that started Emacs's handoff, until the core discards it.
-    /// While it is held, key events in its window are this view's.
+    /// Deliver a press the core offers to the view's app, which answers with
+    /// `settle`. Only web views have apps that are offered keys.
+    var offer: ((NSEvent) -> Void)?
+    /// The key press that started Emacs's handoff, until the core discards
+    /// it, or the press offered to the app, until the app answers. While it
+    /// is held, key events in its window are this view's.
     private(set) var trigger: NSEvent?
-    /// The key events after the trigger, until the core replays them.
+    /// Whether the trigger is a press offered to the app.
+    private var offering = false
+    /// The key events after the trigger, until the core replays them or the
+    /// app answers.
     private var held: [NSEvent]?
     /// Whether the core was last told the view has the keyboard.
     private var reported = false
@@ -65,11 +75,21 @@ final class NativeInput: NativeInputHandler {
         Core.focus(target, focused)
     }
 
-    func handleKeyEvent(_ event: NSEvent) -> Bool {
+    func handleKeyEvent(_ event: NSEvent) -> Bool { handleKeyEvent(event, content: true) }
+
+    /// What to do with EVENT, a key event in the view's window: true if this
+    /// took it. With CONTENT false, it is for the view's own controls, such
+    /// as its find field, not for its app.
+    func handleKeyEvent(_ event: NSEvent, content: Bool) -> Bool {
         // Recovery must work even before Lisp acknowledges, without a JS flush.
         if event.type == .keyDown, event.keyCode == 53,
            event.modifierFlags.intersection(Self.modifiers) == .command {
             escape()
+            return true
+        }
+        // The app hands back an offered press it did not use.
+        if offering, event === trigger {
+            settle(event, used: false)
             return true
         }
         if held != nil {
@@ -87,8 +107,36 @@ final class NativeInput: NativeInputHandler {
             }
             return true
         case PORTAL_KEY_TAKE: return true
+        case PORTAL_KEY_OFFER:
+            if content, let offer {
+                trigger = event
+                held = []
+                offering = true
+                offer(event)
+                return true
+            }
+            // The view's own text field, such as its find field, uses Control
+            // and Option chords, as any AppKit field does, and no Command chord.
+            guard event.modifierFlags.contains(.command) else { return false }
+            if Core.unused(target, event) == PORTAL_KEY_HOLD {
+                trigger = event
+                held = []
+            }
+            return true
         default: return false
         }
+    }
+
+    /// The app has handled EVENT, the press offered to it: it USED it, or the
+    /// core decides what happens to it. An answer for another press, or a
+    /// second answer, does nothing.
+    func settle(_ event: NSEvent, used: Bool) {
+        guard offering, event === trigger else { return }
+        offering = false
+        NativeHost.delivered(event)
+        if !used, Core.unused(target, event) == PORTAL_KEY_HOLD { return }
+        trigger = nil
+        replay()
     }
 
     // The primitives of native/Core/include/portal.h.
@@ -110,6 +158,7 @@ final class NativeInput: NativeInputHandler {
 
     func discard() {
         trigger = nil
+        offering = false
         held = nil
     }
 

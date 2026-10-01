@@ -397,11 +397,12 @@ static void test_local_links_and_edits_go_to_emacs(void)
     CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_EMACS);
     /* During a handoff, Emacs stops reading its key sequence first. */
     CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
-    portal_fake_press((portal_chord) {'b', PORTAL_CONTROL}, false);
+    portal_fake_press((portal_chord) {'x', PORTAL_CONTROL}, false);
+    portal_fake_answer(false);
     int64_t serial = 0;
-    char prefix[64];
-    snprintf(prefix, sizeof prefix, "prefix %s %%" SCNd64 " 0\n", web);
-    CHECK(sscanf(drain(), prefix, &serial) == 1 && serial > 0);
+    char key[64];
+    snprintf(key, sizeof key, "key %s %%" SCNd64 " 120 2\n", web);
+    CHECK(sscanf(drain(), key, &serial) == 1 && serial > 0);
     edit(web);
     char escape[64];
     snprintf(escape, sizeof escape, "escape %%s %" PRId64 " 0\n", serial);

@@ -1,7 +1,8 @@
 # Native toolbar design
 
 Design date: 23 September 2026. Mockups: [toolbar-mockup.html](toolbar-mockup.html)
-(open it in a browser). The toolbar's look and controls below are implemented. Where
+(open it in a browser; its prefix and passthrough states predate their removal
+on 30 September 2026). The toolbar's look and controls below are implemented. Where
 its state lives changed later: see [Ownership](#ownership), which describes the code
 today, and the README's implementation notes. [Changes to existing
 code](#changes-to-existing-code) and [Rejected alternatives](#rejected-alternatives)
@@ -91,7 +92,7 @@ left after the dot, separated by a rule.
 
 The dot shows who receives the keyboard. The C core already knows this: the
 platform reports each change of keyboard focus, and the core keeps each view's
-handoff and passthrough state (`native/Core/input.c`). The toolbar core puts it in
+handoff (`native/Core/input.c`). The toolbar core puts it in
 the view's toolbar snapshot and redraws the strip whenever it changes, so the dot
 updates immediately with no polling.
 
@@ -99,8 +100,7 @@ updates immediately with no polling.
 | --- | --- | --- | --- |
 | Emacs has the keyboard | Hollow ring, `shadow` color | Click to enter | Focus the view, same as clicking the view or `RET` |
 | The view has the keyboard | Filled `success` green, soft halo | Click to return to Emacs · ⌘⎋ | Return to Emacs, same as Command-Escape |
-| Prefix pending | Filled accent (`link`) | Emacs is reading a command | None; the minibuffer owns the prompt |
-| Passthrough | Filled amber (`warning`) | Passthrough · ⌘⎋ returns to Emacs | Return to Emacs, same as Command-Escape |
+| Handoff pending | Filled accent (`link`) | Emacs is reading a command | None; the minibuffer owns the prompt |
 
 Clicking the dot uses the paths that already exist. Entering is the same as
 clicking the view. Returning is the same as Command-Escape, which already sends
@@ -213,8 +213,7 @@ Elisp sends for the toolbar, and nothing is sent back.
 | Icons, dimmed values, Emacs dot | `shadow` foreground |
 | Hovered icon, values | `default` foreground |
 | View-has-keyboard dot | `success` foreground |
-| Prefix dot, toggled-on tint | `link` foreground |
-| Passthrough dot | `warning` foreground |
+| Handoff dot, toggled-on tint | `link` foreground |
 
 Swift derives the hover, pressed, and toggled backgrounds as translucent tints of
 the foreground and `link` colors. Before any colors arrive, it uses built-in
@@ -232,7 +231,7 @@ dark or light defaults that follow the system appearance.
 ```
 
 `portal-toolbar` is a defcustom with a variable watcher, like
-`portal-input-prefix`. Setting it calls one native function. When it is nil, the
+`portal-terminal-theme`. Setting it calls one native function. When it is nil, the
 view fills the whole window body and there is no dot. Keyboard ownership is then
 visible only from where input goes. Hiding the strip for particular views is not
 part of this design.
@@ -259,7 +258,7 @@ rejected for these reasons:
 | Direction | Why it was rejected |
 | --- | --- |
 | Floating capsule (Island), corner menu | Floating controls cover content |
-| Leader sheet (clickable key help on the prefix) | The keybinding UI belongs in Emacs |
+| Leader sheet (clickable key help on the former prefix) | The keybinding UI belongs in Emacs |
 | Emacs actions in the toolbar (split, new, close, save) | They are Emacs behavior; clicks would have to go back to Elisp |
 | Keep drawing it as an Emacs header line | Limited to text, and it needs `:eval` to catch native state |
 | Edge rail | Kept as a possible later position: the same strip on another edge |

@@ -5,7 +5,7 @@ import PortalCore
 /// One view's toolbar as the core last drew it (`portal_toolbar` in
 /// portal.h). The core owns every value; this only draws them.
 struct ToolbarState: Sendable {
-    enum Owner: Sendable { case emacs, view, pending, passthrough }
+    enum Owner: Sendable { case emacs, view, pending }
     var visible = false
     /// Face colors by role, as sRGB components; a missing role uses AppKit's default.
     var colors: [String: [Double]] = [:]
@@ -28,14 +28,12 @@ struct ToolbarState: Sendable {
         let colors = state.colors
         for (name, color) in [("background", colors.background), ("border", colors.border),
                               ("shadow", colors.shadow), ("foreground", colors.foreground),
-                              ("success", colors.success), ("accent", colors.accent),
-                              ("warning", colors.warning)] where color.set {
+                              ("success", colors.success), ("accent", colors.accent)] where color.set {
             self.colors[name] = [color.red, color.green, color.blue]
         }
         switch state.owner {
         case PORTAL_OWNER_VIEW: owner = .view
         case PORTAL_OWNER_PENDING: owner = .pending
-        case PORTAL_OWNER_PASSTHROUGH: owner = .passthrough
         default: owner = .emacs
         }
         buttons = state.buttons
@@ -62,7 +60,6 @@ struct ToolbarState: Sendable {
         case "foreground": return .labelColor
         case "success": return .systemGreen
         case "accent": return .systemBlue
-        case "warning": return .systemOrange
         default: return .secondaryLabelColor
         }
     }
@@ -155,7 +152,7 @@ private final class ToolbarButton: NSButton {
         let color = (selected ? accent : hovering && isEnabled || !dimmed ? foreground : colors.color("shadow"))
             .withAlphaComponent(isEnabled ? 1 : 0.3)
         if let dot {
-            let dotColor = colors.color(dot == .emacs ? "shadow" : dot == .pending ? "accent" : dot == .passthrough ? "warning" : "success")
+            let dotColor = colors.color(dot == .emacs ? "shadow" : dot == .pending ? "accent" : "success")
             let rect = NSRect(x: bounds.midX - 4, y: bounds.midY - 4, width: 8, height: 8)
             if dot == .view {
                 dotColor.withAlphaComponent(0.13).setFill()
@@ -243,7 +240,6 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         case .emacs: label(PORTAL_BUTTON_OWNER, "Click to enter")
         case .view: label(PORTAL_BUTTON_OWNER, "Click to return to Emacs · ⌘⎋")
         case .pending: label(PORTAL_BUTTON_OWNER, "Emacs is reading a command")
-        case .passthrough: label(PORTAL_BUTTON_OWNER, "Passthrough · ⌘⎋ returns to Emacs")
         }
         for (id, button) in buttons { button.isEnabled = state.allows(portal_button(rawValue: id)) }
         let contents = button(PORTAL_BUTTON_CONTENTS)

@@ -287,7 +287,7 @@ Return the view's target."
         (should (eq (plist-get (portal--inspect (portal-view-target)) :frame) other))
         (portal-terminal-next)
         (should (eq (current-buffer) second))
-        (let ((last-command-event ?0)) (portal-terminal-select-index))
+        (let ((last-command-event ?\s-0)) (portal-terminal-select-index))
         (should (eq (current-buffer) first))
         (portal-terminal-focus)
         (should (= (length (portal-fake-native-calls 'portal--open)) 2))))))
@@ -388,10 +388,10 @@ Return the view's target."
           (other (portal-view-test--open "other"))
           (unread-command-events nil))
       (portal-fake-native-send
-       (format "prefix %s 3 0\nbinding %s 4 8388704\nliteral %s 5 0\ncancel web:999999 6 0\nescape %s 7 0\n"
+       (format "key %s 3 120 8\nbinding %s 4 8388704\nliteral %s 5 0\ncancel web:999999 6 0\nescape %s 7 0\n"
                target target other other))
       (should (equal unread-command-events
-                     `((portal-input-prefix (,target 3 0))
+                     `((portal-input-key (,target 3 120 8))
                        (portal-input-binding (,target 4 8388704))
                        (portal-input-literal (,other 5 0))
                        (portal-input-escape (,other 7 0))))))))

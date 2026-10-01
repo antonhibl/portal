@@ -7,8 +7,7 @@
   (declare (indent 0))
   `(let ((portal-terminal-native-map (make-sparse-keymap))
          (portal-terminal-quick-native-map (make-sparse-keymap))
-         (portal-terminal--native-maps (cons (make-sparse-keymap) (make-sparse-keymap)))
-         (portal-terminal-prefix "C-b"))
+         (portal-terminal--native-maps (cons (make-sparse-keymap) (make-sparse-keymap))))
      ,@body))
 
 (ert-deftest portal-bindings-live-registration-and-scope ()
@@ -27,8 +26,7 @@
   (portal-bindings-test--maps
     (portal-terminal-bind-key portal-terminal-native-map "C-x a b" #'ignore)
     (portal-terminal-bind-key portal-terminal-native-map "C-x <f5>" #'portal-terminal-unfocus)
-    (let* ((compiled (portal-terminal--compile-native-map
-                      portal-terminal-native-map (portal-terminal--prefix-description "C-b")))
+    (let* ((compiled (portal-terminal--compile-native-map portal-terminal-native-map))
            (entries (cdr compiled)))
       (should (= (length entries) 1))
       (should (equal (alist-get 'character (aref entries 0)) "x"))
@@ -49,15 +47,16 @@
     (portal-terminal-refresh-bindings)
     (should (eq (lookup-key (car portal-terminal--native-maps) (kbd "s-j")) #'portal-terminal-unfocus))))
 
-(ert-deftest portal-bindings-invalid-edits-and-prefix-conflicts-are-atomic ()
+(ert-deftest portal-bindings-invalid-edits-are-atomic ()
   (portal-bindings-test--maps
     (portal-terminal-bind-key portal-terminal-native-map "s-j" #'ignore)
-    (dolist (key '("a" "<f5>" "C-b x" "s-<escape>" "s-S-1"))
+    (dolist (key '("a" "<f5>" "s-<escape>" "s-S-1"))
       (should-error (portal-terminal-bind-key portal-terminal-native-map key #'ignore))
       (should (equal portal-terminal-native-map
                      (car portal-terminal--native-maps))))
-    (should-error (setq portal-terminal-prefix "s-j"))
-    (should (equal portal-terminal-prefix "C-b"))
+    ;; C-b, once the prefix, is a chord like any other.
+    (portal-terminal-bind-key portal-terminal-native-map "C-b x" #'ignore)
+    (should (eq (lookup-key (car portal-terminal--native-maps) (kbd "C-b x")) #'ignore))
     (should (eq (lookup-key (car portal-terminal--native-maps) (kbd "s-j")) #'ignore))
     (should-error (portal-terminal-bind-key (make-sparse-keymap) "s-j" #'ignore))))
 

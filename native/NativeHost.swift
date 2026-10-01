@@ -32,9 +32,10 @@ final class NativeHost: NSObject {
     private static let frames = NSMapTable<NSWindow, NativeHost>(
         keyOptions: .weakMemory, valueOptions: .weakMemory)
     private static var keyMonitor: Any?
+    /// Where a key was pressed: its window, and the view whose key it was.
     private struct KeyOwner: Equatable {
         let window: Int
-        let handler: ObjectIdentifier?
+        let view: ObjectIdentifier?
     }
     // WebKit re-sends unhandled key-downs through NSApplication asynchronously.
     // Once delivered to a guest, they must not become Emacs commands later.
@@ -71,7 +72,8 @@ final class NativeHost: NSObject {
         surfaces.values.compactMap(\.value).first { ownsFocus($0.nativeView) }
     }
 
-    /// The view whose handoff Emacs is handling: key events in this window are its own.
+    /// The view whose handoff Emacs is handling, or whose app has not answered
+    /// a key press offered to it: key events in this window are its own.
     private var inputCapture: NativeInput? {
         surfaces.values.compactMap(\.value?.input).first { $0.trigger != nil }
     }
@@ -181,6 +183,10 @@ final class NativeHost: NSObject {
         return false
     }
 
+    /// A guest has had EVENT, a key press, whatever it did with it: never
+    /// take a later re-send of it for a new press.
+    static func delivered(_ event: NSEvent) { deliveredKeys.add(event) }
+
     static func deliverLiteral(_ down: NSEvent, up: NSEvent, in view: NSView) {
         guard let responder = view.window?.firstResponder else { return }
         deliveredKeys.add(down)
@@ -193,7 +199,8 @@ final class NativeHost: NSObject {
         guard let window = event.window ?? NSApp.keyWindow else { return false }
         let host = frames.object(forKey: window)
         let handler: (any NativeInputHandler)? = host?.inputCapture ?? host?.focusedSurface
-        let owner = KeyOwner(window: window.windowNumber, handler: handler.map(ObjectIdentifier.init))
+        let view = host?.inputCapture?.view ?? host?.focusedSurface?.nativeView
+        let owner = KeyOwner(window: window.windowNumber, view: view.map(ObjectIdentifier.init))
         if event.type == .keyUp, let pressed = pressedKeys.removeValue(forKey: event.keyCode), pressed != owner {
             // A command can move focus before its release. Never deliver that
             // unmatched release to the newly focused terminal or web page.
@@ -208,7 +215,7 @@ final class NativeHost: NSObject {
         } ?? false
         let handled: Bool
         if finding && !inContent && host?.inputCapture == nil {
-            handled = host?.focusedSurface?.input?.handleKeyEvent(event) ?? false
+            handled = host?.focusedSurface?.input?.handleKeyEvent(event, content: false) ?? false
         } else { handled = handler?.handleKeyEvent(event) ?? false }
         host?.refreshOwnership()
         if !handled, handler is any NativeSurface, event.type == .keyDown { deliveredKeys.add(event) }

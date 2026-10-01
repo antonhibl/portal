@@ -121,9 +121,10 @@ struct CheckToolbar {
         check(!container.state.finding && field.isHidden && container.state.owner == .view)
         check(window.firstResponder === web || (window.firstResponder as? NSView)?.isDescendant(of: web) == true,
               "Closing find did not return the keyboard to the page")
+        // The page does not use Command-F, so the toolbar's shortcut gets it.
         let commandF = key(window, "f", code: 3, flags: .command)
         press(commandF)
-        check(container.state.finding && window.firstResponder !== web, "Command-F did not open find")
+        wait("Command-F did not open find") { container.state.finding && window.firstResponder !== web }
         wait("find query was not retained") { container.state.matches == 3 }
         _ = try Views.input(target, action: "unfocus")
         _ = try Views.toolbar(target, "find")
@@ -134,12 +135,6 @@ struct CheckToolbar {
         check(container.state.owner == .emacs)
         _ = try Views.toolbar(target, "close-find")
         check(window.firstResponder === editor && !container.state.finding, "Closing find took the keyboard")
-        _ = try Views.input(target, action: "passthrough")
-        check(container.state.owner == .passthrough)
-        press(commandF)
-        check(!container.state.finding && container.state.owner == .passthrough, "Passthrough must pass Command-F")
-        dot().performClick(nil)
-        check(container.state.owner == .emacs)
         // Visibility is live, and the view keeps its state.
         Views.showToolbars(false)
         check(container.toolbar == nil && web.frame.height == 480)
@@ -229,17 +224,18 @@ struct CheckToolbar {
         check(!button.isHidden)
         let focused = try Views.input(target, action: "focus")
         check(focused && window.firstResponder !== editor)
-        // Clicking while Emacs reads a prefix ends that read first, so Emacs
-        // runs the edit instead of taking it for the prefix's next key.
-        NSApp.sendEvent(key(window, "\u{2}", ignoring: "b", code: 11, flags: .control))
-        check(container().state.owner == .pending, "The prefix is not pending")
+        // Clicking while Emacs reads a key sequence ends that read first, so
+        // Emacs runs the edit instead of taking it for the sequence's next
+        // key. The page does not use C-x, so Emacs reads from it.
+        NSApp.sendEvent(key(window, "\u{18}", ignoring: "x", code: 7, flags: .control))
+        wait("The chord did not reach Emacs") { container().state.owner == .pending }
         button.performClick(nil)
         var buffer = [UInt8](repeating: 0, count: 512)
         let count = read(fds[0], &buffer, buffer.count)
         let records = count > 0 ? String(decoding: buffer[..<count], as: UTF8.self) : ""
         let kinds = records.split(separator: "\n").map { $0.split(separator: " ").prefix(2).joined(separator: " ") }
-        check(kinds == ["prefix \(target)", "escape \(target)", "bridge \(target)"],
-                     "Open in Emacs did not end the prefix and notify Emacs: \(records)")
+        check(kinds == ["key \(target)", "escape \(target)", "bridge \(target)"],
+                     "Open in Emacs did not end the key sequence and notify Emacs: \(records)")
         let messages = try Views.receive(target)
         check(messages == #"[{"type":"edit"}]"#, "Open in Emacs did not ask Emacs to edit")
         check(window.firstResponder === editor, "Open in Emacs left the keyboard in the view")
