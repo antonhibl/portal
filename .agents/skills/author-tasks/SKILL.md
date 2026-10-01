@@ -1,55 +1,91 @@
 ---
 name: author-tasks
-description: Author tasks for the Portal dashboard. Use when creating, updating, or completing this repository's project tasks.
+description: Author tasks in project.org. Use when creating, updating, or completing this repository's project tasks.
 ---
 
 # Author tasks
 
-Use the repository's `tasks/` root. Save a regular file as `<name>.md`, or use
-`<name>/content.md` with attachments beside it. Discovery is recursive: group
-related tasks in a folder, which needs no metadata, or nest them under a parent
-task's folder. Every `.md` file with a `status` is a task at any depth, so keep
-`status` out of supporting documents.
+Use the repository-root [project.org](../../../project.org) as the source of
+truth for task authoring. Keep each task's plan, decisions, acceptance criteria,
+and completion record together in its subtree. The retained Markdown files in
+`tasks/` serve the existing Portal task browser; it does not read Org, and the
+two representations are not synchronized. New tasks and subsequent task edits
+belong in `project.org`.
 
-Start with YAML front matter and an outcome heading:
+## Locate and scope
 
-```markdown
----
-id: fix-search
-status: todo
-depends_on:
-  - extract-search-index
----
+Read the file preamble and outline, then find an existing task by `CUSTOM_ID`.
+Read its subtree through the next heading of the same or a shallower level,
+plus any relevant prerequisites. Resolve the boundaries again before editing;
+line numbers can move as other tasks change. Preserve unrelated subtrees.
 
-# Fix search
+For an agent handoff, identify the repository, `project.org`, and `CUSTOM_ID`.
+Supply the selected subtree and relevant file-level settings or prerequisite
+context instead of loading the entire file. A line range is a snapshot; the ID
+is the durable locator.
+
+## Author a task
+
+Use level-one headings for areas and level-two headings for tasks. Each task
+has a `TODO` or `DONE` keyword, an outcome title, and a local `:task:` tag.
+Use deeper headings for the task's sections. For example:
+
+```org
+* Task management :tasks:
+** TODO Make task search predictable :task:
+:PROPERTIES:
+:CUSTOM_ID: predictable-task-search
+:ID: <fresh-uuid>
+:DEPENDS_ON: task-dependencies
+:END:
+
+Search finds a task by its stable ID or words in its title.
+
+*** Blocked by
+[[#task-dependencies][Task dependencies]] supplies stable task identities.
+
+*** Acceptance
+- [ ] Searching by an exact task ID selects that task.
+- [ ] Title search preserves the selected task when results refresh.
 ```
 
-- Use exactly `todo` or `done`. The first level-one heading supplies the title;
-  optional YAML `title` overrides it and must be a nonempty string.
-- Give new tasks an `id` (lowercase kebab-case, unique in the root) and keep it
-  forever; the file can then move or be renamed freely, including between
-  folders. Without `id`, the root-relative path without `.md` or `/content.md`
-  is the ID, such as `big refactor/extract`. Keep only one of `<name>.md` and
-  `<name>/content.md`.
-- List prerequisites by ID in `depends_on`; the dashboard orders work and marks
-  it ready or blocked from that list alone. Folders imply nothing: a parent
-  does not wait for its tasks unless it lists their IDs, and a group cannot be
-  a dependency. Before moving a task others depend on, give it an `id` equal to
-  its current name when that fits the form. Explain why under `Blocked by`,
-  linking the prerequisite files.
-- Describe the problem, outcome, scope, and verifiable acceptance criteria.
-  Record unresolved decisions before implementation. Checklists and notes
-  belong in the body.
-- Link other tasks by their relative source paths. Keep other attachments within
-  the document's directory: the folder holding a standalone task, its own folder
-  otherwise. Update relative links when moving a document.
-  The dashboard blocks escaping links; cite repository files outside that boundary
-  as code paths for agents to read.
-- After the work and checks pass, set YAML `status: done` and record the outcome
-  and verification. Keep completed files in place. Save and reload the dashboard
-  with `g`; check **Problems** is empty and use **Show completed** to verify
-  finished tasks. The dashboard is the task index: **Tree** browses folders,
-  **Execution** gives the order to work in.
+- Give a new task a unique lowercase kebab-case `CUSTOM_ID` and a fresh UUID
+  `ID`, generated with `org-id-new` or `uuidgen`. Replace the example placeholder.
+  Preserve both identifiers when renaming, moving, or completing a task.
+- Preserve migrated `SOURCE` properties as provenance. New tasks need no
+  Markdown source or `SOURCE` property.
+- Describe the problem, intended outcome, scope, concrete plan, and verifiable
+  acceptance criteria. Record unresolved decisions before implementation. Use
+  Org headings, `- [ ]` checkboxes, `=inline code=`, and `#+begin_src` blocks.
+- Link tasks with `[[#custom-id][Description]]`. Use repository-relative
+  `[[file:path][Description]]` links for supporting files; paths are relative
+  to `project.org` at the repository root.
+- When dates are specified, use native `SCHEDULED:` or `DEADLINE:` timestamps
+  immediately below the task heading, before its property drawer. Record only
+  known dates.
 
-For detailed discovery and link behavior, read the repository's
-[task format](../../../README.md#writing-tasks).
+## Dependencies
+
+`DEPENDS_ON` contains space-separated prerequisite `CUSTOM_ID` values from this
+file. Omit the property when there are none. Every target must be a task, with
+no duplicate edges, self-dependencies, or cycles. Explain each prerequisite
+under `Blocked by` and link to its heading.
+
+Only `DEPENDS_ON` defines dependency edges; area membership and prose links do
+not. A TODO task is ready when all its prerequisites are DONE. This property
+does not enforce blocking in Org: inspect prerequisite states before starting
+dependent work.
+
+## Complete and verify
+
+After implementation and the required checks pass, change the task keyword to
+`DONE` and record the outcome and verification in its subtree. Update acceptance
+checkboxes according to the evidence; existing DONE tasks may contain historical
+unchecked boxes. Keep completed tasks and their IDs in place. Reopening a task
+sets it to `TODO` while retaining its completion history.
+
+Check that IDs remain unique, dependencies resolve without cycles, and internal
+links reach their intended tasks. Use `org-lint` to check Org structure. Scope
+org-ql queries to this project's `project.org` buffer or filename; select actual
+tasks with `(tags-local "task")`, combining it with `(todo "TODO")` or `(done)`
+as needed. This workflow needs no global agenda configuration.
