@@ -371,14 +371,21 @@ terminals of its kind show.
 
 ### Consult and Embark
 
-Two optional adapters use these commands and facts; the rest of Portal needs
-neither package, nor Vertico, Orderless or Marginalia, which work through
-ordinary completion. Enable them in your configuration:
+Loading `portal.el` automatically enables `portal-terminal-consult-mode` when
+Consult is loaded, in either load order. No extra configuration is needed:
+`consult-buffer` then accepts `t SPC` to show only Portal terminals, and the
+terminal pickers use Consult with your existing completion UI. Portal does
+not load Consult itself or require it to be installed. Vertico, Orderless and
+Marginalia work through ordinary completion.
+
+To opt out, set `portal-terminal-consult-auto-enable` to nil before loading
+Portal and Consult. You can also disable the active integration with
+`M-x portal-terminal-consult-mode`.
+
+The optional Embark adapter and a project picker binding can be enabled in
+your configuration:
 
 ```elisp
-(with-eval-after-load 'consult
-  (require 'portal-terminal-consult)
-  (portal-terminal-consult-mode))
 (with-eval-after-load 'embark
   (require 'portal-terminal-embark)
   (portal-terminal-embark-mode))
