@@ -675,6 +675,26 @@ static void test_a_held_chord_takes_one_handoff(void)
     close_view(terminal);
 }
 
+static void test_keys_after_a_whole_command_stay_with_emacs(void)
+{
+    char *terminal = open_view("terminal", false);
+    /* Typed at once after a chord that is a whole command. */
+    press('n', S);
+    press('x', 0);
+    CHECK(went("held s-n, held x"));
+    int64_t serial = key_record(terminal, 'n', S);
+    /* Emacs needs no key after the trigger: it runs the command without
+       reading x, and takes it in before deciding to resume the view. */
+    CHECK(act(terminal, "ack", serial));
+    CHECK(act(terminal, "command", serial));
+    CHECK(act(terminal, "finish", serial));
+    portal_fake_run();
+    CHECK(went("emacs x"));
+    CHECK(!act(terminal, "focused", 0));
+    CHECK(sent(""));
+    close_view(terminal);
+}
+
 int main(void)
 {
     int fds[2];
@@ -694,6 +714,7 @@ int main(void)
     test_native_bindings_by_profile();
     test_configuration_changes_atomically();
     test_a_held_chord_takes_one_handoff();
+    test_keys_after_a_whole_command_stay_with_emacs();
     CHECK(!portal_fake_calls().misused);
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);

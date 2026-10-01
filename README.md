@@ -1468,8 +1468,9 @@ page is offered each chord, and keeps those it uses, while an unused one goes
 to the view's shortcuts or Emacs, with the keys typed after it; Super-C and
 Super-V copy and paste; and the keyboard moving while a page decides. It also
 checks that keys typed before Emacs acknowledges are held and replayed in
-order; that only the first key after a native binding's chord, when it repeats
-it, goes to the app, while after a chord that fell through the trigger is
+order, and stay with Emacs when its command never read them;
+that only the first key after a native binding's chord, when it repeats it,
+goes to the app, while after a chord that fell through the trigger is
 Emacs's and its repeats are dropped; C-g, Command-Escape and Emacs's unfocus;
 that a click abandons a handoff before it selects the pane, while Emacs's own
 focus changes do not; that serials of finished or abandoned handoffs, or another

@@ -69,6 +69,20 @@ The page records every key press, and uses Control-K itself."
       (should (portal-excalidraw-gui--js
                "return keys.map(k=>k[0]).join()==='c,z' && document.querySelector('input').value==='z';")))))
 
+(ert-deftest portal-input-gui-web-keys-after-a-whole-command-stay-with-emacs ()
+  (portal-input-gui--page
+    (keymap-set (current-local-map) "C-c" #'portal-input-gui--mark)
+    (let ((portal-input-gui--ran nil))
+      ;; Typed at once: C-c is a whole command, so x is Emacs's next
+      ;; command, and Emacs keeps the keyboard to read it.
+      (portal-test-native-key 8 portal-input-gui--control "\C-c")
+      (portal-test-native-key 7 0 "x")
+      (portal-input-gui--dispatch)
+      (should portal-input-gui--ran)
+      (should-not (portal-input--action "focused"))
+      (should (eq (read-event nil nil 1) ?x))
+      (should (= (portal-excalidraw-gui--js "return keys.length") 1)))))
+
 (ert-deftest portal-input-gui-web-trigger-again-inside-a-sequence-is-emacs-s ()
   (portal-input-gui--page
     (keymap-set (current-local-map) "C-c C-c" #'portal-input-gui--mark)

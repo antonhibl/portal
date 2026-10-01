@@ -106,12 +106,15 @@ The native input machinery is shared by terminal and web views.
    the rest of the binding's prefix map. It applies normal command remapping,
    and executes the command outside the process filter.
 4. Completion releases the held trigger and normally focuses the selected
-   Portal view. Explicit unfocus, errors, ordinary buffers, or the user ending
-   the handoff keep Emacs in control. A command that hides the originating view,
-   such as by showing another terminal in its pane, ends its handoff silently;
-   the selected view still resumes. When finishing fails, Lisp first reads the
-   records already in the pipe, so an `escape` sent while a command ran, even
-   one that read no input, keeps Emacs in control.
+   Portal view. Keys typed after the trigger are Emacs's. Those its key
+   sequence and command did not read, as after a chord that is a whole
+   command, are its next command, so Emacs keeps the keyboard while any
+   wait. Explicit unfocus, errors, ordinary buffers, or the user ending the
+   handoff keep Emacs in control too. A command that hides the originating
+   view, such as by showing another terminal in its pane, ends its handoff
+   silently; the selected view still resumes. When finishing fails, Lisp
+   first reads the records already in the pipe, so an `escape` sent while a
+   command ran, even one that read no input, keeps Emacs in control.
 
 Each view's handoff is in one state: idle, awaiting acknowledgement, reading a
 command, or executing it. Whether the view has the keyboard, which the platform
@@ -194,13 +197,13 @@ shortcuts, the keyboard moving during an offer, delayed acknowledgement, rapid
 tails, repeated triggers, literal delivery, cancellation, stale serials, and
 hiding or closing during a handoff), batch [Lisp input
 tests](../test/portal-input-tests.el) (key sequences read with the buffer's
-keymaps, Evil's included, escape and cancel), batch [record dispatch
+keymaps, Evil's included, escape, cancel and type-ahead), batch [record dispatch
 tests](../test/portal-view-tests.el) (split, batched and unknown-target
 records), [pipe tests](../test/portal-channel-tests.c) (a full pipe,
 reconnects, malformed records and a closed reader), and graphical
 [terminal](../test/portal-terminal-tests.el) and [web
 input](../test/portal-input-gui-tests.el) tests with real AppKit input: Emacs
 commands from Super chords, `C-b` and `C-a` reaching the shell, chords a page
-uses or not, keys typed at once after a chord, copy and paste, live
-rebinding, quick-only scope, shifted characters, cancellation, literal PTY
-bytes, and rapid minibuffer input.
+uses or not, keys typed at once after a chord, in a sequence or after a
+whole command, copy and paste, live rebinding, quick-only scope, shifted
+characters, cancellation, literal PTY bytes, and rapid minibuffer input.

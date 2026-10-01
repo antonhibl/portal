@@ -93,6 +93,12 @@ without keys; the README shows binding them to Command chords.
 
 Found while implementing:
 
+- Keys typed at once after a chord that is a whole command are Emacs's next
+  command. The platform replays them when Emacs acknowledges, but Emacs reads
+  no key after the trigger, and the redisplay before it gave the view the
+  keyboard back took them in, so they ran in the buffer behind the resumed
+  view. Emacs now keeps the keyboard while any wait. Agreed with the user in
+  review on 2026-10-01.
 - WebKit hands back a key a page did not use by sending the same event
   through `[NSApp sendEvent:]`, which Portal already saw and discarded. It sends
   the next queued key to the page first, so Portal holds keys after a chord

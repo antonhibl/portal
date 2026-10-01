@@ -45,6 +45,23 @@
       (should resumed)
       (should-not unread-command-events))))
 
+(ert-deftest portal-input-type-ahead-keeps-emacs-in-control ()
+  ;; x, typed at once after a chord that is a whole command, fell through or
+  ;; claimed by a native binding, is Emacs's next command.
+  (dolist (binding '(nil portal-input-test--save))
+    (portal-input-test--in portal-terminal-mode
+      (local-set-key (kbd "s-j") #'portal-input-test--save)
+      (let ((portal-input-test--called nil) (unread-command-events nil))
+        (cl-letf (((symbol-function 'portal--input)
+                   (lambda (_target action &rest _)
+                     ;; The platform replays what was typed after the trigger.
+                     (when (equal action "ack") (setq unread-command-events (list ?x)))
+                     t)))
+          (portal-input--run "terminal:1" 1 (kbd "s-j") binding))
+        (should portal-input-test--called)
+        (should-not resumed)
+        (should (equal unread-command-events '(?x)))))))
+
 (ert-deftest portal-input-escape-and-error-do-not-resume ()
   (dolist (kind '(unfocus escape error hidden))
     (with-temp-buffer

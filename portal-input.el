@@ -5,9 +5,9 @@
 ;; and a chord it does not use, a key that types a character pressed with
 ;; Control, Meta or Super, reaches Emacs: this file reads the rest of its key
 ;; sequence with the view's buffer's keymaps and runs the command, then gives
-;; the view the keyboard back.  Command-Escape returns to Emacs, and RET in
-;; the buffer re-enters the view.  The native core decides who gets each key
-;; (native/Core/input.c).
+;; the view the keyboard back, unless keys typed meanwhile wait for Emacs.
+;; Command-Escape returns to Emacs, and RET in the buffer re-enters the view.
+;; The native core decides who gets each key (native/Core/input.c).
 
 (require 'cl-lib)
 (require 'portal-view)
@@ -208,7 +208,10 @@ for a chord the view did not use, read with the current buffer's keymaps."
                    (not (and ended (buffer-live-p origin)
                              (>= (buffer-local-value 'portal-input--escaped origin) serial)))
                    (memq (current-buffer) (portal-view-buffers))
-                   (not (active-minibuffer-window)))
+                   (not (active-minibuffer-window))
+                   ;; Keys typed after the trigger that the command never
+                   ;; read are Emacs's next command; checking takes them in.
+                   (not (input-pending-p)))
           (portal-input-focus))))))
 
 (defun portal-input--window (target)
