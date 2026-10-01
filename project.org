@@ -128,7 +128,7 @@ Decisions made during implementation:
   files is shared.
 - A task's own missing or shared =CUSTOM_ID=, or a keyword other than =TODO=, blocks
   it. A TODO task on a dependency cycle is blocked, even when the cycle passes
-  through a DONE task; a dependent of that DONE task is not.
+  through a DONE or archived task; a dependent of that DONE task is not.
 - A task without a priority sorts at Org's default priority, as Org does.
 - Redraws keep each pane on its task by its heading's position, and fall back to the
   same line. A view is redrawn on return only when the day or a source buffer

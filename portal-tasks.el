@@ -378,14 +378,17 @@ deselected; by then WINDOW may show another buffer, which is left alone."
   "Return SOURCE's tasks, each judged, in the order the view lists them.
 Prerequisites are found in SOURCE and ARCHIVES.  See `portal-tasks--judge'."
   (let* ((tasks (portal-tasks--select source))
+         (all (append tasks (seq-mapcat #'portal-tasks--select archives)))
          (ids (make-hash-table :test #'equal))
          (edges (make-hash-table :test #'equal))
          (today (org-today))
          (default (buffer-local-value 'org-priority-default source)))
-    (dolist (task (reverse (append tasks (seq-mapcat #'portal-tasks--select archives))))
+    (dolist (task (reverse all))
       (when-let* ((id (org-element-property :CUSTOM_ID task)))
         (push task (gethash id ids))))
-    (dolist (task tasks)
+    ;; Archived tasks keep their prerequisites, so archiving a task in a
+    ;; cycle leaves the cycle.
+    (dolist (task all)
       (let ((id (org-element-property :CUSTOM_ID task)))
         (when (and id (not (cdr (gethash id ids))))
           (puthash id (portal-tasks--prerequisites task) edges))))
@@ -396,8 +399,8 @@ Prerequisites are found in SOURCE and ARCHIVES.  See `portal-tasks--judge'."
   "Return TASK, an org-ql element, with its state and why it is not actionable.
 The plist has the `:element', its `:state', actionable, blocked, deferred
 or closed, and its `:reasons', strings that link to the tasks they name.
-IDS maps each CUSTOM_ID to the tasks that have it, EDGES each unique one in
-the project to its prerequisites, and TODAY is the day's number.  A task
+IDS maps each CUSTOM_ID to the tasks that have it, EDGES each unique one,
+archived or not, to its prerequisites, and TODAY is the day's number.  A task
 with a done keyword is closed.  Others are blocked by a missing or shared
 CUSTOM_ID, a keyword other than TODO, a prerequisite that is missing, not
 unique or not DONE, or a dependency cycle; a task blocked by nothing but

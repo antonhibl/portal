@@ -274,21 +274,27 @@ The file declares TODO, DONE and CANCELLED."
                   "app"
                   (portal-tasks-view-test--task "TODO After archived" :id "after" :depends "archived")
                   (portal-tasks-view-test--task "TODO After shelved" :id "later" :depends "shelved")
-                  (portal-tasks-view-test--task "TODO Reused" :id "reused")))
+                  (portal-tasks-view-test--task "TODO Reused" :id "reused")
+                  (portal-tasks-view-test--task "TODO Circular" :id "circular"
+                                                :depends "archived-loop")))
            (view nil))
       (with-temp-file (concat file "_archive")
         (insert "#    -*- mode: org -*-\n#+TODO: TODO | DONE CANCELLED\n"
                 "* DONE Archived :task:\n:PROPERTIES:\n:CUSTOM_ID: archived\n:END:\n"
                 "* TODO Shelved :task:\n:PROPERTIES:\n:CUSTOM_ID: shelved\n:END:\n"
-                "* DONE Reused before :task:\n:PROPERTIES:\n:CUSTOM_ID: reused\n:END:\n"))
+                "* DONE Reused before :task:\n:PROPERTIES:\n:CUSTOM_ID: reused\n:END:\n"
+                "* DONE Archived loop :task:\n"
+                ":PROPERTIES:\n:CUSTOM_ID: archived-loop\n:DEPENDS_ON: circular\n:END:\n"))
       (setq view (portal-tasks-view-test--open file))
       (portal-tasks-toggle-all)
-      ;; Archived tasks satisfy and block dependents, but are not listed.
+      ;; Archived tasks satisfy and block dependents, and close cycles, but
+      ;; are not listed.
       (should (equal (portal-tasks-view-test--lines view)
                      '("Actionable (1)" "TODO After archived :task:"
-                       "Blocked (2)"
+                       "Blocked (3)"
                        "TODO After shelved — waiting for shelved (TODO) :task:"
-                       "TODO Reused — CUSTOM_ID reused is not unique :task:")))
+                       "TODO Reused — CUSTOM_ID reused is not unique :task:"
+                       "TODO Circular — dependency cycle through archived-loop :task:")))
       ;; The view follows the archive's buffer too, and its link goes there.
       (with-current-buffer (find-buffer-visiting (concat file "_archive"))
         (goto-char (point-min))
