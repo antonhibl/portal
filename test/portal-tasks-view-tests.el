@@ -787,6 +787,42 @@ ARGV is a list, and BRIEF the file its last argument names with @."
   (portal-tasks-view-test--goto view title)
   (portal-tasks-implement new))
 
+(ert-deftest portal-tasks-implement-follows-emacs-display-rules ()
+  (dolist (placement '(side-window same-window base-action full-frame default))
+    (portal-tasks-view-test--environment
+      (let* ((temporary-file-directory (portal-tasks-view-test--brief-directory))
+             (display-buffer-overriding-action nil)
+             (display-buffer-base-action
+              (and (eq placement 'base-action) '(display-buffer-same-window)))
+             (display-buffer-alist
+              (pcase placement
+                ('side-window '(("\\`\\*claude: " display-buffer-in-side-window (side . right))))
+                ('same-window '(("\\`\\*claude: " display-buffer-same-window)))
+                ('full-frame '(("\\`\\*claude: " display-buffer-full-frame)))))
+             (file (portal-tasks-view-test--project
+                    "app" (portal-tasks-view-test--task "TODO Target" :id "target")))
+             (view (portal-tasks-view-test--open file))
+             (task-window (selected-window))
+             previous)
+        (split-window-below)
+        ;; The same display rules govern starting, reusing, and forcing a run.
+        (dolist (new '(nil nil t))
+          (select-window task-window)
+          (let ((terminal (portal-tasks-view-test--implement view "Target" new)))
+            (should (eq (window-buffer) terminal))
+            (should (plist-get (portal--inspect (portal-view-target)) :focused))
+            (should (= (length (window-list))
+                       (pcase placement ('side-window 3) ('full-frame 1) (_ 2))))
+            (pcase placement
+              ('side-window (should (eq (window-parameter nil 'window-side) 'right)))
+              ((or 'same-window 'base-action 'full-frame)
+               (should (eq (selected-window) task-window))))
+            (when previous
+              (if new (should-not (eq terminal previous)) (should (eq terminal previous))))
+            (should (= (length (portal-view-buffers 'terminal)) (if new 2 1)))
+            (should (buffer-live-p view))
+            (setq previous terminal)))))))
+
 (ert-deftest portal-tasks-implement-starts-claude-on-a-brief-of-one-task ()
   (portal-tasks-view-test--environment
     (let* ((temporary-file-directory (portal-tasks-view-test--brief-directory))

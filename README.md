@@ -857,12 +857,22 @@ not stop a terminal working on it.
 `M-x portal-tasks-implement` starts Claude on an actionable task: the one on
 the view's line, or the one point is in, in the task detail or in
 `project.org` itself. No key is bound to it; bind one if you like. Claude runs
-in a new terminal filling its frame, named after the task, such as
+in a new terminal, named after the task, such as
 `*claude: search-index*`, at the project root. The program and its arguments
 are `portal-tasks-claude-program` and `portal-tasks-claude-arguments`, read at
 each start, then the initial prompt; [Implementing a task](#implementing-a-task)
 describes them and the shell that finds the program. The first time Claude runs in a
 folder, it may ask whether you trust it.
+
+Window placement follows Emacs's `pop-to-buffer` rules, for both new and
+existing runs. Use `display-buffer-alist` or `display-buffer-base-action`
+to choose your layout. For example, to show `*claude: ...*` terminals in the
+entire frame, add this to your Emacs config:
+
+```elisp
+(add-to-list 'display-buffer-alist
+             '("\\`\\*claude: " display-buffer-full-frame))
+```
 
 The task is judged again first, from `project.org` and its archives as they
 are in Emacs. A task that is not actionable starts nothing, and the message
@@ -893,8 +903,8 @@ terminal, or Emacs exits; if Emacs itself is killed, it stays in the
 temporary directory.
 
 Running the command on a task whose terminal still exists shows that
-terminal filling its frame instead of starting another run.
-`C-u M-x portal-tasks-implement` starts another.
+terminal instead of starting another run. `C-u M-x portal-tasks-implement`
+starts another.
 
 ## Task browser
 
@@ -950,7 +960,7 @@ page, which picks up changes made outside Emacs.
 ### Implementing a task
 
 Click **Implement with Claude** on a task detail to open a dedicated native
-terminal in another pane. Claude starts in the project root with
+terminal using Emacs's display rules. Claude starts in the project root with
 `--dangerously-skip-permissions` and an initial prompt such as
 `implement @tasks/fix-search.md`. Folder tasks use their actual `content.md`
 path. The project is captured when the task browser opens; selecting another
