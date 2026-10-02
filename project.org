@@ -580,3 +580,319 @@ The spike proved identity with no setup and the extension's lifecycle with Pi
   when available and reject non-agent signals without changing shared UI behavior.
 - [ ] Document tested versions, setup, freshness and measured latency; verify
   extension/collector cleanup, responsiveness and existing plus new checks.
+
+* Launcher :launcher:
+The first milestone is a global macOS application launcher whose UI is a real
+Emacs buffer. Portal supplies a small native presentation layer; Elisp keeps the
+commands, completion and customization. The existing =launcher.el= supplies the
+first command. Later M-x.app features, including URL scheme handling,
+=org-protocol=, modifier double-taps and multiple shortcut bindings, are outside
+this milestone.
+
+** DONE Prove a real Emacs buffer can run in a native launcher panel :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-nspanel-prototype
+:ID: 7e829d95-6d62-4187-8350-c2e3f89e0481
+:END:
+Prove that a module loaded by GUI Emacs can register a global shortcut and show
+a real buffer in a precisely positioned NSPanel, without a separate launcher
+application or a replacement text renderer.
+
+*** Outcome and decision
+The experiment in [[https://github.com/xiaoxinghu/portal/pull/62][PR #62]], at commit
+=d7febbd0047ef165e4d8c3508f607de4a6816b50=, establishes feasibility for a dedicated
+launcher frame on GNU Emacs 31.1 NS, revision
+=a360712c9d272d950d8d8255ef74570f7e90b7d9=.
+See the [[https://github.com/xiaoxinghu/portal/blob/d7febbd0047ef165e4d8c3508f607de4a6816b50/experiments/launcher-prototype.md][experiment notes and screenshots]].
+
+The first generic forwarding implementation crashed on an appearance change.
+Explicit window compatibility methods and restoring the original EmacsWindow
+before deletion fixed the reproduced failure. Keep the launcher's native role
+fixed; do not offer arbitrary-frame conversion. Native defects can crash the
+hosting Emacs, so the initial integration is opt-in and restricted to validated
+builds. Emacs must be running; busy Lisp delays launcher work.
+
+*** Verification
+- [X] Physical Control-Option-Command-P callbacks and real minibuffer input.
+- [X] Exact position and size, including 713x407 points, on two monitors with
+  unequal origins; font and appearance changes preserve the tested geometry.
+- [X] Real Vertico completion, Org capture, Corfu child frames, nested
+  minibuffers, mouse input and native dead-key composition.
+- [X] 62 automated assertions, including 100 show/hide cycles, 20 frame
+  deletion/recreation cycles and deletion with a live child frame.
+- [X] Prototype build and all 25 Portal CTest suites passed in the experiment.
+- [X] The user subsequently confirmed the requested foreground fullscreen test:
+  invocation, typing, dismissal and focus return worked as expected without
+  switching Spaces. This is user-verified evidence and supersedes the pending
+  fullscreen check in the linked experiment notes.
+
+This completes the feasibility experiment, not production validation. Full IME
+candidate windows, VoiceOver, the complete user configuration and additional
+Emacs builds remain unverified; carry them into [[#launcher-daily-use][daily-use validation]].
+
+** TODO Host a dedicated launcher frame in Portal's native module :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-native-panel
+:ID: 5a25dfe3-5094-46a6-b7e5-9049fc6d666e
+:DEPENDS_ON: launcher-nspanel-prototype
+:END:
+An explicit Elisp command can show and hide an ordinary Emacs buffer in a
+borderless, nonactivating NSPanel owned by Portal's existing native module.
+This task delivers the supported frame lifecycle and placement without a global
+shortcut or application picker.
+
+*** Blocked by
+[[#launcher-nspanel-prototype][The NSPanel experiment]] supplies the working mechanism,
+failure analysis and tested Emacs build. Its PR is reference material; production
+integration should not require loading a second prototype module.
+
+*** Plan and decisions
+- Add a small opt-in =portal-launcher.el= feature and the necessary bindings to
+  the existing module/build. Start from [[file:native/Core/emacs.c][the C bindings]],
+  [[file:native/Core/include/portal.h][the platform interface]] and
+  [[file:native/NativeHost.swift][the native frame integration]]. Keep AppKit and Emacs NS
+  compatibility in one bounded implementation. The launcher hosts an Emacs
+  frame; it is not a new web/terminal Portal view kind.
+- Prefer Swift/AppKit for the production panel and Emacs NS compatibility layer,
+  following Portal's existing Swift backend and C module bindings. Keep any
+  Objective-C shim limited to a demonstrated interoperability need and document
+  why it is necessary. Leave the Objective-C experiment unchanged as reference;
+  rewriting it is not part of this task.
+- Own one reusable, dedicated frame and its NSPanel. Use explicit compatibility
+  methods; retain required donor state and restore the original native window
+  before frame deletion. Guard native-role parameters that could rebuild the
+  window. Roll back a partial attachment and make disable/cleanup idempotent.
+- Check the supported Emacs port/build before modifying the frame. Initially
+  support the experiment's validated build; unsupported builds fail with a
+  useful error and leave ordinary frames and Portal views intact.
+- Put size, offset, font and presentation choices in Elisp customization. Default
+  to 720x420 AppKit logical points, centered in the pointer monitor's usable
+  area. Define one coordinate convention and handle negative monitor origins,
+  Retina scaling, changed display arrangements and offscreen bounds.
+- Loading the feature alone must neither present a window nor register a
+  shortcut. Keep ordinary frame selection and buffer state separate from the
+  launcher; do not copy the experiment's controller frame or test server.
+
+*** Acceptance
+- [ ] Show a caller-supplied real buffer, resize and hide it through Elisp;
+  subsequent presentation reuses the frame and its content.
+- [ ] Repeat the experiment's sizes and offsets, including odd dimensions and
+  two unequal monitor origins, and record requested versus actual geometry.
+- [ ] Appearance/font changes, repeated show/hide, frame deletion/recreation,
+  disable and re-enable work without stale native references or leaked frames.
+- [ ] Unsupported native-role changes and unsupported builds fail before
+  corrupting the frame; ordinary frames and existing Portal views still work.
+- [ ] Relevant native/Elisp lifecycle checks and the existing project checks
+  pass. Document the initial support restriction and crash risk.
+
+** TODO Summon the launcher with a configurable global shortcut :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-global-shortcut
+:ID: fbf937b4-7cdc-4960-acd4-5a1615f981c8
+:DEPENDS_ON: launcher-native-panel
+:END:
+Enabling the launcher registers one global shortcut from Elisp. It summons or
+dismisses the dedicated panel from another application without M-x.app or an
+=emacsclient= subprocess.
+
+*** Blocked by
+[[#launcher-native-panel][The dedicated native panel]] provides attachment, placement and
+cleanup. This task can use a simple buffer while the command-session task is
+being implemented.
+
+*** Plan and decisions
+- Provide explicit enable/disable and one customizable shortcut. Initially use
+  Control-Option-Command-P; never claim Command-Space by default. Document the
+  accepted key notation and supported modifiers/layout behavior.
+- Prefer Swift for shortcut registration and native event handling, using the
+  existing module bindings and notification pipe. Report conflicts; a failed
+  enable or rebind must leave the previous valid state intact. Repeated enable
+  must not accumulate handlers, and disabling must release the chord.
+- Reuse Portal's notification pipe and queue interactive work for the Emacs
+  command loop. The current [[file:portal-view.el][record dispatcher]] resolves view targets;
+  add explicit feature-event routing for launcher events without fabricating a
+  web/terminal view. Native callbacks send records; process filters only parse
+  and queue interactive work. Never retain an Emacs environment/value beyond
+  a module call.
+- Tag queued events with the active registration/session as needed so late blur
+  or shortcut events cannot reopen a disabled launcher or dismiss a new session.
+  Keep this to one launcher binding; a general shortcut manager is deferred.
+
+*** Acceptance
+- [ ] A physical shortcut from another app presents the panel on the pointer's
+  monitor; a second press dismisses it. Repeat over a foreground fullscreen app
+  without switching Spaces, and across monitor/Space changes.
+- [ ] Changing the chord releases the old one; conflicts and repeated
+  enable/disable cycles leave no duplicate or orphaned registrations.
+- [ ] Invocation still works with no web/terminal Portal view open; their native
+  records continue to be delivered when such views are present.
+- [ ] Delayed events after disable or reconfiguration are ignored; busy Emacs
+  remains a documented limitation rather than a claimed responsiveness guarantee.
+- [ ] Event-routing tests and the relevant native and project checks pass.
+
+** TODO Run an Elisp command in the launcher with reliable dismissal :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-command-session
+:ID: 1ac60e75-be13-4c17-a448-1fca7829e496
+:DEPENDS_ON: launcher-native-panel
+:END:
+An Elisp presentation function runs an interactive command inside the dedicated
+launcher frame and cleans up on success, cancellation, errors or loss of focus.
+This replaces the temporary-frame behavior of M-x's =present= / =my/popup-command=
+without taking command logic or completion out of Emacs.
+
+*** Blocked by
+[[#launcher-native-panel][The dedicated native panel]] supplies show/hide and the frame
+lifecycle. Test with direct Elisp invocation; global shortcuts are not a
+prerequisite for this task.
+
+*** Plan and decisions
+- Keep one active command session and a customizable command function, not
+  serialized Elisp expressions or a provider/plugin framework. Validate that
+  configured commands are interactive. A second invocation dismisses the current
+  session rather than accidentally starting another recursive edit.
+- Use the launcher's own minibuffer and synchronize Lisp frame visibility with
+  native presentation. Preserve the original Emacs frame/window selection;
+  restore it after closing if still live. Keep nested prompts in the launcher.
+- Distinguish cancellation, loss of focus and successful external actions.
+  Cancel a live launcher minibuffer before changing frames. Restore the previous
+  application's focus on cancellation, but do not steal focus from a newly
+  launched app or from the app the user clicked to dismiss the launcher.
+- Keep display rules and temporary key bindings scoped to the command session.
+  Prefer ordinary completion APIs and the user's configured completion stack.
+  Commands that deliberately open other frames may need explicit wrappers;
+  arbitrary command compatibility is not promised by this task.
+
+*** Acceptance
+- [ ] A real =completing-read= command works with stock completion and
+  Vertico/Orderless/Marginalia, without permanently changing their configuration.
+- [ ] Nested prompts stay in the launcher; Escape, C-g, command errors, a second
+  invocation and clicking another app leave no leaked recursive edit or prompt
+  in a normal Emacs frame.
+- [ ] Closing after a successful external action does not reactivate the
+  previous app over the action's destination; cancellation restores the previous
+  app, and click-away preserves the newly selected app.
+- [ ] Deleting the frame or disabling during a session cleans up once and a
+  subsequent invocation works. Test stale callbacks as well as the happy path.
+- [ ] Add focused session tests and a real GUI smoke test; existing Portal focus
+  and input checks remain passing.
+
+** TODO Launch macOS applications through the native panel :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-applications
+:ID: 5650dbd0-e60d-48f9-a15b-4deb54cbdde5
+:DEPENDS_ON: launcher-global-shortcut launcher-command-session
+:END:
+Press the global shortcut, type an application name, select it in Emacs
+completion and press Return to launch or activate that application. The panel
+closes and keyboard focus belongs to the chosen app. This is the first usable
+M-x replacement workflow.
+
+*** Blocked by
+[[#launcher-global-shortcut][Global invocation]] supplies the system entry point, and
+[[#launcher-command-session][command sessions]] supply minibuffer, dismissal and focus
+handling. The application data and command already exist in =launcher.el=.
+
+*** Existing behavior and reuse decision
+The existing [[https://github.com/xiaoxinghu/launcher.el/blob/731146d95d7d1ff16f48e7a200da873c8d8b375c/README.org][launcher.el workflow]] pairs =M-x launcher= with M-x.app's
+shortcut/popup bridge. The inspected local M-x =usage/links.el= example invokes
+=(my/popup-command #'launcher)=.
+The implementation is the separate
+[[https://github.com/xiaoxinghu/launcher.el/blob/731146d95d7d1ff16f48e7a200da873c8d8b375c/launcher.el][launcher.el package at revision 731146d]], inspected for this plan.
+Reuse it as an optional, documented dependency of the application-launcher
+feature. Do not duplicate its app index in Swift/C or make it mandatory for
+Portal's unrelated features. Missing-package errors should explain setup.
+
+Current behavior to preserve:
+- Spotlight =mdfind= discovery restricted to configurable application directories:
+  =/Applications=, =/System/Applications=, =/System/Library/CoreServices= and
+  =~/Applications=. Cached candidates have alphabetical labels and path context
+  for duplicate names; =open -a= receives the selected bundle path.
+- =C-u M-x launcher= refreshes before prompting; =launcher-refresh= refreshes
+  separately. Keep these available through the integration's Elisp entry point.
+- Nonmatching text falls back to a configured web search. =!g=, =!yt= and =!gh=
+  route queries through configurable URL templates. These are implemented in
+  the inspected source, even though its README still lists bangs as future work.
+
+*** Plan and decisions
+- Wire the existing command as the default launcher action. Keep a configurable
+  command function so other Elisp workflows can be added later without native
+  UI changes. Use a thin adapter only where presentation/focus requires it.
+- Check the actual completion metadata and input path with the supported package
+  version; preserve app identity independently of rendered annotations. Do not
+  copy speculative explanations from M-x's old completion troubleshooting notes.
+- Preserve cached warm invocation and explicit refresh. Measure cold discovery
+  and refresh latency on the user's machine; avoid adding a scan per keystroke.
+  Record any required launcher.el fix against that package rather than forking
+  a second app catalog or silently changing unrelated package behavior.
+- Treat existing-app activation and web-search opening as successful external
+  actions. Handle missing/moved bundles, discovery/open failures, empty input
+  and cancellation without accidentally launching another app or searching for
+  an empty query. Define any deliberate change from existing behavior here.
+- Icons, learned ranking, background indexing and additional command sources
+  are outside this first milestone.
+
+*** Acceptance
+- [ ] In the panel, search for and launch a stopped app, then activate an already
+  running app. Both receive focus and no normal Emacs frame is raised over them.
+- [ ] Duplicate names, spaces and non-ASCII names select the exact bundle path;
+  decorated completion strings never select the wrong entry.
+- [ ] Warm invocation uses the cache; explicit refresh discovers installation
+  and removal changes. Empty indexes and command failures remain recoverable.
+- [ ] Existing fallback and bang searches open the correctly encoded query in
+  the browser; empty input and cancellation perform no external action.
+- [ ] Stock completion and Vertico/Orderless/Marginalia work with useful path
+  annotations. Preserve the user's configuration and ordinary =M-x launcher=.
+- [ ] Adapter tests use fixtures/mocked external actions; record physical GUI
+  launch, activation, refresh and search smoke tests plus cold/warm timings.
+
+** TODO Validate and document the app launcher for everyday use :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-daily-use
+:ID: 0e329141-a4ab-4c48-a397-2569a074d06b
+:DEPENDS_ON: launcher-applications
+:END:
+Make the opt-in app launcher usable in the user's normal Emacs configuration,
+with a reproducible setup, supported-version statement and verified input/focus
+behavior. This closes the gap between the isolated experiment and daily use;
+it does not retroactively broaden the experiment's evidence.
+
+*** Blocked by
+[[#launcher-applications][The integrated app launcher]] provides the complete workflow to
+exercise. [[#launcher-nspanel-prototype][The experiment]] already has a user-confirmed fullscreen
+pass, but the production integration must repeat that regression check.
+
+*** Plan and decisions
+- Exercise the integrated module first in an isolated process with the user's
+  completion/theme configuration, then in an explicitly enabled normal session.
+  Check coexistence with ordinary frames and Portal web/terminal buffers.
+- Verify foreground fullscreen/Spaces, monitor disconnect/reconnect, focus
+  return, repeated use, configuration reload and disable/re-enable. Include
+  launch success, cancellation and failure while another app is active.
+- Close the input/accessibility gaps: test at least one full Chinese/Japanese
+  IME candidate-and-commit workflow and VoiceOver's prompt/candidate navigation.
+  Fix failures or record a concrete limitation and explicit scope decision;
+  lack of access to a test environment is not a pass.
+- Document supported Emacs/macOS/package versions and the tested display/input
+  setup. Do not advertise other Emacs ports/builds until tested. Keep known
+  exclusions, including outbound drag-and-drop, visible.
+- Add setup and rollback instructions to [[file:README.md][the README]]: install the tested
+  =launcher.el= dependency, build/load Portal, explicitly enable the launcher,
+  customize its chord/command/geometry and disable it. Emacs must already be
+  running, and long Lisp work can delay invocation. No app host, separate
+  launcher app or per-invocation =emacsclient= is needed for this workflow.
+- Describe migration from M-x.app's launcher shortcut without disabling its
+  unrelated URL/org-protocol bindings or uninstalling it. Those features remain
+  outside this milestone. Keep further feature work in separate tasks.
+
+*** Acceptance
+- [ ] Record a real session using the complete intended configuration, including
+  app launches/activation, refresh, search, cancellation and recovery after errors.
+- [ ] Record physical fullscreen/Spaces and multi-monitor regression results,
+  plus the exact IME and VoiceOver results; limitations are explicit.
+- [ ] Enabling/disabling leaves ordinary Emacs and Portal functionality intact;
+  the documented rollback removes the launcher shortcut and native resources.
+- [ ] A fresh configured session follows the documented setup successfully, and
+  support claims match the builds and workflows actually tested.
+- [ ] The project's build/checks and the new launcher checks pass; attach evidence
+  and record any accepted limitations here before marking this task DONE.
