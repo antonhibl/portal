@@ -788,7 +788,7 @@ ARGV is a list, and BRIEF the file its last argument names with @."
           ;; The brief is a new read-only file: provenance, then exactly the
           ;; saved subtree, without its neighbors or prerequisites.
           (should (equal (portal-tasks-view-test--briefs) (list brief)))
-          (should (= (file-modes brief) #o444))
+          (should (= (file-modes brief) #o400))
           (let* ((text (portal-tasks-view-test--read brief))
                  (header (split-string (substring text 0 (string-search "\n\n" text)) "\n")))
             (should (equal (substring text (+ 2 (string-search "\n\n" text))) subtree))

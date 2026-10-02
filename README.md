@@ -814,7 +814,8 @@ pass, Claude is to mark the task `DONE` in `project.org`, found by its
 implementation's pull request. Starting Claude changes no task. There is no
 shared in-progress state: other checkouts see the task done through Git.
 
-The brief is a new read-only file in `temporary-file-directory`, such as
+The brief is a new file in `temporary-file-directory` that only you can read
+and no one can write, such as
 `portal-task-search-index-AbC123.org`. It holds the task's subtree as saved,
 with its child sections, and nothing else: no neighboring tasks or
 prerequisites. Comments before it give the project, the path of

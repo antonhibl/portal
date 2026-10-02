@@ -840,9 +840,10 @@ either again, so both are checked after saving too."
 
 (defun portal-tasks--brief (file id heading)
   "Write the brief of task ID of FILE, at HEADING, and return its file name.
-The brief is a new read-only file.  Comments name the project, FILE, ID,
-the task's lines and FILE's SHA-256; the task's subtree follows, with its
-child sections, as FILE's buffer has it saved."
+The brief is a new file that only its owner can read, and no one write.
+Comments name the project, FILE, ID, the task's lines and FILE's SHA-256;
+the task's subtree follows, with its child sections, as FILE's buffer has
+it saved."
   (let ((digest (portal-tasks--hash file)))
     (with-current-buffer (marker-buffer heading)
       (save-excursion
@@ -867,7 +868,7 @@ child sections, as FILE's buffer has it saved."
                           "# Links in the task are relative to Source.  Update the task there,\n"
                           "# found by its CUSTOM_ID; Lines only record where it was.\n\n"
                           (buffer-substring-no-properties start end)))))
-            (set-file-modes brief #o444)
+            (set-file-modes brief #o400)
             brief))))))
 
 (defun portal-tasks--prompt (file id brief)

@@ -289,12 +289,13 @@ Other worktrees receive that update through Git; no shared in-progress status.
 the one point is in, in the task detail or in =project.org=. The task is judged
 again from the file and its archives. A task that is not actionable starts
 nothing, and the message gives the view's reasons. A modified =project.org=
-is offered for saving, and one changed on disk, or by a save hook, is refused. The brief is a
-read-only =portal-task-ID-XXXXXX.org= in =temporary-file-directory=. Comments
-give the project, source path, =CUSTOM_ID=, line range and the SHA-256 of the
-saved file, and then comes the subtree exactly as saved. Claude runs through
-=portal-terminal-start= in =*claude: ID*= at the project root, with the
-configured program and arguments and one prompt. The prompt names the brief
+is offered for saving, and one changed on disk, or by a save hook, is
+refused. The brief is a read-only =portal-task-ID-XXXXXX.org= in
+=temporary-file-directory=, mode =0400=. Comments give the project, source
+path, =CUSTOM_ID=, line range and the SHA-256 of the saved file, and then comes
+the subtree exactly as saved. Claude runs through =portal-terminal-start= in
+=*claude: ID*= at the project root, with the configured program and arguments
+and one prompt. The prompt names the brief
 as =@"PATH"=. It asks Claude to implement the task under the repository's
 instructions, then mark it =DONE= in =project.org= by =CUSTOM_ID= with its
 verification. The terminal's =portal-view-close-hook= deletes the brief. Running
