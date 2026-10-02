@@ -151,6 +151,8 @@ Found while implementing:
   GUI tests and the benchmark wait with =accept-process-output= instead.
 
 *** Verification
+Implemented in [[https://github.com/xiaoxinghu/portal/pull/59][PR #59]].
+
 - =ctest --test-dir build=: all 25 suites pass, including the new =agents= suite
   (9 tests) and a new =terminal-metadata= check that a web view's buffer has no
   terminal metadata. Each of 12 dashboard mutations fails the =agents= suite:
