@@ -334,6 +334,8 @@ keeps a row as stopped or loses it like an exited one. Untested scenarios are
 listed in the research note.
 
 *** Verification
+Recorded in [[https://github.com/xiaoxinghu/portal/pull/63][PR #63]].
+
 - Headless captures of real sessions, with recorded steps, for each harness:
   first prompt or trust dialog, a turn, permission or approval accepted and
   denied (Claude, Codex), cancel, a failing turn, a queued message and
