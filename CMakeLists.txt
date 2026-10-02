@@ -48,6 +48,11 @@ add_custom_command(
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
 if(BUILD_TESTING)
+    add_test(NAME launcher
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(launcher PROPERTIES TIMEOUT 30)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
     add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions

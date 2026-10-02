@@ -958,3 +958,74 @@ const char *portal_fake_keys(void)
     key_log[0] = '\0';
     return keys;
 }
+
+/* Launcher bindings are tested independently of the view registry. This fake
+   records what crossed the C boundary; real NS ownership is checked in GUI. */
+static portal_text launcher_title;
+static int64_t launcher_values[6];
+static bool launcher_visible, launcher_shadow;
+static unsigned launcher_calls;
+
+bool portal_launcher_attach(portal_string title, portal_text *error)
+{
+    launcher_calls++;
+    if (launcher_title.data)
+        return fail(error, "Portal launcher is already attached");
+    if (is(title, "missing"))
+        return fail(error, "Cannot find launcher frame");
+    launcher_title = copy(title.data, title.length);
+    return true;
+}
+
+bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
+                          int64_t screen, bool shadow, int64_t radius, portal_text *error)
+{
+    launcher_calls++;
+    if (!launcher_title.data)
+        return fail(error, "Portal launcher is not attached");
+    int64_t values[] = {width, height, dx, dy, screen, radius};
+    memcpy(launcher_values, values, sizeof values);
+    launcher_shadow = shadow;
+    launcher_visible = true;
+    return true;
+}
+
+bool portal_launcher_hide(portal_text *error)
+{
+    (void) error;
+    launcher_calls++;
+    launcher_visible = false;
+    return true;
+}
+
+bool portal_launcher_detach(portal_text *error)
+{
+    (void) error;
+    launcher_calls++;
+    free(launcher_title.data);
+    launcher_title = (portal_text) {0};
+    launcher_visible = false;
+    return true;
+}
+
+bool portal_launcher_describe(portal_text *state, portal_text *error)
+{
+    (void) error;
+    struct json json = {0};
+    const char *prefix = "{\"title\":";
+    put(&json, prefix, strlen(prefix));
+    put_string(&json, launcher_title);
+    put_format(&json, ",\"calls\":%lld", launcher_calls);
+    put_format(&json, ",\"attached\":%lld", launcher_title.data != NULL);
+    put_format(&json, ",\"visible\":%lld", launcher_visible);
+    put_format(&json, ",\"shadow\":%lld", launcher_shadow);
+    const char *keys[] = {"width", "height", "dx", "dy", "screen", "radius"};
+    for (size_t i = 0; i < 6; i++) {
+        put(&json, ",", 1);
+        put_string(&json, (portal_text) {(char *) keys[i], strlen(keys[i])});
+        put_format(&json, ":%lld", launcher_values[i]);
+    }
+    put(&json, "}", 1);
+    *state = (portal_text) {json.data, json.length};
+    return true;
+}

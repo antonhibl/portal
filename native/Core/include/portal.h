@@ -82,6 +82,22 @@ typedef struct portal_rect {
     int64_t x, y, width, height;
 } portal_rect;
 
+/* One dedicated launcher frame, independent of the Portal view registry.
+   Attach moves a new hidden Emacs frame's content into a platform panel; it
+   refuses a second attachment. The caller checks the supported Emacs build
+   first and MUST detach before Emacs deletes the frame. Detach and hide are
+   idempotent. Show uses logical points, centered in the pointer screen's usable
+   area (SCREEN=-1), or the current screen index; a missing index falls back to
+   the pointer. Positive DX/DY mean right/down. The platform clamps to the
+   screen, and reapplies placement when displays change. Describe returns JSON.
+   No environment, Lisp value, or Portal view target is retained here. */
+bool portal_launcher_attach(portal_string title, portal_text *error);
+bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
+                          int64_t screen, bool shadow, int64_t radius, portal_text *error);
+bool portal_launcher_hide(portal_text *error);
+bool portal_launcher_detach(portal_text *error);
+bool portal_launcher_describe(portal_text *state, portal_text *error);
+
 /* A view kind (CONTEXT.md). */
 typedef enum portal_kind { PORTAL_WEB, PORTAL_TERMINAL } portal_kind;
 

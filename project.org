@@ -630,7 +630,7 @@ This completes the feasibility experiment, not production validation. Full IME
 candidate windows, VoiceOver, the complete user configuration and additional
 Emacs builds remain unverified; carry them into [[#launcher-daily-use][daily-use validation]].
 
-** TODO Host a dedicated launcher frame in Portal's native module :task:
+** DONE Host a dedicated launcher frame in Portal's native module :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-native-panel
 :ID: 5a25dfe3-5094-46a6-b7e5-9049fc6d666e
@@ -674,16 +674,74 @@ integration should not require loading a second prototype module.
   launcher; do not copy the experiment's controller frame or test server.
 
 *** Acceptance
-- [ ] Show a caller-supplied real buffer, resize and hide it through Elisp;
+- [X] Show a caller-supplied real buffer, resize and hide it through Elisp;
   subsequent presentation reuses the frame and its content.
-- [ ] Repeat the experiment's sizes and offsets, including odd dimensions and
+- [X] Repeat the experiment's sizes and offsets, including odd dimensions and
   two unequal monitor origins, and record requested versus actual geometry.
-- [ ] Appearance/font changes, repeated show/hide, frame deletion/recreation,
+- [X] Appearance/font changes, repeated show/hide, frame deletion/recreation,
   disable and re-enable work without stale native references or leaked frames.
-- [ ] Unsupported native-role changes and unsupported builds fail before
+- [X] Unsupported native-role changes and unsupported builds fail before
   corrupting the frame; ordinary frames and existing Portal views still work.
-- [ ] Relevant native/Elisp lifecycle checks and the existing project checks
+- [X] Relevant native/Elisp lifecycle checks and the existing project checks
   pass. Document the initial support restriction and crash risk.
+
+*** Outcome
+Done 2026-10-03. =portal-launcher.el= supplies explicit =portal-launcher-show=,
+=portal-launcher-resize=, =portal-launcher-hide= and =portal-launcher-mode=.
+One reusable dedicated frame hosts the caller's real buffer in a Swift NSPanel,
+through five bindings in the existing Portal module. Loading the feature is
+inert; enabling loads the module and installs lifecycle guards without creating
+a frame. The panel is not a Portal view kind and starts no app host.
+
+The Swift compatibility layer retains the original EmacsWindow and its delegate,
+implements explicit NS methods, and restores content, layer state and child
+windows before Emacs deletes the frame. Attachment failures roll back; deletion,
+disable, unload and exit share cleanup. No Objective-C shim was needed.
+Only GNU Emacs NS 31.1 at =a360712c9d272d950d8d8255ef74570f7e90b7d9= is accepted.
+
+Size, offset, screen, font, shadow, corner radius and initial presentation
+parameters are customizable. Placement uses AppKit logical points, defaults to
+720x420 centered in the pointer monitor's usable area, and clamps onscreen.
+Display-arrangement notifications reapply placement without requesting focus.
+[[file:docs/launcher-native-panel.md][Implementation notes and measured geometry]]
+record all 16 requested/actual size-and-offset combinations on the two connected
+Retina monitors. Every rectangle matched, including 713x407 at =(2786, 497)=
+on the monitor whose origin is =(2560, -483)=.
+
+A graphical test exposed a bypass in the prototype's parameter guard:
+native-compiled Emacs setters ignore Lisp advice without a native subroutine
+trampoline. Enabling now verifies the validated build's trampoline registry and
+fails before frame creation if that guard is unavailable. It preserves the
+user's compilation settings. Unchanged role parameters are filtered too, since
+setting =parent-frame= to its existing nil still calls an EmacsWindow-only method.
+
+Global shortcuts and command sessions remain the next tasks. Finish or cancel
+an active launcher minibuffer before hiding. Full IME, VoiceOver and daily use
+remain in [[#launcher-daily-use][daily-use validation]]; physical monitor
+hot-unplug was not tested. The [[file:README.md][README]] documents initial
+support restrictions, commands, configuration and the in-process crash risk.
+
+*** Verification
+- =./build.sh= succeeds. All 26 CTest suites pass, including the new =launcher=
+  suite (7 ERT tests) and new native binding validation in =module=.
+- The full graphical suite: 71 pass, 0 unexpected, 1 skipped. The skipped
+  =portal-terminal-start-uses-shell-startup= requires its separate shell harness.
+  Five launcher tests cover real-buffer edits and native keyboard delivery,
+  exact geometry on both monitors, fonts and appearance, 100 show/hide cycles,
+  20 deletion/recreation cycles, live child-frame deletion, disable/re-enable,
+  attachment-failure cleanup, role rejection and ordinary frame preservation.
+- All three standalone Swift/AppKit checks pass: =native-launcher=,
+  =native-focus= and =native-toolbar=, compiled with warnings as errors.
+  Launcher checks include synthetic negative-X monitor origins, display-change
+  notifications, invalid donor rejection, failed responder attachment rollback,
+  donor restoration and release of panels after 20 attachment cycles.
+- An initial full graphical run overlapped standalone AppKit checks and failed
+  an existing terminal-picker input assertion. The serial full rerun passed
+  with no change to the picker.
+- New Lisp files byte-compile with warnings as errors. =bun run check=,
+  =bun run typecheck= and the native failure-reporter tests pass.
+- =org-lint= reports no issues; all 37 tasks across this file and its archive
+  retain unique IDs, resolving links/dependencies and an acyclic dependency graph.
 
 ** TODO Summon the launcher with a configurable global shortcut :task:
 :PROPERTIES:

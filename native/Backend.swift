@@ -51,6 +51,39 @@ private func json(_ value: Any) throws -> String {
            as: UTF8.self)
 }
 
+@_cdecl("portal_launcher_attach")
+public func portalLauncherAttach(_ title: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let title = String(copying: title)
+    return perform(error) { try NativeLauncher.attach(title: title) } != nil
+}
+
+@_cdecl("portal_launcher_show")
+public func portalLauncherShow(_ width: Int64, _ height: Int64, _ dx: Int64, _ dy: Int64,
+                               _ screen: Int64, _ shadow: Bool, _ radius: Int64,
+                               _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    return perform(error) {
+        guard let launcher = NativeLauncher.attached else { throw NativeError.message("Portal launcher is not attached") }
+        try launcher.place(.init(width: width, height: height, dx: dx, dy: dy,
+                                 screen: screen, shadow: shadow, radius: radius))
+    } != nil
+}
+
+@_cdecl("portal_launcher_hide")
+public func portalLauncherHide(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { NativeLauncher.attached?.hide() } != nil
+}
+
+@_cdecl("portal_launcher_detach")
+public func portalLauncherDetach(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { NativeLauncher.detach() } != nil
+}
+
+@_cdecl("portal_launcher_describe")
+public func portalLauncherDescribe(_ state: UnsafeMutablePointer<portal_text>,
+                                   _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error, into: state) { try json(NativeLauncher.describe()) }
+}
+
 /// The `NativeView` the core holds as VIEW.
 private func native(_ view: OpaquePointer) -> NativeView {
     Unmanaged<NativeView>.fromOpaque(UnsafeRawPointer(view)).takeUnretainedValue()
