@@ -28,58 +28,107 @@ are preserved independently; completion dates have not been invented.
 :SOURCE: tasks/09-agent-dashboard.md
 :DEPENDS_ON: terminal-buffer-metadata
 :END:
-Add =M-x portal-agents=: list tracked Portal terminals with agent, project/path, working
-or idle status, attention, and existing job title. Refresh every second; =RET= selects
-and focuses the terminal, including hidden and quick terminals.
+Add =M-x portal-agents=: one ordinary Emacs buffer listing explicitly tracked
+Portal terminals. Like Ibuffer or Dired, it uses text rows, normal movement,
+isearch, sorting, =g= to refresh, =q= to quit the window, and =RET= to visit a
+terminal. Prefer inexpensive live updates while visible. The dashboard creates
+no native or web view and needs no app host or third-party UI package.
 
-*** Blocked by
-[[#terminal-buffer-metadata][Terminal metadata and project ownership]] supplies buffer
-identity, labels, title, current directory, process state, and assigned project. Consume
-its shared Lisp interface; do not introduce a second metadata store or project resolver.
-This task adds agent tracking, status, and attention on top of that foundation.
+*** Foundation
+[[file:project.org_archive::#terminal-buffer-metadata][Terminal metadata and project ownership]]
+is DONE. Use =portal-terminal-buffers= and =portal-terminal-metadata= for the
+buffer name, assigned project, directory, title, quick-terminal flag and process
+exit. These facts are already cached in Lisp and updated by coalesced native
+change records, even for hidden terminals. Do not poll =portal--inspect= from
+the dashboard or duplicate metadata storage or project resolution.
 
-*** Design
-- Use =tabulated-list-mode= in =portal-agents.el=. Provide track/untrack, refresh, and a
-  cached snapshot callable from Elisp.
-- Collect additional Ghostty progress and notification callbacks in
-  =native/Terminal.swift=; expose cached agent data through =portal--inspect=. Reuse the
-  prerequisite's title and directory updates. Poll with one timer while the dashboard is
-  visible; keep native collection active while hidden.
-- Track terminals explicitly by buffer and native incarnation, never path/title. Ignore
-  pre-registration status; remove closed terminals. Read directory and assigned project
-  from the shared metadata interface, including its launch directory fallback. Changing
-  directory must not reassign the terminal's project.
-- Choose one status source per terminal. Missing/stale evidence means unknown.
-  Notifications indicate attention only; silence or progress-clear does not universally
-  mean idle. Idle never means proven success.
-- Start with an opt-in Pi extension loaded using =pi --extension PATH= in
-  =INSIDE_EMACS=portal-ghostty=. Use =agent_start= and =agent_settled= plus
-  =ctx.isIdle()=, not =agent_end=. Emit OSC =9;4;3= for working and =9;4;0= for idle,
-  with one-second heartbeats and a five-second stale limit. Keep Pi's native progress
-  writer off. Compute event age natively.
-- Validate Claude/Codex progress/title behavior before enabling mappings. Unsupported
-  cases stay unknown; heuristics must be labelled. OSC assumes one cooperating writer;
-  use a structured adapter if stronger guarantees are needed.
+The existing picker already handles terminal navigation, including quick panels.
+Reuse its visit path and explicitly focus the terminal on =RET=. The new
+[[#org-task-claude-launch][Org task launch]] remains independent: a task's TODO/DONE
+state is not an agent's runtime state, and this dashboard does not change Org tasks.
+
+*** First version
+- Derive =portal-agents-mode= from =tabulated-list-mode= in =portal-agents.el=.
+  Keep one dashboard for this Emacs instance, with columns for buffer label,
+  assigned project, current directory, terminal title and process state. Include
+  an explicitly supplied agent label if available; do not infer it from titles.
+- Provide explicit track/untrack commands using ordinary terminal completion.
+  Allow hidden and quick terminals. Tracking stores only dashboard-specific
+  data, keyed by buffer and native incarnation, never name, path or title.
+  Untracking leaves the terminal running. Remove closed/replaced sessions;
+  retain exited sessions while their buffers still own the terminal view.
+- Distinguish a running terminal process from an exited one. A running shell
+  does not prove that its agent is working, idle, waiting for input or successful.
+  Agent activity is =unknown= until a verified source exists; do not add an
+  attention column with no source. Terminal title is reported text, not a
+  generated job summary. Useful navigation must not depend on a status adapter.
+
+*** Refresh policy
+- Implement =g= through the mode's revert function first. Refresh on opening
+  and redisplaying the dashboard. Keep a usable manual-only setting.
+- Enable a single configurable two-second regular Emacs timer while the
+  dashboard is displayed in any visible frame. Cancel it when hidden, killed
+  or live updating is disabled; restart on display without duplicating timers.
+  This is best-effort freshness, not a real-time deadline. Use normal window
+  hooks for visibility; no always-running timer just to discover visibility.
+- Read cached metadata on each tick and compare the displayed snapshot. If
+  unchanged, do not sort or rewrite the buffer. A changed snapshot can use a
+  full =tabulated-list-print= with remembered position; preserve the selected
+  session, sort choice and each displaying window's position. Do not assume
+  its UPDATE argument updates changed columns for an existing row ID.
+- Never select a window, focus a terminal, prompt, run a shell command, read
+  terminal output, scan task files or perform network I/O during refresh.
+  Reuse the existing native collection; add no heartbeat protocol, status
+  subscription framework or per-terminal UI timers for this version.
+
+*** Performance and verification
+A small cached table should be inexpensive, but that is an expectation to check,
+not a benchmark result. Timers execute within Emacs's event processing: slow
+callbacks delay editing. Current =portal-terminal-metadata= validates membership
+by enumerating views, so reading N rows among V live views costs O(N*V), before
+formatting and any sorting. Profile realistic session counts before changing
+that shared API. Avoid continuously changing age/counter columns that force
+redraws even when agent facts have not changed.
+
+Compare manual-only and live modes at 10, 50 and 100 tracked sessions, both
+unchanged and with bursts of metadata changes. Record refresh duration,
+allocations/GC, redraw count and typing responsiveness. Hiding or killing the
+dashboard must leave no dashboard timer or redraw work; ordinary terminal
+metadata collection continues. Increase the interval or retain manual refresh
+if live updating noticeably disrupts editing.
 
 *** Acceptance
-- [ ] Multiple agents, including two in one directory, remain distinct; =RET= reaches
-  the correct terminal across frames.
-- [ ] Labels, title, directory, process state, and project come from shared terminal
-  metadata. Renames and directory changes appear without changing tracking identity or
-  implicitly reassigning the project.
-- [ ] Refresh preserves selection, sorting, and focus; hiding/killing the dashboard
-  stops its timer.
-- [ ] Test working/idle, input waits, cancellation, retries, compaction, stale reports,
-  retracking, and terminal replacement. Verify actual harness versions.
-- [ ] Cover normalization/timer behavior with ERT, verify graphical focus, and document
-  setup and supported harnesses.
+- [ ] The dashboard is a plain Emacs text buffer with no dashboard native view,
+  web page or app-host request. Movement, isearch, sorting, =g= and =q= work.
+- [ ] Two agents in one directory remain distinct. =RET= visits and focuses the
+  correct ordinary or quick terminal, including hidden terminals and use across frames.
+- [ ] Renames, project reassignment, directory/title changes and exits appear
+  from shared metadata. Directory changes never reassign the project.
+- [ ] Tracking survives renames; untracking never kills a session. Closing or
+  replacing a terminal drops old tracking. Unsupported activity stays unknown.
+- [ ] Refresh preserves selected session, sorting, window positions and focus.
+  Unchanged snapshots do not redraw. Manual refresh works with live mode off.
+- [ ] Hiding, redisplaying, multiple windows/frames, killing and toggling live
+  mode leave exactly one timer when needed and none otherwise.
+- [ ] ERT covers tracking, changed rows, refresh and timer lifecycle; graphical
+  checks cover focus and visibility. Record the performance comparison and
+  document commands, defaults and the limits of reported status.
 
-Follow-up only: semantic summaries/LLM calls, automatic discovery, remote/multiplexed
-terminals, and agent control.
+*** Review and follow-ups
+Reviewed 2026-10-02 against the current metadata, terminal picker and Org task
+implementation. The mandatory one-second polling/Pi heartbeat plan is
+replaced by the cached Emacs list above. Live updates have established Emacs
+precedents (Proced, Ibuffer and Dired Auto Revert); see
+[[file:docs/emacs-agent-dashboard-research.md][research, source links and performance tradeoffs]].
 
-References: [[https://ghostty.org/docs/vt/osc/conemu][Ghostty progress]],
-[[https://herdr.dev/docs/agents/#status-authority][Herdr status sources]],
-[[https://github.com/earendil-works/pi/blob/2b0a123de98318c2ff8069661721ce0c3794c34e/packages/coding-agent/docs/extensions.md][Pi lifecycle]].
+Verified working/idle/waiting status and attention are separate follow-up work.
+Before adding an adapter, validate actual harness versions, choose one authority
+per session and define stale/unknown, exit and retracking behavior. Notifications
+alone mean attention, silence does not mean idle, and idle does not prove success.
+The earlier Pi OSC proposal remains a candidate to research, not a prerequisite
+or a promised mapping; validate heartbeat cost separately from UI refresh cost.
+Automatic discovery, task-launch registration, remote/multiplexed terminals,
+agent control and generated summaries are also outside this first version.
 
 * Task management :tasks:
 Org workflow design: three implementation tasks, in order below. Keep the UI in
