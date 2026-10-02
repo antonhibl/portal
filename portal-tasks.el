@@ -761,7 +761,8 @@ saved, and where it came from.  It is deleted when the terminal ends.
 Starting Claude changes no task.
 
 If a terminal started on the task still exists, show it instead.  With
-prefix argument NEW, start another anyway.  Return the terminal's buffer."
+prefix argument NEW, start another anyway.  Return the terminal's buffer.
+Window placement follows `pop-to-buffer' and `display-buffer-alist'."
   (interactive "P")
   (portal-tasks--require)
   (let* ((file (portal-tasks--project-file))
@@ -773,7 +774,7 @@ prefix argument NEW, start another anyway.  Return the terminal's buffer."
     (let ((terminal (and (not new) (portal-tasks--running file id))))
       (if (not terminal)
           (portal-tasks--start file id)
-        (pop-to-buffer terminal '(nil (inhibit-same-window . t) (reusable-frames . visible)))
+        (pop-to-buffer terminal)
         (portal-terminal-focus)
         (message "Claude is already on task %s; %s starts another" id
                  (substitute-command-keys "\\[universal-argument] \\[portal-tasks-implement]"))

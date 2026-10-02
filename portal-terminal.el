@@ -217,8 +217,8 @@ With prefix argument NEW, always start a new shell.  Hidden shells persist."
 (defun portal-terminal--new (&optional quick-root command name elsewhere argv label)
   "Create a terminal, optionally for QUICK-ROOT or with startup COMMAND.
 NAME names its buffer; without it, the name holds LABEL, by default
-\"terminal\", and the terminal's project.  ELSEWHERE displays it in
-another pane.  ARGV is a JSON array of a program and literal arguments to
+\"terminal\", and the terminal's project.  ELSEWHERE displays it with
+`pop-to-buffer'.  ARGV is a JSON array of a program and literal arguments to
 run through the user's shell, instead of COMMAND.  The terminal belongs to
 QUICK-ROOT, or to the project of `default-directory', where it starts."
   (when (file-remote-p default-directory)
@@ -250,8 +250,7 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
           (if quick-root
               (portal-terminal-quick--display buffer)
             (if elsewhere
-                (pop-to-buffer buffer '(nil (inhibit-same-window . t)
-                                            (reusable-frames . visible)))
+                (pop-to-buffer buffer)
               (switch-to-buffer buffer)))
           (redisplay t)
           (with-current-buffer buffer
@@ -270,11 +269,12 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
     buffer))
 
 (defun portal-terminal-start (directory program arguments &optional name)
-  "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal in another pane.
-Return its buffer.  NAME optionally names the buffer; by default, the name
-holds PROGRAM's file name and DIRECTORY's project.  Arguments are literal
-strings.  The native terminal starts the user's interactive login shell,
-which loads its startup files and resolves PROGRAM on its PATH.
+  "Start PROGRAM with ARGUMENTS in DIRECTORY in a new terminal.
+Show it with `pop-to-buffer' and return its buffer, leaving window placement
+to Emacs's display rules.  NAME optionally names the buffer; by default,
+the name holds PROGRAM's file name and DIRECTORY's project.  Arguments are
+literal strings.  The native terminal starts the user's interactive login
+shell, which loads its startup files and resolves PROGRAM on its PATH.
 Lisp-side `process-environment' changes are not exported to the terminal.
 A missing program is reported by the shell inside the terminal."
   (unless (and (stringp directory) (file-name-absolute-p directory)

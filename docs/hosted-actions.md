@@ -95,7 +95,7 @@ No worktree is created and no task status is changed by launching.
 
 `portal-terminal-start` accepts directory, program, literal arguments, and an
 optional buffer name. It sends a JSON `:argv` array to the native adapter and
-opens a dedicated terminal in another pane using Emacs display rules. The
+opens a dedicated terminal with `pop-to-buffer`, using Emacs display rules. The
 adapter starts the user's interactive login shell, lets it load its startup
 files, restores the requested working directory, then uses `exec` to run the
 requested program. Program names are resolved
