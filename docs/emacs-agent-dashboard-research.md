@@ -85,13 +85,12 @@ Use one refresh path for `g`, opening the list, and automatic updates:
   subprocesses, synchronous network requests, remote filesystem checks, or
   blocking waits. Do not redraw on every terminal output chunk or agent token.
 
-The current metadata accessor verifies membership by enumerating live views on
-each call. Reading metadata for `n` tracked terminals among `V` views therefore
-does repeated scans, potentially `O(nV)` work, rather than constant-time access
-per row. This is a code-derived scaling observation, not a measured bottleneck.
-For a few terminals, prefer the public interface and simple code. If profiling
-shows collection dominates, batch the membership check in the shared terminal
-layer instead of introducing a competing metadata store.
+The metadata accessor verified membership by enumerating live views on each
+call, so reading metadata for `n` tracked terminals among `V` views did `O(nV)`
+work. Profiling the dashboard showed that scan dominated refreshes (see
+[Measurements](#measurements)), so the accessor now checks the buffer's own
+view target, which a buffer has exactly while it is registered. Its interface
+is unchanged, and there is still one metadata store.
 [Terminal accessor](../portal-terminal.el), [view registry](../portal-view.el)
 
 With comparable work per refresh, a two-second interval performs half as many
@@ -101,8 +100,69 @@ one heartbeat each second add approximately `n` reports per second even while
 the dashboard is hidden, unless the producer protocol changes. Hiding the list
 only removes its own refresh cost.
 
-No dashboard benchmark was run because the dashboard is not implemented. Before
-tuning, measure refresh elapsed time, allocation/GC, and interactive latency at
-representative terminal counts, comparing unchanged, changing, and hidden lists.
-Start with full redraws only on changes; add incremental rendering or event
-subscriptions only if measurements justify their additional lifecycle complexity.
+## Measurements
+
+Measured 2026-10-02 on Emacs 31.1 (macOS 27.0, `emacs -Q`, default
+`gc-cons-threshold` of 800000) with
+[`test/portal-agents-benchmark.el`](../test/portal-agents-benchmark.el), over the
+fake native module: `n` tracked terminals in 10 projects. "Changed" means every
+terminal reported a new title before the refresh. Batch times are means of
+200 refreshes; KB is approximate allocation per refresh.
+
+How the first implementation scaled, compared with the shipped one:
+
+| Tracked | Views | First: unchanged ms, KB | Metadata ms | Shipped: unchanged ms, KB | Shipped: changed ms, KB |
+| --- | --- | --- | --- | --- | --- |
+| 10 | 10 | 0.27, 51 | 0.05 | 0.01, 4 | 0.59, 156 |
+| 50 | 50 | 1.46, 131 | 1.02 | 0.07, 19 | 2.17, 520 |
+| 100 | 100 | 4.73, 301 | 3.89 | 0.18, 38 | 4.98, 998 |
+| 100 | 200 | 8.52, 457 | 7.88 | 0.18, 38 | 4.38, 998 |
+
+Two changes made unchanged refreshes cheap. The membership scan was 82% of an
+unchanged refresh at 100 terminals and 92% beside 100 more views; the accessor
+now costs the same whatever `V` is. The dashboard also compares the cached facts
+before formatting rows, so an unchanged refresh no longer abbreviates
+directories or names projects. A changed refresh still reprints every row with
+`tabulated-list-print`, which is most of its cost: 2.9 ms and 740 KB for 100
+rows. Over 30 refreshes, the batch run printed nothing while the facts stayed
+the same and once per refresh while every title changed.
+
+In graphical Emacs, each configuration ran the event loop for 10 seconds with
+the dashboard shown, at the default two-second interval. A tick's time excludes
+garbage collection, which is reported separately. Redisplay is the forced
+redisplay after a printed change. A key typed during a tick waits for the tick,
+then that redisplay, then any collection.
+
+| Tracked | Mode | Titles | Ticks | Prints | Tick mean / max ms | Redisplay max ms | GCs (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 10 | manual | unchanged | 0 | 0 | — | — | 1 (10) |
+| 10 | manual | every 0.5 s | 0 | 0 | — | — | 2 (20) |
+| 10 | live | unchanged | 5 | 0 | 0.12 / 0.15 | 0.01 | 0 (0) |
+| 10 | live | every 0.5 s | 5 | 5 | 2.7 / 4.7 | 7.4 | 3 (30) |
+| 50 | manual | unchanged | 0 | 0 | — | — | 1 (12) |
+| 50 | manual | every 0.5 s | 0 | 0 | — | — | 6 (138) |
+| 50 | live | unchanged | 5 | 0 | 0.59 / 0.67 | 0.01 | 1 (24) |
+| 50 | live | every 0.5 s | 5 | 5 | 5.5 / 7.7 | 38 | 10 (322) |
+| 100 | manual | unchanged | 0 | 0 | — | — | 0 (0) |
+| 100 | manual | every 0.5 s | 0 | 0 | — | — | 15 (878) |
+| 100 | live | unchanged | 5 | 0 | 0.82 / 1.0 | 0.01 | 1 (14) |
+| 100 | live | every 0.5 s | 5 | 5 | 7.0 / 7.9 | 12 | 23 (274) |
+
+In manual mode the dashboard does no work at all, and in live mode an unchanged
+list costs under a millisecond every two seconds. The collections in manual
+rows come from the terminals' own metadata reports, which run whether or not
+the dashboard is shown; single collections took 10 to 60 ms and varied more
+than any dashboard cost. The worst case is every title changing between every
+tick, as an animated title would. Even then, 100 terminals cost about 7 ms and
+a redisplay of up to 12 ms every two seconds; the slowest redisplay, 38 ms,
+was with 50. No interval or default change was
+needed, so live updates stay on at two seconds and manual refresh stays
+available.
+
+These are timings of the dashboard's own work, not keystroke-to-screen latency.
+A 10 ms probe timer was tried and dropped. Outside the command loop, `sit-for`
+returns at once while input is pending, so the wait loop spun and allocated
+about 35 MB/s. With `accept-process-output` instead, the probe fired only as
+each wait ended, so it measured the harness, not Emacs. Hidden dashboards are
+covered by the tests rather than timed: hiding or killing one cancels its timer,
+and a hidden one redraws nothing.

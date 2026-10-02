@@ -369,6 +369,56 @@ whose program exited goes without asking, and quick reset and forget keep their
 own question. `M-x portal-terminal-select` selects a terminal by name, where
 terminals of its kind show.
 
+### Agent dashboard
+
+`M-x portal-agents` lists the terminals you track, typically ones running coding
+agents, in one ordinary Emacs buffer. It has no native view or web page and
+needs no app host. `M-x portal-agents-track` reads a terminal's name and tracks
+it; with a prefix argument it also asks for an agent label, such as `claude`.
+Hidden and quick terminals can be tracked. `M-x portal-agents-untrack` stops
+tracking one, and the terminal keeps running. From Lisp,
+`(portal-agents-track BUFFER LABEL)` does the same.
+
+Each row shows a terminal's buffer name (Terminal), the label it was tracked
+with (Agent), its project, whether its program is `running` or `exited`
+(Process), its activity, its directory and the title its program set last. It
+is a Tabulated List: move and isearch as in any buffer, and press `S` or click a
+column header to sort. `RET` shows the terminal on the line and gives it the
+keyboard: a quick terminal in its quick panel, any other in the dashboard's
+window, from wherever it was shown, in any frame. `t` tracks another terminal,
+`u` untracks the one on the line, `g` refreshes and `q` quits the window.
+
+Tracking follows the terminal session, not its name, directory or title: it
+survives renames, and two agents in one directory are two rows. A terminal
+that is closed, killed or replaced, such as by `portal-terminal-quick-reset`,
+leaves the dashboard. One whose program exited stays, as `exited`, until its
+buffer is killed. Tracking lasts for the Emacs session.
+
+The dashboard reports only what `portal-terminal-metadata` caches. `running`
+means the terminal's program has not exited, not that its agent is working: it
+may be idle or waiting for input, and nothing reports whether it succeeded. So
+Activity is `unknown` on every row until a source of agent status exists. A
+title is whatever the program set, not a summary Portal made, and Portal never
+infers an agent label from it.
+
+While a window on a visible frame shows the dashboard, it refreshes itself
+every two seconds. A refresh reads the cached metadata and rewrites the buffer
+only when something it shows changed, keeping the sort order, each window on
+its row and screen line, the selected window and the keyboard. The timer stops
+when the dashboard is hidden or killed, and the dashboard refreshes as soon as
+it is shown again. Turn live updates off in the dashboard with
+`M-x portal-agents-toggle-live-update`, or set `portal-agents-live-update` to nil:
+the list then changes only when opened, shown again, or with `g`. Set the period
+with `portal-agents-live-update-interval`; a change applies the next time live
+updates start. A dashboard shown only on a frame that was minimized or made
+invisible stops at its next refresh and starts again once windows change, such
+as when you select the frame.
+
+With 100 tracked terminals, a refresh with nothing changed took under 1 ms in
+graphical Emacs and redrew nothing. When every title changed, it took about
+7 ms plus the redisplay. See the
+[measurements](docs/emacs-agent-dashboard-research.md#measurements).
+
 ### Consult and Embark
 
 Loading `portal.el` automatically enables `portal-terminal-consult-mode` when
@@ -1459,6 +1509,23 @@ unidentified and other files' tasks, declining to save, a failed save, a
 save hook that changes the buffer or the file again, a file changed on disk
 and a terminal that fails to start each start nothing, and an accepted save
 puts the edit in the brief.
+Agent dashboard batch tests run with `ctest --test-dir build -R agents`. They
+check that the dashboard is one plain buffer that opens no view or app host;
+that tracking keeps two terminals in one directory apart, follows renames,
+keeps exited programs and labels, and drops closed, killed and replaced
+terminals, including a reset quick terminal and a new view in the same buffer,
+while untracking leaves terminals running; that rows follow reported titles,
+directories, exits and project reassignment, a directory never reassigning a
+project; that a refresh with nothing changed rewrites nothing, and one with
+changes keeps the sort order, each window's session and screen line, the
+selected window and focus, and asks native code, the user and the system
+nothing; that `g` works with live updates off; that one timer runs while the
+dashboard is shown in any number of windows, none while hidden, shown only on
+an invisible frame, killed or with live updates off, and that showing it again
+refreshes it; and that `RET` gives the right ordinary, quick, hidden or
+other-frame terminal the keyboard. `test/portal-agents-benchmark.el` measures
+refresh time, allocation and redraws at 10, 50 and 100 tracked terminals; see
+its commentary to run it.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise
@@ -1517,6 +1584,13 @@ buffer, a terminal that has the keyboard and a quick panel. They check that
 frame, without the keyboard, that typing stays in the minibuffer and reaches no
 shell, that cancelling puts every view and the keyboard back, and that accepting
 gives the chosen terminal the keyboard once the minibuffer closes.
+The agent dashboard's graphical tests use real terminals and redisplay's window
+hooks. They check that `RET` gives a hidden terminal, one shown in another
+frame and a quick terminal the keyboard, and that the dashboard in another frame
+pulls a terminal there; that a title a shell sets appears without `g` while
+another terminal keeps the keyboard, and unchanged ticks redraw nothing; and
+that hiding, showing in another frame, an invisible frame and killing leave one
+timer only while shown.
 
 Build the test-only event injector shown above, then run the suite in a disposable
 graphical Emacs. Batch Emacs has no native window and
@@ -1540,6 +1614,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -l "$PWD/test/portal-tasks-gui-tests.el" \
   -l "$PWD/test/portal-tasks-view-gui-tests.el" \
   -l "$PWD/test/portal-terminal-choose-gui-tests.el" \
+  -l "$PWD/test/portal-agents-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 

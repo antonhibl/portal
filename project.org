@@ -21,7 +21,7 @@ not built-in Org enforcement. Groups and prose links imply no dependencies.
 are preserved independently; completion dates have not been invented.
 
 * Agents and terminals :terminal:
-** TODO Live agent dashboard in Emacs :task:
+** DONE Live agent dashboard in Emacs :task:
 :PROPERTIES:
 :CUSTOM_ID: 09-agent-dashboard
 :ID: d7d9829e-1245-5106-8cc3-02aafc10d07d
@@ -44,8 +44,9 @@ the dashboard or duplicate metadata storage or project resolution.
 
 The existing picker already handles terminal navigation, including quick panels.
 Reuse its visit path and explicitly focus the terminal on =RET=. The new
-[[#org-task-claude-launch][Org task launch]] remains independent: a task's TODO/DONE
-state is not an agent's runtime state, and this dashboard does not change Org tasks.
+[[file:project.org_archive::#org-task-claude-launch][Org task launch]] remains
+independent: a task's TODO/DONE state is not an agent's runtime state, and this
+dashboard does not change Org tasks.
 
 *** First version
 - Derive =portal-agents-mode= from =tabulated-list-mode= in =portal-agents.el=.
@@ -98,21 +99,92 @@ metadata collection continues. Increase the interval or retain manual refresh
 if live updating noticeably disrupts editing.
 
 *** Acceptance
-- [ ] The dashboard is a plain Emacs text buffer with no dashboard native view,
+- [X] The dashboard is a plain Emacs text buffer with no dashboard native view,
   web page or app-host request. Movement, isearch, sorting, =g= and =q= work.
-- [ ] Two agents in one directory remain distinct. =RET= visits and focuses the
+- [X] Two agents in one directory remain distinct. =RET= visits and focuses the
   correct ordinary or quick terminal, including hidden terminals and use across frames.
-- [ ] Renames, project reassignment, directory/title changes and exits appear
+- [X] Renames, project reassignment, directory/title changes and exits appear
   from shared metadata. Directory changes never reassign the project.
-- [ ] Tracking survives renames; untracking never kills a session. Closing or
+- [X] Tracking survives renames; untracking never kills a session. Closing or
   replacing a terminal drops old tracking. Unsupported activity stays unknown.
-- [ ] Refresh preserves selected session, sorting, window positions and focus.
+- [X] Refresh preserves selected session, sorting, window positions and focus.
   Unchanged snapshots do not redraw. Manual refresh works with live mode off.
-- [ ] Hiding, redisplaying, multiple windows/frames, killing and toggling live
+- [X] Hiding, redisplaying, multiple windows/frames, killing and toggling live
   mode leave exactly one timer when needed and none otherwise.
-- [ ] ERT covers tracking, changed rows, refresh and timer lifecycle; graphical
+- [X] ERT covers tracking, changed rows, refresh and timer lifecycle; graphical
   checks cover focus and visibility. Record the performance comparison and
   document commands, defaults and the limits of reported status.
+
+*** Outcome
+Done 2026-10-02. =M-x portal-agents= in =portal-agents.el= shows one
+=portal-agents-mode= buffer, derived from =tabulated-list-mode=, with columns
+Terminal, Agent, Project, Process (=running= or =exited=), Activity (always
+=unknown=), Directory and Title. =portal-agents-track= (=t=; a prefix argument
+asks for an agent label) and =portal-agents-untrack= (=u=) take ordinary
+terminal completion. Tracking is keyed by buffer and native view target. =RET=
+visits through =portal-terminal--visit= and focuses the terminal, and
+=portal-agents-toggle-live-update= switches live updates. The defaults are
+=portal-agents-live-update= t and =portal-agents-live-update-interval= 2. A
+global =window-state-change-functions= hook exists only while the dashboard
+does, and refreshes it when it is shown again.
+
+Found while implementing:
+
+- Profiling at 100 tracked terminals showed the =O(N*V)= membership scan in
+  =portal-terminal-metadata= was 82% of an unchanged refresh, and 92% beside
+  100 more views. The accessor now checks the buffer's own view target, which a
+  buffer has exactly while it is registered, as =portal-view--target='s
+  docstring now says. Its interface is unchanged. An unchanged refresh at 100
+  terminals fell from 4.7 ms and 301 KB to 0.18 ms and 38 KB, whatever the
+  number of views.
+- The dashboard compares the cached facts before formatting, so an unchanged
+  tick never abbreviates directories or names projects. A changed tick reprints
+  with =tabulated-list-print=, which is most of its cost.
+- =tabulated-list-sort= with -1 restores order from a hash keyed by entry
+  objects, so every print rebuilds that hash with tracking order; without that,
+  =C-u -1 S= fails after a refresh.
+- No window hook reports a frame being made invisible, so each tick checks
+  visibility itself and stops the timer. Live updates restart at the next
+  window change, such as selecting the frame.
+- In graphical Emacs outside the command loop, =sit-for= returns at once while
+  input is pending: a benchmark wait loop spun and allocated about 35 MB/s. The
+  GUI tests and the benchmark wait with =accept-process-output= instead.
+
+*** Verification
+Implemented in [[https://github.com/xiaoxinghu/portal/pull/59][PR #59]].
+
+- =ctest --test-dir build=: all 25 suites pass, including the new =agents= suite
+  (9 tests) and a new =terminal-metadata= check that a web view's buffer has no
+  terminal metadata. Each of 12 dashboard mutations fails the =agents= suite:
+  always printing, ignoring the view target, not restoring window points or
+  starts, a timer while hidden, no focus on =RET=, duplicate timers, no refresh
+  when shown again, dropping exited terminals, a stale original-order hash, a
+  tick ignoring visibility, and leaving the window hook installed. Accepting any
+  buffer, or any view kind, in =portal-terminal-metadata= fails the metadata
+  suite.
+- The full graphical suite: 66 of 67 pass, and the skipped one,
+  =portal-terminal-start-uses-shell-startup=, runs only under
+  =sh test/terminal-shell-startup.sh=. The 2 new =portal-agents-gui-= tests use
+  real terminals and redisplay's window hooks for focus, frames and
+  visibility, and fail under the no-focus, timer-while-hidden and
+  no-refresh-on-show mutations.
+- Every new and changed Lisp file byte-compiles without warnings. =portal.el='s
+  existing warning about =portal-terminal-consult-mode= is the same on =main=.
+  No native code changed, so the standalone Swift checks were not rerun.
+- Performance, from =test/portal-agents-benchmark.el=; see
+  [[file:docs/emacs-agent-dashboard-research.md][the research note]]
+  for the full tables, under Measurements. In batch, an unchanged refresh took 0.01 / 0.07 / 0.18 ms
+  at 10 / 50 / 100 tracked terminals, and one with every title changed took
+  0.6 / 2.2 / 5.0 ms. Over 30 refreshes, unchanged facts printed nothing and
+  changed facts printed once per refresh. In graphical Emacs over 10 s, manual
+  mode did no dashboard work. In live mode an unchanged tick took under 1.0 ms
+  with no redisplay. With every title changing twice a second, ticks averaged
+  2.7 / 5.5 / 7.0 ms, plus redisplays of up to 38 ms. Garbage collection from
+  the terminals' own metadata reports, 10 to 60 ms each, ran in either mode and
+  varied more than any dashboard cost. These are timings of the dashboard's
+  work, not keystroke latency: a timer-lateness probe measured the script's
+  wait loop instead, and was dropped. The two-second default stays, and manual
+  refresh stays available.
 
 *** Review and follow-ups
 Reviewed 2026-10-02 against the current metadata, terminal picker and Org task

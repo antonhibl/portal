@@ -79,6 +79,11 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-choose-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-choose PROPERTIES TIMEOUT 30)
+    add_test(NAME agents
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-agents-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(agents PROPERTIES TIMEOUT 30)
     # The optional Consult and Embark adapters, and the task view under Evil,
     # are tested against the GNU and NonGNU ELPA releases the README names,
     # downloaded once and checked by hash.
