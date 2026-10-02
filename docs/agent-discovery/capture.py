@@ -70,9 +70,12 @@ QUERIES = [
 pending = b''
 focus_reporting = False
 def scan(data):
-    """Log signals and answer queries in DATA, keeping a partial tail."""
+    """Log signals and answer queries in DATA.  An escape sequence the read
+    ends inside waits for the next read; everything before it is handled once."""
     global pending, focus_reporting
-    buf = pending + data
+    buf, pending = split_unfinished(pending + data)
+    if len(pending) > 65536:  # never terminated: drop it rather than grow
+        pending = b''
     for m in OSC.finditer(buf):
         code, payload = m.group(1).decode(), (m.group(2) or b'').decode('utf-8', 'replace')
         if code in ('10', '11', '12') and payload == '?':
@@ -96,20 +99,40 @@ def scan(data):
     stripped = OSC.sub(b'', buf)
     if b'\x07' in stripped:
         log('bel', count=stripped.count(b'\x07'))
-    cut = buf.rfind(b'\x1b')
-    pending = buf[cut:] if cut != -1 and len(buf) - cut < 512 and incomplete(buf[cut:]) else b''
 
-def incomplete(tail):
-    """Whether TAIL, starting at ESC, is a sequence the next read must finish.
-    A complete one was handled already and must not be handled twice."""
-    if len(tail) == 1:
-        return True
-    kind = tail[1:2]
-    if kind in (b']', b'P', b'_', b'^'):  # OSC, DCS, APC, PM: end with BEL or ST
-        return b'\x07' not in tail and b'\x1b\\' not in tail
+CSI = re.compile(rb'\x1b\[[0-?]*[ -/]*[@-~]')
+CSI_PREFIX = re.compile(rb'\x1b\[[0-?]*[ -/]*')
+
+def sequence_end(buf, start):
+    """The index just past the escape sequence at START in BUF, or None if BUF
+    ends inside it."""
+    kind = buf[start + 1:start + 2]
+    if not kind:
+        return None
+    if kind in (b']', b'P', b'_', b'^'):  # OSC, DCS, APC, PM: end at BEL or ST
+        ends = [i + 1 for i in [buf.find(b'\x07', start + 2)] if i != -1]
+        ends += [i + 2 for i in [buf.find(b'\x1b\\', start + 2)] if i != -1]
+        return min(ends) if ends else None
     if kind == b'[':  # CSI: parameters and intermediates, then a final byte
-        return re.fullmatch(rb'\x1b\[[0-?]*[ -/]*', tail) is not None
-    return kind in (b'(', b')', b'*', b'+') and len(tail) == 2  # charset designation
+        m = CSI.match(buf, start)
+        if m:
+            return m.end()
+        return None if CSI_PREFIX.match(buf, start).end() == len(buf) else start + 2
+    if kind in (b'(', b')', b'*', b'+'):  # charset designation: one more byte
+        return start + 3 if start + 2 < len(buf) else None
+    return start + 2
+
+def split_unfinished(buf):
+    """Split BUF into what can be handled now and an escape sequence it ends
+    inside, walking sequences from the start so a terminator split across
+    reads keeps the sequence it ends."""
+    start = buf.find(b'\x1b')
+    while start != -1:
+        end = sequence_end(buf, start)
+        if end is None:
+            return buf[:start], buf[start:]
+        start = buf.find(b'\x1b', end)
+    return buf, b''
 
 alive = True
 def reader():

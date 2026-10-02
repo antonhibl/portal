@@ -12,8 +12,9 @@ come from different sources:
 - **Identity, for all three harnesses: the terminal's foreground process.**
   Portal exports `PORTAL_TERMINAL=<emacs-pid>/<view-target>` into each
   terminal's environment. A scan of the user's processes keeps those in their
-  TTY's foreground process group whose executable is a known agent, and reads
-  the marker from the agent's own environment. The outermost agent per terminal
+  TTY's foreground process group that are named `claude`, `codex` or `pi` (by
+  `argv[0]`, or by the script a runtime runs) with an executable that agrees,
+  and reads the marker from the agent's own environment. The outermost agent per terminal
   wins. An incarnation is the process ID plus start time. Titles, directories,
   progress and notifications never register an agent.
 - **Activity, one authority per harness:**
@@ -274,7 +275,7 @@ Two graphical runs, `portal-run-discovery.jsonl` and `portal-run-triggers.jsonl`
 
 | | Claude Code 2.1.287 | Codex CLI 0.155.1 | Pi 0.87.0 |
 | --- | --- | --- | --- |
-| Identity and terminal binding | Foreground process; exe under `claude/versions/` or named `claude`; marker in its environment. Verified. | Foreground process named `codex`; marker. Verified. | Foreground `node` with `argv[0]` `pi` or the package path; marker after NUL padding. Verified after a parser fix. |
+| Identity and terminal binding | Foreground process with `argv[0]` `claude` and an executable under `claude/versions/` (or a runtime running a `claude` script); marker in its environment. Verified. | Foreground process with `argv[0]` and executable `codex`; marker. Verified. | Foreground `node` with `argv[0]` `pi` once Pi renames itself, 0.1–0.2 s after Node starts; marker after NUL padding. Verified after a parser fix. |
 | Startup discovery | At the first prompt and at the trust dialog. Process visible 0.17–0.73 s after Enter. | At the first prompt; visible 0.62–0.74 s after Enter. | At the trust dialog; visible 0.62–0.63 s after Enter. |
 | Working | `busy` from the JSON status | Braille spinner title | Extension progress 3; none by default |
 | Idle | `idle` (also after errors, denials and cancels) | Title without spinner or `Action Required` | Extension progress 0 at `agent_settled` with `isIdle`; none by default |
@@ -472,22 +473,32 @@ uses `claude agents --json`.
 
 Four refinements to adopt in the implementation tasks:
 
-1. **Classify by `argv[0]`, unwrapping runtimes.** Name a process by the
-   basename of `argv[0]`, or of its script argument when that name is `node`,
-   `bun`, Python or a shell, and prefer the group leader. This covers the native
-   installs tested here (Claude's `comm` is its version number, but its
-   `argv[0]` is `claude`; Pi's renamed `argv[0]` is `pi`) and npm installs, whose
-   shims run `node <bin>/claude`, without matching install paths.
-2. **Strip one leading activity glyph from titles** for the Title column and
-   the unchanged-facts comparison. Otherwise a working Claude (a frame a second)
-   or Codex (ten a second) makes every refresh reprint the dashboard, which cost
+1. **Classify by `argv[0]`, unwrapping runtimes, and check the executable.**
+   Name a process by the basename of `argv[0]`, or of its script argument when
+   that name is `node`, `bun`, Deno, Python or a shell. Unlike Herdr, accept the
+   name only when the executable agrees: the agent's own binary (for Claude,
+   one under `claude/versions/`) or a runtime. This covers the native installs
+   tested here (Claude's `comm` is its version number, but its `argv[0]` is
+   `claude`; Pi's renamed `argv[0]` is `pi`) and npm installs, whose shims run
+   `node <bin>/claude`, without matching install paths, and it still rejects a
+   program that only claims the name. `agentscan.c` does this. Checked on real
+   processes with a test marker: Claude, Codex, Pi and `node <dir>/claude` were
+   found; `exec -a claude sleep`, the same for `codex` and `pi`, and `node -e`
+   were not. Pi started through mise runs as `node .../cli.js` until it renames
+   itself, and was recognized 0.1–0.2 s after Node started.
+2. **Strip one leading activity marker from titles** for the Title column and
+   the unchanged-facts comparison: a spinner frame, `✳`, or Codex's blinking
+   `[ . ]` and `[ ! ]`. Otherwise a working Claude (a frame a second) or Codex
+   (ten a second) makes every refresh reprint the dashboard, which cost
    2.7–7.0 ms per tick, plus redisplay, at 10–100 terminals when titles changed
-   (PR #59).
+   (PR #59). `prototype.el` does this.
 3. **Claude's trigger glyph classes cover both spinner sets:** braille and
    `◐`–`◓`, as well as `✳`. Claude changed its spinner at 2.1.228; a later change
-   still leaves the progress trigger and the 30 s poll.
+   still leaves the progress trigger and the 30 s poll. `prototype.el` does this.
 4. **Pi extension reports only after a TUI `session_start`.** Keep Portal's
-   `ui_prompt_*` mapping, which Herdr lacks.
+   `ui_prompt_*` mapping, which Herdr lacks. `pi-progress.ts` does this: a TUI
+   run reported the same sequence as before, and `pi --mode rpc` reported
+   nothing.
 
 Not adopted:
 

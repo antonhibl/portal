@@ -3,8 +3,11 @@
 // docs/agent-discovery-research.md.  usage: agentscan EMACS_PID
 // Build: cc -O2 -o build/agentscan docs/agent-discovery/agentscan.c
 //
-// An agent is a process whose executable is Claude Code, Codex or Pi and whose
-// environment has PORTAL_TERMINAL=EMACS_PID/<target>.  Prints one JSON object
+// An agent is a process named claude, codex or pi whose environment has
+// PORTAL_TERMINAL=EMACS_PID/<target>.  The name is the basename of argv[0],
+// or of the script a runtime or shell runs (as Herdr names processes), and the
+// executable must agree: the agent's own binary, or that runtime.  So
+// `exec -a claude sleep` is not Claude, and npm's `node .../bin/claude` is.  Prints one JSON object
 // per agent, then {"scan_us":...}.  "fg" is whether its process group owns its
 // terminal's foreground; "nested" whether an agent ancestor shares its target.
 #include <libproc.h>
@@ -20,23 +23,43 @@ struct agent { pid_t pid, ppid, pgid, tpgid; const char *harness; char target[96
 
 static char *buf; static int argmax;
 
-/* Fill ARGV0 and TARGET from PID's arguments and environment.  Returns
-   whether any argument contains NEEDLE (or 1 when NEEDLE is NULL). */
-static int procargs(pid_t pid, const char *prefix, char *argv0, size_t n0, char *target, size_t nt,
-                    const char *needle)
+static const char *basename_of(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
+/* Runtimes and shells that run an agent as a script. */
+static int runtime(const char *name)
+{
+    static const char *const names[] = {"node", "bun", "deno", "python", "python3",
+                                        "sh", "bash", "zsh", "fish"};
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++)
+        if (!strcmp(name, names[i])) return 1;
+    return 0;
+}
+
+/* Fill ARGV0, SCRIPT (the first argument after argv[0] that is not an option,
+   or "" when an option evaluates code instead) and TARGET from PID's arguments
+   and environment.  Returns 0 if they cannot be read. */
+static int procargs(pid_t pid, const char *prefix, char *argv0, size_t n0, char *script, size_t ns,
+                    char *target, size_t nt)
 {
     int mib[3] = {CTL_KERN, KERN_PROCARGS2, pid};
     size_t size = argmax;
-    *argv0 = *target = 0;
+    *argv0 = *script = *target = 0;
     if (sysctl(mib, 3, buf, &size, NULL, 0) < 0) return 0;
     int nargs; memcpy(&nargs, buf, sizeof nargs);
     char *p = buf + sizeof nargs, *end = buf + size;
     p += strlen(p) + 1;
     while (p < end && !*p) p++;
-    int found = needle == NULL;
+    int scripted = 0;
     for (int a = 0; a < nargs && p < end; a++, p += strlen(p) + 1) {
-        if (a == 0) snprintf(argv0, n0, "%s", p);
-        if (needle && strstr(p, needle)) found = 1;
+        if (a == 0) { snprintf(argv0, n0, "%s", p); continue; }
+        if (scripted) continue;
+        if (!strcmp(p, "-e") || !strcmp(p, "--eval") || !strcmp(p, "-p") || !strcmp(p, "--print")
+            || !strcmp(p, "-c") || !strcmp(p, "-m")) scripted = 1;
+        else if (*p != '-') { snprintf(script, ns, "%s", p); scripted = 1; }
     }
     /* A process that renamed itself (Pi via Node's process.title) leaves its
        old argument bytes as NUL padding before the environment. */
@@ -45,13 +68,22 @@ static int procargs(pid_t pid, const char *prefix, char *argv0, size_t n0, char 
     for (; p < end && *p; p += strlen(p) + 1)
         if (!strncmp(p, "PORTAL_TERMINAL=", 16) && !strncmp(p + 16, prefix, plen))
             snprintf(target, nt, "%s", p + 16 + plen);
-    return found;
+    return 1;
 }
 
-static const char *basename_of(const char *path)
+/* The agent PID runs, from its executable PATH, ARGV0 and SCRIPT, or NULL. */
+static const char *agent_name(const char *path, const char *argv0, const char *script)
 {
-    const char *slash = strrchr(path, '/');
-    return slash ? slash + 1 : path;
+    const char *exe = basename_of(path), *name = basename_of(argv0);
+    if (runtime(name)) name = basename_of(script);
+    static const char *const agents[] = {"claude", "codex", "pi"};
+    for (size_t i = 0; i < sizeof agents / sizeof *agents; i++) {
+        if (strcmp(name, agents[i])) continue;
+        /* Native Claude runs from .../claude/versions/<version>. */
+        int own = !strcmp(exe, name) || (!strcmp(name, "claude") && strstr(path, "/claude/versions/"));
+        return own || runtime(exe) ? agents[i] : NULL;
+    }
+    return NULL;
 }
 
 int main(int argc, char **argv)
@@ -79,15 +111,10 @@ int main(int argc, char **argv)
         inspected++;
         char path[PROC_PIDPATHINFO_MAXSIZE];
         if (proc_pidpath(pid, path, sizeof path) <= 0) continue;
-        const char *base = basename_of(path), *harness = NULL, *needle = NULL;
-        if (strstr(path, "/claude/versions/") || !strcmp(base, "claude")) harness = "claude";
-        else if (!strcmp(base, "codex")) harness = "codex";
-        else if (!strcmp(base, "node")) { harness = "pi"; needle = "/pi-coding-agent/"; }
-        else continue;
-        char argv0[256], target[96];
-        int matched = procargs(pid, prefix, argv0, sizeof argv0, target, sizeof target, needle);
-        if (!strcmp(harness, "pi") && !matched && strcmp(argv0, "pi")) continue;
-        if (!*target) continue;
+        char argv0[256], script[1024], target[96];
+        if (!procargs(pid, prefix, argv0, sizeof argv0, script, sizeof script, target, sizeof target)) continue;
+        const char *harness = agent_name(path, argv0, script);
+        if (!harness || !*target) continue;
         struct proc_bsdinfo b;
         if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &b, sizeof b) != sizeof b) continue;
         struct agent *a = &agents[count++];

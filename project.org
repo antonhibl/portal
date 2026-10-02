@@ -391,10 +391,12 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
   =KERN_PROC_UID= snapshot, keeping processes whose group owns their TTY, then
   reading =argv[0]=, arguments and the marker; skip NUL padding before the
   environment. Name a process by the basename of =argv[0]=, or of its script
-  argument when that is =node=, =bun=, Python or a shell, as Herdr does; prefer
-  the group leader. Claude is =claude= (its =comm= is its version number), and
-  npm shims run =node .../bin/claude=, so no install-path matching is needed.
-  Ignore an agent nested under another agent in the same terminal. Per the platform-primitives rule, the platform reports processes;
+  argument when that is =node=, =bun=, Deno, Python or a shell, as Herdr does,
+  and accept the name only when the executable agrees: the agent's own binary
+  (for Claude, under =claude/versions/=) or a runtime. Claude is =claude= (its
+  =comm= is its version number), npm shims run =node .../bin/claude=, and
+  =exec -a claude sleep= is rejected. Ignore an agent nested under another
+  agent in the same terminal. Per the platform-primitives rule, the platform reports processes;
   Lisp or the core classifies them. [[file:docs/agent-discovery/agentscan.c][agentscan.c]]
   is the reference. Also cache each terminal's last OSC 9;4 progress state and
   announce changes through the existing change records.
@@ -416,9 +418,10 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
 - *Cost to stay within:* a scan of a few milliseconds per refresh (measured
   0.8–12 ms) and one 190 ms, 150 ms CPU query per transition; nothing while
   hidden. Replay with [[file:test/fixtures/agent-signals][the fixtures]].
-- *Title column:* strip one leading activity or spinner glyph, for display and
-  for the unchanged-facts comparison, so a working agent's spinner does not
-  reprint the dashboard every refresh (as Herdr's stripped title does).
+- *Title column:* strip one leading activity marker (a spinner frame, =✳=, or
+  Codex's blinking =[ . ]= and =[ ! ]=), for display and for the unchanged-facts
+  comparison, so a working agent's spinner does not reprint the dashboard every
+  refresh (as Herdr's stripped title does).
 - *Decide first:* whether a suspended (Ctrl-Z) Claude keeps a row as stopped.
 
 *** Plan
@@ -536,9 +539,10 @@ The spike proved identity with no setup and the extension's lifecycle with Pi
 
 *** Measured mechanism
 - *Identity, no setup:* the shared foreground-process scan; Pi is Node with
-  =argv[0]= =pi= (after it sets =process.title=) or the =pi-coding-agent=
-  package path in its arguments. Its rename pads the old arguments with NULs
-  before the environment, which the scanner must skip. Found at Pi's trust
+  =argv[0]= =pi= once it sets =process.title=, 0.1–0.2 s after Node starts
+  through mise's shim (=node .../cli.js=); an npm-style shim runs it as a script
+  named =pi=. Its rename pads the old arguments with NULs before the
+  environment, which the scanner must skip. Found at Pi's trust
   dialog 0.62–0.63 s after Enter; gone 0.15 s after Ctrl-D.
 - *Activity needs the extension:* Pi's title (=π - <dir>=) never changes while
   working and outlives Pi; it emits no progress by default and no

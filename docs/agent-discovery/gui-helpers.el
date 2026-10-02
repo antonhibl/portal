@@ -44,14 +44,16 @@
   (alist-get (spike-target buffer) spike-agents nil nil #'equal))
 
 (defun spike-probe (buffer pred timeout label)
-  "Scan every 0.1 s until PRED holds for BUFFER's agent; log the latency."
+  "Scan every 0.1 s until PRED holds for BUFFER's agent; log the latency.
+Return the agent PRED accepted, t if PRED accepted no agent (as #\='null
+does), or nil if it timed out."
   (let ((start (float-time)) agent ok)
     (while (and (not (setq ok (funcall pred (setq agent (progn (spike-scan) (spike-agent buffer))))))
                 (< (- (float-time) start) timeout))
       (spike-wait 0.1))
     (spike-log "probe" :label label :ms (* 1000 (- (float-time) start)) :ok (if ok t :json-false)
                :pid (and agent (plist-get agent :pid)) :harness (and agent (plist-get agent :harness)))
-    agent))
+    (and ok (or agent t))))
 
 (defun spike-until (pred timeout label)
   "Wait until PRED holds, at most TIMEOUT seconds; log it."

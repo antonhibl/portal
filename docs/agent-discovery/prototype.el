@@ -71,7 +71,8 @@ the title and progress are back to what they were when it started.")
   "Claude's title glyph: idle-or-waiting, working, or other."
   (cond ((null title) 'none)
         ((string-prefix-p "✳" title) 'star)
-        ((string-match-p "\\`[◐◑◒◓]" title) 'spinner)
+        ;; Braille through 2.1.227, half circles from 2.1.228.
+        ((string-match-p "\\`[⠀-⣿◐◑◒◓]" title) 'spinner)
         (t 'other)))
 
 (defun spike-claude-query ()
@@ -128,6 +129,13 @@ CLAUDE is a list of (TARGET . PLIST) agents."
           (setq spike-claude-pending t)
         (spike-claude-query)))))
 
+(defun spike-strip-title (title)
+  "TITLE without one leading activity marker, so spinner frames and Codex's
+blinking [ . ] / [ ! ] change no row.  Activity has its own column."
+  (if (and title (string-match "\\`\\(?:[⠀-⣿◐◑◒◓✳]\\|\\[ [.!] \\]\\)[ \t]*" title))
+      (substring title (match-end 0))
+    title))
+
 (defun spike-activity (agent buffer)
   "Return AGENT's activity in BUFFER as a string, with its source."
   (let ((title (plist-get (portal-terminal-metadata buffer) :title)))
@@ -154,11 +162,14 @@ CLAUDE is a list of (TARGET . PLIST) agents."
                   (mapcar (lambda (agent)
                             (let ((buffer (spike-buffer (car agent))))
                               (when (and buffer (not (memq buffer buffers)))
-                                (list (cons buffer (car agent))
-                                      (plist-get (cdr agent) :harness)
-                                      (append (portal-terminal-metadata buffer)
-                                              (list :activity (spike-activity agent buffer)
-                                                    :pid (plist-get (cdr agent) :pid)))))))
+                                (let ((metadata (copy-sequence (portal-terminal-metadata buffer))))
+                                  (setq metadata (plist-put metadata :title (spike-strip-title
+                                                                             (plist-get metadata :title))))
+                                  (list (cons buffer (car agent))
+                                        (plist-get (cdr agent) :harness)
+                                        (append metadata
+                                                (list :activity (spike-activity agent buffer)
+                                                      :pid (plist-get (cdr agent) :pid))))))))
                           spike-agents)))))
 
 (defun spike-rows (orig facts)
