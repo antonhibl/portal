@@ -201,3 +201,202 @@ The earlier Pi OSC proposal remains a candidate to research, not a prerequisite
 or a promised mapping; validate heartbeat cost separately from UI refresh cost.
 Automatic discovery, task-launch registration, remote/multiplexed terminals,
 agent control and generated summaries are also outside this first version.
+
+Scope correction, 2026-10-02: the user's intended workflow is to start an agent
+in an ordinary Portal terminal and have it appear automatically in the dashboard.
+The completed task records the delivered list UI, not completion of that workflow.
+The tasks below supersede the deferral of automatic discovery and agent activity;
+manual tracking is not the intended default. Remote/multiplexed terminals, agent
+control and generated summaries remain follow-ups.
+
+** TODO Prove automatic agent discovery and status in Portal terminals :task:
+:PROPERTIES:
+:CUSTOM_ID: agent-discovery-spike
+:ID: 5bc5fbe5-e404-45d8-a913-5dd3ea4554bc
+:DEPENDS_ON: 09-agent-dashboard
+:END:
+Test actual Claude Code, Codex CLI and Pi sessions before choosing how Portal
+identifies agents and reports activity. Required workflow: type =claude=, =codex=
+or =pi= in an ordinary Portal shell, then open =portal-agents= and find the agent
+without tracking, labelling or launching it through a special Portal command.
+Discovery must include an agent waiting for its first prompt. Start with Claude,
+the reported failure; record support and gaps separately for each harness.
+
+*** Blocked by
+[[#09-agent-dashboard][Live agent dashboard in Emacs]] supplies the existing table,
+navigation and refresh behavior against which to test the missing workflow.
+
+*** Starting evidence
+- [[https://github.com/xiaoxinghu/portal/blob/1c04d8af227488dd7758141d84d5b9df77f5c5b7/docs/agent-state-design.md][Original signal-driven design]]
+  proposed automatic registration on an agent signal. Its
+  [[https://github.com/xiaoxinghu/portal/blob/1c04d8af227488dd7758141d84d5b9df77f5c5b7/docs/tasks/08-agent-signal-spike.md][validation task]]
+  was in closed, unmerged PR #3; its mappings are hypotheses.
+- [[https://github.com/xiaoxinghu/portal/blob/b33c92a16e13acb848268b122d82b58072a2a480/tasks/09-agent-dashboard.md][Full September 27 research]]
+  records a synthetic Ghostty callback probe, Claude JSON discovery, Codex
+  observer limitations, Pi lifecycle semantics and Herdr's hybrid detection.
+  It did not verify complete real-agent lifecycles. Preserve these references
+  when recording results; the shortened Markdown task omits most of this evidence.
+- Inspect =native/Terminal.swift=, the pinned Ghostty wrapper, =portal-terminal.el=
+  and =portal-agents.el=. Recheck current versions and APIs rather than treating
+  historical settings, PID/TTY limitations or signal meanings as current facts.
+
+*** Experiment
+- Instrument terminal callbacks with target identity and monotonic timestamps.
+  Capture startup, progress, notification, title, shell-command and exit evidence
+  from real agents inside Portal, not just standalone Ghostty or synthetic OSC.
+  Record versions, shell, terminal environment, effective settings and exact steps.
+- Separate two questions: what identifies an agent and its exact terminal, and
+  what establishes its activity? Test terminal signals first, then the smallest
+  necessary process/TTY discovery, supported provider API or lifecycle hook.
+  Compare reliability and setup cost. A generic progress bar, title or directory
+  match alone must not register an agent; two agents can share one directory.
+- For each harness test launch before any prompt, working, completion, permission
+  and input waits, cancellation, failure, retry/compaction/queued continuation,
+  and quit back to a still-running shell. Relaunch in that same terminal; close
+  or replace a view and deliver delayed old events. Record unsupported scenarios.
+- Repeat discovery with the dashboard initially unopened, hidden then reopened,
+  and an agent already running when discovery is enabled. Check focused,
+  unfocused and hidden ordinary/quick terminals, plus concurrent sessions.
+  Use shells, builds and synthetic progress/notifications as negative controls.
+- Prefer ordinary unmodified CLI launches. If a harness needs configuration or
+  an extension, prove the minimum one-time setup and record the tradeoff; do not
+  silently change user settings or replace the workflow with per-session tracking.
+  Measure discovery latency and collection cost, including while the list is hidden.
+
+*** Decision and acceptance
+- [ ] Record findings, reproducible commands and compact sanitized traces in this
+  subtree or a linked research file. Distinguish observed results from hypotheses.
+  Keep useful replay fixtures; remove temporary runtime instrumentation.
+- [ ] Provide a per-harness matrix covering automatic identity/terminal binding,
+  startup discovery, working/idle/waiting evidence, exit, freshness, setup and gaps.
+  Notification suppression, progress clear and silence never imply completion alone.
+- [ ] Select one identity source and one activity authority per harness, with a
+  fallback/unknown policy and handling of restarts, stale reports and source loss.
+  Define how existing running terminals are found without a new prompt or relaunch.
+- [ ] Demonstrate Claude launch-to-row evidence and reject non-agent controls.
+  For any unmet requirement, record the blocker and required decision explicitly;
+  do not declare feasibility from synthetic callbacks alone.
+- [ ] Update the dependent tasks with the measured mechanism, supported versions,
+  setup and latency target before implementation. Keep an unsupported harness's
+  task blocked by its own explicit follow-up spike if needed; manual tracking
+  cannot substitute for automatic discovery to mark a task complete.
+
+** TODO Discover Claude sessions automatically and show their live status :task:
+:PROPERTIES:
+:CUSTOM_ID: agent-discovery-claude
+:ID: 699d24e6-67c7-4597-972b-3fbab205ae61
+:DEPENDS_ON: agent-discovery-spike
+:END:
+Deliver the reported workflow end to end: run =claude= in =portal-terminal=,
+open =portal-agents= and see its row, agent identity and supported activity
+without calling =portal-agents-track=. Implement the spike's verified mechanism;
+discovery and activity are separate facts, so an identified agent can have
+unknown activity without disappearing.
+
+*** Blocked by
+[[#agent-discovery-spike][Discovery and status spike]] must establish Claude's
+identity, startup, status and exit contract, including exact terminal association.
+
+*** Plan
+- Add only the collection and discovery needed by the selected mechanism. Reuse
+  the native change channel, shared terminal metadata and existing Emacs table;
+  keep native collection and Lisp state separate from rendering. Update
+  =CONTEXT.md= and README to describe automatic discovery and verified semantics.
+- Key observations by terminal buffer/view and agent incarnation. Detect a CLI
+  exiting while its shell survives; remove its automatic row and let a new CLI
+  start with fresh identity and state. Drop delayed events from old incarnations.
+  Never bind by project path, mutable title or user-supplied buffer name.
+- Report working, idle and waiting/attention only where verified; otherwise show
+  unknown with a reason. Idle does not mean successful task completion. Recover
+  after source failure or stale reports without retaining a false healthy state.
+- Discover agents started before the dashboard opens and while it is hidden.
+  Reuse its visible-only redraw timer and unchanged-snapshot optimization.
+  Keep blocking subprocess/network work out of refresh; if polling is required,
+  use bounded asynchronous collection with no overlapping requests. Measure
+  hidden collection separately from visible UI work.
+- Preserve optional manual controls and labels with a documented policy for
+  untracking/hiding and rediscovery. No manual action is needed for the normal
+  workflow, and renaming or untracking never terminates the CLI.
+
+*** Acceptance
+- [ ] A plain =claude= launch appears before its first prompt, within the spike's
+  stated bound, both with the dashboard open and when opened afterwards. Existing
+  running sessions are found when discovery is enabled. Ordinary shells stay absent.
+- [ ] Two Claude sessions in the same directory remain distinct. =RET= focuses
+  the correct ordinary, hidden, quick or other-frame terminal after renames and =cd=.
+- [ ] Verified activity, waits, interruption, failure and recovery match captured
+  fixtures and real CLI behavior. Exit/relaunch in one shell, terminal replacement
+  and stale/late evidence neither leave a live-looking row nor reuse old status.
+- [ ] Focus, sorting, selection, timer cleanup and metadata ownership regressions
+  pass existing tests. Replay tests exercise collection through dashboard rows;
+  a real graphical smoke test covers the original user workflow without tracking.
+- [ ] Compare collection and redraw cost at 10, 50 and 100 simulated sessions
+  with the existing benchmark; verify concurrent real sessions and hidden behavior.
+  Record results, supported versions/setup and unknown-state behavior. Checks pass.
+
+** TODO Discover Codex sessions automatically and show their live status :task:
+:PROPERTIES:
+:CUSTOM_ID: agent-discovery-codex
+:ID: f23b441d-dd0c-45e1-a365-47b2e021f2e3
+:DEPENDS_ON: agent-discovery-claude
+:END:
+Typing =codex= in an ordinary Portal shell adds its agent row automatically,
+including before the first prompt. Extend the shared discovery/dashboard path
+with the Codex mechanism validated by the spike.
+
+*** Blocked by
+[[#agent-discovery-claude][Automatic Claude discovery and status]] supplies the
+tested collection, identity, lifecycle and dashboard path to extend. Codex's
+mechanism and any setup must first be resolved in
+[[#agent-discovery-spike][the spike]]; add an explicit prerequisite if still unproven.
+
+*** Plan and acceptance
+- [ ] Use the selected identity and activity sources. If an app-server observer
+  is selected, verify access to the server owning that terminal session; a new
+  unrelated server or directory match is insufficient. Do not move sessions,
+  take over approvals or require a replacement TUI. Label any inferred status.
+- [ ] Plain CLI launches and already-running sessions appear without tracking or
+  a special launcher. Opening/hiding/reopening the dashboard and focus changes
+  do not prevent discovery or turn suppressed notifications into false idle.
+- [ ] Replay verified startup, work, completion, approval/input waits, interruption,
+  failure and source-loss evidence. Unknown states explain their missing evidence.
+  Quit/relaunch and delayed events obey the shared incarnation contract.
+- [ ] A real mixed Claude/Codex smoke test includes two sessions in one directory,
+  hidden/quick terminals and =RET= to the exact buffer, with no duplicate rows
+  or cross-agent state. Non-agent terminal signals remain negative controls.
+- [ ] Document tested versions, minimum setup, source confidence and measured
+  latency; keep the dashboard responsive and pass existing plus new checks.
+
+** TODO Discover Pi sessions automatically and show their live status :task:
+:PROPERTIES:
+:CUSTOM_ID: agent-discovery-pi
+:ID: e2d79329-b507-4a41-a355-cb4846ef2ba8
+:DEPENDS_ON: agent-discovery-claude
+:END:
+Typing =pi= in an ordinary Portal shell adds its agent row automatically,
+including before the first prompt. Use the Pi mechanism validated by the spike;
+if an extension is necessary, provide the proven one-time setup so later launches
+need neither a special command nor manual tracking.
+
+*** Blocked by
+[[#agent-discovery-claude][Automatic Claude discovery and status]] supplies the
+shared collection, lifecycle and dashboard path. Pi's setup and lifecycle
+contract must first be resolved in [[#agent-discovery-spike][the spike]]; add an
+explicit prerequisite if still unproven. Codex support is not a prerequisite.
+
+*** Plan and acceptance
+- [ ] Identify Pi independently of generic progress output. If the selected source
+  is a lifecycle extension, initialize identity and activity on startup, validate
+  =agent_settled= and =ctx.isIdle()= for the tested version, and avoid competing
+  progress writers. Do not assume an =agent_end= or progress-clear means settled.
+- [ ] Normal launches after any documented one-time setup and existing running
+  sessions are discovered without per-session registration or relaunch. Hidden
+  terminals and an unopened dashboard do not lose identity or activity evidence.
+- [ ] Replay work, retries, compaction, queued continuation, cancellation, failure
+  and input dialogs. Test reload/conversation changes, source loss, exit/relaunch
+  and stale events; report unsupported evidence as unknown.
+- [ ] A real Pi/Claude smoke test verifies separate sessions in one directory,
+  ordinary/quick/hidden terminals and correct =RET= destinations. Include Codex
+  when available and reject non-agent signals without changing shared UI behavior.
+- [ ] Document tested versions, setup, freshness and measured latency; verify
+  extension/collector cleanup, responsiveness and existing plus new checks.
