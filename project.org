@@ -243,7 +243,7 @@ Verified on 2026-10-02 (macOS 27.0, Emacs 31.1, Org 9.8.7):
   still folded. The Claude launch task's blocker button and Back return to
   its line.
 
-** TODO Launch Claude with exactly one task as its initial brief :task:
+** DONE Launch Claude with exactly one task as its initial brief :task:
 :PROPERTIES:
 :CUSTOM_ID: org-task-claude-launch
 :ID: 5fbf0f3e-e2ff-4d91-997e-aa42ecb54678
@@ -281,8 +281,69 @@ Other worktrees receive that update through Git; no shared in-progress status.
 *** Acceptance
 - [ ] A real Claude launch reads the selected task's immutable brief from either
   view; cover large neighboring tasks and spaces/quotes in paths.
-- [ ] Save/launch failures preserve task state and edits; repeated launch does not
+- [X] Save/launch failures preserve task state and edits; repeated launch does not
   accidentally create another run. Document the commands and initial-read contract.
+
+*** Outcome
+=M-x portal-tasks-implement= starts Claude on the task on a task view line, or
+the one point is in, in the task detail or in =project.org=. The task is judged
+again from the file and its archives. A task that is not actionable starts
+nothing, and the message gives the view's reasons. A modified =project.org=
+is offered for saving, and one changed on disk is refused. The brief is a
+read-only =portal-task-ID-XXXXXX.org= in =temporary-file-directory=. Comments
+give the project, source path, =CUSTOM_ID=, line range and the SHA-256 of the
+saved file, and then comes the subtree exactly as saved. Claude runs through
+=portal-terminal-start= in =*claude: ID*= at the project root, with the
+configured program and arguments and one prompt. The prompt names the brief
+as =@"PATH"=. It asks Claude to implement the task under the repository's
+instructions, then mark it =DONE= in =project.org= by =CUSTOM_ID= with its
+verification. The terminal's =portal-view-close-hook= deletes the brief. Running
+the command again shows the task's latest live terminal; =C-u= starts another.
+README "Starting Claude on a task", =CONTEXT.md= and the author-tasks skill
+document the commands and the brief.
+
+Decisions made during implementation:
+- The brief lives outside the repository, so it adds no untracked files, and
+  agents in other worktrees read it by its absolute path. An =@= mention makes
+  Claude Code attach it to the first message, under normal permissions,
+  without a Read call or a prompt. A quoted mention keeps spaces and quotes.
+- The brief lasts while the terminal's view does. Killing the buffer, =C-c C-k=
+  and Emacs exiting (=portal-view--close-all=) all delete it. An Emacs killed by
+  a signal leaves it in the temporary directory.
+- Readiness is judged before the save offer, so a blocked task never asks, and
+  again from the saved buffer. A file changed on disk is refused even when the
+  buffer is unmodified, rather than reverted, so the user sees the change first.
+- The prompt names no path for the =DONE= edit, since the agent normally works
+  in its own worktree's =project.org=; only links resolve against the original.
+- A heading must be the task that its =CUSTOM_ID= finds, so a copy in another
+  Org file of the project cannot start a =project.org= task.
+- No key is bound. The agenda's only free keys (K, V, W, Y, Z and punctuation)
+  suggest nothing, and the detail's keys stay Org's.
+- The brief is written as UTF-8 with LF line ends; the digest is of the saved
+  file's bytes.
+
+*** Verification
+Verified on 2026-10-02 (macOS 27.0, Emacs 31.1, Org 9.8.7, Claude Code 2.1.287):
+- =./build.sh=, =ctest --test-dir build --output-on-failure= (24 of 24),
+  =bun run --cwd host check= and =typecheck= pass. =tasks-view= has two new
+  tests. Each of these mutations fails one: the whole file in the brief, no
+  save offer, no on-disk check, readiness judged only after saving, no
+  readiness check, a brief kept on close or after a failed start, always a new
+  run, the oldest run shown, a writable brief, and no unique-ID check.
+- =portal-tasks.el= byte-compiles without warnings, with and without org-ql.
+- Real Claude read each brief. In a project whose path has spaces and quotes,
+  beside a 3000-line neighbouring task, batch Emacs recorded the directory and
+  arguments =portal-tasks-implement= gave the terminal, from a view line and from
+  inside the detail. It then ran =claude -p --model haiku= with them, in default
+  permission mode and a clean environment. Each run answered from its brief with
+  no tool call or permission denial, including the brief's line range, and saw
+  nothing of the neighbour. Both briefs were deleted when Emacs exited.
+- A graphical run started real Claude through Ghostty from both views, at the
+  quoted project path with read-only briefs. Claude stopped at its trust prompt
+  for the new folder, and the run was stopped there. So the first read in
+  interactive Claude was not observed, and the first acceptance box stays open.
+  The graphical suites were not run; this change adds no native or
+  redisplay-dependent behaviour.
 
 ** DONE Launch Claude from task details through hosted app actions :task:
 :PROPERTIES:

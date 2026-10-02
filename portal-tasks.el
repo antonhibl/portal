@@ -18,13 +18,14 @@
 (require 'portal-terminal)
 
 (defcustom portal-tasks-claude-program "claude"
-  "Claude Code program used by the task detail's Implement button.
+  "Claude Code program that implements tasks.
+`portal-tasks-implement' and the task browser's Implement button use it.
 The terminal's initialized shell resolves the name on its PATH.
 An explicit executable path is also accepted."
   :type 'string :group 'portal)
 
 (defcustom portal-tasks-claude-arguments '("--dangerously-skip-permissions")
-  "Arguments for task implementation, before the project-relative initial prompt."
+  "Arguments for task implementation, before the initial prompt."
   :type '(repeat string) :group 'portal)
 
 (defcustom portal-tasks-directory "tasks/"
@@ -255,21 +256,25 @@ view orders them by priority, then nearest deadline, then file order.
 \\[portal-tasks-toggle-all] switches to all tasks, which says why each one is not
 actionable and links to its blockers.  \\[portal-tasks-open] shows the task on a line in the
 project's task detail, where Org edits it; see `portal-tasks-detail-mode'.
-A blocker's link shows that task.  Org's other agenda keys act on the task
-on a line.
+A blocker's link shows that task.  \\[portal-tasks-implement] starts Claude on the task on a
+line.  Org's other agenda keys act on the task on a line.
 
 The view reads the file's buffer, saved or not.  It is redrawn when shown
 again after a change, when the file is saved, and on \\[portal-tasks-refresh].
 Each pane keeps its task.  Each project has one view, which keeps its
 choice of tasks.  This needs the org-ql package."
   (interactive)
-  (unless (and (require 'org-ql nil t) (require 'org-ql-view nil t))
-    (user-error "The task view needs the org-ql package"))
-  (require 'org-archive)
+  (portal-tasks--require)
   (let ((buffer (portal-tasks--view (portal-tasks--project-file))))
     (pop-to-buffer-same-window buffer)
     (with-current-buffer buffer (portal-tasks--update))
     buffer))
+
+(defun portal-tasks--require ()
+  "Load org-ql and Org's archives, or signal that org-ql is missing."
+  (unless (and (require 'org-ql nil t) (require 'org-ql-view nil t))
+    (user-error "The task view needs the org-ql package"))
+  (require 'org-archive))
 
 (defun portal-tasks--view (file &optional all)
   "Return the task view of FILE, a project.org, making it if there is none.
@@ -706,6 +711,176 @@ Without a view, make one that lists all tasks if ALL."
   (pcase (portal-tasks--locate file id)
     (`(,task) (when-let* ((line (portal-tasks--search (lambda (heading) (equal heading task)))))
                 (goto-char line)))))
+
+;;; Implementing a task
+
+;; `portal-tasks-implement' starts Claude on one actionable task, in a
+;; terminal at the project root.  Claude reads the task's brief first: a
+;; read-only file holding the task's subtree as saved, which lasts as long as
+;; the terminal.  The task itself stays in project.org, where the agent finds
+;; it by CUSTOM_ID to mark it done.
+
+(declare-function org-back-to-heading "org" (&optional invisible-ok))
+(declare-function org-end-of-subtree "org" (&optional invisible-ok to-heading element))
+(declare-function org-get-tags "org" (&optional epom local))
+(declare-function org-up-heading-safe "org" ())
+
+(defvar-local portal-tasks--launch nil
+  "The task this terminal was started on, as (FILE ID BRIEF).
+FILE is its project.org, ID its CUSTOM_ID, and BRIEF the file of its brief,
+deleted when the terminal ends.")
+
+;;;###autoload
+(defun portal-tasks-implement (&optional new)
+  "Start Claude on a task, in a new terminal at the project root.
+The task is the one on this line of the task view, or else the one point
+is in, in the task detail or project.org.  It must be actionable.  When
+project.org has unsaved changes, offer to save it first; nothing starts
+unless it is saved.
+
+The terminal runs `portal-tasks-claude-program' with
+`portal-tasks-claude-arguments' and an initial prompt.  That has Claude read
+the task's brief first, implement the task under the repository's
+instructions, and mark it DONE in project.org once the work and its checks
+pass.  The brief is a new read-only file holding the task's subtree as
+saved, and where it came from.  It is deleted when the terminal ends.
+Starting Claude changes no task.
+
+If a terminal started on the task still exists, show it instead.  With
+prefix argument NEW, start another anyway.  Return the terminal's buffer."
+  (interactive "P")
+  (portal-tasks--require)
+  (let* ((file (portal-tasks--project-file))
+         (heading (portal-tasks--heading))
+         (id (org-entry-get heading "CUSTOM_ID")))
+    (unless (and id (equal (portal-tasks--locate file id) (list heading)))
+      (user-error "Only a task of %s with a CUSTOM_ID of its own can be implemented"
+                  (abbreviate-file-name file)))
+    (let ((terminal (and (not new) (portal-tasks--running file id))))
+      (if (not terminal)
+          (portal-tasks--start file id)
+        (pop-to-buffer terminal '(nil (inhibit-same-window . t) (reusable-frames . visible)))
+        (portal-terminal-focus)
+        (message "Claude is already on task %s; %s starts another" id
+                 (substitute-command-keys "\\[universal-argument] \\[portal-tasks-implement]"))
+        terminal))))
+
+(defun portal-tasks--heading ()
+  "Return the heading of the task on this task view line, or the one point is in.
+That is the nearest heading holding point with its own task tag, as a
+marker in its file's buffer."
+  (if portal-tasks--file
+      (let ((heading (get-text-property (line-beginning-position) 'org-hd-marker)))
+        (if (markerp heading) heading (user-error "No task on this line")))
+    (unless (derived-mode-p 'org-mode) (user-error "Not in a task"))
+    (save-excursion
+      (unless (ignore-errors (org-back-to-heading t) t) (user-error "Not in a task"))
+      (while (not (member "task" (org-get-tags nil t)))
+        (unless (org-up-heading-safe) (user-error "Not in a task")))
+      (set-marker (make-marker) (point) (or (buffer-base-buffer) (current-buffer))))))
+
+(defun portal-tasks--running (file id)
+  "Return the latest terminal started on task ID of FILE that still exists."
+  (car (last (seq-filter (lambda (buffer)
+                           (equal (take 2 (buffer-local-value 'portal-tasks--launch buffer))
+                                  (list file id)))
+                         (portal-view-buffers 'terminal)))))
+
+(defun portal-tasks--start (file id)
+  "Start Claude on task ID of FILE, a project.org; return its terminal.
+Signal an error, starting nothing, unless the task is actionable and FILE
+is saved, after offering to save it."
+  (portal-tasks--actionable file id)
+  (portal-tasks--save (portal-tasks--visiting file))
+  (let ((brief (portal-tasks--brief file id (portal-tasks--actionable file id)))
+        terminal)
+    (unwind-protect
+        (setq terminal (portal-terminal-start
+                        (file-name-directory file) portal-tasks-claude-program
+                        (append portal-tasks-claude-arguments
+                                (list (portal-tasks--prompt file id brief)))
+                        (format "*claude: %s*" id)))
+      (unless terminal (delete-file brief)))
+    (with-current-buffer terminal
+      (setq portal-tasks--launch (list file id brief))
+      (add-hook 'portal-view-close-hook #'portal-tasks--discard nil t))
+    terminal))
+
+(defun portal-tasks--actionable (file id)
+  "Return the heading of task ID of FILE, judged again; signal unless actionable."
+  (let* ((source (portal-tasks--visiting file))
+         (task (seq-find (lambda (task)
+                           (equal (org-element-property :CUSTOM_ID (plist-get task :element)) id))
+                         (portal-tasks--judge-all source (portal-tasks--archives source))))
+         (element (plist-get task :element)))
+    (unless task
+      (user-error "Task %s is not in %s" id (abbreviate-file-name file)))
+    (unless (eq (plist-get task :state) 'actionable)
+      (user-error "Task %s is not actionable: %s" id
+                  (substring-no-properties
+                   (string-join (or (plist-get task :reasons)
+                                    (list (org-element-property :todo-keyword element)))
+                                "; "))))
+    (org-element-property :org-hd-marker element)))
+
+(defun portal-tasks--save (source)
+  "Offer to save SOURCE, a task file's buffer, if it has unsaved changes.
+Signal an error, leaving SOURCE as it is, unless its file is then saved
+and has not changed on disk since SOURCE read it."
+  (with-current-buffer source
+    (unless (verify-visited-file-modtime)
+      (user-error "%s changed on disk; revert or save it, then try again" (buffer-name)))
+    (when (buffer-modified-p)
+      (unless (y-or-n-p (format "Save %s first? " (buffer-name)))
+        (user-error "Started nothing, as %s is not saved" (buffer-name)))
+      (save-buffer))))
+
+(defun portal-tasks--brief (file id heading)
+  "Write the brief of task ID of FILE, at HEADING, and return its file name.
+The brief is a new read-only file.  Comments name the project, FILE, ID,
+the task's lines and FILE's SHA-256; the task's subtree follows, with its
+child sections, as FILE's buffer has it saved."
+  (let ((digest (portal-tasks--hash file)))
+    (with-current-buffer (marker-buffer heading)
+      (save-excursion
+        (save-restriction
+          (widen)
+          (goto-char heading)
+          (let* ((start (point))
+                 (end (progn (org-end-of-subtree t t) (point)))
+                 (coding-system-for-write 'utf-8-unix)
+                 (brief (make-temp-file
+                         (format "portal-task-%s-"
+                                 (replace-regexp-in-string "[^[:alnum:]_.-]+" "-" id))
+                         nil ".org"
+                         (concat
+                          "# Task brief: a read-only snapshot of one task in project.org, as saved.\n"
+                          "# Project: " (file-name-directory file) "\n"
+                          "# Source: " file "\n"
+                          "# CUSTOM_ID: " id "\n"
+                          (format "# Lines: %d-%d\n"
+                                  (line-number-at-pos start) (line-number-at-pos (1- end)))
+                          "# Source SHA-256: " digest "\n"
+                          "# Links in the task are relative to Source.  Update the task there,\n"
+                          "# found by its CUSTOM_ID; Lines only record where it was.\n\n"
+                          (buffer-substring-no-properties start end)))))
+            (set-file-modes brief #o444)
+            brief))))))
+
+(defun portal-tasks--prompt (file id brief)
+  "Return the initial prompt that has Claude implement task ID of FILE from BRIEF."
+  (format (concat "Read the task brief @\"%s\" first.  It is a snapshot of task %s in %s, "
+                  "and its links are relative to that file.  Implement the task, following "
+                  "this repository's instructions.  Once the work and its checks pass, mark "
+                  "the task DONE in project.org, finding it by its CUSTOM_ID, and record its "
+                  "verification there, normally in the implementation's pull request.")
+          brief id file))
+
+(defun portal-tasks--discard ()
+  "Delete this terminal's task brief, as the terminal ends."
+  (when portal-tasks--launch
+    (delete-file (nth 2 portal-tasks--launch))
+    (setq portal-tasks--launch nil)))
 
 (provide 'portal-tasks)
 ;;; portal-tasks.el ends here
