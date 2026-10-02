@@ -59,6 +59,10 @@
 (defvar spike-claude-process nil)
 (defvar spike-claude-classes nil "Alist (TARGET . TITLE-CLASS) when Claude was last queried.")
 (defvar spike-claude-queried 0 "When Claude was last queried.")
+(defvar spike-claude-pending nil
+  "Non-nil if a trigger fired while a query ran: query again when it finishes.
+The running query may have sampled a state that has since passed, even if
+the title and progress are back to what they were when it started.")
 (defvar spike-use-progress (getenv "SPIKE_USE_PROGRESS")
   "Whether the Claude query trigger includes the OSC 9;4 progress state.")
 (defvar spike-claude-poll 30 "Seconds between safety queries while Claude rows are shown.")
@@ -97,6 +101,9 @@
                    (spike-log "claude_query_done" :ms (* 1000 (- (float-time) start))
                               :statuses (vconcat (mapcar (lambda (s) (format "%s %s" (plist-get s :pid) (plist-get s :status)))
                                                          sessions)))
+                   (when spike-claude-pending
+                     (setq spike-claude-pending nil)
+                     (spike-claude-query))
                    (portal-agents--changed)))))))))
 
 (defun spike-claude-maybe-query (claude)
@@ -110,17 +117,16 @@ CLAUDE is a list of (TARGET . PLIST) agents."
                                        (and spike-use-progress
                                             (plist-get (portal--inspect (car agent)) :progress)))))
                          claude)))
-    ;; While a query runs, leave the trigger armed: the refresh after it
-    ;; finishes sees the change and queries again.
     (when (and claude
-               (not (process-live-p spike-claude-process))
                (or (not (equal classes spike-claude-classes))
                    (and (seq-some (lambda (agent) (not (gethash (plist-get (cdr agent) :pid) spike-claude-status)))
                                   claude)
                         (> (- (float-time) spike-claude-queried) 4))
                    (> (- (float-time) spike-claude-queried) spike-claude-poll)))
       (setq spike-claude-classes classes)
-      (spike-claude-query))))
+      (if (process-live-p spike-claude-process)
+          (setq spike-claude-pending t)
+        (spike-claude-query)))))
 
 (defun spike-activity (agent buffer)
   "Return AGENT's activity in BUFFER as a string, with its source."

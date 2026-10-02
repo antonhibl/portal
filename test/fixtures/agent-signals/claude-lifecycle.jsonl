@@ -54,6 +54,5 @@
 {"t": 52.74, "kind": "progress", "state": 0}
 {"t": 52.74, "kind": "progress", "state": 0}
 {"t": 52.74, "kind": "title", "title": ""}
-{"t": 52.74, "kind": "focus_reporting", "enabled": false}
 {"t": 53.327, "kind": "claude_agents_status", "status": "absent"}
 {"t": 53.772, "kind": "exit", "wait_status": 0}

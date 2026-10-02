@@ -1,7 +1,6 @@
 {"fixture": "agent-signals", "harness": "codex", "version": "0.155.1", "scenario": "approved and denied escalation, cancel, /quit", "source": "headless pty (test harness answers terminal queries)", "clock": "t = seconds since spawn", "terminal": {"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty", "TERM_PROGRAM_VERSION": "1.3.2-HEAD-+82938b633", "COLORTERM": "truecolor", "INSIDE_EMACS": "portal-ghostty", "size": "120x40"}, "recorded": "2026-10-02", "reasoning": "low"}
 {"t": 0.002, "kind": "spawn", "argv": ["codex", "-c", "model_reasoning_effort=low"]}
 {"t": 0.051, "kind": "focus_reporting", "enabled": true}
-{"t": 0.051, "kind": "focus_reporting", "enabled": true}
 {"t": 0.632, "kind": "title", "title": "portal"}
 {"t": 0.889, "kind": "title", "title": "⠹ portal"}
 {"t": 0.984, "kind": "title", "title": "⠸ portal"}
@@ -261,6 +260,5 @@
 {"t": 71.196, "kind": "step", "label": "after-cancel"}
 {"t": 72.321, "kind": "step", "label": "exit-typed"}
 {"t": 72.363, "kind": "title", "title": ""}
-{"t": 72.365, "kind": "focus_reporting", "enabled": false}
 {"t": 72.365, "kind": "focus_reporting", "enabled": false}
 {"t": 72.642, "kind": "exit", "wait_status": 0}

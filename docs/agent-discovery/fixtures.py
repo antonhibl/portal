@@ -20,8 +20,11 @@ def clean(value):
     return value
 
 def pty_events(path, until=None):
-    """Signals from a ptyrun trace: titles, notifications, progress, BEL, OSC 133, marks, Claude status."""
+    """Signals from a ptyrun trace: titles, notifications, progress, BEL, OSC 133, marks, Claude status.
+    focus_reporting records are state changes: a repeat of the current state is
+    dropped (earlier captures could log one sequence twice)."""
     out = []
+    focus = None
     for line in open(path):
         e = json.loads(line)
         if until is not None and e['t'] > until:
@@ -57,7 +60,8 @@ def pty_events(path, until=None):
             out.append({'t': e['t'], 'kind': 'spawn', 'argv': e['cmd'][:1] + [a for a in e['cmd'][1:] if not a.startswith('/')]})
         elif k == 'exit':
             out.append({'t': e['t'], 'kind': 'exit', 'wait_status': e['status']})
-        elif k == 'mode' and e['mode'] == '1004':
+        elif k == 'mode' and e['mode'] == '1004' and e['set'] != focus:
+            focus = e['set']
             out.append({'t': e['t'], 'kind': 'focus_reporting', 'enabled': e['set']})
         elif k in ('timeout', 'kill'):
             out.append({'t': e['t'], 'kind': 'harness_' + k})

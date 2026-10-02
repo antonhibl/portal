@@ -402,9 +402,9 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
   while the dashboard is shown: when shown, for a PID with no status (at most
   every 4 s while unlisted), when a Claude terminal's title glyph class (=✳=,
   a spinner in U+2800–U+28FF or =◐=–=◓=, other) or progress state changes, and
-  every 30 s. A trigger that arrives while a query runs stays armed and starts
-  the next query when it finishes, since the running one may have sampled the
-  old state. Claude changed its spinner at 2.1.228; progress and the poll
+  every 30 s. A trigger that arrives while a query runs is remembered, even if
+  the title and progress change back before it ends, and starts another query
+  when it finishes: the running one may have sampled a state that has passed. Claude changed its spinner at 2.1.228; progress and the poll
   cover a later change. Map =busy=,
   =waiting=, =idle= by PID and process start; otherwise =unknown=, with a reason
   (not yet listed, trust dialog, query failed). [[file:docs/agent-discovery/prototype.el][prototype.el]]

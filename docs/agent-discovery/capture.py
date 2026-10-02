@@ -97,7 +97,19 @@ def scan(data):
     if b'\x07' in stripped:
         log('bel', count=stripped.count(b'\x07'))
     cut = buf.rfind(b'\x1b')
-    pending = buf[cut:] if cut != -1 and len(buf) - cut < 512 and not OSC.search(buf[cut:]) else b''
+    pending = buf[cut:] if cut != -1 and len(buf) - cut < 512 and incomplete(buf[cut:]) else b''
+
+def incomplete(tail):
+    """Whether TAIL, starting at ESC, is a sequence the next read must finish.
+    A complete one was handled already and must not be handled twice."""
+    if len(tail) == 1:
+        return True
+    kind = tail[1:2]
+    if kind in (b']', b'P', b'_', b'^'):  # OSC, DCS, APC, PM: end with BEL or ST
+        return b'\x07' not in tail and b'\x1b\\' not in tail
+    if kind == b'[':  # CSI: parameters and intermediates, then a final byte
+        return re.fullmatch(rb'\x1b\[[0-?]*[ -/]*', tail) is not None
+    return kind in (b'(', b')', b'*', b'+') and len(tail) == 2  # charset designation
 
 alive = True
 def reader():
@@ -186,8 +198,9 @@ def run_step(step):
                 log('seen', pattern=step['wait_text']); break
             time.sleep(0.1)
         else:
-            log('timeout', pattern=step['wait_text']); snapshot('timeout ' + step['wait_text'])
-            if step.get('required', True) and alive:
+            log('timeout' if alive else 'exited_during_wait', pattern=step['wait_text'])
+            snapshot('unmet ' + step['wait_text'])
+            if step.get('required', True):
                 return False
     if 'type' in step:
         for ch in os.path.expandvars(step['type']):
@@ -203,15 +216,19 @@ def run_step(step):
         log('agents', data=agents_json())
     return True
 
-INPUT_KEYS = {'type', 'key', 'focus', 'sleep'}
+def observes(step):
+    """Whether STEP records something about the program: a required wait, a
+    mark, or a process or status sample.  A capture is complete only if every
+    such step ran while the program was alive and every required wait matched."""
+    return (any(key in step for key in ('mark', 'tree', 'agents'))
+            or ('wait_text' in step and step.get('required', True)))
+
 ok = True
 for index, step in enumerate(script['steps']):
     if not alive:
         log('exited_early')
-        # Leftover input, such as a second quit key, is harmless; a step that
-        # would have observed the program means the trace is incomplete.
-        if any(set(rest) - INPUT_KEYS for rest in script['steps'][index:]):
-            ok = False
+        # Leftover input, such as a second quit key, is harmless.
+        ok = not any(observes(rest) for rest in script['steps'][index:])
         break
     if not run_step(step):
         ok = False; break

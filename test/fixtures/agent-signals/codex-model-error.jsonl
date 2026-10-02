@@ -1,7 +1,6 @@
 {"fixture": "agent-signals", "harness": "codex", "version": "0.155.1", "scenario": "turn fails: unknown model, then a model-switch menu waits", "source": "headless pty (test harness answers terminal queries)", "clock": "t = seconds since spawn", "terminal": {"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty", "TERM_PROGRAM_VERSION": "1.3.2-HEAD-+82938b633", "COLORTERM": "truecolor", "INSIDE_EMACS": "portal-ghostty", "size": "120x40"}, "recorded": "2026-10-02"}
 {"t": 0.006, "kind": "spawn", "argv": ["codex", "-m", "spike-nonexistent-model"]}
 {"t": 0.209, "kind": "focus_reporting", "enabled": true}
-{"t": 0.21, "kind": "focus_reporting", "enabled": true}
 {"t": 0.793, "kind": "title", "title": "portal"}
 {"t": 1.275, "kind": "title", "title": "⠼ portal"}
 {"t": 1.73, "kind": "title", "title": "⠏ portal"}
