@@ -653,6 +653,11 @@ integration should not require loading a second prototype module.
   [[file:native/NativeHost.swift][the native frame integration]]. Keep AppKit and Emacs NS
   compatibility in one bounded implementation. The launcher hosts an Emacs
   frame; it is not a new web/terminal Portal view kind.
+- Prefer Swift/AppKit for the production panel and Emacs NS compatibility layer,
+  following Portal's existing Swift backend and C module bindings. Keep any
+  Objective-C shim limited to a demonstrated interoperability need and document
+  why it is necessary. Leave the Objective-C experiment unchanged as reference;
+  rewriting it is not part of this task.
 - Own one reusable, dedicated frame and its NSPanel. Use explicit compatibility
   methods; retain required donor state and restore the original native window
   before frame deletion. Guard native-role parameters that could rebuild the
@@ -699,7 +704,8 @@ being implemented.
 - Provide explicit enable/disable and one customizable shortcut. Initially use
   Control-Option-Command-P; never claim Command-Space by default. Document the
   accepted key notation and supported modifiers/layout behavior.
-- Register/unregister through the native module. Report conflicts; a failed
+- Prefer Swift for shortcut registration and native event handling, using the
+  existing module bindings and notification pipe. Report conflicts; a failed
   enable or rebind must leave the previous valid state intact. Repeated enable
   must not accumulate handlers, and disabling must release the chord.
 - Reuse Portal's notification pipe and queue interactive work for the Emacs
