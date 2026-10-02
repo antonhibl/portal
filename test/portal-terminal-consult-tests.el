@@ -10,6 +10,45 @@
 ;; `portal-completion-testing' types into a real minibuffer with Consult,
 ;; Vertico and Orderless on.
 
+(ert-deftest portal-terminal-consult-auto-enables-in-either-load-order ()
+  ;; Fresh Emacs processes exercise package loading, without this suite's
+  ;; already-loaded adapter or explicit mode activation masking a failure.
+  (let ((portal (locate-library "portal")))
+    (dolist (consult-first '(nil t))
+      (dolist (enabled '(nil t))
+        (let ((form
+               `(progn
+                  (setq load-path ',load-path)
+                  ,@(unless enabled '((setq portal-terminal-consult-auto-enable nil)))
+                  ,@(when consult-first '((require 'consult)))
+                  (load ,portal nil t)
+                  ,@(unless consult-first
+                      '((cl-assert (not (featurep 'consult)))
+                        (cl-assert (not (featurep 'portal-terminal-consult)))
+                        (require 'consult)))
+                  (cl-assert (eq (bound-and-true-p portal-terminal-consult-mode) ,enabled))
+                  (if ,enabled
+                      (progn
+                        ;; Reloading must enable, not toggle or duplicate sources.
+                        (load ,portal nil t)
+                        (cl-assert portal-terminal-consult-mode)
+                        (cl-assert (= (cl-count 'portal-terminal-consult-source
+                                               consult-buffer-sources) 1))
+                        (cl-assert (= (cl-count 'portal-terminal-consult-project-source
+                                               consult-project-buffer-sources) 1))
+                        (cl-assert (eq portal-terminal--reader #'portal-terminal-consult--read))
+                        (portal-terminal-consult-mode -1)
+                        (cl-assert (eq portal-terminal--reader #'portal-terminal--completing-read))
+                        (cl-assert (not (memq 'portal-terminal-consult-source consult-buffer-sources))))
+                    (cl-assert (not (featurep 'portal-terminal-consult)))))))
+          (with-temp-buffer
+            (let ((status (call-process (expand-file-name invocation-name invocation-directory)
+                                        nil t nil "--batch" "-Q" "--eval"
+                                        (prin1-to-string form))))
+              (ert-info ((format "Consult first: %S, enabled: %S\n%s"
+                                 consult-first enabled (buffer-string)))
+                (should (eq status 0))))))))))
+
 (ert-deftest portal-terminal-consult-buffer-narrows-to-terminals-once ()
   (portal-completion-test--environment
     (let* ((server (portal-completion-test--open "one/app" :title "npm run dev"))

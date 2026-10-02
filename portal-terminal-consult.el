@@ -1,7 +1,7 @@
 ;;; portal-terminal-consult.el --- Consult sources for Portal terminals -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Optional; load it after Consult and enable `portal-terminal-consult-mode'.
+;; Optional; portal.el enables `portal-terminal-consult-mode' when Consult loads.
 ;; The terminal pickers then read with Consult, which adds preview and
 ;; narrowing, and `consult-buffer' and `consult-project-buffer' gain a hidden
 ;; group of terminals.  Tested with Consult 3.10.  The source helpers used
