@@ -25,11 +25,14 @@ let package = Package(
         // same sources into the fake-backend tests.
         .target(name: "PortalCore", path: "Core", exclude: ["CMakeLists.txt", "scripts"],
                 cSettings: [.unsafeFlags(["-I", emacsInclude, "-Wall", "-Wextra", "-Werror"])]),
+        // macOS process collection is C to use Darwin's process structures directly.
+        .target(name: "PortalProcesses", dependencies: ["PortalCore"], path: "Processes",
+                cSettings: [.unsafeFlags(["-Wall", "-Wextra", "-Werror"])]),
         // The macOS backend; all Swift features share one target.
         .target(name: "Portal", dependencies: [
-            "PortalCore", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+            "PortalCore", "PortalProcesses", .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "GhosttyTheme", package: "libghostty-spm")
-        ], path: ".", exclude: ["Core", "Info.plist"],
+        ], path: ".", exclude: ["Core", "Processes", "Info.plist"],
            sources: ["Backend.swift", "CoreCalls.swift", "NativeHost.swift", "NativeInput.swift",
                      "Views.swift", "WebView.swift", "Terminal.swift", "Toolbar.swift",
                      "WebToolbar.swift", "Launcher.swift", "LauncherShortcut.swift"],

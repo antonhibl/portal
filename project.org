@@ -365,7 +365,7 @@ Recorded in [[https://github.com/xiaoxinghu/portal/pull/63][PR #63]].
   11.2 ms median reading every process's path.
 - The instrumentation patch was reverted before committing.
 
-** TODO Discover Claude sessions automatically and show their live status :task:
+** DONE Discover Claude sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-claude
 :ID: 699d24e6-67c7-4597-972b-3fbab205ae61
@@ -422,7 +422,9 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
   Codex's blinking =[ . ]= and =[ ! ]=), for display and for the unchanged-facts
   comparison, so a working agent's spinner does not reprint the dashboard every
   refresh (as Herdr's stripped title does).
-- *Decide first:* whether a suspended (Ctrl-Z) Claude keeps a row as stopped.
+- *Suspension decision:* a suspended (Ctrl-Z) Claude leaves automatic discovery
+  until foregrounded. This follows the foreground-process identity contract.
+  Manual tracking can keep the terminal row; it makes no activity claim.
 
 *** Plan
 - Add only the collection and discovery needed by the selected mechanism. Reuse
@@ -446,20 +448,97 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
   workflow, and renaming or untracking never terminates the CLI.
 
 *** Acceptance
-- [ ] A plain =claude= launch appears before its first prompt, within the spike's
+- [X] A plain =claude= launch appears before its first prompt, within the spike's
   stated bound, both with the dashboard open and when opened afterwards. Existing
   running sessions are found when discovery is enabled. Ordinary shells stay absent.
-- [ ] Two Claude sessions in the same directory remain distinct. =RET= focuses
+- [X] Two Claude sessions in the same directory remain distinct. =RET= focuses
   the correct ordinary, hidden, quick or other-frame terminal after renames and =cd=.
-- [ ] Verified activity, waits, interruption, failure and recovery match captured
+- [X] Verified activity, waits, interruption, failure and recovery match captured
   fixtures and real CLI behavior. Exit/relaunch in one shell, terminal replacement
   and stale/late evidence neither leave a live-looking row nor reuse old status.
-- [ ] Focus, sorting, selection, timer cleanup and metadata ownership regressions
+- [X] Focus, sorting, selection, timer cleanup and metadata ownership regressions
   pass existing tests. Replay tests exercise collection through dashboard rows;
   a real graphical smoke test covers the original user workflow without tracking.
-- [ ] Compare collection and redraw cost at 10, 50 and 100 simulated sessions
+- [X] Compare collection and redraw cost at 10, 50 and 100 simulated sessions
   with the existing benchmark; verify concurrent real sessions and hidden behavior.
   Record results, supported versions/setup and unknown-state behavior. Checks pass.
+
+*** Outcome
+Done 2026-10-02. Plain Claude launches now appear automatically in
+=portal-agents=, with activity from =claude agents --json=. No Claude settings
+or launch wrapper are required. Tested with Claude Code 2.1.287, Emacs 31.1,
+macOS 27.0.1 and the repository's pinned Ghostty.
+
+- [[file:native/Processes/Processes.c][Darwin process collection]] supplies a
+  foreground snapshot with arguments, executable, process start, ancestry and
+  one requested environment value. The platform does not classify agents.
+  Each terminal exports =PORTAL_TERMINAL=<emacs-pid>/<view-target>=. The existing
+  terminal change channel now also caches progress in shared metadata.
+- [[file:portal-agent-discovery.el][Discovery and status collection]] joins
+  foreground processes to terminal incarnations and handles one asynchronous,
+  bounded status request at a time. Both spinner sets and progress changes
+  trigger queries. A pending transition survives a round trip back to the
+  original signal; a fresh snapshot rejects late replies after exit, PID reuse
+  or view replacement. A five-second deadline and bounded stdout/stderr avoid
+  hanging collection. Hidden dashboards cancel requests and collect nothing.
+- =busy= becomes =working=; =waiting= and =idle= retain their meaning. Unknown
+  status has an explanatory tooltip, including startup/trust, source failure,
+  timeout and unsupported statuses. Idle does not imply success. Process
+  collection failure invalidates live claims and never keeps closed views.
+- Manual labels override the automatic label without duplicating a row.
+  Untracking hides the current foreground incarnation until it leaves the
+  foreground or is explicitly tracked again. A later run is discoverable.
+  Suspending a real Claude removed its row; =fg= restored it in the smoke test.
+- README and CONTEXT describe the new behavior. Codex and Pi discovery remain
+  in their existing dependent tasks. SSH, tmux and removed environment markers
+  remain outside this mechanism; older terminals need an Emacs restart after
+  rebuilding to acquire the marker.
+
+*** Verification
+- Native build passes with C/Swift warnings treated as errors. All 27 CTest
+  suites pass, including Darwin argument parsing and the new discovery suite.
+  Host Biome and TypeScript checks pass; changed production Lisp files byte
+  compile with warnings treated as errors. Org lint, unique IDs and dependency
+  graph checks pass.
+- The discovery suite runs 17 ERT tests including the nine existing dashboard
+  tests. Real asynchronous pipes exercise collection through rendered rows,
+  nested agents, spoofed executable names, two sessions in one directory,
+  hide/rediscovery, manual mode, spinner-only redraw suppression, retries,
+  malformed responses, output limits, timeouts, PID reuse, terminal replacement
+  and late results. Fixture replay covers real recorded waits, denial,
+  interruption, failure, queued continuation, compaction and trust startup.
+- Three graphical ERT tests pass in a disposable Emacs with real native views:
+  existing focus/other-frame/quick-panel and visibility tests, plus the opt-in
+  [[file:test/portal-agent-discovery-gui-tests.el][plain-Claude smoke test]]. It
+  starts ordinary Claude sessions without tracking, finds a pre-existing one
+  on opening, observes working/idle on a harmless real turn, rejects a synthetic
+  title/progress plus =exec -a claude sleep= control, navigates after renaming,
+  hides/reopens the dashboard, exits/relaunches while the shell survives,
+  suspends/foregrounds Claude, and discovers/visits a hidden quick-terminal
+  Claude. The concurrent ordinary sessions share a directory.
+- Last graphical run: launch-to-row 1.822 s at the default two-second interval;
+  50 native snapshots with two real Claude sessions averaged 0.972 ms, maximum
+  12.556 ms. The earlier run measured 1.812 s and 0.931 ms respectively.
+  These are local observations, not hard deadlines. Hidden tests assert zero
+  process scans/queries while native metadata continues.
+- Benchmarks, Emacs 31.1, 200 iterations per case, default 800 KB GC threshold:
+
+  | Sessions | Manual unchanged ms | Discovery collection ms | Automatic unchanged ms | Automatic changed ms |
+  |----------+---------------------+-------------------------+------------------------+----------------------|
+  |       10 |               0.025 |                   0.074 |                  0.135 |                0.700 |
+  |       50 |               0.161 |                   0.804 |                  1.062 |                3.127 |
+  |      100 |               0.334 |                   2.394 |                  2.949 |                7.372 |
+
+  The automatic benchmark supplies simulated process snapshots; native scan
+  cost and the asynchronous Claude process are measured separately. Changed
+  means every title's text changed, not just its spinner. The unchanged path
+  performs no table rewrite. Run =portal-agents-benchmark-discovery= or the
+  existing =portal-agents-benchmark-refresh= from
+  [[file:test/portal-agents-benchmark.el][the benchmark file]].
+
+  Homebrew Emacs's native trampoline linker needed its GCC library directory:
+  =LIBRARY_PATH=/opt/homebrew/opt/gcc/lib/gcc/current/gcc/aarch64-apple-darwin25/15=.
+  This is a local test-environment setting, not a project/runtime dependency.
 
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:

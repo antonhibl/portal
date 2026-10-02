@@ -78,7 +78,7 @@ a folder, loose, in no project."
       (should (equal (portal-terminal-metadata first)
                      (list :name "*terminal: app*" :project one
                            :directory (portal-metadata-test--path "one/app/src/")
-                           :title nil :exited nil :quick nil)))
+                           :title nil :progress nil :exited nil :quick nil)))
       (should (equal (portal-metadata-test--get other :project) two))
       (should-not (portal-metadata-test--get outside :project))
       (should (equal (buffer-local-value 'list-buffers-directory outside) loose))
@@ -120,7 +120,8 @@ a folder, loose, in no project."
       (portal-view-sync)
       (should-not (plist-get (portal--inspect (buffer-local-value 'portal-view--target terminal))
                              :visible))
-      (portal-metadata-test--report terminal :title "npm run dev")
+      (portal-metadata-test--report terminal :title "npm run dev" :progress "indeterminate")
+      (should (equal (portal-metadata-test--get terminal :progress) "indeterminate"))
       (should (equal (portal-metadata-test--get terminal :title) "npm run dev"))
       (should (equal (buffer-name terminal) "server"))
       ;; The assigned project stays wherever the shell goes.
@@ -286,7 +287,7 @@ The New entries, which carry no terminal, are left out."
         (should (equal (buffer-name) (format "*portal-quick:%s*" (abbreviate-file-name root))))
         (should (equal (portal-terminal-metadata)
                        (list :name (buffer-name) :project root :directory root
-                             :title nil :exited nil :quick t)))
+                             :title nil :progress nil :exited nil :quick t)))
         (should-error (portal-terminal-set-project loose) :type 'user-error)
         ;; Its shell's reports update it, but never its project or name.
         (portal-metadata-test--report quick :pwd loose :title "zsh")

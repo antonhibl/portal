@@ -453,48 +453,61 @@ terminals of its kind show.
 
 ### Agent dashboard
 
-`M-x portal-agents` lists the terminals you track, typically ones running coding
-agents, in one ordinary Emacs buffer. It has no native view or web page and
-needs no app host. `M-x portal-agents-track` reads a terminal's name and tracks
-it; with a prefix argument it also asks for an agent label, such as `claude`.
-Hidden and quick terminals can be tracked. `M-x portal-agents-untrack` stops
-tracking one, and the terminal keeps running. From Lisp,
-`(portal-agents-track BUFFER LABEL)` does the same.
+Run `claude` in an ordinary Portal shell, then open `M-x portal-agents`.
+Claude appears automatically, even before its first prompt or while waiting at
+a trust dialog. Discovery also finds sessions started before the dashboard
+opened, while it was hidden, or before discovery was enabled. No Claude setup
+or per-session tracking is needed. This is tested with Claude Code 2.1.287.
+Rebuild and restart Emacs to give new terminals the discovery marker.
 
-Each row shows a terminal's buffer name (Terminal), the label it was tracked
-with (Agent), its project, whether its program is `running` or `exited`
-(Process), its activity, its directory and the title its program set last. It
-is a Tabulated List: move and isearch as in any buffer, and press `S` or click a
-column header to sort. `RET` shows the terminal on the line and gives it the
-keyboard: a quick terminal in its quick panel, any other in the dashboard's
-window, from wherever it was shown, in any frame. `t` tracks another terminal,
-`u` untracks the one on the line, `g` refreshes and `q` quits the window.
+Each row shows its terminal name, agent, assigned project, terminal process
+state, agent activity, current directory and reported title. Activity comes
+from [`claude agents --json`](https://code.claude.com/docs/en/agent-view#list-sessions-as-json):
+`busy` becomes `working`, and `waiting` and `idle` keep their names. **Idle does
+not mean success.** At startup, at a trust dialog, on an unsupported status, or
+when the status command fails, activity is `unknown`; hover it for the reason.
+A process-discovery failure also makes Process `unknown` until recovery.
+Set `portal-agents-claude-program` to an absolute path if Claude is not on Emacs's
+`exec-path`. Codex and Pi automatic discovery are separate planned tasks.
 
-Tracking follows the terminal session, not its name, directory or title: it
-survives renames, and two agents in one directory are two rows. A terminal
-that is closed, killed or replaced, such as by `portal-terminal-quick-reset`,
-leaves the dashboard. One whose program exited stays, as `exited`, until its
-buffer is killed. Tracking lasts for the Emacs session.
+The dashboard is an ordinary Tabulated List buffer with no native view, web
+page or app host. Move, isearch, or press `S` to sort; `RET` visits the correct
+terminal and gives it the keyboard, including hidden terminals, quick panels,
+and terminals in another frame. Renaming a buffer or changing directory does
+not change its identity. Two agents in the same directory remain distinct.
 
-The dashboard reports only what `portal-terminal-metadata` caches. `running`
-means the terminal's program has not exited, not that its agent is working: it
-may be idle or waiting for input, and nothing reports whether it succeeded. So
-Activity is `unknown` on every row until a source of agent status exists. A
-title is whatever the program set, not a summary Portal made, and Portal never
-infers an agent label from it.
+Discovery uses foreground processes tied to the exact terminal, never titles,
+progress bars or project paths. Exiting Claude removes its automatic row even
+while the shell keeps running; relaunching starts with fresh activity. A
+suspended (Ctrl-Z) agent disappears until foregrounded. Remote agents, agents
+inside tmux, or launches that remove `PORTAL_TERMINAL` are not discovered.
 
-While a window on a visible frame shows the dashboard, it refreshes itself
-every two seconds. A refresh reads the cached metadata and rewrites the buffer
-only when something it shows changed, keeping the sort order, each window on
-its row and screen line, the selected window and the keyboard. The timer stops
-when the dashboard is hidden or killed, and the dashboard refreshes as soon as
-it is shown again. Turn live updates off in the dashboard with
-`M-x portal-agents-toggle-live-update`, or set `portal-agents-live-update` to nil:
-the list then changes only when opened, shown again, or with `g`. Set the period
-with `portal-agents-live-update-interval`; a change applies the next time live
-updates start. A dashboard shown only on a frame that was minimized or made
-invisible stops at its next refresh and starts again once windows change, such
-as when you select the frame.
+Optional `M-x portal-agents-track` (`t`) tracks any terminal; a prefix argument
+also asks for a label, and `(portal-agents-track BUFFER LABEL)` works from Lisp.
+An explicit label overrides “Claude” without creating a second row. Manually
+tracked terminals remain after program exit, marked `exited`, until closed or
+untracked. Other harnesses have unknown activity. `portal-agents-untrack` (`u`)
+leaves the program running and hides a discovered run until it leaves the
+foreground or is explicitly tracked again; later runs are discovered normally.
+
+While shown, one two-second timer scans processes and reads cached metadata.
+Opening or showing the dashboard scans immediately. Title glyph-class and
+progress changes trigger asynchronous Claude status queries; spinner animation
+within a class does not. Queries never overlap, time out after five seconds,
+and retry after a transition, every four seconds for unknown status, or at a
+30-second safety poll. A transition during a query schedules a fresh query;
+results cannot attach to a replaced terminal or process. Leading activity
+markers are omitted from agent titles so spinner frames do not redraw rows.
+Hidden dashboards do no discovery or status collection, and cancel pending
+queries. Existing native metadata records continue for hidden terminals.
+
+Rows are rewritten only when displayed facts change, preserving sorting,
+selection, each window's position and keyboard focus. `g` refreshes and `q`
+hides the dashboard. `portal-agents-toggle-live-update` or
+`(setq portal-agents-live-update nil)` leaves collection manual: open, show, or
+`g`. Set `portal-agents-live-update-interval` to change the interval the next
+time updates start. Set `portal-agents-discover-claude` to nil to retain only
+manual tracking. Minimized/invisible frames stop collection at the next tick.
 
 With 100 tracked terminals, a refresh with nothing changed took under 1 ms in
 graphical Emacs and redrew nothing. When every title changed, it took about
@@ -699,9 +712,9 @@ cmake --build --preset dev
 ```
 
 CMake locates Emacs, builds the Bun host, and invokes the native Swift package.
-`native/Package.swift` defines two targets linked into the one module: `PortalCore`,
-the C core in `native/Core`, and `Portal`, the Swift backend containing the
-host, web, terminal, input and toolbar code. There are no separate feature libraries
+`native/Package.swift` links three targets into one module: `PortalCore`,
+the portable C core; `PortalProcesses`, Darwin process collection in C; and
+`Portal`, the Swift backend containing the host, web, terminal, input and toolbar code. There are no separate feature libraries
 or plugin builds. Configuration writes the discovered header
 path to `build/emacs-include.txt`, which the package also reads for editor support.
 
@@ -1679,6 +1692,20 @@ buffer, a terminal that has the keyboard and a quick panel. They check that
 frame, without the keyboard, that typing stays in the minibuffer and reaches no
 shell, that cancelling puts every view and the keyboard back, and that accepting
 gives the chosen terminal the keyboard once the minibuffer closes.
+Automatic discovery has batch tests in `ctest --test-dir build -R agent-discovery`:
+real asynchronous pipes, process identity, nested/spoofed controls, PID reuse,
+hidden/manual collection, bounded failures, pending triggers, and recorded Claude
+lifecycle/compaction/error/trust fixtures replayed through dashboard rows.
+`ctest --test-dir build -R processes` checks Darwin argument parsing, including
+NUL padding and truncation. `portal-agents-benchmark-discovery` in
+`test/portal-agents-benchmark.el` compares 10, 50 and 100 simulated sessions.
+
+For the opt-in real-Claude smoke test, set `PORTAL_TEST_CLAUDE_DIRECTORY` to an
+already trusted project, load `test/portal-agent-discovery-gui-tests.el` in a
+fresh graphical Emacs, and run ERT selector `^portal-discovery-gui-`. It starts
+plain Claude sessions, sends one harmless prompt, verifies automatic rows and
+working/idle, navigation and exit/relaunch, then closes its terminals.
+
 The agent dashboard's graphical tests use real terminals and redisplay's window
 hooks. They check that `RET` gives a hidden terminal, one shown in another
 frame and a quick terminal the keyboard, and that the dashboard in another frame

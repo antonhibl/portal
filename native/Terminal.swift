@@ -45,7 +45,7 @@ private func terminalQuote(_ value: String) -> String {
 @MainActor
 private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     TerminalSurfacePwdDelegate, TerminalSurfaceGridResizeDelegate, TerminalSurfaceLifecycleDelegate,
-    TerminalSurfaceCloseDelegate, TerminalSurfaceOpenURLDelegate, NativeSurface {
+    TerminalSurfaceCloseDelegate, TerminalSurfaceOpenURLDelegate, TerminalSurfaceProgressReportDelegate, NativeSurface {
     var nativeView: NSView { self }
     var input: NativeInput? { session?.input }
     weak var session: TerminalSession?
@@ -58,13 +58,14 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     var terminalSurface: TerminalSurface?
     /// The process has ended. The view stays, showing its last output.
     var exited = false
+    var progress = ""
 
-    init(directory: String, command: String?, theme: TerminalTheme) {
+    init(directory: String, command: String?, theme: TerminalTheme, marker: String) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: ["INSIDE_EMACS": "portal-ghostty"],
+            envVars: ["INSIDE_EMACS": "portal-ghostty", "PORTAL_TERMINAL": marker],
             command: command,
             // Ghostty then reports the exit at once, as a close request,
             // which leaves the view and its last output.
@@ -80,6 +81,12 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+    func terminalDidReportProgress(state: TerminalProgressState, percent: Int?) {
+        let value = "\(state)"
+        guard value != progress else { return }
+        progress = value
+        session?.changed()
+    }
     func terminalDidChangeTitle(_ title: String) {
         guard title != terminalTitle else { return }
         terminalTitle = title
@@ -130,7 +137,8 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         let terminal = HostedTerminal(directory: directory, command: try terminalCommand(options, directory: directory),
-                                      theme: try Terminals.theme(named: options.string("theme")))
+                                      theme: try Terminals.theme(named: options.string("theme")),
+                                      marker: "\(getpid())/\(target)")
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
         input = NativeInput(target: target, view: terminal, host: NativeView.parking) { [weak terminal] in
@@ -161,6 +169,7 @@ final class TerminalSession: PortalView {
          ("title", .string(terminal.terminalTitle)),
          ("pwd", .string(terminal.workingDirectory)),
          ("exited", .flag(terminal.exited)),
+         ("progress", .string(terminal.progress)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
          ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]
