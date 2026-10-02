@@ -1,0 +1,27 @@
+{
+ "cwd": "$TMPDIR/portal-untrusted",
+ "claude_status": true,
+ "status_interval": 0.4,
+ "steps": [
+  {
+   "sleep": 6
+  },
+  {
+   "mark": "trust-dialog",
+   "agents": true
+  },
+  {
+   "key": "esc"
+  },
+  {
+   "sleep": 2
+  },
+  {
+   "key": "ctrl-c"
+  },
+  {
+   "sleep": 1
+  }
+ ],
+ "exit_timeout": 15
+}

@@ -1,0 +1,357 @@
+{"fixture": "portal-gui", "scenario": "run 2: progress trigger, Pi at trust dialog, Codex exit, change-record cost", "source": "graphical emacs -Q, Portal build with spike instrumentation", "clock": "t = seconds since the first record", "versions": {"claude": "2.1.287", "codex": "0.155.1", "pi": "0.87.0", "emacs": "31.1", "ghostty": "82938b633ba6 (libghostty-spm 1.6.20260909)"}, "recorded": "2026-10-02"}
+{"t": 0.0, "source": "lisp", "kind": "discovery_enabled"}
+{"t": 0.577, "source": "lisp", "kind": "mark", "label": "dashboard shown"}
+{"t": 0.822, "source": "native", "target": "terminal:1", "kind": "open", "directory": "~/workspace/portal/", "marker": "8968/terminal:1"}
+{"t": 0.936, "source": "lisp", "kind": "mark", "label": "opened *T1 claude*", "target": "terminal:1"}
+{"t": 0.94, "source": "lisp", "kind": "type", "target": "terminal:1", "text": "claude --model haiku"}
+{"t": 1.079, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 1.369, "source": "native", "target": "terminal:1", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 1.369, "source": "native", "target": "terminal:1", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 1.369, "source": "native", "target": "terminal:1", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 1.429, "source": "native", "target": "terminal:1", "kind": "title", "title": "claude --model haiku"}
+{"t": 1.444, "source": "lisp", "kind": "discovered", "agents": ["terminal:1 claude 9033"], "scan_ms": 4.723787307739258, "scan_us": 1813}
+{"t": 1.445, "source": "lisp", "kind": "probe", "label": "T1 process visible", "ms": 504.43220138549805, "ok": true, "pid": 9033, "harness": "claude"}
+{"t": 2.564, "source": "native", "target": "terminal:1", "kind": "title", "title": "✳ Claude Code"}
+{"t": 2.564, "source": "lisp", "kind": "claude_query_start"}
+{"t": 2.566, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 2.802, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | unknown | ✳ Claude Code"]}
+{"t": 2.975, "source": "lisp", "kind": "claude_query_done", "ms": 410.17985343933105, "statuses": ["2868 busy", "9033 idle"]}
+{"t": 2.982, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Claude Code"]}
+{"t": 3.076, "source": "lisp", "kind": "until", "label": "T1 idle at first prompt", "ms": 1631.2170028686523, "ok": true}
+{"t": 3.077, "source": "lisp", "kind": "mark", "label": "deny T1"}
+{"t": 3.078, "source": "lisp", "kind": "type", "target": "terminal:1", "text": "Use the Bash tool to run exactly this command: touch $SCRATCH/portal-gui2-denied.txt"}
+{"t": 3.116, "source": "native", "target": "terminal:1", "kind": "title", "title": "◐ Claude Code"}
+{"t": 3.117, "source": "lisp", "kind": "claude_query_start"}
+{"t": 3.12, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 3.41, "source": "lisp", "kind": "claude_query_done", "ms": 293.31183433532715, "statuses": ["2868 busy", "9033 busy"]}
+{"t": 3.418, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Claude Code"]}
+{"t": 4.077, "source": "native", "target": "terminal:1", "kind": "title", "title": "◑ Claude Code"}
+{"t": 4.102, "source": "native", "target": "terminal:1", "kind": "title", "title": "◑ Create scratchpad file portal-gui2-denied.txt"}
+{"t": 4.817, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 5.038, "source": "native", "target": "terminal:1", "kind": "title", "title": "◐ Create scratchpad file portal-gui2-denied.txt"}
+{"t": 6.0, "source": "native", "target": "terminal:1", "kind": "title", "title": "◑ Create scratchpad file portal-gui2-denied.txt"}
+{"t": 6.193, "source": "native", "target": "terminal:1", "kind": "title", "title": "✳ Create scratchpad file portal-gui2-denied.txt"}
+{"t": 6.194, "source": "lisp", "kind": "claude_query_start"}
+{"t": 6.416, "source": "lisp", "kind": "claude_query_done", "ms": 221.9870090484619, "statuses": ["2868 busy", "9033 waiting"]}
+{"t": 6.424, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | waiting | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 6.486, "source": "lisp", "kind": "until", "label": "T1 waiting", "ms": 3406.996965408325, "ok": true}
+{"t": 8.547, "source": "lisp", "kind": "key", "target": "terminal:1", "action": "text:\\x1b"}
+{"t": 8.548, "source": "native", "target": "terminal:1", "kind": "spike_action", "action": "text:\\x1b", "ok": true}
+{"t": 8.643, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 8.644, "source": "lisp", "kind": "claude_query_start"}
+{"t": 8.894, "source": "lisp", "kind": "claude_query_done", "ms": 250.7150173187256, "statuses": ["2868 busy", "9033 idle"]}
+{"t": 8.901, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 8.993, "source": "lisp", "kind": "until", "label": "T1 idle after denial", "ms": 444.4727897644043, "ok": true}
+{"t": 9.017, "source": "native", "target": "terminal:2", "kind": "open", "directory": "~/workspace/portal/", "marker": "8968/terminal:2"}
+{"t": 9.067, "source": "lisp", "kind": "mark", "label": "opened *T5 pi*", "target": "terminal:2"}
+{"t": 9.072, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "pi"}
+{"t": 9.273, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 9.562, "source": "native", "target": "terminal:2", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 9.562, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 9.562, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 9.613, "source": "native", "target": "terminal:2", "kind": "title", "title": "pi"}
+{"t": 9.691, "source": "lisp", "kind": "discovered", "agents": ["terminal:2 pi 10299", "terminal:1 claude 9033"], "scan_ms": 6.1740875244140625, "scan_us": 3310}
+{"t": 9.692, "source": "lisp", "kind": "probe", "label": "T5 process visible", "ms": 619.4319725036621, "ok": true, "pid": 10299, "harness": "pi"}
+{"t": 10.828, "source": "lisp", "kind": "rows", "rows": ["*T5 pi* | pi | running | unknown | pi", "*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 12.74, "source": "lisp", "kind": "check", "label": "pi row at trust dialog", "row": "[*T5 pi* pi portal running unknown ~/workspace/portal/ pi]", "agent": "(:target terminal:2 :harness pi :pid 10299 :start 1790916099.432263 :pgid 10299 :tpgid 10299 :fg t :tty ttys003 :nested nil)"}
+{"t": 12.741, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x1b"}
+{"t": 12.742, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x1b", "ok": true}
+{"t": 12.98, "source": "native", "target": "terminal:2", "kind": "title", "title": "π - portal"}
+{"t": 14.834, "source": "lisp", "kind": "rows", "rows": ["*T5 pi* | pi | running | unknown | π - portal", "*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 15.788, "source": "lisp", "kind": "check", "label": "pi row after trust dialog", "row": "[*T5 pi* pi portal running unknown ~/workspace/portal/ π - portal]"}
+{"t": 15.79, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x04"}
+{"t": 15.791, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x04", "ok": true}
+{"t": 15.857, "source": "native", "target": "terminal:2", "kind": "title", "title": "π - portal"}
+{"t": 15.935, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 15.94, "source": "lisp", "kind": "discovered", "agents": ["terminal:1 claude 9033"], "scan_ms": 5.058050155639648, "scan_us": 2289}
+{"t": 15.941, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 15.941, "source": "lisp", "kind": "probe", "label": "T5 gone after ctrl-d", "ms": 149.2760181427002, "ok": true, "pid": null, "harness": null}
+{"t": 15.941, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x03"}
+{"t": 16.469, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x03"}
+{"t": 16.47, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 16.486, "source": "lisp", "kind": "probe", "label": "T5 gone after ctrl-c", "ms": 15.303850173950195, "ok": true, "pid": null, "harness": null}
+{"t": 16.513, "source": "native", "target": "terminal:3", "kind": "open", "directory": "~/workspace/portal/", "marker": "8968/terminal:3"}
+{"t": 16.552, "source": "lisp", "kind": "mark", "label": "opened *T4 codex*", "target": "terminal:3"}
+{"t": 16.555, "source": "native", "target": "terminal:2", "kind": "command_finished", "duration_ms": 6941.904042, "exit": 130}
+{"t": 16.555, "source": "native", "target": "terminal:2", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 16.556, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 16.557, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "codex"}
+{"t": 16.761, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 16.799, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 17.042, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 17.042, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 17.042, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 17.093, "source": "native", "target": "terminal:3", "kind": "title", "title": "codex"}
+{"t": 17.175, "source": "lisp", "kind": "discovered", "agents": ["terminal:3 codex 10842", "terminal:1 claude 9033"], "scan_ms": 6.628990173339844, "scan_us": 3064}
+{"t": 17.176, "source": "lisp", "kind": "probe", "label": "T4 process visible", "ms": 617.6941394805908, "ok": true, "pid": 10842, "harness": "codex"}
+{"t": 17.893, "source": "native", "target": "terminal:3", "kind": "title", "title": "portal"}
+{"t": 18.211, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠸ portal"}
+{"t": 18.836, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | working | ⠸ portal", "*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 18.841, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠴ portal"}
+{"t": 18.841, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠦ portal"}
+{"t": 18.841, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠧ portal"}
+{"t": 18.841, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠇ portal"}
+{"t": 18.841, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠏ portal"}
+{"t": 18.931, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠋ portal"}
+{"t": 19.078, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠙ portal"}
+{"t": 19.128, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠹ portal"}
+{"t": 19.437, "source": "native", "target": "terminal:3", "kind": "title", "title": "⠴ portal"}
+{"t": 19.44, "source": "native", "target": "terminal:3", "kind": "title", "title": "portal"}
+{"t": 20.82, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | portal", "*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 22.178, "source": "lisp", "kind": "check", "label": "codex row at first prompt", "row": "[*T4 codex* codex portal running idle ~/workspace/portal/ portal]"}
+{"t": 22.179, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "/quit"}
+{"t": 22.219, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 22.628, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 22.641, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 5548.643, "exit": 0}
+{"t": 22.643, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 22.643, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 22.643, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 22.799, "source": "lisp", "kind": "discovered", "agents": ["terminal:1 claude 9033"], "scan_ms": 4.744052886962891, "scan_us": 1782}
+{"t": 22.8, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Create scratchpad file portal-gui2-denied.txt"]}
+{"t": 23.191, "source": "lisp", "kind": "probe", "label": "T4 gone after /quit", "ms": 8.388042449951172, "ok": true, "pid": null, "harness": null}
+{"t": 23.191, "source": "lisp", "kind": "key", "target": "terminal:3", "action": "text:\\r"}
+{"t": 23.192, "source": "native", "target": "terminal:3", "kind": "spike_action", "action": "text:\\r", "ok": true}
+{"t": 23.198, "source": "lisp", "kind": "probe", "label": "T4 gone after second Enter", "ms": 6.331920623779297, "ok": true, "pid": null, "harness": null}
+{"t": 23.199, "source": "native", "target": "terminal:3", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 23.199, "source": "lisp", "kind": "key", "target": "terminal:3", "action": "text:\\x03"}
+{"t": 23.238, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 23.238, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 23.563, "source": "lisp", "kind": "key", "target": "terminal:3", "action": "text:\\x03"}
+{"t": 23.564, "source": "native", "target": "terminal:3", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 23.583, "source": "lisp", "kind": "probe", "label": "T4 gone after ctrl-c", "ms": 18.182992935180664, "ok": true, "pid": null, "harness": null}
+{"t": 23.613, "source": "native", "target": "terminal:4", "kind": "open", "directory": "~/workspace/portal/", "marker": "8968/terminal:4"}
+{"t": 23.652, "source": "lisp", "kind": "mark", "label": "opened *T2 spinner*", "target": "terminal:4"}
+{"t": 23.654, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 23.654, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 23.846, "source": "native", "target": "terminal:4", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.131, "source": "native", "target": "terminal:4", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 24.131, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.131, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.671, "source": "lisp", "kind": "mark", "label": "dashboard hidden"}
+{"t": 24.674, "source": "lisp", "kind": "mark", "label": "spinner hidden"}
+{"t": 24.678, "source": "lisp", "kind": "type", "target": "terminal:4", "text": "for i in $(seq 100); do printf '\\e]0;%s spin\\a' $i; sleep 0.1; done"}
+{"t": 24.691, "source": "native", "target": "terminal:4", "kind": "title", "title": "for i in $(seq 100); do printf '\\e]0;%s spin\\a' $i; sleep 0.1; done"}
+{"t": 24.698, "source": "native", "target": "terminal:4", "kind": "title", "title": "1 spin"}
+{"t": 24.806, "source": "native", "target": "terminal:4", "kind": "title", "title": "2 spin"}
+{"t": 24.92, "source": "native", "target": "terminal:4", "kind": "title", "title": "3 spin"}
+{"t": 25.053, "source": "native", "target": "terminal:4", "kind": "title", "title": "4 spin"}
+{"t": 25.192, "source": "native", "target": "terminal:4", "kind": "title", "title": "5 spin"}
+{"t": 25.308, "source": "native", "target": "terminal:4", "kind": "title", "title": "6 spin"}
+{"t": 25.417, "source": "native", "target": "terminal:4", "kind": "title", "title": "7 spin"}
+{"t": 25.542, "source": "native", "target": "terminal:4", "kind": "title", "title": "8 spin"}
+{"t": 25.674, "source": "native", "target": "terminal:4", "kind": "title", "title": "9 spin"}
+{"t": 25.8, "source": "native", "target": "terminal:4", "kind": "title", "title": "10 spin"}
+{"t": 25.924, "source": "native", "target": "terminal:4", "kind": "title", "title": "11 spin"}
+{"t": 26.04, "source": "native", "target": "terminal:4", "kind": "title", "title": "12 spin"}
+{"t": 26.167, "source": "native", "target": "terminal:4", "kind": "title", "title": "13 spin"}
+{"t": 26.291, "source": "native", "target": "terminal:4", "kind": "title", "title": "14 spin"}
+{"t": 26.418, "source": "native", "target": "terminal:4", "kind": "title", "title": "15 spin"}
+{"t": 26.529, "source": "native", "target": "terminal:4", "kind": "title", "title": "16 spin"}
+{"t": 26.646, "source": "native", "target": "terminal:4", "kind": "title", "title": "17 spin"}
+{"t": 26.775, "source": "native", "target": "terminal:4", "kind": "title", "title": "18 spin"}
+{"t": 26.908, "source": "native", "target": "terminal:4", "kind": "title", "title": "19 spin"}
+{"t": 27.031, "source": "native", "target": "terminal:4", "kind": "title", "title": "20 spin"}
+{"t": 27.146, "source": "native", "target": "terminal:4", "kind": "title", "title": "21 spin"}
+{"t": 27.276, "source": "native", "target": "terminal:4", "kind": "title", "title": "22 spin"}
+{"t": 27.405, "source": "native", "target": "terminal:4", "kind": "title", "title": "23 spin"}
+{"t": 27.525, "source": "native", "target": "terminal:4", "kind": "title", "title": "24 spin"}
+{"t": 27.653, "source": "native", "target": "terminal:4", "kind": "title", "title": "25 spin"}
+{"t": 27.767, "source": "native", "target": "terminal:4", "kind": "title", "title": "26 spin"}
+{"t": 27.885, "source": "native", "target": "terminal:4", "kind": "title", "title": "27 spin"}
+{"t": 28.011, "source": "native", "target": "terminal:4", "kind": "title", "title": "28 spin"}
+{"t": 28.136, "source": "native", "target": "terminal:4", "kind": "title", "title": "29 spin"}
+{"t": 28.261, "source": "native", "target": "terminal:4", "kind": "title", "title": "30 spin"}
+{"t": 28.384, "source": "native", "target": "terminal:4", "kind": "title", "title": "31 spin"}
+{"t": 28.521, "source": "native", "target": "terminal:4", "kind": "title", "title": "32 spin"}
+{"t": 28.635, "source": "native", "target": "terminal:4", "kind": "title", "title": "33 spin"}
+{"t": 28.75, "source": "native", "target": "terminal:4", "kind": "title", "title": "34 spin"}
+{"t": 28.865, "source": "native", "target": "terminal:4", "kind": "title", "title": "35 spin"}
+{"t": 29.004, "source": "native", "target": "terminal:4", "kind": "title", "title": "36 spin"}
+{"t": 29.126, "source": "native", "target": "terminal:4", "kind": "title", "title": "37 spin"}
+{"t": 29.249, "source": "native", "target": "terminal:4", "kind": "title", "title": "38 spin"}
+{"t": 29.358, "source": "native", "target": "terminal:4", "kind": "title", "title": "39 spin"}
+{"t": 29.479, "source": "native", "target": "terminal:4", "kind": "title", "title": "40 spin"}
+{"t": 29.614, "source": "native", "target": "terminal:4", "kind": "title", "title": "41 spin"}
+{"t": 29.706, "source": "native", "target": "terminal:4", "kind": "title", "title": "42 spin"}
+{"t": 29.82, "source": "native", "target": "terminal:4", "kind": "title", "title": "43 spin"}
+{"t": 29.947, "source": "native", "target": "terminal:4", "kind": "title", "title": "44 spin"}
+{"t": 30.063, "source": "native", "target": "terminal:4", "kind": "title", "title": "45 spin"}
+{"t": 30.192, "source": "native", "target": "terminal:4", "kind": "title", "title": "46 spin"}
+{"t": 30.316, "source": "native", "target": "terminal:4", "kind": "title", "title": "47 spin"}
+{"t": 30.437, "source": "native", "target": "terminal:4", "kind": "title", "title": "48 spin"}
+{"t": 30.573, "source": "native", "target": "terminal:4", "kind": "title", "title": "49 spin"}
+{"t": 30.685, "source": "native", "target": "terminal:4", "kind": "title", "title": "50 spin"}
+{"t": 30.818, "source": "native", "target": "terminal:4", "kind": "title", "title": "51 spin"}
+{"t": 30.925, "source": "native", "target": "terminal:4", "kind": "title", "title": "52 spin"}
+{"t": 31.051, "source": "native", "target": "terminal:4", "kind": "title", "title": "53 spin"}
+{"t": 31.191, "source": "native", "target": "terminal:4", "kind": "title", "title": "54 spin"}
+{"t": 31.31, "source": "native", "target": "terminal:4", "kind": "title", "title": "55 spin"}
+{"t": 31.435, "source": "native", "target": "terminal:4", "kind": "title", "title": "56 spin"}
+{"t": 31.552, "source": "native", "target": "terminal:4", "kind": "title", "title": "57 spin"}
+{"t": 31.674, "source": "native", "target": "terminal:4", "kind": "title", "title": "58 spin"}
+{"t": 31.801, "source": "native", "target": "terminal:4", "kind": "title", "title": "59 spin"}
+{"t": 31.918, "source": "native", "target": "terminal:4", "kind": "title", "title": "60 spin"}
+{"t": 32.046, "source": "native", "target": "terminal:4", "kind": "title", "title": "61 spin"}
+{"t": 32.171, "source": "native", "target": "terminal:4", "kind": "title", "title": "62 spin"}
+{"t": 32.3, "source": "native", "target": "terminal:4", "kind": "title", "title": "63 spin"}
+{"t": 32.419, "source": "native", "target": "terminal:4", "kind": "title", "title": "64 spin"}
+{"t": 32.552, "source": "native", "target": "terminal:4", "kind": "title", "title": "65 spin"}
+{"t": 32.724, "source": "native", "target": "terminal:4", "kind": "title", "title": "66 spin"}
+{"t": 32.847, "source": "native", "target": "terminal:4", "kind": "title", "title": "67 spin"}
+{"t": 32.96, "source": "native", "target": "terminal:4", "kind": "title", "title": "68 spin"}
+{"t": 33.078, "source": "native", "target": "terminal:4", "kind": "title", "title": "69 spin"}
+{"t": 33.198, "source": "native", "target": "terminal:4", "kind": "title", "title": "70 spin"}
+{"t": 33.33, "source": "native", "target": "terminal:4", "kind": "title", "title": "71 spin"}
+{"t": 33.463, "source": "native", "target": "terminal:4", "kind": "title", "title": "72 spin"}
+{"t": 33.597, "source": "native", "target": "terminal:4", "kind": "title", "title": "73 spin"}
+{"t": 33.725, "source": "native", "target": "terminal:4", "kind": "title", "title": "74 spin"}
+{"t": 33.848, "source": "native", "target": "terminal:4", "kind": "title", "title": "75 spin"}
+{"t": 33.97, "source": "native", "target": "terminal:4", "kind": "title", "title": "76 spin"}
+{"t": 34.095, "source": "native", "target": "terminal:4", "kind": "title", "title": "77 spin"}
+{"t": 34.231, "source": "native", "target": "terminal:4", "kind": "title", "title": "78 spin"}
+{"t": 34.341, "source": "native", "target": "terminal:4", "kind": "title", "title": "79 spin"}
+{"t": 34.494, "source": "native", "target": "terminal:4", "kind": "title", "title": "80 spin"}
+{"t": 34.6, "source": "native", "target": "terminal:4", "kind": "title", "title": "81 spin"}
+{"t": 34.729, "source": "native", "target": "terminal:4", "kind": "title", "title": "82 spin"}
+{"t": 34.85, "source": "native", "target": "terminal:4", "kind": "title", "title": "83 spin"}
+{"t": 34.968, "source": "native", "target": "terminal:4", "kind": "title", "title": "84 spin"}
+{"t": 35.1, "source": "native", "target": "terminal:4", "kind": "title", "title": "85 spin"}
+{"t": 35.257, "source": "native", "target": "terminal:4", "kind": "title", "title": "86 spin"}
+{"t": 35.376, "source": "native", "target": "terminal:4", "kind": "title", "title": "87 spin"}
+{"t": 35.486, "source": "native", "target": "terminal:4", "kind": "title", "title": "88 spin"}
+{"t": 35.613, "source": "native", "target": "terminal:4", "kind": "title", "title": "89 spin"}
+{"t": 35.695, "source": "lisp", "kind": "cost", "label": "hidden 10 Hz spinner", "changed": [["terminal:4", 90, 26.742219924926758]], "scans": 0, "claude_queried_since": false}
+{"t": 35.707, "source": "lisp", "kind": "mark", "label": "dashboard shown"}
+{"t": 35.711, "source": "lisp", "kind": "mark", "label": "spinner shown"}
+{"t": 35.713, "source": "lisp", "kind": "type", "target": "terminal:4", "text": "for i in $(seq 100); do printf '\\e]0;%s spin\\a' $i; sleep 0.1; done"}
+{"t": 35.741, "source": "native", "target": "terminal:4", "kind": "title", "title": "90 spin"}
+{"t": 35.857, "source": "native", "target": "terminal:4", "kind": "title", "title": "91 spin"}
+{"t": 35.974, "source": "native", "target": "terminal:4", "kind": "title", "title": "92 spin"}
+{"t": 36.086, "source": "native", "target": "terminal:4", "kind": "title", "title": "93 spin"}
+{"t": 36.201, "source": "native", "target": "terminal:4", "kind": "title", "title": "94 spin"}
+{"t": 36.329, "source": "native", "target": "terminal:4", "kind": "title", "title": "95 spin"}
+{"t": 36.451, "source": "native", "target": "terminal:4", "kind": "title", "title": "96 spin"}
+{"t": 36.57, "source": "native", "target": "terminal:4", "kind": "title", "title": "97 spin"}
+{"t": 36.692, "source": "native", "target": "terminal:4", "kind": "title", "title": "98 spin"}
+{"t": 36.81, "source": "native", "target": "terminal:4", "kind": "title", "title": "99 spin"}
+{"t": 36.938, "source": "native", "target": "terminal:4", "kind": "title", "title": "100 spin"}
+{"t": 37.181, "source": "native", "target": "terminal:4", "kind": "command_finished", "duration_ms": 12490.035125, "exit": 0}
+{"t": 37.183, "source": "native", "target": "terminal:4", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 37.183, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.217, "source": "native", "target": "terminal:4", "kind": "title", "title": "for i in $(seq 100); do printf '\\e]0;%s spin\\a' $i; sleep 0.1; done"}
+{"t": 37.221, "source": "native", "target": "terminal:4", "kind": "title", "title": "1 spin"}
+{"t": 37.331, "source": "native", "target": "terminal:4", "kind": "title", "title": "2 spin"}
+{"t": 37.441, "source": "native", "target": "terminal:4", "kind": "title", "title": "3 spin"}
+{"t": 37.548, "source": "native", "target": "terminal:4", "kind": "title", "title": "4 spin"}
+{"t": 37.672, "source": "native", "target": "terminal:4", "kind": "title", "title": "5 spin"}
+{"t": 37.789, "source": "native", "target": "terminal:4", "kind": "title", "title": "6 spin"}
+{"t": 37.903, "source": "native", "target": "terminal:4", "kind": "title", "title": "7 spin"}
+{"t": 38.025, "source": "native", "target": "terminal:4", "kind": "title", "title": "8 spin"}
+{"t": 38.152, "source": "native", "target": "terminal:4", "kind": "title", "title": "9 spin"}
+{"t": 38.277, "source": "native", "target": "terminal:4", "kind": "title", "title": "10 spin"}
+{"t": 38.392, "source": "native", "target": "terminal:4", "kind": "title", "title": "11 spin"}
+{"t": 38.515, "source": "native", "target": "terminal:4", "kind": "title", "title": "12 spin"}
+{"t": 38.653, "source": "native", "target": "terminal:4", "kind": "title", "title": "13 spin"}
+{"t": 38.769, "source": "native", "target": "terminal:4", "kind": "title", "title": "14 spin"}
+{"t": 38.903, "source": "native", "target": "terminal:4", "kind": "title", "title": "15 spin"}
+{"t": 39.026, "source": "native", "target": "terminal:4", "kind": "title", "title": "16 spin"}
+{"t": 39.134, "source": "native", "target": "terminal:4", "kind": "title", "title": "17 spin"}
+{"t": 39.285, "source": "native", "target": "terminal:4", "kind": "title", "title": "18 spin"}
+{"t": 39.409, "source": "native", "target": "terminal:4", "kind": "title", "title": "19 spin"}
+{"t": 39.529, "source": "native", "target": "terminal:4", "kind": "title", "title": "20 spin"}
+{"t": 39.646, "source": "native", "target": "terminal:4", "kind": "title", "title": "21 spin"}
+{"t": 39.776, "source": "lisp", "kind": "claude_query_start"}
+{"t": 39.786, "source": "native", "target": "terminal:4", "kind": "title", "title": "22 spin"}
+{"t": 39.891, "source": "native", "target": "terminal:4", "kind": "title", "title": "23 spin"}
+{"t": 40.0, "source": "native", "target": "terminal:4", "kind": "title", "title": "24 spin"}
+{"t": 40.026, "source": "lisp", "kind": "claude_query_done", "ms": 250.21910667419434, "statuses": ["2868 busy", "9033 idle"]}
+{"t": 40.105, "source": "native", "target": "terminal:4", "kind": "title", "title": "25 spin"}
+{"t": 40.21, "source": "native", "target": "terminal:4", "kind": "title", "title": "26 spin"}
+{"t": 40.321, "source": "native", "target": "terminal:4", "kind": "title", "title": "27 spin"}
+{"t": 40.441, "source": "native", "target": "terminal:4", "kind": "title", "title": "28 spin"}
+{"t": 40.558, "source": "native", "target": "terminal:4", "kind": "title", "title": "29 spin"}
+{"t": 40.679, "source": "native", "target": "terminal:4", "kind": "title", "title": "30 spin"}
+{"t": 40.806, "source": "native", "target": "terminal:4", "kind": "title", "title": "31 spin"}
+{"t": 40.928, "source": "native", "target": "terminal:4", "kind": "title", "title": "32 spin"}
+{"t": 41.064, "source": "native", "target": "terminal:4", "kind": "title", "title": "33 spin"}
+{"t": 41.18, "source": "native", "target": "terminal:4", "kind": "title", "title": "34 spin"}
+{"t": 41.302, "source": "native", "target": "terminal:4", "kind": "title", "title": "35 spin"}
+{"t": 41.419, "source": "native", "target": "terminal:4", "kind": "title", "title": "36 spin"}
+{"t": 41.547, "source": "native", "target": "terminal:4", "kind": "title", "title": "37 spin"}
+{"t": 41.67, "source": "native", "target": "terminal:4", "kind": "title", "title": "38 spin"}
+{"t": 41.79, "source": "native", "target": "terminal:4", "kind": "title", "title": "39 spin"}
+{"t": 41.905, "source": "native", "target": "terminal:4", "kind": "title", "title": "40 spin"}
+{"t": 42.025, "source": "native", "target": "terminal:4", "kind": "title", "title": "41 spin"}
+{"t": 42.143, "source": "native", "target": "terminal:4", "kind": "title", "title": "42 spin"}
+{"t": 42.26, "source": "native", "target": "terminal:4", "kind": "title", "title": "43 spin"}
+{"t": 42.384, "source": "native", "target": "terminal:4", "kind": "title", "title": "44 spin"}
+{"t": 42.503, "source": "native", "target": "terminal:4", "kind": "title", "title": "45 spin"}
+{"t": 42.624, "source": "native", "target": "terminal:4", "kind": "title", "title": "46 spin"}
+{"t": 42.749, "source": "native", "target": "terminal:4", "kind": "title", "title": "47 spin"}
+{"t": 42.861, "source": "native", "target": "terminal:4", "kind": "title", "title": "48 spin"}
+{"t": 42.997, "source": "native", "target": "terminal:4", "kind": "title", "title": "49 spin"}
+{"t": 43.131, "source": "native", "target": "terminal:4", "kind": "title", "title": "50 spin"}
+{"t": 43.251, "source": "native", "target": "terminal:4", "kind": "title", "title": "51 spin"}
+{"t": 43.376, "source": "native", "target": "terminal:4", "kind": "title", "title": "52 spin"}
+{"t": 43.507, "source": "native", "target": "terminal:4", "kind": "title", "title": "53 spin"}
+{"t": 43.63, "source": "native", "target": "terminal:4", "kind": "title", "title": "54 spin"}
+{"t": 43.756, "source": "native", "target": "terminal:4", "kind": "title", "title": "55 spin"}
+{"t": 43.863, "source": "native", "target": "terminal:4", "kind": "title", "title": "56 spin"}
+{"t": 43.976, "source": "native", "target": "terminal:4", "kind": "title", "title": "57 spin"}
+{"t": 44.092, "source": "native", "target": "terminal:4", "kind": "title", "title": "58 spin"}
+{"t": 44.204, "source": "native", "target": "terminal:4", "kind": "title", "title": "59 spin"}
+{"t": 44.327, "source": "native", "target": "terminal:4", "kind": "title", "title": "60 spin"}
+{"t": 44.452, "source": "native", "target": "terminal:4", "kind": "title", "title": "61 spin"}
+{"t": 44.585, "source": "native", "target": "terminal:4", "kind": "title", "title": "62 spin"}
+{"t": 44.715, "source": "native", "target": "terminal:4", "kind": "title", "title": "63 spin"}
+{"t": 44.829, "source": "native", "target": "terminal:4", "kind": "title", "title": "64 spin"}
+{"t": 44.938, "source": "native", "target": "terminal:4", "kind": "title", "title": "65 spin"}
+{"t": 45.048, "source": "native", "target": "terminal:4", "kind": "title", "title": "66 spin"}
+{"t": 45.184, "source": "native", "target": "terminal:4", "kind": "title", "title": "67 spin"}
+{"t": 45.302, "source": "native", "target": "terminal:4", "kind": "title", "title": "68 spin"}
+{"t": 45.425, "source": "native", "target": "terminal:4", "kind": "title", "title": "69 spin"}
+{"t": 45.545, "source": "native", "target": "terminal:4", "kind": "title", "title": "70 spin"}
+{"t": 45.672, "source": "native", "target": "terminal:4", "kind": "title", "title": "71 spin"}
+{"t": 45.798, "source": "native", "target": "terminal:4", "kind": "title", "title": "72 spin"}
+{"t": 45.915, "source": "native", "target": "terminal:4", "kind": "title", "title": "73 spin"}
+{"t": 46.045, "source": "native", "target": "terminal:4", "kind": "title", "title": "74 spin"}
+{"t": 46.168, "source": "native", "target": "terminal:4", "kind": "title", "title": "75 spin"}
+{"t": 46.292, "source": "native", "target": "terminal:4", "kind": "title", "title": "76 spin"}
+{"t": 46.415, "source": "native", "target": "terminal:4", "kind": "title", "title": "77 spin"}
+{"t": 46.54, "source": "native", "target": "terminal:4", "kind": "title", "title": "78 spin"}
+{"t": 46.664, "source": "native", "target": "terminal:4", "kind": "title", "title": "79 spin"}
+{"t": 46.748, "source": "lisp", "kind": "cost", "label": "shown 10 Hz spinner", "changed": [["terminal:4", 92, 29.292583465576172]], "scans": 7, "scan_us": [12217, 1775, 5351, 2065, 2739, 6511, 2187], "helper_ms": [26.63397789001465, 4.9381256103515625, 16.690969467163086, 5.207061767578125, 6.210088729858398, 19.984006881713867, 5.821943283081055], "seconds": 11.036961078643799}
+{"t": 46.752, "source": "lisp", "kind": "mark", "label": "close T1 during query"}
+{"t": 46.754, "source": "lisp", "kind": "claude_query_start"}
+{"t": 46.785, "source": "native", "target": "terminal:4", "kind": "title", "title": "80 spin"}
+{"t": 46.893, "source": "native", "target": "terminal:4", "kind": "title", "title": "81 spin"}
+{"t": 47.002, "source": "lisp", "kind": "claude_query_done", "ms": 247.79391288757324, "statuses": ["2868 busy", "9033 idle"]}
+{"t": 47.008, "source": "lisp", "kind": "claude_query_start"}
+{"t": 47.009, "source": "native", "target": "terminal:4", "kind": "title", "title": "82 spin"}
+{"t": 47.009, "source": "lisp", "kind": "rows", "rows": []}
+{"t": 47.111, "source": "native", "target": "terminal:4", "kind": "title", "title": "83 spin"}
+{"t": 47.217, "source": "native", "target": "terminal:4", "kind": "title", "title": "84 spin"}
+{"t": 47.238, "source": "lisp", "kind": "claude_query_done", "ms": 229.89511489868164, "statuses": ["2868 busy", "9033 idle"]}
+{"t": 47.325, "source": "native", "target": "terminal:4", "kind": "title", "title": "85 spin"}
+{"t": 47.435, "source": "native", "target": "terminal:4", "kind": "title", "title": "86 spin"}
+{"t": 47.554, "source": "native", "target": "terminal:4", "kind": "title", "title": "87 spin"}
+{"t": 47.659, "source": "native", "target": "terminal:4", "kind": "title", "title": "88 spin"}
+{"t": 47.802, "source": "lisp", "kind": "discovered", "agents": [], "scan_ms": 32.1040153503418, "scan_us": 1170}
+{"t": 47.805, "source": "native", "target": "terminal:4", "kind": "title", "title": "89 spin"}
+{"t": 47.907, "source": "native", "target": "terminal:4", "kind": "title", "title": "90 spin"}
+{"t": 48.014, "source": "native", "target": "terminal:4", "kind": "title", "title": "91 spin"}
+{"t": 48.123, "source": "native", "target": "terminal:4", "kind": "title", "title": "92 spin"}
+{"t": 48.227, "source": "native", "target": "terminal:4", "kind": "title", "title": "93 spin"}
+{"t": 48.336, "source": "native", "target": "terminal:4", "kind": "title", "title": "94 spin"}
+{"t": 48.457, "source": "native", "target": "terminal:4", "kind": "title", "title": "95 spin"}
+{"t": 48.585, "source": "native", "target": "terminal:4", "kind": "title", "title": "96 spin"}
+{"t": 48.705, "source": "native", "target": "terminal:4", "kind": "title", "title": "97 spin"}
+{"t": 48.83, "source": "native", "target": "terminal:4", "kind": "title", "title": "98 spin"}
+{"t": 48.955, "source": "native", "target": "terminal:4", "kind": "title", "title": "99 spin"}
+{"t": 49.063, "source": "native", "target": "terminal:4", "kind": "title", "title": "100 spin"}
+{"t": 49.252, "source": "native", "target": "terminal:4", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 49.264, "source": "native", "target": "terminal:4", "kind": "command_finished", "duration_ms": 12046.98925, "exit": 0}
+{"t": 49.266, "source": "native", "target": "terminal:4", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 49.266, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 49.797, "source": "lisp", "kind": "check", "label": "after closing T1", "process_alive": false, "status_after": "idle", "rows": 0}
+{"t": 50.851, "source": "lisp", "kind": "mark", "label": "done"}

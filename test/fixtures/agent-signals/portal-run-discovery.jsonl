@@ -1,0 +1,1022 @@
+{"fixture": "portal-gui", "scenario": "run 1: discovery, controls, Claude activity, Codex, Pi, quick terminal, exit/relaunch, close", "source": "graphical emacs -Q, Portal build with spike instrumentation", "clock": "t = seconds since the first record", "versions": {"claude": "2.1.287", "codex": "0.155.1", "pi": "0.87.0", "emacs": "31.1", "ghostty": "82938b633ba6 (libghostty-spm 1.6.20260909)"}, "recorded": "2026-10-02"}
+{"t": 0.0, "source": "native", "target": "terminal:1", "kind": "open", "directory": "~/workspace/portal/", "marker": "89962/terminal:1"}
+{"t": 0.125, "source": "lisp", "kind": "mark", "label": "opened *T3 preexisting*", "target": "terminal:1"}
+{"t": 0.138, "source": "lisp", "kind": "type", "target": "terminal:1", "text": "claude"}
+{"t": 0.268, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 0.529, "source": "native", "target": "terminal:1", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 0.529, "source": "native", "target": "terminal:1", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 0.529, "source": "native", "target": "terminal:1", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 0.588, "source": "native", "target": "terminal:1", "kind": "title", "title": "claude"}
+{"t": 1.702, "source": "native", "target": "terminal:1", "kind": "title", "title": "✳ Claude Code"}
+{"t": 1.704, "source": "native", "target": "terminal:1", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 8.202, "source": "lisp", "kind": "discovery_enabled"}
+{"t": 8.211, "source": "lisp", "kind": "mark", "label": "discovery enabled"}
+{"t": 8.239, "source": "native", "target": "terminal:2", "kind": "open", "directory": "~/workspace/portal/", "marker": "89962/terminal:2"}
+{"t": 8.272, "source": "lisp", "kind": "mark", "label": "opened *T1 claude*", "target": "terminal:2"}
+{"t": 8.28, "source": "lisp", "kind": "mark", "label": "launch T1"}
+{"t": 8.281, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "claude --model haiku"}
+{"t": 8.29, "source": "lisp", "kind": "discovered", "agents": ["terminal:1 claude 90021"], "scan_ms": 8.810997009277344, "scan_us": 5702}
+{"t": 8.45, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 8.717, "source": "native", "target": "terminal:2", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 8.718, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 8.718, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 8.775, "source": "native", "target": "terminal:2", "kind": "title", "title": "claude --model haiku"}
+{"t": 8.796, "source": "lisp", "kind": "discovered", "agents": ["terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 9.885072708129883, "scan_us": 6584}
+{"t": 8.797, "source": "lisp", "kind": "probe", "label": "T1 process visible", "ms": 515.3598785400391, "ok": true, "pid": 90935, "harness": "claude"}
+{"t": 9.875, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Claude Code"}
+{"t": 9.876, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 11.828, "source": "lisp", "kind": "claude_query_start"}
+{"t": 11.83, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | unknown | ✳ Claude Code", "*T3 preexisting* | claude | running | unknown | ✳ Claude Code"]}
+{"t": 11.868, "source": "lisp", "kind": "mark", "label": "dashboard shown"}
+{"t": 12.063, "source": "lisp", "kind": "claude_query_done", "ms": 234.71808433532715, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 12.073, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Claude Code", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 12.899, "source": "lisp", "kind": "check", "label": "rows after open", "t1": true, "t3": true}
+{"t": 12.9, "source": "lisp", "kind": "until", "label": "T1 idle at first prompt", "ms": 0.01621246337890625, "ok": true}
+{"t": 12.924, "source": "native", "target": "terminal:3", "kind": "open", "directory": "~/workspace/portal/", "marker": "89962/terminal:3"}
+{"t": 12.963, "source": "lisp", "kind": "mark", "label": "opened *T2 control*", "target": "terminal:3"}
+{"t": 13.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 13.411, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 13.411, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 13.411, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 14.997, "source": "lisp", "kind": "mark", "label": "control: synthetic claude title, progress, notifications"}
+{"t": 15.001, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "printf '\\e]0;✳ Claude Code\\a\\e]9;4;3\\a\\e]9;Claude is waiting for your input\\a'; sleep 1.2; printf '\\e]777;notify;Claude Code;Claude is waiting for your input\\a'"}
+{"t": 15.01, "source": "native", "target": "terminal:3", "kind": "title", "title": "printf '\\e]0;✳ Claude Code\\a\\e]9;4;3\\a\\e]9;Claude is waiting for your input\\a'; sleep 1.2; printf '\\e]777;notify;Claude Code;Claude is waiting for your input\\a'"}
+{"t": 15.011, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 15.011, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 15.011, "source": "native", "target": "terminal:3", "kind": "notification", "body": "Claude is waiting for your input", "title": ""}
+{"t": 16.216, "source": "native", "target": "terminal:3", "kind": "notification", "body": "Claude is waiting for your input", "title": "Claude Code"}
+{"t": 16.283, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 1271.933458, "exit": 0}
+{"t": 16.284, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 16.284, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 19.56, "source": "lisp", "kind": "check", "label": "synthetic claude title, progress, notifications", "t2_row": false, "t2_agent": false}
+{"t": 19.561, "source": "lisp", "kind": "mark", "label": "control: replay claude output"}
+{"t": 19.563, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 19.593, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 19.599, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 19.599, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.599, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 19.599, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.6, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.601, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 19.601, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 19.641, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 48.238792, "exit": 0}
+{"t": 19.643, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 19.643, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 19.643, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 19.651, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 24.099, "source": "lisp", "kind": "check", "label": "replay claude output", "t2_row": false, "t2_agent": false}
+{"t": 24.1, "source": "lisp", "kind": "mark", "label": "control: progress with percent, like a build"}
+{"t": 24.103, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "for i in 1 2 3; do printf '\\e]9;4;1;%d\\a' $((i*30)); sleep 1; done; printf '\\e]9;4;0\\a'"}
+{"t": 24.111, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 24.125, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.131, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.132, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.135, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 24.136, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.139, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 24.139, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.139, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.14, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.263, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 24.274, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 149.024709, "exit": 1}
+{"t": 24.277, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 24.277, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.277, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 24.288, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 24.388, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 28.613, "source": "lisp", "kind": "check", "label": "progress with percent, like a build", "t2_row": false, "t2_agent": false}
+{"t": 28.615, "source": "lisp", "kind": "mark", "label": "control: sleep in foreground"}
+{"t": 28.618, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "sleep 4"}
+{"t": 28.621, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 28.637, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.641, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.642, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.646, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.647, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 28.704, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 28.709, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 28.79, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 152.975417, "exit": 1}
+{"t": 28.791, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 28.792, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 28.792, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 28.799, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 28.901, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 29.017, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.134, "source": "lisp", "kind": "check", "label": "sleep in foreground", "t2_row": false, "t2_agent": false}
+{"t": 33.135, "source": "lisp", "kind": "mark", "label": "control: argv0 spoofed as claude"}
+{"t": 33.137, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "bash -c 'exec -a claude sleep 4'"}
+{"t": 33.14, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.148, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.152, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.153, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.156, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.157, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.207, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.208, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.208, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.208, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.208, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.208, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.258, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 33.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.345, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 197.092, "exit": 1}
+{"t": 33.347, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 33.347, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.347, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 33.354, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.455, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.557, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.661, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 33.765, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 37.66, "source": "lisp", "kind": "check", "label": "argv0 spoofed as claude", "t2_row": false, "t2_agent": false}
+{"t": 37.661, "source": "lisp", "kind": "mark", "label": "control: node that is not pi"}
+{"t": 37.664, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "node -e 'setTimeout(()=>{},4000)'"}
+{"t": 37.669, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 37.681, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.684, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.685, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.688, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.689, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 37.689, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.69, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.749, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 37.749, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.749, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 37.749, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.749, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.75, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.801, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 37.801, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.802, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.85, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 37.851, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.933, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 251.976083, "exit": 1}
+{"t": 37.945, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 37.945, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.945, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 37.951, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 38.066, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 38.168, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 38.282, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 38.383, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 41.962, "source": "lisp", "kind": "claude_query_start"}
+{"t": 42.183, "source": "lisp", "kind": "check", "label": "node that is not pi", "t2_row": false, "t2_agent": false}
+{"t": 42.183, "source": "lisp", "kind": "mark", "label": "control: reset title"}
+{"t": 42.184, "source": "lisp", "kind": "type", "target": "terminal:3", "text": "printf '\\e]0;\\a'; clear"}
+{"t": 42.185, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.186, "source": "lisp", "kind": "claude_query_done", "ms": 224.80201721191406, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 42.197, "source": "native", "target": "terminal:3", "kind": "title", "title": "cat $SCRATCH/probe/runs/claude2.raw; printf '\\e[?1049l\\e[0m\\n'"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.201, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.202, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.202, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.202, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.202, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.203, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.204, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.204, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.205, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.209, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.21, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.259, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.26, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.309, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 42.309, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.31, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.313, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Claude Code"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Claude Code"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.359, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◑ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "◐ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "✳ Create claude-approved.txt file"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 42.36, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.442, "source": "native", "target": "terminal:3", "kind": "command_finished", "duration_ms": 245.536083, "exit": 1}
+{"t": 42.444, "source": "native", "target": "terminal:3", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 42.444, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.444, "source": "native", "target": "terminal:3", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 42.461, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.562, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.664, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.764, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 42.864, "source": "native", "target": "terminal:3", "kind": "bell"}
+{"t": 46.748, "source": "lisp", "kind": "check", "label": "reset title", "t2_row": false, "t2_agent": false}
+{"t": 46.749, "source": "lisp", "kind": "mark", "label": "prompt T1"}
+{"t": 46.75, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "Reply with exactly the word OK and nothing else."}
+{"t": 46.825, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Claude Code"}
+{"t": 46.825, "source": "lisp", "kind": "claude_query_start"}
+{"t": 46.827, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 47.067, "source": "lisp", "kind": "claude_query_done", "ms": 241.93406105041504, "statuses": ["2868 busy", "90021 idle", "90935 busy"]}
+{"t": 47.078, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Claude Code", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 47.121, "source": "lisp", "kind": "until", "label": "T1 busy", "ms": 371.4780807495117, "ok": true}
+{"t": 47.721, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 47.784, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 47.975, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 48.172, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Reply with OK"}
+{"t": 48.172, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 48.172, "source": "lisp", "kind": "claude_query_start"}
+{"t": 48.374, "source": "lisp", "kind": "claude_query_done", "ms": 201.19595527648926, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 48.385, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 48.404, "source": "lisp", "kind": "until", "label": "T1 idle after turn", "ms": 1281.7399501800537, "ok": true}
+{"t": 48.404, "source": "lisp", "kind": "mark", "label": "permission T1"}
+{"t": 48.405, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "Use the Bash tool to run exactly this command: touch $SCRATCH/portal-gui-approved.txt"}
+{"t": 48.424, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 48.424, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 48.424, "source": "lisp", "kind": "claude_query_start"}
+{"t": 48.65, "source": "lisp", "kind": "claude_query_done", "ms": 225.1420021057129, "statuses": ["2868 busy", "90021 idle", "90935 busy"]}
+{"t": 48.66, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 49.387, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 49.966, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 50.348, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 50.4, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Reply with OK"}
+{"t": 50.4, "source": "lisp", "kind": "claude_query_start"}
+{"t": 50.622, "source": "lisp", "kind": "claude_query_done", "ms": 221.8308448791504, "statuses": ["2868 busy", "90021 idle", "90935 waiting"]}
+{"t": 50.636, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | waiting | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 50.639, "source": "lisp", "kind": "until", "label": "T1 waiting", "ms": 2233.910083770752, "ok": true}
+{"t": 50.64, "source": "lisp", "kind": "check", "label": "row while waiting", "row": "[*T1 claude* claude portal running waiting ~/workspace/portal/ ✳ Reply with OK]"}
+{"t": 52.68, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\r"}
+{"t": 52.681, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\r", "ok": true}
+{"t": 52.71, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 52.71, "source": "lisp", "kind": "claude_query_start"}
+{"t": 52.93, "source": "lisp", "kind": "claude_query_done", "ms": 219.4540500640869, "statuses": ["2868 busy", "90021 idle", "90935 busy"]}
+{"t": 52.94, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 53.67, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 53.948, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 54.022, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Reply with OK"}
+{"t": 54.022, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 54.022, "source": "lisp", "kind": "claude_query_start"}
+{"t": 54.232, "source": "lisp", "kind": "claude_query_done", "ms": 209.37395095825195, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 54.242, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 54.312, "source": "lisp", "kind": "until", "label": "T1 idle after approval", "ms": 1631.2921047210693, "ok": true}
+{"t": 54.313, "source": "lisp", "kind": "mark", "label": "deny T1"}
+{"t": 54.314, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "Use the Bash tool to run exactly this command: touch $SCRATCH/portal-gui-denied.txt"}
+{"t": 54.33, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 54.331, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 54.331, "source": "lisp", "kind": "claude_query_start"}
+{"t": 54.562, "source": "lisp", "kind": "claude_query_done", "ms": 230.7450771331787, "statuses": ["2868 busy", "90021 idle", "90935 busy"]}
+{"t": 54.572, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 55.292, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 55.973, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 56.122, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Reply with OK"}
+{"t": 56.122, "source": "lisp", "kind": "claude_query_start"}
+{"t": 56.326, "source": "lisp", "kind": "claude_query_done", "ms": 203.57203483581543, "statuses": ["2868 busy", "90021 idle", "90935 waiting"]}
+{"t": 56.336, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | waiting | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 56.357, "source": "lisp", "kind": "until", "label": "T1 waiting again", "ms": 2042.618989944458, "ok": true}
+{"t": 58.379, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x1b"}
+{"t": 58.381, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x1b", "ok": true}
+{"t": 58.444, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 87.959, "source": "lisp", "kind": "claude_query_start"}
+{"t": 88.174, "source": "lisp", "kind": "claude_query_done", "ms": 215.1801586151123, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 88.184, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 88.24, "source": "lisp", "kind": "until", "label": "T1 idle after denial", "ms": 29859.055995941162, "ok": true}
+{"t": 88.24, "source": "lisp", "kind": "mark", "label": "cancel T1"}
+{"t": 88.241, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "Use the Bash tool to run exactly this command: sleep 15"}
+{"t": 88.26, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 88.26, "source": "lisp", "kind": "claude_query_start"}
+{"t": 88.261, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "indeterminate"}
+{"t": 88.483, "source": "lisp", "kind": "claude_query_done", "ms": 222.5639820098877, "statuses": ["2868 busy", "90021 idle", "90935 busy"]}
+{"t": 88.493, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◑ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 88.498, "source": "lisp", "kind": "until", "label": "T1 busy before cancel", "ms": 256.0851573944092, "ok": true}
+{"t": 89.22, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 89.954, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | working | ◐ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 90.184, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 91.144, "source": "native", "target": "terminal:2", "kind": "title", "title": "◐ Reply with OK"}
+{"t": 92.105, "source": "native", "target": "terminal:2", "kind": "title", "title": "◑ Reply with OK"}
+{"t": 92.528, "source": "lisp", "kind": "key", "target": "terminal:2", "action": "text:\\x1b"}
+{"t": 92.53, "source": "native", "target": "terminal:2", "kind": "spike_action", "action": "text:\\x1b", "ok": true}
+{"t": 92.616, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Reply with OK"}
+{"t": 92.617, "source": "lisp", "kind": "claude_query_start"}
+{"t": 92.632, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 92.827, "source": "lisp", "kind": "claude_query_done", "ms": 210.33501625061035, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 92.837, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 92.852, "source": "lisp", "kind": "until", "label": "T1 idle after cancel", "ms": 322.22509384155273, "ok": true}
+{"t": 92.853, "source": "lisp", "kind": "mark", "label": "dashboard hidden"}
+{"t": 92.876, "source": "native", "target": "terminal:4", "kind": "open", "directory": "~/workspace/portal/", "marker": "89962/terminal:4"}
+{"t": 92.914, "source": "lisp", "kind": "mark", "label": "opened *T4 codex*", "target": "terminal:4"}
+{"t": 92.919, "source": "lisp", "kind": "type", "target": "terminal:4", "text": "codex -c model_reasoning_effort=low"}
+{"t": 93.109, "source": "native", "target": "terminal:4", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 93.444, "source": "native", "target": "terminal:4", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 93.444, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 93.444, "source": "native", "target": "terminal:4", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 93.521, "source": "native", "target": "terminal:4", "kind": "title", "title": "codex -c model_reasoning_effort=low"}
+{"t": 93.661, "source": "lisp", "kind": "discovered", "agents": ["terminal:4 codex 96090", "terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 9.75489616394043, "scan_us": 6896}
+{"t": 93.661, "source": "lisp", "kind": "probe", "label": "T4 process visible", "ms": 741.8830394744873, "ok": true, "pid": 96090, "harness": "codex"}
+{"t": 94.114, "source": "native", "target": "terminal:4", "kind": "title", "title": "portal"}
+{"t": 94.459, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ portal"}
+{"t": 95.463, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ portal"}
+{"t": 95.464, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ portal"}
+{"t": 95.502, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ portal"}
+{"t": 95.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ portal"}
+{"t": 95.805, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ portal"}
+{"t": 95.856, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ portal"}
+{"t": 95.959, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ portal"}
+{"t": 96.111, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ portal"}
+{"t": 96.264, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ portal"}
+{"t": 96.314, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ portal"}
+{"t": 96.421, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ portal"}
+{"t": 96.568, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ portal"}
+{"t": 96.621, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ portal"}
+{"t": 96.724, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ portal"}
+{"t": 96.877, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ portal"}
+{"t": 96.926, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ portal"}
+{"t": 97.027, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ portal"}
+{"t": 97.113, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ portal"}
+{"t": 97.22, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ portal"}
+{"t": 97.372, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ portal"}
+{"t": 97.422, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ portal"}
+{"t": 97.524, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ portal"}
+{"t": 97.675, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ portal"}
+{"t": 97.726, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ portal"}
+{"t": 97.827, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ portal"}
+{"t": 97.989, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ portal"}
+{"t": 98.05, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ portal"}
+{"t": 98.056, "source": "native", "target": "terminal:4", "kind": "title", "title": "portal"}
+{"t": 99.752, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | portal", "*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 99.752, "source": "lisp", "kind": "mark", "label": "dashboard shown"}
+{"t": 100.765, "source": "lisp", "kind": "check", "label": "codex row after reopen", "row": "[*T4 codex* codex portal running idle ~/workspace/portal/ portal]"}
+{"t": 100.768, "source": "lisp", "kind": "mark", "label": "prompt T4"}
+{"t": 100.771, "source": "lisp", "kind": "type", "target": "terminal:4", "text": "Reply with exactly the word OK."}
+{"t": 100.871, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ portal"}
+{"t": 100.882, "source": "lisp", "kind": "until", "label": "T4 working", "ms": 110.20112037658691, "ok": true}
+{"t": 100.941, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ portal"}
+{"t": 101.043, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ portal"}
+{"t": 101.145, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ portal"}
+{"t": 101.212, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ portal"}
+{"t": 101.315, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ portal"}
+{"t": 101.426, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ portal"}
+{"t": 101.538, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ portal"}
+{"t": 101.615, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ portal"}
+{"t": 101.617, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ renaming... ⠴ | portal"}
+{"t": 101.726, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ renaming... ⠦ | portal"}
+{"t": 101.834, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ renaming... ⠧ | portal"}
+{"t": 101.834, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | working | ⠦ renaming... ⠦ | portal", "*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ renaming... ⠇ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ renaming... ⠏ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ renaming... ⠋ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ renaming... ⠙ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ renaming... ⠹ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ renaming... ⠸ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ renaming... ⠼ | portal"}
+{"t": 102.704, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ renaming... ⠴ | portal"}
+{"t": 102.74, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ renaming... ⠦ | portal"}
+{"t": 102.841, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ renaming... ⠧ | portal"}
+{"t": 102.942, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ renaming... ⠇ | portal"}
+{"t": 103.044, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ renaming... ⠏ | portal"}
+{"t": 103.113, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ renaming... ⠋ | portal"}
+{"t": 103.219, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ renaming... ⠙ | portal"}
+{"t": 103.325, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ renaming... ⠹ | portal"}
+{"t": 103.433, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ renaming... ⠸ | portal"}
+{"t": 103.514, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ renaming... ⠼ | portal"}
+{"t": 103.616, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ renaming... ⠴ | portal"}
+{"t": 103.718, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ renaming... ⠦ | portal"}
+{"t": 103.838, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ renaming... ⠧ | portal"}
+{"t": 103.941, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ renaming... ⠇ | portal"}
+{"t": 104.018, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ renaming... ⠏ | portal"}
+{"t": 104.142, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠋ renaming... ⠋ | portal"}
+{"t": 104.245, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠙ renaming... ⠙ | portal"}
+{"t": 104.315, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠹ renaming... ⠹ | portal"}
+{"t": 104.42, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠸ renaming... ⠸ | portal"}
+{"t": 104.551, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ renaming... ⠼ | portal"}
+{"t": 104.607, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠼ portal"}
+{"t": 104.611, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠴ Reply OK | portal"}
+{"t": 104.721, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠦ Reply OK | portal"}
+{"t": 104.823, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠧ Reply OK | portal"}
+{"t": 104.913, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠇ Reply OK | portal"}
+{"t": 105.014, "source": "native", "target": "terminal:4", "kind": "title", "title": "⠏ Reply OK | portal"}
+{"t": 105.07, "source": "native", "target": "terminal:4", "kind": "title", "title": "Reply OK | portal"}
+{"t": 105.084, "source": "lisp", "kind": "until", "label": "T4 idle", "ms": 4201.512098312378, "ok": true}
+{"t": 105.836, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | Reply OK | portal", "*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 107.611, "source": "lisp", "kind": "check", "label": "codex row idle", "row": "[*T4 codex* codex portal running idle ~/workspace/portal/ Reply OK | portal]"}
+{"t": 107.613, "source": "lisp", "kind": "type", "target": "terminal:4", "text": "/quit"}
+{"t": 122.753, "source": "lisp", "kind": "probe", "label": "T4 gone after quit", "ms": 15138.132095336914, "ok": false, "pid": 96090, "harness": "codex"}
+{"t": 122.773, "source": "native", "target": "terminal:5", "kind": "open", "directory": "~/workspace/portal/", "marker": "89962/terminal:5"}
+{"t": 122.82, "source": "lisp", "kind": "mark", "label": "opened *T5 pi*", "target": "terminal:5"}
+{"t": 122.825, "source": "lisp", "kind": "type", "target": "terminal:5", "text": "pi"}
+{"t": 122.993, "source": "native", "target": "terminal:5", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 123.26, "source": "native", "target": "terminal:5", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 123.26, "source": "native", "target": "terminal:5", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 123.26, "source": "native", "target": "terminal:5", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 123.308, "source": "native", "target": "terminal:5", "kind": "title", "title": "pi"}
+{"t": 123.451, "source": "lisp", "kind": "discovered", "agents": ["terminal:5 pi 98103", "terminal:4 codex 96090", "terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 19.054889678955078, "scan_us": 10612}
+{"t": 123.452, "source": "lisp", "kind": "probe", "label": "T5 process visible", "ms": 625.694990158081, "ok": true, "pid": 98103, "harness": "pi"}
+{"t": 123.841, "source": "lisp", "kind": "discovered", "agents": ["terminal:4 codex 96090", "terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 12.005805969238281, "scan_us": 7832}
+{"t": 123.842, "source": "lisp", "kind": "claude_query_start"}
+{"t": 124.154, "source": "lisp", "kind": "claude_query_done", "ms": 312.11113929748535, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 126.488, "source": "lisp", "kind": "check", "label": "pi row at trust dialog", "row": "nil"}
+{"t": 126.49, "source": "lisp", "kind": "key", "target": "terminal:5", "action": "text:\\x1b"}
+{"t": 126.491, "source": "native", "target": "terminal:5", "kind": "spike_action", "action": "text:\\x1b", "ok": true}
+{"t": 126.735, "source": "native", "target": "terminal:5", "kind": "title", "title": "π - portal"}
+{"t": 129.498, "source": "native", "target": "terminal:5", "kind": "spike_action", "action": "text:\\x04", "ok": true}
+{"t": 129.498, "source": "lisp", "kind": "key", "target": "terminal:5", "action": "text:\\x04"}
+{"t": 129.555, "source": "lisp", "kind": "probe", "label": "T5 gone after ctrl-d", "ms": 56.448936462402344, "ok": true, "pid": null, "harness": null}
+{"t": 129.557, "source": "native", "target": "terminal:5", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 129.557, "source": "native", "target": "terminal:5", "kind": "title", "title": "π - portal"}
+{"t": 129.557, "source": "lisp", "kind": "key", "target": "terminal:5", "action": "text:\\x03"}
+{"t": 129.629, "source": "native", "target": "terminal:5", "kind": "command_finished", "duration_ms": 6320.967708, "exit": 0}
+{"t": 129.631, "source": "native", "target": "terminal:5", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 129.631, "source": "native", "target": "terminal:5", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 130.099, "source": "lisp", "kind": "key", "target": "terminal:5", "action": "text:\\x03"}
+{"t": 130.1, "source": "native", "target": "terminal:5", "kind": "spike_action", "action": "text:\\x03", "ok": true}
+{"t": 130.159, "source": "lisp", "kind": "probe", "label": "T5 gone after ctrl-c", "ms": 58.60400199890137, "ok": true, "pid": null, "harness": null}
+{"t": 130.16, "source": "lisp", "kind": "mark", "label": "quick terminal"}
+{"t": 130.177, "source": "native", "target": "terminal:6", "kind": "open", "directory": "~/", "marker": "89962/terminal:6"}
+{"t": 130.206, "source": "lisp", "kind": "type", "target": "terminal:6", "text": "claude"}
+{"t": 130.225, "source": "native", "target": "terminal:5", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 130.225, "source": "native", "target": "terminal:5", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 130.397, "source": "native", "target": "terminal:6", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 130.799, "source": "native", "target": "terminal:6", "kind": "pwd", "pwd": "~"}
+{"t": 130.799, "source": "native", "target": "terminal:6", "kind": "title", "title": "~"}
+{"t": 130.8, "source": "native", "target": "terminal:6", "kind": "title", "title": "~"}
+{"t": 130.851, "source": "native", "target": "terminal:6", "kind": "title", "title": "claude"}
+{"t": 130.932, "source": "lisp", "kind": "discovered", "agents": ["terminal:6 claude 98913", "terminal:4 codex 96090", "terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 12.918949127197266, "scan_us": 9778}
+{"t": 130.932, "source": "lisp", "kind": "probe", "label": "quick process visible", "ms": 725.3720760345459, "ok": true, "pid": 98913, "harness": "claude"}
+{"t": 131.851, "source": "lisp", "kind": "claude_query_start"}
+{"t": 131.853, "source": "lisp", "kind": "rows", "rows": ["*portal-quick:~/* | claude | running | unknown | claude", "*T4 codex* | codex | running | idle | Reply OK | portal", "*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 132.078, "source": "lisp", "kind": "claude_query_done", "ms": 226.44710540771484, "statuses": ["2868 busy", "90021 idle", "90935 idle"]}
+{"t": 133.992, "source": "lisp", "kind": "check", "label": "three claude rows", "rows": ["[*T1 claude* claude portal running idle ~/workspace/portal/ ✳ Reply with OK]", "[*T3 preexisting* claude portal running idle ~/workspace/portal/ ✳ Claude Code]", "[*portal-quick:~/* claude ~ running unknown ~/ claude]"]}
+{"t": 133.993, "source": "lisp", "kind": "type", "target": "terminal:6", "text": "/exit"}
+{"t": 134.005, "source": "native", "target": "terminal:6", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 134.005, "source": "native", "target": "terminal:6", "kind": "title", "title": "~"}
+{"t": 134.562, "source": "lisp", "kind": "discovered", "agents": ["terminal:4 codex 96090", "terminal:2 claude 90935", "terminal:1 claude 90021"], "scan_ms": 15.56396484375, "scan_us": 11035}
+{"t": 134.563, "source": "lisp", "kind": "probe", "label": "quick gone after exit", "ms": 569.2169666290283, "ok": true, "pid": null, "harness": null}
+{"t": 134.624, "source": "native", "target": "terminal:6", "kind": "command_finished", "duration_ms": 3772.551084, "exit": 1}
+{"t": 134.624, "source": "native", "target": "terminal:6", "kind": "pwd", "pwd": "~"}
+{"t": 134.624, "source": "native", "target": "terminal:6", "kind": "title", "title": "~"}
+{"t": 134.624, "source": "native", "target": "terminal:6", "kind": "title", "title": "~"}
+{"t": 134.628, "source": "lisp", "kind": "check", "label": "RET visit", "buffer": "*T1 claude*"}
+{"t": 134.639, "source": "lisp", "kind": "claude_query_start"}
+{"t": 134.641, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | Reply OK | portal", "*T1 claude* | claude | running | idle | ✳ Reply with OK", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 134.641, "source": "lisp", "kind": "mark", "label": "dashboard shown"}
+{"t": 134.643, "source": "lisp", "kind": "mark", "label": "exit T1"}
+{"t": 134.645, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "/exit"}
+{"t": 134.71, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 134.71, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 134.71, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 134.71, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 134.925, "source": "lisp", "kind": "claude_query_done", "ms": 285.6171131134033, "statuses": ["2868 busy", "90021 idle"]}
+{"t": 134.937, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | Reply OK | portal", "*T1 claude* | claude | running | unknown | ~/workspace/portal/", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 135.623, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 135.635, "source": "native", "target": "terminal:2", "kind": "command_finished", "duration_ms": 126859.116625, "exit": 0}
+{"t": 135.636, "source": "native", "target": "terminal:2", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 135.636, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 135.636, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 135.713, "source": "lisp", "kind": "discovered", "agents": ["terminal:4 codex 96090", "terminal:1 claude 90021"], "scan_ms": 9.747028350830078, "scan_us": 6385}
+{"t": 135.713, "source": "lisp", "kind": "probe", "label": "T1 gone after exit", "ms": 1067.5039291381836, "ok": true, "pid": null, "harness": null}
+{"t": 136.732, "source": "lisp", "kind": "claude_query_start"}
+{"t": 136.733, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | Reply OK | portal", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 136.939, "source": "lisp", "kind": "claude_query_done", "ms": 207.41581916809082, "statuses": ["2868 busy", "90021 idle"]}
+{"t": 138.219, "source": "lisp", "kind": "check", "label": "T1 row after exit", "row": false}
+{"t": 138.22, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "claude --model haiku"}
+{"t": 138.257, "source": "native", "target": "terminal:2", "kind": "title", "title": "claude --model haiku"}
+{"t": 138.389, "source": "lisp", "kind": "discovered", "agents": ["terminal:2 claude 99239", "terminal:4 codex 96090", "terminal:1 claude 90021"], "scan_ms": 10.296821594238281, "scan_us": 7528}
+{"t": 138.39, "source": "lisp", "kind": "probe", "label": "T1 relaunched", "ms": 169.04616355895996, "ok": true, "pid": 99239, "harness": "claude"}
+{"t": 138.39, "source": "lisp", "kind": "check", "label": "relaunch", "old": 90935, "new": 99239, "status_at_relaunch": false}
+{"t": 138.715, "source": "lisp", "kind": "claude_query_start"}
+{"t": 138.716, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | unknown | claude --model haiku", "*T4 codex* | codex | running | idle | Reply OK | portal", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 138.902, "source": "lisp", "kind": "claude_query_done", "ms": 187.32213973999023, "statuses": ["2868 busy", "90021 idle"]}
+{"t": 139.375, "source": "native", "target": "terminal:2", "kind": "title", "title": "✳ Claude Code"}
+{"t": 139.376, "source": "lisp", "kind": "claude_query_start"}
+{"t": 139.393, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 139.661, "source": "lisp", "kind": "claude_query_done", "ms": 285.39490699768066, "statuses": ["2868 busy", "90021 idle", "99239 idle"]}
+{"t": 139.675, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Claude Code", "*T4 codex* | codex | running | idle | Reply OK | portal", "*T3 preexisting* | claude | running | idle | ✳ Claude Code"]}
+{"t": 139.734, "source": "lisp", "kind": "until", "label": "T1 relaunch idle", "ms": 1343.832015991211, "ok": true}
+{"t": 139.735, "source": "lisp", "kind": "mark", "label": "close T3"}
+{"t": 139.735, "source": "lisp", "kind": "claude_query_start"}
+{"t": 139.974, "source": "lisp", "kind": "claude_query_done", "ms": 238.43908309936523, "statuses": ["2868 busy", "90021 idle", "99239 idle"]}
+{"t": 139.985, "source": "lisp", "kind": "discovered", "agents": ["terminal:2 claude 99239", "terminal:4 codex 96090"], "scan_ms": 10.828971862792969, "scan_us": 7513}
+{"t": 139.986, "source": "lisp", "kind": "claude_query_start"}
+{"t": 139.987, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | idle | ✳ Claude Code", "*T4 codex* | codex | running | idle | Reply OK | portal"]}
+{"t": 140.227, "source": "lisp", "kind": "claude_query_done", "ms": 241.35279655456543, "statuses": ["2868 busy", "99239 idle"]}
+{"t": 142.793, "source": "lisp", "kind": "check", "label": "after closing T3", "process_alive": false, "status_after": false, "rows": 2}
+{"t": 142.795, "source": "lisp", "kind": "type", "target": "terminal:2", "text": "/exit"}
+{"t": 142.839, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 142.841, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 142.842, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 142.842, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 142.843, "source": "lisp", "kind": "claude_query_start"}
+{"t": 143.096, "source": "lisp", "kind": "claude_query_done", "ms": 253.04388999938965, "statuses": ["2868 busy"]}
+{"t": 143.108, "source": "lisp", "kind": "rows", "rows": ["*T1 claude* | claude | running | unknown | ~/workspace/portal/", "*T4 codex* | codex | running | idle | Reply OK | portal"]}
+{"t": 144.216, "source": "lisp", "kind": "discovered", "agents": ["terminal:4 codex 96090"], "scan_ms": 11.278867721557617, "scan_us": 7571}
+{"t": 144.217, "source": "lisp", "kind": "probe", "label": "T1 gone at end", "ms": 1420.9070205688477, "ok": true, "pid": null, "harness": null}
+{"t": 144.243, "source": "native", "target": "terminal:2", "kind": "progress", "percent": -1, "state": "remove"}
+{"t": 144.254, "source": "native", "target": "terminal:2", "kind": "command_finished", "duration_ms": 5997.628375, "exit": 0}
+{"t": 144.255, "source": "native", "target": "terminal:2", "kind": "pwd", "pwd": "~/workspace/portal/"}
+{"t": 144.255, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 144.255, "source": "native", "target": "terminal:2", "kind": "title", "title": "~/workspace/portal/"}
+{"t": 144.738, "source": "lisp", "kind": "rows", "rows": ["*T4 codex* | codex | running | idle | Reply OK | portal"]}
+{"t": 146.222, "source": "lisp", "kind": "mark", "label": "done"}
+{"t": 146.736, "source": "lisp", "kind": "rows", "rows": []}

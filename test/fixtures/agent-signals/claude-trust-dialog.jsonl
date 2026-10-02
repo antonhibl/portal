@@ -1,0 +1,9 @@
+{"fixture": "agent-signals", "harness": "claude", "version": "2.1.287", "scenario": "untrusted folder: trust dialog, declined", "source": "headless pty (test harness answers terminal queries)", "clock": "t = seconds since spawn", "terminal": {"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty", "TERM_PROGRAM_VERSION": "1.3.2-HEAD-+82938b633", "COLORTERM": "truecolor", "INSIDE_EMACS": "portal-ghostty", "size": "120x40"}, "recorded": "2026-10-02"}
+{"t": 0.002, "kind": "spawn", "argv": ["claude", "--model", "haiku"]}
+{"t": 0.208, "kind": "claude_agents_status", "status": "absent"}
+{"t": 0.6, "kind": "focus_reporting", "enabled": true}
+{"t": 6.008, "kind": "step", "label": "trust-dialog"}
+{"t": 6.269, "kind": "progress", "state": 0}
+{"t": 6.27, "kind": "title", "title": ""}
+{"t": 6.27, "kind": "focus_reporting", "enabled": false}
+{"t": 8.221, "kind": "exit", "wait_status": 0}

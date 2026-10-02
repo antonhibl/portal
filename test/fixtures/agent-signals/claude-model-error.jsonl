@@ -1,0 +1,26 @@
+{"fixture": "agent-signals", "harness": "claude", "version": "2.1.287", "scenario": "turn fails: unknown model", "source": "headless pty (test harness answers terminal queries)", "clock": "t = seconds since spawn", "terminal": {"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty", "TERM_PROGRAM_VERSION": "1.3.2-HEAD-+82938b633", "COLORTERM": "truecolor", "INSIDE_EMACS": "portal-ghostty", "size": "120x40"}, "recorded": "2026-10-02"}
+{"t": 0.002, "kind": "spawn", "argv": ["claude", "--model", "claude-nonexistent-spike-model"]}
+{"t": 0.235, "kind": "claude_agents_status", "status": "absent"}
+{"t": 0.687, "kind": "focus_reporting", "enabled": true}
+{"t": 1.114, "kind": "focus_reporting", "enabled": false}
+{"t": 1.214, "kind": "focus_reporting", "enabled": true}
+{"t": 1.221, "kind": "title", "title": "✳ Claude Code"}
+{"t": 1.222, "kind": "progress", "state": 0}
+{"t": 1.516, "kind": "claude_agents_status", "status": "idle"}
+{"t": 4.625, "kind": "step", "label": "submitted-bad-model"}
+{"t": 4.646, "kind": "title", "title": "◐ Claude Code"}
+{"t": 4.649, "kind": "progress", "state": 3}
+{"t": 4.729, "kind": "claude_agents_status", "status": "busy"}
+{"t": 5.608, "kind": "title", "title": "◑ Claude Code"}
+{"t": 5.747, "kind": "title", "title": "✳ Claude Code"}
+{"t": 5.747, "kind": "progress", "state": 0}
+{"t": 5.908, "kind": "title", "title": "✳ OK"}
+{"t": 5.957, "kind": "claude_agents_status", "status": "idle"}
+{"t": 14.631, "kind": "step", "label": "after-failure"}
+{"t": 15.773, "kind": "progress", "state": 0}
+{"t": 15.773, "kind": "focus_reporting", "enabled": false}
+{"t": 15.775, "kind": "progress", "state": 0}
+{"t": 15.776, "kind": "progress", "state": 0}
+{"t": 15.776, "kind": "title", "title": ""}
+{"t": 16.377, "kind": "claude_agents_status", "status": "absent"}
+{"t": 16.815, "kind": "exit", "wait_status": 0}
