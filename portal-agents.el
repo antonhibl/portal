@@ -295,7 +295,12 @@ tracked again.  A later run is discovered normally."
     (unless (or session agent) (user-error "Not a tracked or discovered terminal: %s" buffer))
     (setq portal-agents--tracked (delq session portal-agents--tracked))
     (when agent
-      (cl-pushnew (portal-agent-discovery--identity agent) portal-agent-discovery--hidden :test #'equal))
+      (cl-pushnew (portal-agent-discovery--identity agent) portal-agent-discovery--hidden :test #'equal)
+      ;; Hidden runs are not observed.  Reject outstanding replies and require
+      ;; a fresh observation if this incarnation is tracked again.
+      (cl-incf (portal-agent-revision agent))
+      (setf (portal-agent-signal agent) nil)
+      (portal-agent-discovery--unknown agent "Status unobserved while untracked"))
     (portal-agents--changed)))
 
 (defun portal-agents-visit ()

@@ -581,6 +581,22 @@ existing identity, metadata and redraw contracts.
   now runs 20 ERT tests, including the ten dashboard tests; terminal metadata
   runs seven. No findings are deferred.
 
+*** Review follow-up: retracked activity
+Addressed the finding from the review of =dc3025e= in PR #65 on 2026-10-03.
+Untracking now invalidates cached activity and outstanding requests, and clears
+the observed signal. Tracking the same run again shows =unknown= until fresh
+status arrives. Live collection queries on the next tick; manual collection
+still requires an explicit refresh. This repairs the existing freshness contract
+without changing interfaces, dependencies or collection policy.
+
+- The regression first reproduced the stale =working= row. It now passes with
+  live updates both on and off, with no outstanding query, and with an old reply
+  arriving while hidden or after retracking. Fresh replies restore activity;
+  changing a visible run's label retains its verified activity.
+- Native build, all 27 CTest suites, host Biome/type checking and changed Lisp
+  byte compilation with warnings treated as errors pass. The discovery suite
+  now runs 21 ERT tests. No findings are deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex

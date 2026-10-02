@@ -94,6 +94,42 @@
       (should (equal (portal-discovery-test--status one) "unknown"))
       (should (equal (nth 1 (portal-agents-test--row one)) "Claude")))))
 
+(ert-deftest portal-discovery-retracking-requires-fresh-status ()
+  (dolist (live '(nil t))
+    ;; A request from before untracking may finish while hidden or retracked.
+    (dolist (completion '(nil hidden retracked))
+      (portal-discovery-test--environment
+        (let ((portal-agents-live-update live)
+              (terminal (portal-agents-test--open "one/app")))
+          (setq portal-discovery-test--processes (list (portal-discovery-test--process terminal 10)))
+          (portal-agents-test--show)
+          (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"}]")
+          (should (equal (portal-discovery-test--status terminal) "working"))
+          (when completion (portal-agent-discovery--collect t))
+          (portal-agents-untrack terminal)
+          (should-not (portal-agents-test--row terminal))
+          (when (eq completion 'hidden)
+            (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"}]"))
+          ;; No title or progress change: the gap alone invalidates activity.
+          (portal-agents-track terminal "My reviewer")
+          (should (equal (portal-discovery-test--status terminal) "unknown"))
+          (when (eq completion 'retracked)
+            (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"}]")
+            (should (equal (portal-discovery-test--status terminal) "unknown")))
+          (portal-agents--tick)
+          (unless live
+            (should-not portal-agent-discovery--process)
+            (with-current-buffer portal-agents--buffer (revert-buffer)))
+          (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"idle\"}]")
+          (should (equal (portal-discovery-test--status terminal) "idle"))
+          (should (equal (nth 1 (portal-agents-test--row terminal)) "My reviewer"))
+          ;; Merely changing a visible run's label preserves verified activity.
+          (let ((queries portal-discovery-test--queries))
+            (portal-agents-track terminal "Renamed reviewer")
+            (portal-agents--tick)
+            (should (equal (portal-discovery-test--status terminal) "idle"))
+            (should (= portal-discovery-test--queries queries))))))))
+
 (ert-deftest portal-discovery-spoofed-runtime-does-not-create-a-row ()
   (portal-discovery-test--environment
     (let* ((terminal (portal-agents-test--open "one/app"))
