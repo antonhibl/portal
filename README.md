@@ -802,6 +802,50 @@ setting it back to `TODO` in its detail or with `t`. Reopening or cancelling
 changes only the keyword, so the task's sections stay. Cancelling a task does
 not stop a terminal working on it.
 
+### Starting Claude on a task
+
+`M-x portal-tasks-implement` starts Claude on an actionable task: the one on
+the view's line, or the one point is in, in the task detail or in
+`project.org` itself. No key is bound to it; bind one if you like. Claude runs
+in a new terminal in another pane, named after the task, such as
+`*claude: search-index*`, at the project root. The program and its arguments
+are `portal-tasks-claude-program` and `portal-tasks-claude-arguments`, read at
+each start, then the initial prompt; [Implementing a task](#implementing-a-task)
+describes them and the shell that finds the program. The first time Claude runs in a
+folder, it may ask whether you trust it.
+
+The task is judged again first, from `project.org` and its archives as they
+are in Emacs. A task that is not actionable starts nothing, and the message
+says why. If `project.org` has unsaved changes, Emacs offers to save it;
+declining, or a failed save, starts nothing and keeps the edits. So does a
+save hook that changes the buffer or the file again, and a `project.org`
+changed on disk since Emacs read it: revert or save it, then try again.
+
+The initial prompt has Claude read the task's brief first and implement the
+task, following the repository's instructions. Once the work and its checks
+pass, Claude is to mark the task `DONE` in `project.org`, found by its
+`CUSTOM_ID`, and record its verification there, normally in the
+implementation's pull request. Starting Claude changes no task. There is no
+shared in-progress state: other checkouts see the task done through Git.
+
+The brief is a new file in `temporary-file-directory` that only you can read
+and no one can write, such as
+`portal-task-search-index-AbC123.org`. It holds the task's subtree as saved,
+with its child sections, and nothing else: no neighboring tasks or
+prerequisites. Comments before it give the project, the path of
+`project.org`, the task's `CUSTOM_ID`, the lines it was on and the SHA-256 of
+the saved file. Links in the task stay relative to `project.org`, and the line
+numbers only record where it was. The prompt names the brief with an `@`
+mention, so Claude Code attaches it to the first message under its normal
+permissions, with no tool call or permission prompt. The brief lasts as long
+as its terminal. It is deleted when the buffer is killed, `C-c C-k` ends the
+terminal, or Emacs exits; if Emacs itself is killed, it stays in the
+temporary directory.
+
+Running the command on a task whose terminal still exists shows that
+terminal instead of starting another run. `C-u M-x portal-tasks-implement`
+starts another.
+
 ## Task browser
 
 `M-x portal-tasks-browser`, or `(portal-tasks-browser)` from Lisp, lists the
@@ -1405,7 +1449,16 @@ back to each link's place and to the view on its task, even after another pane
 moved the view, or the All tasks view was killed; that typing, `C-c C-t`, undo and
 saving there change the file's buffer, unsaved edits surviving the way back
 and a reopened detail; and that closed tasks reopen and blocked tasks change
-state.
+state. `portal-tasks-implement` tests start Claude, as the fake terminal
+records it, from a view line, the detail and `project.org`, in a project
+whose path has spaces and quotes. They check the literal arguments and
+directory, the brief's provenance and exact subtree beside 3000-line
+neighbors, an unchanged file, showing a task's terminal again, an explicit
+second run, and each brief deleted with its terminal. Blocked, closed,
+unidentified and other files' tasks, declining to save, a failed save, a
+save hook that changes the buffer or the file again, a file changed on disk
+and a terminal that fails to start each start nothing, and an accepted save
+puts the edit in the brief.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise

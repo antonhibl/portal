@@ -24,6 +24,12 @@ Supply the selected subtree and relevant file-level settings or prerequisite
 context instead of loading the entire file. A line range is a snapshot; the ID
 is the durable locator.
 
+`M-x portal-tasks-implement` starts an agent on a task with a brief: a
+read-only snapshot of the task's subtree, with comments naming its project,
+`project.org`, `CUSTOM_ID`, line range and source digest. Links in the brief
+are relative to that `project.org`. Never edit the brief; update the task in
+`project.org` by its `CUSTOM_ID`.
+
 ## Author a task
 
 Use level-one headings for areas and level-two headings for tasks. Each task

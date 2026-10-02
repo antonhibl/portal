@@ -758,5 +758,244 @@ The detail is narrowed to all of that task."
                        "Blocked (1)" "TODO After — waiting for dropped (CANCELLED) :task:"
                        "Closed (2)" "CANCELLED Dropped :task:" "DONE Waiting :task:"))))))
 
+(defun portal-tasks-view-test--launch ()
+  "Return the latest terminal start as (DIRECTORY ARGV BRIEF).
+ARGV is a list, and BRIEF the file its last argument names with @."
+  (let* ((options (cadr (car (last (portal-fake-native-calls 'portal--open)))))
+         (argv (append (json-parse-string (plist-get options :argv)) nil))
+         (prompt (car (last argv))))
+    (list (plist-get options :directory) argv
+          (and (string-match "@\"\\([^\"]+\\)\"" prompt) (match-string 1 prompt)))))
+
+(defun portal-tasks-view-test--read (file)
+  "Return FILE's text."
+  (with-temp-buffer (insert-file-contents file) (buffer-string)))
+
+(defun portal-tasks-view-test--brief-directory ()
+  "Make and return this test's directory for briefs."
+  (let ((directory (expand-file-name "briefs/" portal-tasks-view-test--directory)))
+    (make-directory directory)
+    directory))
+
+(defun portal-tasks-view-test--briefs ()
+  "Return the files in `temporary-file-directory', where briefs go."
+  (directory-files temporary-file-directory t directory-files-no-dot-files-regexp))
+
+(defun portal-tasks-view-test--implement (view title &optional new)
+  "Show VIEW in the selected pane and implement its task TITLE, NEW if non-nil."
+  (switch-to-buffer view)
+  (portal-tasks-view-test--goto view title)
+  (portal-tasks-implement new))
+
+(ert-deftest portal-tasks-implement-starts-claude-on-a-brief-of-one-task ()
+  (portal-tasks-view-test--environment
+    (let* ((temporary-file-directory (portal-tasks-view-test--brief-directory))
+           (neighbor (mapconcat (lambda (n) (format "Neighbor line %d.\n" n))
+                                (number-sequence 1 3000)))
+           (file (portal-tasks-view-test--project
+                  "it's a \"spaced\" app"
+                  (portal-tasks-view-test--task "DONE Before" :id "before"
+                                                :body (concat "Prerequisite body.\n" neighbor))
+                  (portal-tasks-view-test--task
+                   "TODO Target" :id "target" :depends "before"
+                   :body (concat "Target body.\n*** Plan\nSee [[#before][Before]] and "
+                                 "[[file:docs/x.md][x]].\n**** Detail\nDeep.\n"))
+                  (portal-tasks-view-test--task "TODO After" :id "after" :body neighbor)))
+           (root (file-name-directory file))
+           (saved (portal-tasks-view-test--read file))
+           (start (string-search "** TODO Target" saved))
+           (subtree (substring saved start (string-search "** TODO After" saved)))
+           (first-line (1+ (cl-count ?\n saved :end start)))
+           (digest (with-temp-buffer
+                     (set-buffer-multibyte nil)
+                     (insert-file-contents-literally file)
+                     (secure-hash 'sha256 (current-buffer))))
+           (portal-tasks-claude-program "claude probe")
+           (portal-tasks-claude-arguments '("--model" "a 'b' \"c\""))
+           (view (portal-tasks-view-test--open file))
+           (source (find-buffer-visiting file)))
+      ;; From a line of the task view.
+      (let ((terminal (portal-tasks-view-test--implement view "Target")))
+        (should (eq (window-buffer) terminal))
+        (should (equal (buffer-name terminal) "*claude: target*"))
+        (pcase-let ((`(,directory ,argv ,brief) (portal-tasks-view-test--launch)))
+          ;; Claude starts at the project root with literal arguments.
+          (should (equal directory root))
+          (should (equal (butlast argv) '("claude probe" "--model" "a 'b' \"c\"")))
+          (should (string-search (format "of task target in %s," file) (car (last argv))))
+          (should (string-search "mark the task DONE in project.org" (car (last argv))))
+          ;; The brief is a new read-only file: provenance, then exactly the
+          ;; saved subtree, without its neighbors or prerequisites.
+          (should (equal (portal-tasks-view-test--briefs) (list brief)))
+          (should (= (file-modes brief) #o400))
+          (let* ((text (portal-tasks-view-test--read brief))
+                 (header (split-string (substring text 0 (string-search "\n\n" text)) "\n")))
+            (should (equal (substring text (+ 2 (string-search "\n\n" text))) subtree))
+            (should (member (concat "# Project: " root) header))
+            (should (member (concat "# Source: " file) header))
+            (should (member "# CUSTOM_ID: target" header))
+            (should (member (format "# Lines: %d-%d" first-line
+                                    (+ first-line (cl-count ?\n subtree) -1))
+                            header))
+            (should (member (concat "# Source SHA-256: " digest) header))
+            (should-not (string-search "Neighbor" text))
+            (should-not (string-search "Prerequisite" text)))
+          ;; Starting changes no task.
+          (should (equal (portal-tasks-view-test--read file) saved))
+          (should-not (buffer-modified-p source))
+          ;; Again, the task's terminal is shown; another run is explicit.
+          (should (eq (portal-tasks-view-test--implement view "Target") terminal))
+          (should (eq (window-buffer) terminal))
+          (should (= (length (portal-fake-native-calls 'portal--open)) 1))
+          (let ((again (portal-tasks-view-test--implement view "Target" t))
+                (second (nth 2 (portal-tasks-view-test--launch))))
+            (should-not (eq again terminal))
+            (should-not (equal second brief))
+            (should (equal (portal-tasks-view-test--read second)
+                           (portal-tasks-view-test--read brief)))
+            (should (eq (portal-tasks-view-test--implement view "Target") again))
+            ;; A brief lasts as long as its terminal.
+            (kill-buffer again)
+            (should-not (file-exists-p second))
+            (should (file-exists-p brief))
+            (should (eq (portal-tasks-view-test--implement view "Target") terminal))
+            (with-current-buffer terminal (portal-terminal-close))
+            (should-not (portal-tasks-view-test--briefs)))))
+      ;; From inside a task, in its detail or in project.org.
+      (switch-to-buffer view)
+      (portal-tasks-view-test--goto view "After")
+      (portal-tasks-open)
+      (goto-char (point-max))
+      (should (equal (buffer-name (portal-tasks-implement)) "*claude: after*"))
+      (let ((text (portal-tasks-view-test--read (nth 2 (portal-tasks-view-test--launch)))))
+        (should (string-search "\n\n** TODO After :task:\n" text))
+        (should (string-suffix-p "Neighbor line 3000.\n" text))
+        (should-not (string-search "Target" text)))
+      (switch-to-buffer source)
+      (goto-char (point-min))
+      (search-forward "Deep.")
+      ;; The closed terminal's buffer keeps its name.
+      (should (equal (buffer-name (portal-tasks-implement)) "*claude: target*<2>"))
+      (should (string-search "\n\n** TODO Target :task:\n"
+                             (portal-tasks-view-test--read (nth 2 (portal-tasks-view-test--launch))))))))
+
+(ert-deftest portal-tasks-implement-starts-nothing-unless-actionable-and-saved ()
+  (portal-tasks-view-test--environment
+    (let* ((temporary-file-directory (portal-tasks-view-test--brief-directory))
+           (file (portal-tasks-view-test--project
+                  "app"
+                  (portal-tasks-view-test--task "TODO First" :id "first" :body "Body.\n")
+                  (portal-tasks-view-test--task "TODO Second" :id "second" :depends "first")
+                  (portal-tasks-view-test--task "DONE Shipped" :id "shipped")
+                  (portal-tasks-view-test--task "TODO Anonymous")
+                  "** Notes\nNot a task.\n"))
+           (view (portal-tasks-view-test--open file))
+           (source (find-buffer-visiting file))
+           (saved (portal-tasks-view-test--read file))
+           (answer nil)
+           (asked 0))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) (cl-incf asked) answer)))
+        (cl-flet ((refused (message)
+                    (should (string-match-p message (cadr (should-error (portal-tasks-implement)
+                                                                        :type 'user-error))))
+                    (should-not (portal-fake-native-calls 'portal--open))
+                    (should-not (portal-tasks-view-test--briefs))
+                    (should (equal (portal-tasks-view-test--read file) saved))))
+          (with-current-buffer source
+            (goto-char (point-min))
+            (search-forward "Body.")
+            (insert " Unsaved."))
+          ;; A task that is not actionable is refused before saving.
+          (portal-tasks-toggle-all)
+          (portal-tasks-view-test--goto view "Second")
+          (refused "not actionable: waiting for first (TODO)")
+          (portal-tasks-view-test--goto view "Shipped")
+          (refused "not actionable: DONE")
+          (portal-tasks-view-test--goto view "Anonymous")
+          (refused "CUSTOM_ID of its own")
+          (should (= asked 0))
+          (switch-to-buffer source)
+          (goto-char (point-min))
+          (refused "Not in a task")
+          (search-forward "Not a task.")
+          (refused "Not in a task")
+          ;; Only project.org's own task, not one elsewhere with its CUSTOM_ID.
+          (find-file (expand-file-name "notes.org" (file-name-directory file)))
+          (insert (portal-tasks-view-test--task "TODO Copy" :id "first"))
+          (refused "CUSTOM_ID of its own")
+          (set-buffer-modified-p nil)
+          ;; Declining to save, or a failed save, keeps the edit unsaved.
+          (switch-to-buffer view)
+          (portal-tasks-view-test--goto view "First")
+          (refused "not saved")
+          (should (= asked 1))
+          (setq answer t)
+          (with-current-buffer source
+            (add-hook 'write-contents-functions (lambda () (error "Disk full")) nil t))
+          (should-error (portal-tasks-implement))
+          (should-not (portal-fake-native-calls 'portal--open))
+          (should-not (portal-tasks-view-test--briefs))
+          (with-current-buffer source
+            (kill-local-variable 'write-contents-functions)
+            (should (buffer-modified-p))
+            (should (string-search "Body. Unsaved." (buffer-string))))
+          ;; A file changed on disk is a conflict to resolve first.
+          (setq saved (string-replace "Body." "Changed." saved))
+          (with-temp-file file (insert saved))
+          (set-file-times file (time-subtract nil 60))
+          (refused "changed on disk")
+          (with-current-buffer source
+            (should (string-search "Body. Unsaved." (buffer-string)))
+            (revert-buffer t t)
+            (goto-char (point-min))
+            (search-forward "Changed.")
+            (insert " Unsaved."))
+          ;; Saving, when asked, saves the edit the brief then holds.
+          (setq asked 0)
+          (portal-tasks-refresh)
+          (portal-tasks-view-test--goto view "First")
+          (portal-tasks-implement)
+          (should (= asked 1))
+          (should-not (buffer-modified-p source))
+          (should (string-search "Changed. Unsaved."
+                                 (portal-tasks-view-test--read
+                                  (nth 2 (portal-tasks-view-test--launch)))))
+          ;; A terminal that fails to start leaves no brief.
+          (let ((briefs (portal-tasks-view-test--briefs))
+                (portal-fake-native-failures '(portal--open)))
+            (should-error (portal-tasks-view-test--implement view "First" t))
+            (should (equal (portal-tasks-view-test--briefs) briefs))
+            (should (= (length (portal-view-buffers 'terminal)) 1)))
+          ;; A save hook that edits the buffer again leaves text no brief
+          ;; may hold, as it is not saved.
+          (with-current-buffer source
+            (goto-char (point-max))
+            (insert "Edited.\n")
+            (add-hook 'after-save-hook (lambda () (goto-char (point-max)) (insert "Stamp.\n"))
+                      nil t))
+          (let ((briefs (portal-tasks-view-test--briefs))
+                (starts (length (portal-fake-native-calls 'portal--open))))
+            (should (string-match-p "changed as it was saved"
+                                    (cadr (should-error
+                                           (portal-tasks-view-test--implement view "First" t)
+                                           :type 'user-error))))
+            (should (equal (portal-tasks-view-test--briefs) briefs))
+            (should (= (length (portal-fake-native-calls 'portal--open)) starts))
+            (with-current-buffer source
+              (kill-local-variable 'after-save-hook)
+              (should (buffer-modified-p))
+              (should (string-suffix-p "Edited.\nStamp.\n" (buffer-string)))
+              ;; So does one that changes the file on disk.
+              (add-hook 'after-save-hook
+                        (lambda () (set-file-times buffer-file-name (time-subtract nil 60)))
+                        nil t))
+            (should (string-match-p "changed as it was saved"
+                                    (cadr (should-error
+                                           (portal-tasks-view-test--implement view "First" t)
+                                           :type 'user-error))))
+            (should (equal (portal-tasks-view-test--briefs) briefs))
+            (should (= (length (portal-fake-native-calls 'portal--open)) starts))
+            (with-current-buffer source (kill-local-variable 'after-save-hook))))))))
+
 (provide 'portal-tasks-view-tests)
 ;;; portal-tasks-view-tests.el ends here

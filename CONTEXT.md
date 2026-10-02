@@ -59,3 +59,7 @@ _Avoid_: task browser, which is the hosted app for Markdown tasks
 **Task detail**:
 A project's one indirect Org buffer, narrowed to the task it shows, where Org edits that task. `RET` in the task view and links to tasks show a task there; Back retraces them to the task view.
 _Avoid_: task page, which is the task browser's
+
+**Task brief**:
+A read-only snapshot of one task's subtree as saved, with where it came from, that `portal-tasks-implement` has Claude read first. It lasts as long as the terminal Claude runs in; the task itself is updated in `project.org`, found by its `CUSTOM_ID`.
+_Avoid_: task file, task copy
