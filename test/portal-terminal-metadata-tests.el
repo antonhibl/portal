@@ -157,7 +157,13 @@ a folder, loose, in no project."
       (with-current-buffer other (portal-terminal-close))
       (should (buffer-live-p other))
       (should-not (portal-terminal-metadata other))
-      (should-not (portal-terminal-buffers)))))
+      (should-not (portal-terminal-buffers))
+      ;; A buffer with another kind of view has no terminal either.
+      (let ((web (get-buffer-create "*portal-metadata-web*")))
+        (with-current-buffer web (portal-view-open 'web nil))
+        (should (memq web (portal-view-buffers 'web)))
+        (should-not (portal-terminal-metadata web))
+        (kill-buffer web)))))
 
 (ert-deftest portal-terminal-metadata-reads-changes-made-while-opening ()
   (portal-metadata-test--environment

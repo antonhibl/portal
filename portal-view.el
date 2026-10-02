@@ -39,7 +39,9 @@ Records for unknown targets, or of types with no handler, are dropped.")
 (defvar portal-view--pending "" "The start of a record whose end is still to come.")
 
 (defvar portal-view--buffers nil "Buffers with a Portal view, in creation order.")
-(defvar-local portal-view--target nil "This buffer's native target.")
+(defvar-local portal-view--target nil
+  "This buffer's native target.
+It is non-nil exactly while the buffer is in `portal-view--buffers'.")
 (defvar-local portal-view-close-hook nil
   "Hook run before this buffer's live view closes, while its target is valid.")
 (defvar-local portal-view--window nil "The window showing this buffer's view, or nil.")

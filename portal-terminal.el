@@ -113,7 +113,10 @@ its `:title', as its program last set it, or nil; whether its program
 `:exited'; and whether it is a `:quick' terminal.  Only facts are reported:
 a live shell may be idle or busy, and a title may name anything."
   (let ((buffer (or buffer (current-buffer))))
-    (when (memq buffer (portal-view-buffers 'terminal))
+    ;; A buffer has a target exactly while it has a view, so this costs the
+    ;; same however many views there are, unlike `portal-view-buffers'.
+    (when (and (buffer-live-p buffer)
+               (string-prefix-p "terminal:" (or (buffer-local-value 'portal-view--target buffer) "")))
       (with-current-buffer buffer
         (list :name (buffer-name) :project portal-terminal--project
               :directory portal-terminal--directory :title portal-terminal--title

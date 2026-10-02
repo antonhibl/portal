@@ -28,6 +28,18 @@ _Avoid_: inferring a terminal's project from its current directory or buffer nam
 A project's scratch terminal view, summoned into a panel at the bottom of the current frame. Each project has one.
 _Avoid_: scratch shell, quick shell
 
+**Agent dashboard**:
+The one plain Emacs buffer, opened with `portal-agents`, that lists tracked terminals from their cached metadata. It has no Portal view, and refreshes itself only while shown.
+_Avoid_: agent view, status panel
+
+**Tracked terminal**:
+A terminal session explicitly added to the agent dashboard, identified by its buffer and its view, never by its name, directory or title. Untracking leaves it running; closing or replacing the terminal ends tracking, and its program exiting does not.
+_Avoid_: watched terminal, registered agent
+
+**Agent activity**:
+Whether an agent is working, idle or waiting for input. No source reports it yet, so it is unknown: a running terminal program does not imply it, and a title does not report it.
+_Avoid_: inferring activity from process state or titles
+
 ## Web content
 
 **Hosted app**:
