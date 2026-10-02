@@ -34,7 +34,7 @@ isearch, sorting, =g= to refresh, =q= to quit the window, and =RET= to visit a
 terminal. Prefer inexpensive live updates while visible. The dashboard creates
 no native or web view and needs no app host or third-party UI package.
 
-*** Foundation
+*** Blocked by
 [[file:project.org_archive::#terminal-buffer-metadata][Terminal metadata and project ownership]]
 is DONE. Use =portal-terminal-buffers= and =portal-terminal-metadata= for the
 buffer name, assigned project, directory, title, quick-terminal flag and process
