@@ -329,6 +329,13 @@ Found while testing:
 - =claude agents --json= costs 190 ms wall, 150 ms CPU and 148 MB a call, too
   much to poll every tick; transitions trigger it instead.
 
+Compared with Herdr v0.9.1 afterwards, which identifies agents by the same
+foreground process and uses the same Codex title and Pi lifecycle rules: the
+decision stands, with four refinements now in the dependent tasks (classify by
+=argv[0]= with runtimes unwrapped, strip spinner glyphs from titles, cover both
+Claude spinner sets, gate the Pi extension on a TUI session). See the research
+note's Herdr section.
+
 Open decision for the Claude implementation: whether a suspended (Ctrl-Z) agent
 keeps a row as stopped or loses it like an exited one. Untested scenarios are
 listed in the research note.
@@ -382,17 +389,21 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
 - *Native:* export =PORTAL_TERMINAL=<emacs-pid>/<view-target>= with
   =INSIDE_EMACS= in each terminal's environment. Report agent processes by one
   =KERN_PROC_UID= snapshot, keeping processes whose group owns their TTY, then
-  reading executable path, =argv[0]= and the marker; skip NUL padding before the
-  environment. Classify Claude by an executable under =claude/versions/= or
-  named =claude=; ignore an agent nested under another agent in the same
-  terminal. Per the platform-primitives rule, the platform reports processes;
+  reading =argv[0]=, arguments and the marker; skip NUL padding before the
+  environment. Name a process by the basename of =argv[0]=, or of its script
+  argument when that is =node=, =bun=, Python or a shell, as Herdr does; prefer
+  the group leader. Claude is =claude= (its =comm= is its version number), and
+  npm shims run =node .../bin/claude=, so no install-path matching is needed.
+  Ignore an agent nested under another agent in the same terminal. Per the platform-primitives rule, the platform reports processes;
   Lisp or the core classifies them. [[file:docs/agent-discovery/agentscan.c][agentscan.c]]
   is the reference. Also cache each terminal's last OSC 9;4 progress state and
   announce changes through the existing change records.
 - *Activity:* run =claude agents --json= asynchronously, one at a time, only
   while the dashboard is shown: when shown, for a PID with no status (at most
   every 4 s while unlisted), when a Claude terminal's title glyph class (=✳=,
-  spinner, other) or progress state changes, and every 30 s. Map =busy=,
+  a spinner in U+2800–U+28FF or =◐=–=◓=, other) or progress state changes, and
+  every 30 s. Claude changed its spinner at 2.1.228; progress and the poll
+  cover a later change. Map =busy=,
   =waiting=, =idle= by PID and process start; otherwise =unknown=, with a reason
   (not yet listed, trust dialog, query failed). [[file:docs/agent-discovery/prototype.el][prototype.el]]
   shows the rules against the current dashboard.
@@ -403,6 +414,9 @@ tested with Claude Code 2.1.287. No Claude setup is needed.
 - *Cost to stay within:* a scan of a few milliseconds per refresh (measured
   0.8–12 ms) and one 190 ms, 150 ms CPU query per transition; nothing while
   hidden. Replay with [[file:test/fixtures/agent-signals][the fixtures]].
+- *Title column:* strip one leading activity or spinner glyph, for display and
+  for the unchanged-facts comparison, so a working agent's spinner does not
+  reprint the dashboard every refresh (as Herdr's stripped title does).
 - *Decide first:* whether a suspended (Ctrl-Z) Claude keeps a row as stopped.
 
 *** Plan
@@ -472,7 +486,10 @@ The spike proved it with Codex CLI 0.155.1; no further prerequisite.
   show the idle title; a customized title setting breaks the mapping. A plain
   =codex= runs its app-server in-process; =codex agents= only sees sessions on
   the shared daemon, which needs =codex --remote=, so the app-server is not an
-  observer for ordinary launches. OSC 9 notifications arrive only while
+  observer for ordinary launches. Herdr closes the menu and prompt gaps with
+  screen rules; Portal would first need the wrapper to expose a non-selecting
+  screen read (=ghostty_surface_read_text= is public only for in-memory
+  sessions), so that is not planned. OSC 9 notifications arrive only while
   unfocused and stay attention hints.
 - *Still to replay:* queued continuation, compaction, retries and patch
   approvals were not captured (quota). Fixtures: =codex-*.jsonl= in
@@ -524,7 +541,9 @@ The spike proved identity with no setup and the extension's lifecycle with Pi
 - *Activity needs the extension:* Pi's title (=π - <dir>=) never changes while
   working and outlives Pi; it emits no progress by default and no
   notifications. The candidate extension, [[file:docs/agent-discovery/pi-progress.ts][pi-progress.ts]],
-  runs only with =PORTAL_TERMINAL= and a TTY, and writes OSC 9;4: 0 at
+  runs only with =PORTAL_TERMINAL= and a TTY, and should report only after a
+  TUI =session_start= (RPC mode also claims a UI, as Herdr's extension notes).
+  It writes OSC 9;4: 0 at
   =session_start= and =agent_settled= when =ctx.isIdle()=, 3 at =agent_start=,
   4 during =ui_prompt_*=, 0 at shutdown. Tested with =pi -e=: correct order for
   turns, a tool turn, cancel and exit, with normal rendering. Portal reads it

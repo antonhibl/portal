@@ -375,9 +375,10 @@ Codex costs about 2.4 ms of Lisp per second this way, discovery or not.
 
 ## Untested and open
 
-- Claude: `AskUserQuestion` and other elicitation waits, background tasks after
-  a turn, automatic retries, `/clear` and `/resume`, npm installations (Node
-  running `@anthropic-ai/claude-code`).
+- Claude: `AskUserQuestion` and other elicitation waits, background agents and
+  MCP tasks still running after a turn (Herdr treats both as working), automatic
+  retries, `/clear` and `/resume`, npm installations (Node running
+  `@anthropic-ai/claude-code`).
 - Codex: queued continuation, compaction, retries and patch approvals (quota
   was low); a customized title; npm installations, where a Node wrapper starts
   the native binary as a child.
@@ -389,6 +390,119 @@ Codex costs about 2.4 ms of Lisp per second this way, discovery or not.
   construction).
 - Decision for the Claude implementation: whether a suspended agent keeps a
   row (as `stopped`) or loses it like an exited one.
+
+## How Herdr does it
+
+[Herdr](https://herdr.dev/) runs agents in its own terminal multiplexer and
+shows their state. Read at v0.9.1, the version installed here, with its
+integration files as installed on this machine.
+
+### Identity: the foreground process
+
+Herdr starts every pane's shell itself, so it knows the shell's process ID and
+terminal. It reads the terminal's foreground process group (`e_tpgid` from
+`proc_pidinfo`, or `tcgetpgrp`) and lists that group with
+`proc_listpids(PROC_PGRP_ONLY)`. It names each process by the basename of
+`argv[0]` (from `KERN_PROCARGS2`), falling back to its `comm`. When that name
+is a runtime or shell (`node`, `bun`, Python, `sh`, `bash`, `zsh`, `fish`), it
+takes the name of the script argument instead. The group leader wins, then a
+process whose name differs from its `comm`, then any non-runtime process.
+`HERDR_AGENT=<agent>` on a wrapper command, read from that process's
+environment, names an agent hidden inside a sandbox wrapper. It does not look
+inside tmux running in a pane.
+[detect/mod.rs](https://github.com/herdrdev/herdr/blob/v0.9.1/src/detect/mod.rs),
+[platform/macos.rs](https://github.com/herdrdev/herdr/blob/v0.9.1/src/platform/macos.rs)
+
+### Status: one authority per pane
+
+- **Lifecycle integrations** (Pi, OMP, Kimi, OpenCode, Kilo, MastraCode): a
+  plugin reports `working`, `idle` or `blocked` over Herdr's Unix socket as
+  `pane.report_agent`, with the pane from `HERDR_PANE_ID`, a stable source name
+  and a rising sequence number; Herdr drops older sequence numbers from the same
+  source. `pane.release_agent` gives authority back on exit. Each pane's
+  environment carries `HERDR_ENV`, `HERDR_PANE_ID`, `HERDR_SOCKET_PATH` and
+  `HERDR_BIN_PATH`. While a plugin reports, Herdr reads no screen for it.
+  - The Pi extension it installs in `~/.pi/agent/extensions` reports nothing
+    outside a TUI session (RPC mode also claims a UI). It publishes a baseline
+    from `isIdle()` at `session_start`, because a reload replaces the extension
+    mid-run without another `agent_start`. `agent_start` means working;
+    `agent_settled` with `isIdle()` means idle. Blocked comes from a
+    Herdr-specific `herdr:blocked` event that other extensions must emit; it does
+    not use Pi's `ui_prompt_*` events.
+- **Screen manifests** (Claude Code, Codex, Pi without the plugin, and most
+  others): Herdr emulates each pane's terminal, so it checks per-agent TOML
+  rules, highest priority first, against the latest OSC 0/2 title, the OSC 9;4
+  state and regions of the live bottom of the screen. Herdr updates these rules
+  from herdr.dev without a restart; local overrides win.
+  - Claude: a spinner title (braille through 2.1.227, `◐`–`◓` since 2.1.228) or
+    an `esc to interrupt` line means working, as do "Waiting for N background
+    agents" and "N MCP tasks still running". Permission, question, MCP
+    elicitation and workflow dialogs, recognized by their text, mean blocked.
+    A `❯` prompt box means idle. A `✳` title and progress `4;0` mean idle only
+    at the lowest priority.
+  - Codex: `Action Required` in the title means blocked and a braille spinner
+    working, matched first. Screen rules then catch the trust prompt, the
+    update prompt, approval and question dialogs, and an `esc to interrupt`
+    timer. Any other non-empty title means idle.
+  - Pi without the plugin: a `Working...` line or border means working.
+  - Blocked needs a recognized dialog. A known agent matching no rule is shown
+    `idle`, labelled as a fallback.
+- **Session-only hooks** (Claude Code, Codex and others): `SessionStart` hooks
+  report only the session ID and transcript path, for restoring sessions. Herdr's
+  documentation explains why they are not a status source: they miss permission
+  results and Escape interrupts.
+- **Display:** a sidebar can show the title with one leading activity or
+  spinner glyph removed, so spinner frames do not redraw the row.
+
+[Claude](https://github.com/herdrdev/herdr/blob/v0.9.1/src/detect/manifests/claude.toml),
+[Codex](https://github.com/herdrdev/herdr/blob/v0.9.1/src/detect/manifests/codex.toml)
+and [Pi](https://github.com/herdrdev/herdr/blob/v0.9.1/src/detect/manifests/pi.toml)
+manifests;
+[agents](https://github.com/herdrdev/herdr/blob/v0.9.1/docs/preview/website/src/content/docs/agents.mdx)
+and [integrations](https://github.com/herdrdev/herdr/blob/v0.9.1/docs/preview/website/src/content/docs/integrations.mdx)
+documentation.
+
+### What it changes for Portal
+
+The decision stands. Herdr independently uses the foreground process for
+identity, the same Codex title rules first, and the same Pi lifecycle events,
+and it also refuses hooks as a Claude or Codex status source. Its Claude title
+and progress rules cannot say blocked either: it needs the screen, where Portal
+uses `claude agents --json`.
+
+Four refinements to adopt in the implementation tasks:
+
+1. **Classify by `argv[0]`, unwrapping runtimes.** Name a process by the
+   basename of `argv[0]`, or of its script argument when that name is `node`,
+   `bun`, Python or a shell, and prefer the group leader. This covers the native
+   installs tested here (Claude's `comm` is its version number, but its
+   `argv[0]` is `claude`; Pi's renamed `argv[0]` is `pi`) and npm installs, whose
+   shims run `node <bin>/claude`, without matching install paths.
+2. **Strip one leading activity glyph from titles** for the Title column and
+   the unchanged-facts comparison. Otherwise a working Claude (a frame a second)
+   or Codex (ten a second) makes every refresh reprint the dashboard, which cost
+   2.7–7.0 ms per tick, plus redisplay, at 10–100 terminals when titles changed
+   (PR #59).
+3. **Claude's trigger glyph classes cover both spinner sets:** braille and
+   `◐`–`◓`, as well as `✳`. Claude changed its spinner at 2.1.228; a later change
+   still leaves the progress trigger and the 30 s poll.
+4. **Pi extension reports only after a TUI `session_start`.** Keep Portal's
+   `ui_prompt_*` mapping, which Herdr lacks.
+
+Not adopted:
+
+- **Screen rules.** They would close Codex's gaps (trust and update prompts,
+  menus that are not approvals) but need a cheap screen read and maintained
+  regexes. Pinned Ghostty has `ghostty_surface_read_text`, which reads a range
+  without touching the selection, but the wrapper exposes it only for in-memory
+  sessions (`readViewportText`); Portal's surfaces offer only select-all
+  (`portal--terminal-text`). Revisit only if those gaps matter in use, with a
+  wrapper change first.
+- **A socket with sequence numbers for Pi.** A PTY delivers OSC in order, and
+  process discovery ends a row when Pi exits, so Portal needs neither the
+  sequence numbers nor a release call, nor a server in Emacs.
+- **A wrapper hint such as `HERDR_AGENT`.** No wrapped agent is in use; add a
+  `PORTAL_AGENT` hint when one is.
 
 ## References
 
