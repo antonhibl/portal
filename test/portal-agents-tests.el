@@ -351,6 +351,23 @@ connection, nor change the selected window, the current buffer or focus."
             (tabulated-list-sort -1)
             (should (equal (mapcar #'car (portal-agents-test--rows)) (remq f terminals)))))))))
 
+(ert-deftest portal-agents-manual-progress-does-not-redraw ()
+  (portal-agents-test--environment
+    (let ((terminal (portal-agents-test--open "one/app")))
+      (portal-agents-track terminal "Other agent")
+      (portal-agents-test--show)
+      (let ((tick (buffer-modified-tick portal-agents--buffer)))
+        (dolist (progress '("indeterminate" "set" "error" "remove"))
+          (portal-agents-test--report terminal :progress progress)
+          (should (equal (plist-get (portal-terminal-metadata terminal) :progress) progress))
+          (portal-agents-test--tick)
+          (should (= (buffer-modified-tick portal-agents--buffer) tick)))
+        ;; Visible facts still redraw the row.
+        (portal-agents-test--report terminal :title "New task")
+        (portal-agents-test--tick)
+        (should (> (buffer-modified-tick portal-agents--buffer) tick))
+        (should (equal (nth 6 (portal-agents-test--row terminal)) "New task"))))))
+
 (ert-deftest portal-agents-manual-refresh-without-live-updates ()
   (portal-agents-test--environment
     (let ((portal-agents-live-update nil)

@@ -43,7 +43,8 @@ Use an absolute path if Claude is not on Emacs's `exec-path'."
   (let* ((argv (append (plist-get process :argv) nil))
          (name (file-name-nondirectory (or (car argv) "")))
          (path (or (plist-get process :executable) ""))
-         (exe (file-name-nondirectory path)))
+         (exe (file-name-nondirectory path))
+         script)
     (when (portal-agent-discovery--runtime-p name)
       (setq name "")
       (catch 'script
@@ -54,14 +55,16 @@ Use an absolute path if Claude is not on Emacs's `exec-path'."
                     (string-match-p "\\`-[^-]*[cep]" arg))
             (throw 'script nil))
           (unless (string-prefix-p "-" arg)
-            (setq name (file-name-nondirectory arg))
+            (setq name (file-name-nondirectory arg) script t)
             (throw 'script t)))))
     ;; Recognize other harnesses only to reject Claude nested underneath them.
     ;; Their own discovery/activity remains in the dependent tasks.
     (when (and (member name '("claude" "codex" "pi"))
                (or (equal exe name)
                    (and (equal name "claude") (string-match-p "/claude/versions/[^/]+\\'" path))
-                   (portal-agent-discovery--runtime-p exe)))
+                   (and script (portal-agent-discovery--runtime-p exe))
+                   ;; Pi sets Node's process.title, replacing its script argv.
+                   (and (equal name "pi") (equal exe "node"))))
       name)))
 
 (defun portal-agent-discovery--class (title)

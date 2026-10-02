@@ -81,11 +81,11 @@ A session whose program exited stays while its buffer keeps its view."
        (let* ((key (car session))
               (agent (cl-find key agents :key #'portal-agent-key :test #'equal))
               (metadata (portal-terminal-metadata (car key))))
+         ;; Progress is a query trigger, not a displayed fact, for every row.
+         (setq metadata (plist-put metadata :progress nil))
          (when agent
            (setq metadata (plist-put metadata :title
                                      (portal-agent-discovery--strip-title (plist-get metadata :title))))
-           ;; Progress is a query trigger, not a displayed fact.
-           (setq metadata (plist-put metadata :progress nil))
            (setq metadata (append metadata (list :activity (portal-agent-activity agent)
                                                  :reason (portal-agent-reason agent)
                                                  :process-error (portal-agent-process-error agent)))))

@@ -94,6 +94,19 @@
       (should (equal (portal-discovery-test--status one) "unknown"))
       (should (equal (nth 1 (portal-agents-test--row one)) "Claude")))))
 
+(ert-deftest portal-discovery-spoofed-runtime-does-not-create-a-row ()
+  (portal-discovery-test--environment
+    (let* ((terminal (portal-agents-test--open "one/app"))
+           (process (portal-discovery-test--process terminal 10)))
+      ;; exec -a can give a runtime Claude's name without running Claude.
+      (setq portal-discovery-test--processes
+            (list (plist-put (plist-put process :executable "/opt/bin/node")
+                             :argv '("claude" "-e" "setInterval(() => {}, 1000)"))))
+      (portal-agents-test--report terminal :title "✳ Claude Code" :progress "indeterminate")
+      (portal-agents-test--show)
+      (should-not (portal-agents-test--rows))
+      (should (= portal-discovery-test--queries 0)))))
+
 (ert-deftest portal-discovery-classification-and-nesting ()
   (portal-discovery-test--environment
     (let* ((terminal (portal-agents-test--open "one/app"))
@@ -104,6 +117,8 @@
         (should (equal "claude" (portal-agent-discovery--name
                                 (list :argv argv :executable (concat "/bin/" (car argv)))))))
       (dolist (process '((:argv ("claude") :executable "/bin/sleep")
+                         (:argv ("claude") :executable "/bin/node")
+                         (:argv ("claude" "-lc" "sleep 10") :executable "/bin/bash")
                          (:argv ("node" "-e" "claude") :executable "/bin/node")
                          (:argv ("bash" "-c" "claude") :executable "/bin/bash")
                          (:argv ("bash" "-lc" "claude") :executable "/bin/bash")
@@ -117,6 +132,11 @@
       (portal-discovery-test--reply "[]")
       (setq portal-discovery-test--processes
             (list child (plist-put (plist-put parent :argv '("codex")) :executable "/bin/codex")))
+      (portal-agents--tick)
+      (should-not (portal-agents-test--rows))
+      ;; Pi legitimately renames Node via process.title, losing its script argv.
+      (setq portal-discovery-test--processes
+            (list child (plist-put (plist-put parent :argv '("pi")) :executable "/bin/node")))
       (portal-agents--tick)
       (should-not (portal-agents-test--rows))
       (setq portal-discovery-test--processes

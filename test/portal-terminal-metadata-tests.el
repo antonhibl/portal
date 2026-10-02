@@ -166,6 +166,21 @@ a folder, loose, in no project."
         (should-not (portal-terminal-metadata web))
         (kill-buffer web)))))
 
+(ert-deftest portal-terminal-metadata-normalizes-unset-progress ()
+  (portal-metadata-test--environment
+    (let ((terminal (portal-metadata-test--open "one/app")))
+      ;; Native terminals initially report the empty string, not nil.
+      (portal-metadata-test--report terminal :progress "")
+      (should-not (portal-metadata-test--get terminal :progress))
+      (dolist (unset '(nil "" 42))
+        (portal-metadata-test--report terminal :progress "indeterminate")
+        (should (equal (portal-metadata-test--get terminal :progress) "indeterminate"))
+        (portal-metadata-test--report terminal :progress unset)
+        (should-not (portal-metadata-test--get terminal :progress)))
+      ;; Explicit OSC removal is still a reported state.
+      (portal-metadata-test--report terminal :progress "remove")
+      (should (equal (portal-metadata-test--get terminal :progress) "remove")))))
+
 (ert-deftest portal-terminal-metadata-reads-changes-made-while-opening ()
   (portal-metadata-test--environment
     ;; The native module drops a record sent before its target is open, so a

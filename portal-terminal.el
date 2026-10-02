@@ -144,9 +144,10 @@ A trusted directory also becomes the buffer's `default-directory', for
 ordinary file commands, and `list-buffers-directory', for buffer lists."
   (when-let* ((state (portal--inspect target)))
     (let ((title (plist-get state :title))
+          (progress (plist-get state :progress))
           (directory (portal-terminal--local-directory (plist-get state :pwd))))
       (setq portal-terminal--title (and (stringp title) (not (string-empty-p title)) title)
-            portal-terminal--progress (plist-get state :progress))
+            portal-terminal--progress (and (stringp progress) (not (string-empty-p progress)) progress))
       (when directory
         (setq portal-terminal--directory directory
               default-directory directory

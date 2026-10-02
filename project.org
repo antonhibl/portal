@@ -560,6 +560,27 @@ the existing behavior; neither changes an interface, dependency or agreed design
   Lisp byte compilation, Org lint and =git diff --check= pass. No findings are
   deferred.
 
+*** Review follow-up 2026-10-03
+Addressed all three findings from the review of =6296e48= in PR #65 within the
+existing identity, metadata and redraw contracts.
+
+- A runtime is accepted as Claude only when the name comes from its script
+  argument. A spoofed =argv[0]= such as =exec -a claude node -e ...= no longer
+  creates a row or starts a status query. Native Claude and runtime script
+  launches remain supported. Pi's verified Node =process.title= case remains
+  an explicit exception so a Claude nested beneath Pi stays excluded.
+- Shared terminal metadata normalizes empty and non-string progress to =nil=,
+  including the native backend's initial empty string. Real progress strings,
+  including the explicit =remove= state, are preserved.
+- Every dashboard row excludes progress from its displayed-facts comparison.
+  Progress-only transitions on manually tracked terminals no longer rewrite
+  the table; shared progress metadata and title-driven redraws still work.
+- All three new regressions failed before the fixes and pass afterwards.
+  Native build, all 27 CTest suites, host Biome/type checking and changed Lisp
+  byte compilation with warnings treated as errors pass. The discovery suite
+  now runs 20 ERT tests, including the ten dashboard tests; terminal metadata
+  runs seven. No findings are deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex
