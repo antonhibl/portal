@@ -110,7 +110,10 @@ CLAUDE is a list of (TARGET . PLIST) agents."
                                        (and spike-use-progress
                                             (plist-get (portal--inspect (car agent)) :progress)))))
                          claude)))
+    ;; While a query runs, leave the trigger armed: the refresh after it
+    ;; finishes sees the change and queries again.
     (when (and claude
+               (not (process-live-p spike-claude-process))
                (or (not (equal classes spike-claude-classes))
                    (and (seq-some (lambda (agent) (not (gethash (plist-get (cdr agent) :pid) spike-claude-status)))
                                   claude)

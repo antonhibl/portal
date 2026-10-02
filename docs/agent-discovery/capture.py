@@ -11,7 +11,9 @@ the agent sees CLAUDECODE variables.  The scenario's cwd defaults to the
 current directory; $VARS and ~ expand in cwd, env values and typed text.
 Writes OUT_PREFIX.jsonl (events), OUT_PREFIX.raw (output bytes, which can be
 replayed with cat but hold whole screens: do not commit them) and
-OUT_PREFIX.screens.txt (screen snapshots at marks)."""
+OUT_PREFIX.screens.txt (screen snapshots at marks).  Exits 1 when the capture
+is incomplete: a required wait timed out, or the program exited while steps
+that observe it (waits, marks, process or status samples) remained."""
 import json, os, pty, re, select, signal, subprocess, sys, threading, time, codecs, fcntl, termios, struct
 import pyte
 
@@ -201,10 +203,16 @@ def run_step(step):
         log('agents', data=agents_json())
     return True
 
+INPUT_KEYS = {'type', 'key', 'focus', 'sleep'}
 ok = True
-for step in script['steps']:
+for index, step in enumerate(script['steps']):
     if not alive:
-        log('exited_early'); break
+        log('exited_early')
+        # Leftover input, such as a second quit key, is harmless; a step that
+        # would have observed the program means the trace is incomplete.
+        if any(set(rest) - INPUT_KEYS for rest in script['steps'][index:]):
+            ok = False
+        break
     if not run_step(step):
         ok = False; break
 
@@ -226,3 +234,4 @@ if sampler_on:
     data = agents_json()
     log('agents_after_exit', present=any(isinstance(s, dict) and s.get('pid') == pid for s in data) if isinstance(data, list) else data)
 print('ok' if ok else 'FAILED', out_prefix)
+sys.exit(0 if ok else 1)
