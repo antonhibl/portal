@@ -1,0 +1,71 @@
+{"fixture": "agent-signals", "harness": "codex", "version": "0.155.1", "scenario": "turn fails: unknown model, then a model-switch menu waits", "source": "headless pty (test harness answers terminal queries)", "clock": "t = seconds since spawn", "terminal": {"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty", "TERM_PROGRAM_VERSION": "1.3.2-HEAD-+82938b633", "COLORTERM": "truecolor", "INSIDE_EMACS": "portal-ghostty", "size": "120x40"}, "recorded": "2026-10-02"}
+{"t": 0.006, "kind": "spawn", "argv": ["codex", "-m", "spike-nonexistent-model"]}
+{"t": 0.209, "kind": "focus_reporting", "enabled": true}
+{"t": 0.21, "kind": "focus_reporting", "enabled": true}
+{"t": 0.793, "kind": "title", "title": "portal"}
+{"t": 1.275, "kind": "title", "title": "⠼ portal"}
+{"t": 1.73, "kind": "title", "title": "⠏ portal"}
+{"t": 1.832, "kind": "title", "title": "⠋ portal"}
+{"t": 1.936, "kind": "title", "title": "⠙ portal"}
+{"t": 2.036, "kind": "title", "title": "⠹ portal"}
+{"t": 2.093, "kind": "title", "title": "⠸ portal"}
+{"t": 2.201, "kind": "title", "title": "⠼ portal"}
+{"t": 2.382, "kind": "title", "title": "⠴ portal"}
+{"t": 2.46, "kind": "title", "title": "⠦ portal"}
+{"t": 2.46, "kind": "title", "title": "portal"}
+{"t": 4.114, "kind": "step", "label": "submitted"}
+{"t": 4.179, "kind": "title", "title": "⠸ portal"}
+{"t": 4.214, "kind": "title", "title": "⠼ portal"}
+{"t": 4.314, "kind": "title", "title": "⠴ portal"}
+{"t": 4.417, "kind": "title", "title": "⠦ portal"}
+{"t": 4.518, "kind": "title", "title": "⠧ portal"}
+{"t": 4.592, "kind": "title", "title": "⠇ portal"}
+{"t": 4.696, "kind": "title", "title": "⠏ portal"}
+{"t": 4.809, "kind": "title", "title": "⠋ portal"}
+{"t": 4.895, "kind": "title", "title": "⠙ portal"}
+{"t": 4.995, "kind": "title", "title": "⠹ portal"}
+{"t": 5.04, "kind": "title", "title": "⠹ renaming... ⠹ | portal"}
+{"t": 5.115, "kind": "title", "title": "⠸ renaming... ⠸ | portal"}
+{"t": 5.217, "kind": "title", "title": "⠼ renaming... ⠼ | portal"}
+{"t": 5.317, "kind": "title", "title": "⠴ renaming... ⠴ | portal"}
+{"t": 5.42, "kind": "title", "title": "⠦ renaming... ⠦ | portal"}
+{"t": 5.492, "kind": "title", "title": "⠧ renaming... ⠧ | portal"}
+{"t": 5.565, "kind": "title", "title": "renaming... ⠧ | portal"}
+{"t": 5.668, "kind": "title", "title": "renaming... ⠇ | portal"}
+{"t": 5.77, "kind": "title", "title": "renaming... ⠏ | portal"}
+{"t": 5.873, "kind": "title", "title": "renaming... ⠋ | portal"}
+{"t": 5.977, "kind": "title", "title": "renaming... ⠙ | portal"}
+{"t": 6.081, "kind": "title", "title": "renaming... ⠹ | portal"}
+{"t": 6.184, "kind": "title", "title": "renaming... ⠸ | portal"}
+{"t": 6.289, "kind": "title", "title": "renaming... ⠼ | portal"}
+{"t": 6.395, "kind": "title", "title": "renaming... ⠦ | portal"}
+{"t": 6.502, "kind": "title", "title": "renaming... ⠧ | portal"}
+{"t": 6.605, "kind": "title", "title": "renaming... ⠇ | portal"}
+{"t": 6.718, "kind": "title", "title": "renaming... ⠏ | portal"}
+{"t": 6.825, "kind": "title", "title": "renaming... ⠋ | portal"}
+{"t": 6.928, "kind": "title", "title": "renaming... ⠙ | portal"}
+{"t": 7.029, "kind": "title", "title": "renaming... ⠹ | portal"}
+{"t": 7.132, "kind": "title", "title": "renaming... ⠸ | portal"}
+{"t": 7.235, "kind": "title", "title": "renaming... ⠼ | portal"}
+{"t": 7.336, "kind": "title", "title": "renaming... ⠴ | portal"}
+{"t": 7.44, "kind": "title", "title": "renaming... ⠦ | portal"}
+{"t": 7.542, "kind": "title", "title": "renaming... ⠧ | portal"}
+{"t": 7.644, "kind": "title", "title": "renaming... ⠇ | portal"}
+{"t": 7.746, "kind": "title", "title": "renaming... ⠏ | portal"}
+{"t": 7.849, "kind": "title", "title": "renaming... ⠋ | portal"}
+{"t": 7.952, "kind": "title", "title": "renaming... ⠙ | portal"}
+{"t": 8.056, "kind": "title", "title": "renaming... ⠹ | portal"}
+{"t": 8.159, "kind": "title", "title": "renaming... ⠸ | portal"}
+{"t": 8.264, "kind": "title", "title": "renaming... ⠼ | portal"}
+{"t": 8.367, "kind": "title", "title": "renaming... ⠴ | portal"}
+{"t": 8.471, "kind": "title", "title": "renaming... ⠦ | portal"}
+{"t": 8.575, "kind": "title", "title": "renaming... ⠧ | portal"}
+{"t": 8.678, "kind": "title", "title": "renaming... ⠇ | portal"}
+{"t": 8.781, "kind": "title", "title": "renaming... ⠏ | portal"}
+{"t": 8.884, "kind": "title", "title": "renaming... ⠋ | portal"}
+{"t": 8.973, "kind": "title", "title": "renaming... ⠙ | portal"}
+{"t": 9.067, "kind": "title", "title": "portal"}
+{"t": 9.072, "kind": "title", "title": "Reply with OK | portal"}
+{"t": 14.121, "kind": "step", "label": "after-failure"}
+{"t": 30.266, "kind": "harness_kill"}
+{"t": 31.271, "kind": "exit", "wait_status": 15}

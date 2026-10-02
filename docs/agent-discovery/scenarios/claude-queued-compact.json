@@ -1,0 +1,77 @@
+{
+ "claude_status": true,
+ "status_interval": 0.4,
+ "steps": [
+  {
+   "wait_text": "for agents",
+   "timeout": 40
+  },
+  {
+   "key": "ctrl-c"
+  },
+  {
+   "sleep": 2
+  },
+  {
+   "type": "Use the Bash tool to run exactly: sleep 6. Then reply FIRST."
+  },
+  {
+   "sleep": 0.5
+  },
+  {
+   "key": "enter"
+  },
+  {
+   "mark": "submitted-1"
+  },
+  {
+   "sleep": 3
+  },
+  {
+   "type": "Now reply with the word SECOND."
+  },
+  {
+   "sleep": 0.5
+  },
+  {
+   "key": "enter"
+  },
+  {
+   "mark": "queued-2"
+  },
+  {
+   "sleep": 20
+  },
+  {
+   "mark": "after-queue"
+  },
+  {
+   "type": "/compact"
+  },
+  {
+   "sleep": 0.7
+  },
+  {
+   "key": "enter"
+  },
+  {
+   "mark": "compact"
+  },
+  {
+   "sleep": 25
+  },
+  {
+   "mark": "after-compact"
+  },
+  {
+   "type": "/exit"
+  },
+  {
+   "sleep": 1
+  },
+  {
+   "key": "enter"
+  }
+ ],
+ "exit_timeout": 15
+}

@@ -1,0 +1,29 @@
+{
+ "claude_status": false,
+ "status_interval": 0.4,
+ "steps": [
+  {
+   "sleep": 6
+  },
+  {
+   "mark": "startup",
+   "tree": true
+  },
+  {
+   "key": "ctrl-c"
+  },
+  {
+   "sleep": 0.5
+  },
+  {
+   "key": "ctrl-c"
+  },
+  {
+   "sleep": 0.5
+  },
+  {
+   "key": "ctrl-d"
+  }
+ ],
+ "exit_timeout": 15
+}

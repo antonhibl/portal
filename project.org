@@ -209,7 +209,7 @@ The tasks below supersede the deferral of automatic discovery and agent activity
 manual tracking is not the intended default. Remote/multiplexed terminals, agent
 control and generated summaries remain follow-ups.
 
-** TODO Prove automatic agent discovery and status in Portal terminals :task:
+** DONE Prove automatic agent discovery and status in Portal terminals :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-spike
 :ID: 5bc5fbe5-e404-45d8-a913-5dd3ea4554bc
@@ -264,22 +264,97 @@ navigation and refresh behavior against which to test the missing workflow.
   Measure discovery latency and collection cost, including while the list is hidden.
 
 *** Decision and acceptance
-- [ ] Record findings, reproducible commands and compact sanitized traces in this
+- [X] Record findings, reproducible commands and compact sanitized traces in this
   subtree or a linked research file. Distinguish observed results from hypotheses.
   Keep useful replay fixtures; remove temporary runtime instrumentation.
-- [ ] Provide a per-harness matrix covering automatic identity/terminal binding,
+- [X] Provide a per-harness matrix covering automatic identity/terminal binding,
   startup discovery, working/idle/waiting evidence, exit, freshness, setup and gaps.
   Notification suppression, progress clear and silence never imply completion alone.
-- [ ] Select one identity source and one activity authority per harness, with a
+- [X] Select one identity source and one activity authority per harness, with a
   fallback/unknown policy and handling of restarts, stale reports and source loss.
   Define how existing running terminals are found without a new prompt or relaunch.
-- [ ] Demonstrate Claude launch-to-row evidence and reject non-agent controls.
+- [X] Demonstrate Claude launch-to-row evidence and reject non-agent controls.
   For any unmet requirement, record the blocker and required decision explicitly;
   do not declare feasibility from synthetic callbacks alone.
-- [ ] Update the dependent tasks with the measured mechanism, supported versions,
+- [X] Update the dependent tasks with the measured mechanism, supported versions,
   setup and latency target before implementation. Keep an unsupported harness's
   task blocked by its own explicit follow-up spike if needed; manual tracking
   cannot substitute for automatic discovery to mark a task complete.
+
+*** Outcome
+Done 2026-10-02. Findings, matrix, decision, commands and measurements are in
+[[file:docs/agent-discovery-research.md][the agent discovery research note]];
+replay fixtures are in [[file:test/fixtures/agent-signals][test/fixtures/agent-signals]],
+and the capture harness, scanner, Pi extension prototype, Lisp prototype and the
+reverted Swift instrumentation (as a patch) are in
+[[file:docs/agent-discovery][docs/agent-discovery]]. Tested with Claude Code
+2.1.287, Codex CLI 0.155.1 and Pi 0.87.0 in Portal's pinned Ghostty
+(=82938b633ba6=), Emacs 31.1, zsh 5.9, macOS 27.0.1.
+
+- *Identity, all harnesses:* the terminal's foreground process. Portal exports
+  =PORTAL_TERMINAL=<emacs-pid>/<view-target>= into each terminal's environment;
+  a scan keeps agent executables (Claude's =claude/versions/= binary, =codex=,
+  Node running Pi) in their TTY's foreground group and reads the marker from the
+  agent's own environment. Ghostty cannot help: its foreground-PID and TTY calls
+  are stubs, and its random =GHOSTTY_SURFACE_ID= is not exposed. A login zsh's
+  environment reads back empty, so the marker is read from the agent, never the
+  shell. This finds agents at a trust dialog or first prompt, agents started
+  while the dashboard was closed or hidden, and agents already running when
+  discovery starts. Titles, progress and notifications never register an agent.
+- *Activity:* Claude from =claude agents --json= (=busy=, =waiting=, =idle=) by
+  PID, queried when that terminal's title glyph class or OSC 9;4 progress state
+  changes, on show, for a new PID and every 30 s while shown; Codex from its
+  default title (braille spinner, =Action Required=, otherwise idle); Pi from
+  OSC 9;4 written by a one-time-install Portal extension (=agent_start=,
+  =agent_settled= with =isIdle()=, =ui_prompt_*=). Everything else is =unknown=,
+  and idle never means success.
+- *Collection:* scan only while the dashboard is shown, on open, show and its
+  tick. Hidden, it does no work beyond today's metadata records.
+
+Found while testing:
+
+- At Claude's trust dialog, only the process shows Claude is running: no title,
+  no progress, no =claude agents= entry. Process discovery is the only source
+  that meets the first-prompt requirement for all three harnesses.
+- Claude's permission dialog shows the idle title glyph while progress stays
+  "working", so in-band signals cannot say waiting. Denying a permission changes
+  only progress: with title-only query triggers, denial reached =idle= after the
+  30 s safety poll; adding progress made it 0.44 s. Portal must cache progress.
+- Pi renames its process through Node's =process.title=, which pads its old
+  arguments with NULs before the environment. The first scanner stopped at the
+  padding and lost Pi 3 s after launch; skipping it fixed that.
+- Codex animates its title every 100 ms while working. Portal's existing change
+  records coalesce that to about 8 a second, 0.30 ms of Lisp each, whether or not
+  the dashboard is shown.
+- =claude agents --json= costs 190 ms wall, 150 ms CPU and 148 MB a call, too
+  much to poll every tick; transitions trigger it instead.
+
+Open decision for the Claude implementation: whether a suspended (Ctrl-Z) agent
+keeps a row as stopped or loses it like an exited one. Untested scenarios are
+listed in the research note.
+
+*** Verification
+- Headless captures of real sessions, with recorded steps, for each harness:
+  first prompt or trust dialog, a turn, permission or approval accepted and
+  denied (Claude, Codex), cancel, a failing turn, a queued message and
+  =/compact= (Claude), a queued follow-up (Pi) and quitting.
+- Two graphical runs with real agents in Portal terminals and the prototype,
+  traced natively and in Lisp (=portal-run-*.jsonl=). A plain =claude= launch
+  was visible to a scan 0.17–0.73 s after Enter; its row printed as soon as the
+  dashboard opened. Codex (0.62–0.74 s) and Pi (0.62–0.63 s) likewise. A Claude
+  started before discovery was enabled was found. Rows survived hiding the
+  terminal; three Claude sessions, two in one directory, stayed distinct; =RET=
+  visited the right one. Exit removed the row while the shell ran; relaunch gave
+  a new PID with no reused status; closing a view removed its agent, and a late
+  =claude agents= result created no row.
+- Controls never produced a row: synthetic Claude titles, progress and OSC
+  9/777 notifications; =cat= of a captured Claude session through Ghostty;
+  build-style percentage progress; =sleep=; =exec -a claude sleep=; Node that
+  is not Pi; every agent in the user's own Portal, whose terminals lack the marker.
+- Scan cost: 0.8–1.3 ms idle and a 2.7 ms median during run 2 with a single
+  foreground-only =KERN_PROC_UID= snapshot, against 4.4–5.9 ms idle and an
+  11.2 ms median reading every process's path.
+- The instrumentation patch was reverted before committing.
 
 ** TODO Discover Claude sessions automatically and show their live status :task:
 :PROPERTIES:
@@ -296,6 +371,37 @@ unknown activity without disappearing.
 *** Blocked by
 [[#agent-discovery-spike][Discovery and status spike]] must establish Claude's
 identity, startup, status and exit contract, including exact terminal association.
+It is DONE; its mechanism follows.
+
+*** Measured mechanism
+From [[file:docs/agent-discovery-research.md][the spike's research note]],
+tested with Claude Code 2.1.287. No Claude setup is needed.
+
+- *Native:* export =PORTAL_TERMINAL=<emacs-pid>/<view-target>= with
+  =INSIDE_EMACS= in each terminal's environment. Report agent processes by one
+  =KERN_PROC_UID= snapshot, keeping processes whose group owns their TTY, then
+  reading executable path, =argv[0]= and the marker; skip NUL padding before the
+  environment. Classify Claude by an executable under =claude/versions/= or
+  named =claude=; ignore an agent nested under another agent in the same
+  terminal. Per the platform-primitives rule, the platform reports processes;
+  Lisp or the core classifies them. [[file:docs/agent-discovery/agentscan.c][agentscan.c]]
+  is the reference. Also cache each terminal's last OSC 9;4 progress state and
+  announce changes through the existing change records.
+- *Activity:* run =claude agents --json= asynchronously, one at a time, only
+  while the dashboard is shown: when shown, for a PID with no status (at most
+  every 4 s while unlisted), when a Claude terminal's title glyph class (=✳=,
+  spinner, other) or progress state changes, and every 30 s. Map =busy=,
+  =waiting=, =idle= by PID and process start; otherwise =unknown=, with a reason
+  (not yet listed, trust dialog, query failed). [[file:docs/agent-discovery/prototype.el][prototype.el]]
+  shows the rules against the current dashboard.
+- *Latency target:* a row within one refresh interval (2 s) of the process
+  starting while the dashboard is shown, and at once when it is opened or shown
+  again. Activity within 1 s of the terminal's title or progress change. Measured:
+  process visible 0.17–0.73 s after Enter; statuses 0.2–0.6 s after the signal.
+- *Cost to stay within:* a scan of a few milliseconds per refresh (measured
+  0.8–12 ms) and one 190 ms, 150 ms CPU query per transition; nothing while
+  hidden. Replay with [[file:test/fixtures/agent-signals][the fixtures]].
+- *Decide first:* whether a suspended (Ctrl-Z) Claude keeps a row as stopped.
 
 *** Plan
 - Add only the collection and discovery needed by the selected mechanism. Reuse
@@ -349,6 +455,27 @@ with the Codex mechanism validated by the spike.
 tested collection, identity, lifecycle and dashboard path to extend. Codex's
 mechanism and any setup must first be resolved in
 [[#agent-discovery-spike][the spike]]; add an explicit prerequisite if still unproven.
+The spike proved it with Codex CLI 0.155.1; no further prerequisite.
+
+*** Measured mechanism
+- *Identity:* the shared foreground-process scan; Codex is a foreground process
+  named =codex= carrying the terminal's marker. Visible 0.62–0.74 s after Enter.
+  The ChatGPT app's own =codex= has no marker and stays out.
+- *Activity:* the default terminal title, labelled as its source: a first
+  character in U+2800–U+28FF (a braille spinner, every ~100 ms) means working;
+  =Action Required= (blinking =[ . ]= and =[ ! ]= each second) means waiting; any
+  other title means idle; no title means unknown. No setup.
+- *Known gaps:* the startup spinner reads as working for 1–2 s before the first
+  prompt; menus that are not approvals (a model-switch prompt after an error)
+  show the idle title; a customized title setting breaks the mapping. A plain
+  =codex= runs its app-server in-process; =codex agents= only sees sessions on
+  the shared daemon, which needs =codex --remote=, so the app-server is not an
+  observer for ordinary launches. OSC 9 notifications arrive only while
+  unfocused and stay attention hints.
+- *Still to replay:* queued continuation, compaction, retries and patch
+  approvals were not captured (quota). Fixtures: =codex-*.jsonl= in
+  [[file:test/fixtures/agent-signals][test/fixtures/agent-signals]].
+- *Latency target:* as Claude's for the row; activity at the next refresh.
 
 *** Plan and acceptance
 - [ ] Use the selected identity and activity sources. If an app-server observer
@@ -383,6 +510,32 @@ need neither a special command nor manual tracking.
 shared collection, lifecycle and dashboard path. Pi's setup and lifecycle
 contract must first be resolved in [[#agent-discovery-spike][the spike]]; add an
 explicit prerequisite if still unproven. Codex support is not a prerequisite.
+The spike proved identity with no setup and the extension's lifecycle with Pi
+0.87.0; no further prerequisite.
+
+*** Measured mechanism
+- *Identity, no setup:* the shared foreground-process scan; Pi is Node with
+  =argv[0]= =pi= (after it sets =process.title=) or the =pi-coding-agent=
+  package path in its arguments. Its rename pads the old arguments with NULs
+  before the environment, which the scanner must skip. Found at Pi's trust
+  dialog 0.62–0.63 s after Enter; gone 0.15 s after Ctrl-D.
+- *Activity needs the extension:* Pi's title (=π - <dir>=) never changes while
+  working and outlives Pi; it emits no progress by default and no
+  notifications. The candidate extension, [[file:docs/agent-discovery/pi-progress.ts][pi-progress.ts]],
+  runs only with =PORTAL_TERMINAL= and a TTY, and writes OSC 9;4: 0 at
+  =session_start= and =agent_settled= when =ctx.isIdle()=, 3 at =agent_start=,
+  4 during =ui_prompt_*=, 0 at shutdown. Tested with =pi -e=: correct order for
+  turns, a tool turn, cancel and exit, with normal rendering. Portal reads it
+  from the cached progress state the Claude task adds, counting only reports
+  after the Pi process was discovered; before one arrives, activity is unknown.
+- *Setup:* one-time install into =~/.pi/agent/extensions= (Pi loads that
+  directory without flags; the user's existing extensions there loaded in every
+  run) or =pi install=. Pi's own =terminal.showTerminalProgress= must stay off,
+  its default, or it clears progress at =agent_end=. Never edit settings for the
+  user.
+- *Still to replay:* =agent_end= before an automatic retry or continuation (a
+  queued follow-up stayed in one run), =ui_prompt_*= dialogs, =/new=, =/resume=
+  and reload. Fixtures: =pi-*.jsonl= in [[file:test/fixtures/agent-signals][test/fixtures/agent-signals]].
 
 *** Plan and acceptance
 - [ ] Identify Pi independently of generic progress output. If the selected source
