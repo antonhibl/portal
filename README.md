@@ -857,7 +857,7 @@ not stop a terminal working on it.
 `M-x portal-tasks-implement` starts Claude on an actionable task: the one on
 the view's line, or the one point is in, in the task detail or in
 `project.org` itself. No key is bound to it; bind one if you like. Claude runs
-in a new terminal in another pane, named after the task, such as
+in a new terminal filling its frame, named after the task, such as
 `*claude: search-index*`, at the project root. The program and its arguments
 are `portal-tasks-claude-program` and `portal-tasks-claude-arguments`, read at
 each start, then the initial prompt; [Implementing a task](#implementing-a-task)
@@ -893,8 +893,8 @@ terminal, or Emacs exits; if Emacs itself is killed, it stays in the
 temporary directory.
 
 Running the command on a task whose terminal still exists shows that
-terminal instead of starting another run. `C-u M-x portal-tasks-implement`
-starts another.
+terminal filling its frame instead of starting another run.
+`C-u M-x portal-tasks-implement` starts another.
 
 ## Task browser
 

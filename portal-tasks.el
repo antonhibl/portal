@@ -746,7 +746,7 @@ deleted when the terminal ends.")
 
 ;;;###autoload
 (defun portal-tasks-implement (&optional new)
-  "Start Claude on a task, in a new terminal at the project root.
+  "Start Claude on a task, in a terminal filling its frame at the project root.
 The task is the one on this line of the task view, or else the one point
 is in, in the task detail or project.org.  It must be actionable.  When
 project.org has unsaved changes, offer to save it first; nothing starts
@@ -760,8 +760,9 @@ pass.  The brief is a new read-only file holding the task's subtree as
 saved, and where it came from.  It is deleted when the terminal ends.
 Starting Claude changes no task.
 
-If a terminal started on the task still exists, show it instead.  With
-prefix argument NEW, start another anyway.  Return the terminal's buffer."
+If a terminal started on the task still exists, show it filling its frame
+instead.  With prefix argument NEW, start another anyway.  Return the
+terminal's buffer."
   (interactive "P")
   (portal-tasks--require)
   (let* ((file (portal-tasks--project-file))
@@ -772,12 +773,13 @@ prefix argument NEW, start another anyway.  Return the terminal's buffer."
                   (abbreviate-file-name file)))
     (let ((terminal (and (not new) (portal-tasks--running file id))))
       (if (not terminal)
-          (portal-tasks--start file id)
+          (setq terminal (portal-tasks--start file id))
         (pop-to-buffer terminal '(nil (inhibit-same-window . t) (reusable-frames . visible)))
-        (portal-terminal-focus)
         (message "Claude is already on task %s; %s starts another" id
-                 (substitute-command-keys "\\[universal-argument] \\[portal-tasks-implement]"))
-        terminal))))
+                 (substitute-command-keys "\\[universal-argument] \\[portal-tasks-implement]")))
+      (delete-other-windows)
+      (portal-terminal-focus)
+      terminal)))
 
 (defun portal-tasks--heading ()
   "Return the heading of the task on this task view line, or the one point is in.
