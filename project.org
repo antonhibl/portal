@@ -289,7 +289,7 @@ Other worktrees receive that update through Git; no shared in-progress status.
 the one point is in, in the task detail or in =project.org=. The task is judged
 again from the file and its archives. A task that is not actionable starts
 nothing, and the message gives the view's reasons. A modified =project.org=
-is offered for saving, and one changed on disk is refused. The brief is a
+is offered for saving, and one changed on disk, or by a save hook, is refused. The brief is a
 read-only =portal-task-ID-XXXXXX.org= in =temporary-file-directory=. Comments
 give the project, source path, =CUSTOM_ID=, line range and the SHA-256 of the
 saved file, and then comes the subtree exactly as saved. Claude runs through
@@ -329,7 +329,9 @@ Verified on 2026-10-02 (macOS 27.0, Emacs 31.1, Org 9.8.7, Claude Code 2.1.287):
   tests. Each of these mutations fails one: the whole file in the brief, no
   save offer, no on-disk check, readiness judged only after saving, no
   readiness check, a brief kept on close or after a failed start, always a new
-  run, the oldest run shown, a writable brief, and no unique-ID check.
+  run, the oldest run shown, a writable brief, no unique-ID check, and no
+  check of the buffer or of the file after saving. Review found the last: an
+  =after-save-hook= that edits the buffer again.
 - =portal-tasks.el= byte-compiles without warnings, with and without org-ql.
 - Real Claude read each brief. In a project whose path has spaces and quotes,
   beside a 3000-line neighbouring task, batch Emacs recorded the directory and

@@ -804,8 +804,8 @@ The task is judged again first, from `project.org` and its archives as they
 are in Emacs. A task that is not actionable starts nothing, and the message
 says why. If `project.org` has unsaved changes, Emacs offers to save it;
 declining, or a failed save, starts nothing and keeps the edits. So does a
-`project.org` changed on disk since Emacs read it: revert or save it, then try
-again.
+save hook that changes the buffer or the file again, and a `project.org`
+changed on disk since Emacs read it: revert or save it, then try again.
 
 The initial prompt has Claude read the task's brief first and implement the
 task, following the repository's instructions. Once the work and its checks
@@ -1439,8 +1439,9 @@ directory, the brief's provenance and exact subtree beside 3000-line
 neighbors, an unchanged file, showing a task's terminal again, an explicit
 second run, and each brief deleted with its terminal. Blocked, closed,
 unidentified and other files' tasks, declining to save, a failed save, a
-file changed on disk and a terminal that fails to start each start nothing,
-and an accepted save puts the edit in the brief.
+save hook that changes the buffer or the file again, a file changed on disk
+and a terminal that fails to start each start nothing, and an accepted save
+puts the edit in the brief.
 `bun test host` checks that status edits change only the status value, in
 block and flow YAML, with quoted keys and values, comments, unknown fields, a
 BOM, CRLF and multibyte text; that tagged, anchored, duplicated and otherwise

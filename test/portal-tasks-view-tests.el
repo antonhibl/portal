@@ -926,7 +926,37 @@ ARGV is a list, and BRIEF the file its last argument names with @."
                 (portal-fake-native-failures '(portal--open)))
             (should-error (portal-tasks-view-test--implement view "First" t))
             (should (equal (portal-tasks-view-test--briefs) briefs))
-            (should (= (length (portal-view-buffers 'terminal)) 1))))))))
+            (should (= (length (portal-view-buffers 'terminal)) 1)))
+          ;; A save hook that edits the buffer again leaves text no brief
+          ;; may hold, as it is not saved.
+          (with-current-buffer source
+            (goto-char (point-max))
+            (insert "Edited.\n")
+            (add-hook 'after-save-hook (lambda () (goto-char (point-max)) (insert "Stamp.\n"))
+                      nil t))
+          (let ((briefs (portal-tasks-view-test--briefs))
+                (starts (length (portal-fake-native-calls 'portal--open))))
+            (should (string-match-p "changed as it was saved"
+                                    (cadr (should-error
+                                           (portal-tasks-view-test--implement view "First" t)
+                                           :type 'user-error))))
+            (should (equal (portal-tasks-view-test--briefs) briefs))
+            (should (= (length (portal-fake-native-calls 'portal--open)) starts))
+            (with-current-buffer source
+              (kill-local-variable 'after-save-hook)
+              (should (buffer-modified-p))
+              (should (string-suffix-p "Edited.\nStamp.\n" (buffer-string)))
+              ;; So does one that changes the file on disk.
+              (add-hook 'after-save-hook
+                        (lambda () (set-file-times buffer-file-name (time-subtract nil 60)))
+                        nil t))
+            (should (string-match-p "changed as it was saved"
+                                    (cadr (should-error
+                                           (portal-tasks-view-test--implement view "First" t)
+                                           :type 'user-error))))
+            (should (equal (portal-tasks-view-test--briefs) briefs))
+            (should (= (length (portal-fake-native-calls 'portal--open)) starts))
+            (with-current-buffer source (kill-local-variable 'after-save-hook))))))))
 
 (provide 'portal-tasks-view-tests)
 ;;; portal-tasks-view-tests.el ends here

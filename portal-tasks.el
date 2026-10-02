@@ -826,14 +826,17 @@ is saved, after offering to save it."
 (defun portal-tasks--save (source)
   "Offer to save SOURCE, a task file's buffer, if it has unsaved changes.
 Signal an error, leaving SOURCE as it is, unless its file is then saved
-and has not changed on disk since SOURCE read it."
+and has not changed on disk since SOURCE read it.  A save hook may change
+either again, so both are checked after saving too."
   (with-current-buffer source
     (unless (verify-visited-file-modtime)
       (user-error "%s changed on disk; revert or save it, then try again" (buffer-name)))
     (when (buffer-modified-p)
       (unless (y-or-n-p (format "Save %s first? " (buffer-name)))
         (user-error "Started nothing, as %s is not saved" (buffer-name)))
-      (save-buffer))))
+      (save-buffer)
+      (when (or (buffer-modified-p) (not (verify-visited-file-modtime)))
+        (user-error "Started nothing, as %s changed as it was saved" (buffer-name))))))
 
 (defun portal-tasks--brief (file id heading)
   "Write the brief of task ID of FILE, at HEADING, and return its file name.
