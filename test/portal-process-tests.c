@@ -3,6 +3,18 @@
 #include "../native/Processes/Processes.c"
 #include <assert.h>
 
+static void encoded_string_is(const char *input, const char *expected)
+{
+    char *json = NULL;
+    size_t length = 0;
+    FILE *out = open_memstream(&json, &length);
+    assert(out);
+    string(out, input);
+    assert(!fclose(out));
+    assert(!strcmp(json, expected));
+    free(json);
+}
+
 int main(void)
 {
     portal_string variable = {"PORTAL_TERMINAL", 15};
@@ -33,6 +45,19 @@ int main(void)
     assert(!fclose(out));
     assert(!strcmp(json, "\"a\\u000a\\\"\\\\é\""));
     free(json);
+    /* Process strings are arbitrary POSIX bytes. Preserve Unicode, replacing
+       each invalid byte without eating adjacent ASCII or valid code points. */
+    encoded_string_is("é日本🙂", "\"é日本🙂\"");
+    encoded_string_is("before\xff" "after", "\"before\\ufffdafter\"");
+    encoded_string_is("\x80\xc0\xaf", "\"\\ufffd\\ufffd\\ufffd\"");
+    encoded_string_is("\xe2\x82", "\"\\ufffd\\ufffd\"");
+    encoded_string_is("\xe0\x80\x80", "\"\\ufffd\\ufffd\\ufffd\"");
+    encoded_string_is("\xf0\x80\x80\x80", "\"\\ufffd\\ufffd\\ufffd\\ufffd\"");
+    encoded_string_is("\xed\xa0\x80", "\"\\ufffd\\ufffd\\ufffd\"");
+    encoded_string_is("\xf4\x90\x80\x80", "\"\\ufffd\\ufffd\\ufffd\\ufffd\"");
+    encoded_string_is("\xe2" "Aé\xff\\\"", "\"\\ufffdAé\\ufffd\\\\\\\"\"");
+    encoded_string_is("\xc2\x80\xe0\xa0\x80\xed\x9f\xbf\xf4\x8f\xbf\xbf",
+                      "\"\xc2\x80\xe0\xa0\x80\xed\x9f\xbf\xf4\x8f\xbf\xbf\"");
     portal_text result = {0}, error = {0};
     assert(!portal_process_snapshot((portal_string) {"bad=name", 8}, &result, &error));
     free(error.data);

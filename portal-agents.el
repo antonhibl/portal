@@ -205,7 +205,8 @@ It needs it while it is shown and `portal-agents-live-update' is on."
     (when portal-agents--timer
       (cancel-timer portal-agents--timer)
       (setq portal-agents--timer nil)
-      (portal-agent-discovery--stop))
+      (portal-agent-discovery--stop)
+      (portal-agents--changed))
     (unless (portal-agents--shown-p) (portal-agent-discovery--stop))))
 
 (defun portal-agents--tick ()
@@ -227,7 +228,7 @@ Window state change hooks call this with the frame that changed."
     (portal-agents--schedule)))
 
 (defun portal-agents--changed ()
-  "Refresh the dashboard after tracking changed, if it is shown.
+  "Refresh the dashboard after tracking or activity changed, if it is shown.
 A hidden one refreshes when it is shown again."
   (when (portal-agents--shown-p)
     (with-current-buffer portal-agents--buffer (portal-agents--refresh))))

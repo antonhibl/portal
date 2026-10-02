@@ -51,13 +51,51 @@ static bool parse_arguments(char *bytes, size_t size, portal_string variable,
     return true;
 }
 
+/* Length of the next well-formed UTF-8 code point, or zero for invalid input.
+   POSIX paths and arguments are bytes, unlike the platform's JSON result. */
+static size_t utf8_width(const unsigned char *p, size_t remaining)
+{
+    size_t width;
+    uint32_t code, minimum;
+    if (p[0] >= 0xc2 && p[0] <= 0xdf) {
+        width = 2; code = p[0] & 0x1f; minimum = 0x80;
+    } else if (p[0] >= 0xe0 && p[0] <= 0xef) {
+        width = 3; code = p[0] & 0x0f; minimum = 0x800;
+    } else if (p[0] >= 0xf0 && p[0] <= 0xf4) {
+        width = 4; code = p[0] & 0x07; minimum = 0x10000;
+    } else {
+        return 0;
+    }
+    if (remaining < width) return 0;
+    for (size_t i = 1; i < width; i++) {
+        if ((p[i] & 0xc0) != 0x80) return 0;
+        code = (code << 6) | (p[i] & 0x3f);
+    }
+    if (code < minimum || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff))
+        return 0;
+    return width;
+}
+
 static void string(FILE *out, const char *s)
 {
     fputc('"', out);
-    for (const unsigned char *p = (const unsigned char *) s; *p; p++) {
+    const unsigned char *p = (const unsigned char *) s;
+    for (size_t remaining = strlen(s); remaining;) {
+        size_t width = 1;
         if (*p == '"' || *p == '\\') fprintf(out, "\\%c", *p);
         else if (*p < 32) fprintf(out, "\\u%04x", *p);
-        else fputc(*p, out);
+        else if (*p < 0x80) fputc(*p, out);
+        else {
+            width = utf8_width(p, remaining);
+            if (width) fwrite(p, 1, width, out);
+            else {
+                /* Replace each invalid byte; preserve adjacent valid text. */
+                fputs("\\ufffd", out);
+                width = 1;
+            }
+        }
+        p += width;
+        remaining -= width;
     }
     fputc('"', out);
 }

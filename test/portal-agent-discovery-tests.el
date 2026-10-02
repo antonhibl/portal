@@ -189,6 +189,35 @@
       (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"}]")
       (should (equal (portal-discovery-test--status terminal) "working")))))
 
+(ert-deftest portal-discovery-pausing-refreshes-visible-activity ()
+  (portal-discovery-test--environment
+    (let ((terminal (portal-agents-test--open "one/app")))
+      (setq portal-discovery-test--processes (list (portal-discovery-test--process terminal 10)))
+      (portal-agents-test--show)
+      ;; Both the interactive toggle and a setting noticed on the next tick
+      ;; invalidate displayed activity without starting another collection.
+      (dolist (pause '(toggle setting))
+        (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"}]")
+        (should (equal (portal-discovery-test--status terminal) "working"))
+        (let ((queries portal-discovery-test--queries))
+          (cl-letf (((symbol-function 'portal--process-snapshot)
+                     (lambda (_) (ert-fail "Pausing scanned processes"))))
+            (if (eq pause 'toggle)
+                (portal-agents-toggle-live-update -1)
+              (setq portal-agents-live-update nil)
+              (portal-agents--tick)))
+          (should (= queries portal-discovery-test--queries)))
+        (should-not portal-agents--timer)
+        (should-not portal-agent-discovery--process)
+        (let ((activity (portal-discovery-test--status terminal)))
+          (should (equal activity "unknown"))
+          (should (equal (get-text-property 0 'help-echo activity) "Refresh paused")))
+        ;; Refreshing manually still completes its one requested query.
+        (with-current-buffer portal-agents--buffer (revert-buffer))
+        (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"idle\"}]")
+        (should (equal (portal-discovery-test--status terminal) "idle"))
+        (when (eq pause 'toggle) (portal-agents-toggle-live-update 1))))))
+
 (ert-deftest portal-discovery-manual-mode-and-unchanged-spinner ()
   (portal-discovery-test--environment
     (let ((terminal (portal-agents-test--open "one/app"))

@@ -540,6 +540,26 @@ macOS 27.0.1 and the repository's pinned Ghostty.
   =LIBRARY_PATH=/opt/homebrew/opt/gcc/lib/gcc/current/gcc/aarch64-apple-darwin25/15=.
   This is a local test-environment setting, not a project/runtime dependency.
 
+*** Review follow-up
+Addressed both findings from the review of =43e074b= in
+[[https://github.com/xiaoxinghu/portal/pull/65][PR #65]]. Both reproduce and repair
+the existing behavior; neither changes an interface, dependency or agreed design.
+
+- Stopping live collection now refreshes the visible table immediately, showing
+  =unknown= with =Refresh paused= rather than retaining =working= indefinitely.
+  The new ERT regression covers the command and a setting noticed on a timer
+  tick, proves pausing starts no collection, and preserves manual refresh.
+- Process JSON encoding preserves valid Unicode and replaces each invalid UTF-8
+  byte with an escaped replacement character. Arbitrary bytes in another
+  foreground command can no longer invalidate the whole discovery snapshot.
+  Tests cover isolated invalid bytes, truncated and overlong sequences,
+  surrogate encodings, values beyond Unicode, valid boundary code points and
+  adjacent ASCII, Unicode and JSON escapes.
+- Both regressions failed before the fixes and pass afterwards. The native build
+  and all 27 CTest suites pass; the discovery suite now has 18 ERT tests. Changed
+  Lisp byte compilation, Org lint and =git diff --check= pass. No findings are
+  deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex
