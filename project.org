@@ -597,6 +597,21 @@ without changing interfaces, dependencies or collection policy.
   byte compilation with warnings treated as errors pass. The discovery suite
   now runs 21 ERT tests. No findings are deferred.
 
+*** Review follow-up: tracking with discovery disabled
+Addressed the finding from the review of =d05cf54= in PR #65 on 2026-10-03.
+Tracking clears hidden identities by terminal buffer/view even when discovery
+is disabled and its agent cache is empty. Re-enabling discovery can then query
+the explicitly tracked run again. Other terminals' hidden identities remain
+intact. This repairs the existing explicit-tracking policy without changing
+interfaces, dependencies or collection policy.
+
+- The regression reproduced the missing status query after re-enabling
+  discovery. It now verifies resumed activity, the preserved manual label, no
+  queries while discovery is disabled, and another session remaining hidden.
+- Native build, all 27 CTest suites, host Biome/type checking and changed Lisp
+  byte compilation with warnings treated as errors pass. The discovery suite
+  now runs 22 ERT tests. No findings are deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex

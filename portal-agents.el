@@ -269,12 +269,13 @@ closes or is replaced.  A program exiting does not end it."
   (let ((buffer (get-buffer buffer)))
     (unless (and buffer (portal-terminal-metadata buffer))
       (user-error "Not a terminal: %s" buffer))
-    (when-let* ((agent (portal-agent-discovery--find buffer)))
+    (let ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
+          (session (portal-agents--tracked-p buffer)))
+      ;; Hidden identities outlive the agent cache when discovery is disabled.
       (setq portal-agent-discovery--hidden
-            (delete (portal-agent-discovery--identity agent) portal-agent-discovery--hidden)))
-    (let ((session (portal-agents--tracked-p buffer)))
+            (cl-delete key portal-agent-discovery--hidden :key #'car :test #'equal))
       (unless session
-        (setq session (list (cons buffer (buffer-local-value 'portal-view--target buffer)))
+        (setq session (list key)
               portal-agents--tracked (append portal-agents--tracked (list session))))
       (when label
         (setcdr session (and (not (string-blank-p label)) (string-trim label)))))

@@ -130,6 +130,36 @@
             (should (equal (portal-discovery-test--status terminal) "idle"))
             (should (= portal-discovery-test--queries queries))))))))
 
+(ert-deftest portal-discovery-retracking-while-disabled-restores-activity ()
+  (portal-discovery-test--environment
+    (let ((one (portal-agents-test--open "one/app"))
+          (two (portal-agents-test--open "one/app")))
+      (setq portal-discovery-test--processes
+            (list (portal-discovery-test--process one 10) (portal-discovery-test--process two 20)))
+      (portal-agents-test--show)
+      (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"busy\"},{\"pid\":20,\"status\":\"idle\"}]")
+      (portal-agents-untrack one)
+      (portal-agents-untrack two)
+      (should-not (portal-agents-test--rows))
+      (let ((portal-agents-discover-claude nil)
+            (queries portal-discovery-test--queries))
+        (portal-agents--tick)
+        (should-not portal-agent-discovery--agents)
+        ;; Tracking must unhide the terminal even with no agent object cached.
+        (portal-agents-track (buffer-name one) "My reviewer")
+        (portal-agents--tick)
+        (should (equal (portal-discovery-test--status one) "unknown"))
+        (should-not portal-agent-discovery--process)
+        (should (= portal-discovery-test--queries queries)))
+      (portal-agents--tick)
+      (should (equal (mapcar #'car (portal-agents-test--rows)) (list one)))
+      (should portal-agent-discovery--process)
+      (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"waiting\"},{\"pid\":20,\"status\":\"busy\"}]")
+      (should (equal (portal-discovery-test--status one) "waiting"))
+      (should (equal (nth 1 (portal-agents-test--row one)) "My reviewer"))
+      ;; Re-enabling discovery must preserve the other terminal's hidden run.
+      (should-not (portal-agents-test--row two)))))
+
 (ert-deftest portal-discovery-spoofed-runtime-does-not-create-a-row ()
   (portal-discovery-test--environment
     (let* ((terminal (portal-agents-test--open "one/app"))
