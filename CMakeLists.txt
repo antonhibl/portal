@@ -108,8 +108,8 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-agent-discovery-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(agent-discovery PROPERTIES TIMEOUT 30)
-    # The optional Consult and Embark adapters, and the task view under Evil,
-    # are tested against the GNU and NonGNU ELPA releases the README names,
+    # The optional Consult and Embark adapters, the task view and agent
+    # dashboard under Evil use the GNU and NonGNU ELPA releases the README names,
     # downloaded once and checked by hash.
     set(elpa_packages
         "elpa.gnu.org/packages/consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
@@ -164,6 +164,11 @@ if(BUILD_TESTING)
         endif()
         list(APPEND elpa_load_path -L "${directory}")
     endforeach()
+    add_test(NAME agents-evil
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
+            -l "${CMAKE_SOURCE_DIR}/test/portal-agents-evil-tests.el"
+            --eval "(ert-run-tests-batch-and-exit 'portal-agents-visit-works-with-evil-collection)")
+    set_tests_properties(agents-evil PROPERTIES TIMEOUT 30)
     add_test(NAME tasks-view
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
             -l "${CMAKE_SOURCE_DIR}/test/portal-tasks-view-tests.el"

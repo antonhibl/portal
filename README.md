@@ -473,8 +473,10 @@ Set `portal-agents-claude-program` to an absolute path if Claude is not on Emacs
 The dashboard is an ordinary Tabulated List buffer with no native view, web
 page or app host. Move, isearch, or press `S` to sort; `RET` visits the correct
 terminal and gives it the keyboard, including hidden terminals, quick panels,
-and terminals in another frame. Renaming a buffer or changing directory does
-not change its identity. Two agents in the same directory remain distinct.
+and terminals in another frame. This also works in Evil's normal state with
+evil-collection's Tabulated List bindings. Renaming a buffer or changing
+directory does not change its identity. Two agents in the same directory remain
+distinct.
 
 Discovery uses foreground processes tied to the exact terminal, never titles,
 progress bars or project paths. Exiting Claude removes its automatic row even
@@ -1645,7 +1647,9 @@ nothing; that `g` works with live updates off; that one timer runs while the
 dashboard is shown in any number of windows, none while hidden, shown only on
 an invisible frame, killed or with live updates off, and that showing it again
 refreshes it; and that `RET` gives the right ordinary, quick, hidden or
-other-frame terminal the keyboard. `test/portal-agents-benchmark.el` measures
+other-frame terminal the keyboard. The `agents-evil` test uses the pinned Evil
+and evil-collection packages to check Enter navigation in normal state.
+`test/portal-agents-benchmark.el` measures
 refresh time, allocation and redraws at 10, 50 and 100 tracked terminals; see
 its commentary to run it.
 `bun test host` checks that status edits change only the status value, in

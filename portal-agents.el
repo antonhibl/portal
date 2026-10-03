@@ -327,6 +327,13 @@ With prefix ARG, turn them on if ARG is positive, and off otherwise."
   "t" #'portal-agents-track
   "u" #'portal-agents-untrack)
 
+(declare-function evil-define-key* "evil-core" (state keymap key def &rest bindings))
+;; Evil's normal-state Return overrides the major mode's binding.
+(with-eval-after-load 'evil
+  (evil-define-key* 'normal portal-agents-mode-map
+    (kbd "RET") #'portal-agents-visit
+    (kbd "<return>") #'portal-agents-visit))
+
 (define-derived-mode portal-agents-mode tabulated-list-mode "Agents"
   "The agent dashboard: discovered Claude sessions and manually tracked terminals.
 Each row shows a terminal's buffer, the agent label it was tracked with,
