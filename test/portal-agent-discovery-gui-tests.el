@@ -1,0 +1,155 @@
+;;; portal-agent-discovery-gui-tests.el --- Real Claude smoke test -*- lexical-binding: t; -*-
+;; SPDX-License-Identifier: GPL-3.0-or-later
+;; Opt in with PORTAL_TEST_CLAUDE_DIRECTORY pointing at an already trusted project.
+;; Starts plain Claude sessions, sends one harmless prompt, then exits them.
+(require 'portal-agents-gui-tests)
+(declare-function portal--process-snapshot "portal-view" (variable))
+(declare-function portal--terminal-paste "portal-terminal" (target text &optional enter))
+
+(defun portal-discovery-gui--type (buffer text)
+  "Type TEXT and Return in BUFFER's shell or Claude session."
+  (portal--terminal-paste (buffer-local-value 'portal-view--target buffer) text t))
+
+(defun portal-discovery-gui--wait (predicate &optional seconds)
+  "Wait up to SECONDS (default 15) for PREDICATE through the real event loop."
+  (let ((deadline (+ (float-time) (or seconds 15))))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.02)
+      (redisplay t))
+    (should (funcall predicate))))
+
+(ert-deftest portal-discovery-gui-inherited-tmux-marker ()
+  (let ((fixture (getenv "PORTAL_TEST_PROCESS_SNAPSHOT"))
+        (tmux (executable-find "tmux")))
+    (skip-unless (and fixture tmux))
+    (portal-agents-gui--environment
+      (let* ((directory (file-truename (make-temp-file "portal-tmux-" t)))
+             (program (expand-file-name "claude" directory))
+             (socket (expand-file-name "socket" directory))
+             ;; Identity only: no real Claude request or credentials are needed.
+             (portal-agents-claude-program "/usr/bin/true")
+             (direct (portal-agents-gui--open "direct-identity"))
+             (nested (portal-agents-gui--open "nested-identity"))
+             (marker (format "%d/%s" (emacs-pid) (buffer-local-value 'portal-view--target nested))))
+        (unwind-protect
+            (progn
+              (copy-file fixture program)
+              (set-file-modes program #o700)
+              (portal-agents-gui--wait 1)
+              (portal-discovery-gui--type direct (concat (shell-quote-argument program) " --wait"))
+              (portal-discovery-gui--type
+               nested (mapconcat #'shell-quote-argument
+                                 (list tmux "-f" "/dev/null" "-S" socket "new-session" "-d"
+                                       (concat (shell-quote-argument program) " --wait")) " "))
+              ;; Verify the adversarial evidence really exists before asserting
+              ;; its absence from the dashboard: a foreground native executable
+              ;; named Claude with the exact Portal marker, on tmux's own PTY.
+              (portal-discovery-gui--wait
+               (lambda ()
+                 (seq-find (lambda (p) (and (equal (plist-get p :executable) program)
+                                            (equal (plist-get p :environment) marker)
+                                            (not (eql (plist-get p :tty-parent) (emacs-pid)))))
+                           (append (portal--process-snapshot "PORTAL_TERMINAL") nil))))
+              (portal-agents)
+              (portal-discovery-gui--wait (lambda () (portal-agents-gui--row direct)))
+              (should-not (portal-agents-gui--row nested))
+              ;; Attaching the tmux client still does not make its pane our TTY.
+              (portal-discovery-gui--type nested
+                                        (mapconcat #'shell-quote-argument
+                                                   (list tmux "-S" socket "attach-session") " "))
+              (portal-discovery-gui--wait
+               (lambda () (equal (process-lines tmux "-S" socket "display-message" "-p"
+                                                "#{session_attached}") '("1"))))
+              (with-current-buffer portal-agents--buffer (revert-buffer))
+              (should (portal-agents-gui--row direct))
+              (should-not (portal-agents-gui--row nested)))
+          (call-process tmux nil nil nil "-S" socket "kill-server")
+          (delete-directory directory t))))))
+
+(ert-deftest portal-discovery-gui-plain-claude ()
+  (skip-unless (getenv "PORTAL_TEST_CLAUDE_DIRECTORY"))
+  (portal-agents-gui--environment
+    (let* ((default-directory (file-name-as-directory (getenv "PORTAL_TEST_CLAUDE_DIRECTORY")))
+           ;; Use the promised default refresh bound, not the GUI helper's 0.2 s.
+           (portal-agents-live-update-interval 2)
+           (one (portal-agents-gui--open "claude-smoke-one"))
+           (two (portal-agents-gui--open "claude-smoke-two"))
+           (control (portal-agents-gui--open "claude-smoke-control"))
+           (window (selected-window))
+           (right (split-window-right))
+           scan-times)
+      (portal-agents-gui--wait 1)
+      ;; A pre-existing plain launch must appear as soon as the dashboard opens.
+      (portal-discovery-gui--type one "claude")
+      (portal-agents-gui--wait 3)
+      (with-selected-window right (portal-agents))
+      (should (portal-agents-gui--row one))
+      (should-not portal-agents--tracked)
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row one)) "idle")))
+      (portal-discovery-gui--type control "printf '\\033]0;✳ Claude Code\\007\\033]9;4;3\\007'; bash -c 'exec -a claude sleep 3'")
+      (let ((start (float-time)))
+        (portal-discovery-gui--type two "claude")
+        (portal-discovery-gui--wait (lambda () (portal-agents-gui--row two)) 3)
+        (message "DISCOVERY launch-to-row %.3f s" (- (float-time) start)))
+      (should (= (length portal-agent-discovery--agents) 2))
+      (should-not (portal-agents-gui--row control))
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row two)) "idle")))
+      (with-current-buffer one (rename-buffer "renamed-real-Claude"))
+      (with-selected-window right
+        (portal-agents-gui--visit one)
+        (should (equal (portal-agents-gui--view one) (list right t)))
+        (portal-agents))
+      ;; A real turn exercises native title/progress -> asynchronous query -> row.
+      (portal-discovery-gui--type one "Reply with exactly PORTAL_OK. Do not use tools.")
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row one)) "working")) 30)
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row one)) "idle")) 60)
+      (dotimes (_ 50)
+        (let ((start (float-time)))
+          (portal--process-snapshot "PORTAL_TERMINAL")
+          (push (* 1000 (- (float-time) start)) scan-times)))
+      (message "DISCOVERY native scan ms mean=%.3f max=%.3f"
+               (/ (apply #'+ scan-times) (length scan-times)) (apply #'max scan-times))
+      ;; Hide collection while the terminals and their metadata keep running.
+      (set-window-buffer right (get-buffer-create "*scratch*"))
+      (portal-agents-gui--settle)
+      (should-not portal-agents--timer)
+      (should-not portal-agent-discovery--process)
+      (portal-discovery-gui--type one "/exit")
+      (portal-agents-gui--wait 3)
+      (with-selected-window right (portal-agents))
+      (should-not (portal-agents-gui--row one))
+      (should (portal-agents-gui--row two))
+      (should-not (plist-get (portal-terminal-metadata one) :exited))
+      (portal-discovery-gui--type one "claude")
+      (portal-discovery-gui--wait (lambda () (portal-agents-gui--row one)) 3)
+      (portal-discovery-gui--type two "/exit")
+      (portal-discovery-gui--wait (lambda () (not (portal-agents-gui--row two))) 5)
+      ;; The selected suspension policy is exercised against a real foreground job.
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row one)) "idle")))
+      (signal-process (portal-agent-pid (portal-agent-discovery--find one)) 'SIGTSTP)
+      (portal-discovery-gui--wait (lambda () (not (portal-agents-gui--row one))) 5)
+      (portal-discovery-gui--type one "fg")
+      (portal-discovery-gui--wait (lambda () (portal-agents-gui--row one)) 5)
+      ;; A quick terminal is discovered and remains discoverable while hidden.
+      (select-window window)
+      (portal-terminal-quick--show default-directory)
+      (let ((quick (current-buffer)))
+        (portal-agents-gui--wait 1)
+        (portal-discovery-gui--type quick "claude")
+        (portal-terminal-quick-dismiss)
+        (portal-discovery-gui--wait (lambda () (portal-agents-gui--row quick)) 3)
+        (with-selected-window right (portal-agents-gui--visit quick))
+        (should (equal (portal-agents-gui--view quick)
+                       (list (portal-terminal-quick--window) t)))
+        (portal-terminal-quick-dismiss)
+        (should (portal-agents-gui--row quick)))
+      (should-not portal-agents--tracked)
+      (select-window window))))
+
+(provide 'portal-agent-discovery-gui-tests)
+;;; portal-agent-discovery-gui-tests.el ends here

@@ -38,6 +38,9 @@ never by the shell changing directory.")
 (defvar-local portal-terminal--directory nil
   "The terminal's working directory: the last its shell reported, or its start.")
 (defvar-local portal-terminal--title nil "The title its program set last, or nil.")
+(defvar-local portal-terminal--progress nil "The last OSC 9;4 progress state, or nil.")
+(defvar portal-terminal-metadata-change-hook nil
+  "Hook run in a terminal buffer after its cached native metadata changes.")
 (defvar-local portal-terminal--exited nil "Whether its program has exited.")
 (defvar portal-terminal--native-maps)
 (declare-function portal-terminal-refresh-bindings "portal-terminal-bindings" ())
@@ -110,8 +113,9 @@ project too, are included only when QUICK is non-nil."
 BUFFER defaults to the current buffer.  The plist holds its label, the
 buffer's `:name'; its `:project' root, or nil; its working `:directory';
 its `:title', as its program last set it, or nil; whether its program
-`:exited'; and whether it is a `:quick' terminal.  Only facts are reported:
-a live shell may be idle or busy, and a title may name anything."
+`:exited'; its `:progress' state, or nil; and whether it is a `:quick'
+terminal.  Only facts are reported: a live shell may be idle or busy,
+and a title may name anything."
   (let ((buffer (or buffer (current-buffer))))
     ;; A buffer has a target exactly while it has a view, so this costs the
     ;; same however many views there are, unlike `portal-view-buffers'.
@@ -120,7 +124,7 @@ a live shell may be idle or busy, and a title may name anything."
       (with-current-buffer buffer
         (list :name (buffer-name) :project portal-terminal--project
               :directory portal-terminal--directory :title portal-terminal--title
-              :exited portal-terminal--exited :quick (and portal-terminal--quick-root t))))))
+              :progress portal-terminal--progress :exited portal-terminal--exited :quick (and portal-terminal--quick-root t))))))
 
 (defun portal-terminal--local-directory (path)
   "Return PATH as a directory name if a report of it can be trusted, else nil.
@@ -140,8 +144,10 @@ A trusted directory also becomes the buffer's `default-directory', for
 ordinary file commands, and `list-buffers-directory', for buffer lists."
   (when-let* ((state (portal--inspect target)))
     (let ((title (plist-get state :title))
+          (progress (plist-get state :progress))
           (directory (portal-terminal--local-directory (plist-get state :pwd))))
-      (setq portal-terminal--title (and (stringp title) (not (string-empty-p title)) title))
+      (setq portal-terminal--title (and (stringp title) (not (string-empty-p title)) title)
+            portal-terminal--progress (and (stringp progress) (not (string-empty-p progress)) progress))
       (when directory
         (setq portal-terminal--directory directory
               default-directory directory
@@ -149,7 +155,8 @@ ordinary file commands, and `list-buffers-directory', for buffer lists."
       (unless (eq portal-terminal--exited (plist-get state :exited))
         (setq portal-terminal--exited (plist-get state :exited)
               mode-line-process (and portal-terminal--exited ":exited"))
-        (force-mode-line-update)))))
+        (force-mode-line-update))
+      (run-hooks 'portal-terminal-metadata-change-hook))))
 
 (setf (alist-get "terminal" portal-view-record-handlers nil nil #'equal)
       #'portal-terminal--changed)

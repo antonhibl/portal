@@ -205,5 +205,39 @@ both, and for any collection."
       (princ report #'external-debugging-output))
     (kill-emacs 0)))
 
+
+(defun portal-agents-benchmark-discovery ()
+  "Compare automatic collection and rendering at 10, 50 and 100 sessions."
+  (let (lines)
+    (dolist (count '(10 50 100))
+      (portal-agents-benchmark--start count)
+      (let* ((buffers (portal-terminal-buffers))
+             (processes
+              (cl-loop for buffer in buffers for pid from 100
+                       collect (list :pid pid :start "100.000001" :ancestors '(1) :tty-parent (emacs-pid)
+                                     :environment (format "%s/%s" (emacs-pid)
+                                                          (buffer-local-value 'portal-view--target buffer))
+                                     :argv '("claude") :executable "/opt/claude/versions/2.1.287"))))
+        (setq portal-agents--tracked nil)
+        (cl-letf (((symbol-function 'portal--process-snapshot) (lambda (_) processes))
+                   ((symbol-function 'portal-agent-discovery--query) #'ignore))
+          (portal-agent-discovery--collect)
+          (dolist (agent portal-agent-discovery--agents)
+            (setf (portal-agent-activity agent) "working" (portal-agent-reason agent) "Benchmark"))
+          (setq portal-agent-discovery--queried (float-time))
+          (with-current-buffer portal-agents--buffer
+            (portal-agents--refresh)
+            (let ((collection (portal-agents-benchmark--measure 200 #'portal-agent-discovery--collect))
+                  (unchanged (portal-agents-benchmark--measure 200 #'portal-agents--tick))
+                  (changed (portal-agents-benchmark--measure 200 #'portal-agents--tick
+                                                            #'portal-agents-benchmark--burst)))
+              (push (format "| %d | %.3f | %.3f | %.3f | %.1f |"
+                            count (car collection) (car unchanged) (car changed)
+                            (/ (nth 1 unchanged) 1024.0)) lines)))))
+      (portal-agents-benchmark--stop))
+    (princ (concat "| Sessions | Collection ms | Unchanged tick ms | Changed tick ms | Unchanged KB |\n"
+                   "|---|---|---|---|---|\n" (mapconcat #'identity (nreverse lines) "\n") "\n"))
+    (kill-emacs 0)))
+
 (provide 'portal-agents-benchmark)
 ;;; portal-agents-benchmark.el ends here

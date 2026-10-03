@@ -1,12 +1,9 @@
-;;; portal-agents.el --- A live list of tracked terminals -*- lexical-binding: t; -*-
+;;; portal-agents.el --- A live list of agent sessions -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; `portal-agents' lists the terminals you track, typically ones running coding
-;; agents, in one ordinary Tabulated List buffer.  Rows come from what
-;; `portal-terminal-metadata' has cached, so a refresh asks nothing of native
-;; code or the shells.  While the list is shown, one timer refreshes it, and a
-;; refresh rewrites the buffer only when those facts changed.  A running shell
-;; says nothing of what its agent is doing, so activity stays unknown.
+;; Automatically discovered Claude sessions and optional manually tracked
+;; terminals share one ordinary table. Collection lives in portal-agent-discovery;
+;; rendering uses cached metadata and preserves unchanged rows and window positions.
 
 (require 'cl-lib)
 (require 'tabulated-list)
@@ -16,6 +13,8 @@
 (defgroup portal-agents nil
   "A live list of tracked Portal terminals."
   :group 'portal-terminal)
+
+(require 'portal-agent-discovery)
 
 (defcustom portal-agents-live-update t
   "Whether the agent dashboard refreshes itself while it is shown.
@@ -63,13 +62,33 @@ A session whose program exited stays while its buffer keeps its view."
   "Return BUFFER's tracked session, as an element of `portal-agents--tracked'."
   (cl-find buffer (portal-agents--sessions) :key #'caar))
 
+(defun portal-agents--listed-p (buffer)
+  "Whether BUFFER is manually tracked or has a visible discovered agent."
+  (or (portal-agents--tracked-p buffer)
+      (let ((agent (portal-agent-discovery--find buffer)))
+        (and agent (not (portal-agent-discovery--hidden-p agent))))))
+
 (defun portal-agents--facts ()
-  "Return what the dashboard shows of each live tracked session, in order.
-Each is (KEY LABEL METADATA), METADATA being what `portal-terminal-metadata'
-has cached."
-  (mapcar (lambda (session)
-            (list (car session) (cdr session) (portal-terminal-metadata (caar session))))
-          (portal-agents--sessions)))
+  "Return (KEY LABEL METADATA) rows, merging manual and automatic sessions."
+  (let* ((manual (portal-agents--sessions))
+         (agents (portal-agent-discovery--visible-agents))
+         (sessions (append manual
+                           (mapcar (lambda (a) (cons (portal-agent-key a) nil))
+                                   (seq-remove (lambda (a) (assoc (portal-agent-key a) manual)) agents)))))
+    (mapcar
+     (lambda (session)
+       (let* ((key (car session))
+              (agent (cl-find key agents :key #'portal-agent-key :test #'equal))
+              (metadata (portal-terminal-metadata (car key))))
+         ;; Progress is a query trigger, not a displayed fact, for every row.
+         (setq metadata (plist-put metadata :progress nil))
+         (when agent
+           (setq metadata (plist-put metadata :title
+                                     (portal-agent-discovery--strip-title (plist-get metadata :title))))
+           (setq metadata (append metadata (list :activity (portal-agent-activity agent)
+                                                 :reason (portal-agent-reason agent)
+                                                 :process-error (portal-agent-process-error agent)))))
+         (list key (or (cdr session) (and agent "Claude")) metadata))) sessions)))
 
 (defun portal-agents--rows (facts)
   "Return a row for each of FACTS, from `portal-agents--facts'.
@@ -83,9 +102,13 @@ Each is (KEY [TERMINAL AGENT PROJECT PROCESS ACTIVITY DIRECTORY TITLE])."
                (vector (plist-get entry :name)
                        (or label "")
                        (or (alist-get (plist-get entry :project) projects nil nil #'equal) "-")
-                       (if (plist-get entry :exited) "exited" "running")
-                       ;; No source reports what an agent is doing yet.
-                       (propertize "unknown" 'face 'shadow)
+                       (cond ((plist-get entry :process-error) "unknown")
+                             ((plist-get entry :exited) "exited") (t "running"))
+                       (propertize (or (plist-get entry :activity) "unknown")
+                                   'help-echo (or (plist-get entry :reason) "No verified activity source")
+                                   'face (pcase (plist-get entry :activity)
+                                           ("waiting" 'warning) ("working" 'font-lock-keyword-face)
+                                           ("idle" 'default) (_ 'shadow)))
                        (abbreviate-file-name (plist-get entry :directory))
                        (if title (replace-regexp-in-string "[[:cntrl:]]" " " title) "")))))
      facts)))
@@ -161,6 +184,7 @@ facts: it never selects a window, focuses a view or prompts."
 
 (defun portal-agents--revert (&rest _)
   "Refresh the dashboard now, as \\`g' does."
+  (portal-agent-discovery--collect t)
   (portal-agents--refresh t))
 
 (defun portal-agents--shown-p ()
@@ -179,13 +203,17 @@ It needs it while it is shown and `portal-agents-live-update' is on."
                                                 #'portal-agents--tick)))
     (when portal-agents--timer
       (cancel-timer portal-agents--timer)
-      (setq portal-agents--timer nil))))
+      (setq portal-agents--timer nil)
+      (portal-agent-discovery--stop)
+      (portal-agents--changed))
+    (unless (portal-agents--shown-p) (portal-agent-discovery--stop))))
 
 (defun portal-agents--tick ()
   "Refresh the shown dashboard, or stop the timer if it is no longer needed.
 Live updates also stop for a frame made invisible, which no window hook reports."
   (portal-agents--schedule)
   (when portal-agents--timer
+    (portal-agent-discovery--collect)
     (with-current-buffer portal-agents--buffer (portal-agents--refresh))))
 
 (defun portal-agents--window-changed (&optional _frame)
@@ -193,12 +221,13 @@ Live updates also stop for a frame made invisible, which no window hook reports.
 Window state change hooks call this with the frame that changed."
   (let ((shown (portal-agents--shown-p)))
     (when (and shown (not portal-agents--shown))
+      (portal-agent-discovery--collect t)
       (with-current-buffer portal-agents--buffer (portal-agents--refresh)))
     (setq portal-agents--shown shown)
     (portal-agents--schedule)))
 
 (defun portal-agents--changed ()
-  "Refresh the dashboard after tracking changed, if it is shown.
+  "Refresh the dashboard after tracking or activity changed, if it is shown.
 A hidden one refreshes when it is shown again."
   (when (portal-agents--shown-p)
     (with-current-buffer portal-agents--buffer (portal-agents--refresh))))
@@ -239,9 +268,11 @@ closes or is replaced.  A program exiting does not end it."
   (let ((buffer (get-buffer buffer)))
     (unless (and buffer (portal-terminal-metadata buffer))
       (user-error "Not a terminal: %s" buffer))
-    (let ((session (portal-agents--tracked-p buffer)))
+    (let ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
+          (session (portal-agents--tracked-p buffer)))
+      (portal-agent-discovery--set-hidden buffer nil)
       (unless session
-        (setq session (list (cons buffer (buffer-local-value 'portal-view--target buffer)))
+        (setq session (list key)
               portal-agents--tracked (append portal-agents--tracked (list session))))
       (when label
         (setcdr session (and (not (string-blank-p label)) (string-trim label)))))
@@ -251,12 +282,17 @@ closes or is replaced.  A program exiting does not end it."
 (defun portal-agents-untrack (buffer)
   "Remove terminal BUFFER from the agent dashboard; its program keeps running.
 BUFFER is a buffer or its name.  Interactively, untrack the terminal on this
-line of the dashboard, or else read a tracked terminal's name."
+line of the dashboard, or else read a listed terminal's name.
+A discovered Claude run stays hidden until it leaves the foreground or is
+tracked again.  A later run is discovered normally."
   (interactive (list (or (portal-agents--at-point)
-                         (portal-agents--read "Untrack terminal: " #'portal-agents--tracked-p))))
-  (let ((session (portal-agents--tracked-p (get-buffer buffer))))
-    (unless session (user-error "Not a tracked terminal: %s" buffer))
+                         (portal-agents--read "Untrack terminal: " #'portal-agents--listed-p))))
+  (let* ((buffer (get-buffer buffer))
+         (session (portal-agents--tracked-p buffer))
+         (agent (portal-agent-discovery--find buffer)))
+    (unless (or session agent) (user-error "Not a tracked or discovered terminal: %s" buffer))
     (setq portal-agents--tracked (delq session portal-agents--tracked))
+    (portal-agent-discovery--set-hidden buffer t)
     (portal-agents--changed)))
 
 (defun portal-agents-visit ()
@@ -279,6 +315,8 @@ With prefix ARG, turn them on if ARG is positive, and off otherwise."
   (setq portal-agents-live-update (if arg
                                       (> (prefix-numeric-value arg) 0)
                                     (not portal-agents-live-update)))
+  (when (and portal-agents-live-update (portal-agents--shown-p))
+    (portal-agent-discovery--collect t))
   (portal-agents--schedule)
   (force-mode-line-update t)
   (message "Agent dashboard live updates %s" (if portal-agents-live-update "on" "off")))
@@ -290,12 +328,13 @@ With prefix ARG, turn them on if ARG is positive, and off otherwise."
   "u" #'portal-agents-untrack)
 
 (define-derived-mode portal-agents-mode tabulated-list-mode "Agents"
-  "The agent dashboard: the terminals tracked with `portal-agents-track'.
+  "The agent dashboard: discovered Claude sessions and manually tracked terminals.
 Each row shows a terminal's buffer, the agent label it was tracked with,
 its assigned project, whether its program runs, its activity, its
 directory and the title its program set.  A running program may be
-working, idle or waiting: activity is unknown, as nothing reports it.
-Titles are whatever a program set.
+working, idle or waiting: Claude reports activity through its status command;
+other terminals stay unknown.  Hover activity for its source or unknown reason.
+Idle does not mean success.  Titles omit a leading activity marker.
 
 \\[portal-agents-visit] visits a terminal with the keyboard.
 \\[portal-agents-track] tracks another terminal.
@@ -317,15 +356,18 @@ While shown, the list refreshes itself; see `portal-agents-live-update'.
 
 ;;;###autoload
 (defun portal-agents ()
-  "Show the agent dashboard: the terminals tracked with `portal-agents-track'.
+  "Show discovered Claude sessions and optionally tracked terminals.
 There is one dashboard.  It is an ordinary text buffer, with no native view.
 See `portal-agents-mode'."
   (interactive)
   (unless (buffer-live-p portal-agents--buffer)
     (with-current-buffer (get-buffer-create "*Portal Agents*")
       (portal-agents-mode)))
+  (pop-to-buffer-same-window portal-agents--buffer)
+  (portal-agent-discovery--collect t)
   (with-current-buffer portal-agents--buffer (portal-agents--refresh))
-  (pop-to-buffer-same-window portal-agents--buffer))
+  (setq portal-agents--shown t)
+  (portal-agents--schedule))
 
 (provide 'portal-agents)
 ;;; portal-agents.el ends here

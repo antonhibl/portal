@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.29)
 
 # CMake orchestrates the native module, Bun host and integration tests.
-project(portal LANGUAGES NONE)
+project(portal LANGUAGES C)
 
 if(NOT APPLE)
     message(FATAL_ERROR "Portal requires macOS with AppKit and WebKit")
@@ -53,6 +53,18 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(launcher PROPERTIES TIMEOUT 30)
+    # Exercise the documented absolute-path entry point in a fresh Emacs.
+    # Do not add the package directory with -L: Portal must load its own siblings.
+    add_test(NAME startup
+        COMMAND "${EMACS}" --batch -Q
+            -l "${CMAKE_SOURCE_DIR}/test/portal-startup-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(startup PROPERTIES TIMEOUT 30)
+    add_executable(portal-process-tests test/portal-process-tests.c)
+    target_include_directories(portal-process-tests PRIVATE native/Core/include)
+    target_compile_options(portal-process-tests PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME processes COMMAND portal-process-tests)
+    set_tests_properties(processes PROPERTIES TIMEOUT 30)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
     add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions
@@ -89,6 +101,13 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-agents-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(agents PROPERTIES TIMEOUT 30)
+    add_test(NAME agent-discovery
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PORTAL_TEST_PROCESS_SNAPSHOT=$<TARGET_FILE:portal-process-tests>"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-agent-discovery-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(agent-discovery PROPERTIES TIMEOUT 30)
     # The optional Consult and Embark adapters, and the task view under Evil,
     # are tested against the GNU and NonGNU ELPA releases the README names,
     # downloaded once and checked by hash.

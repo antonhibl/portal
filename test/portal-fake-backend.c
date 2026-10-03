@@ -1038,3 +1038,15 @@ bool portal_launcher_shortcut(portal_string chord, uint64_t *registration, porta
     *registration = chord.length ? 42 : 0;
     return true;
 }
+
+/* No processes in the fake platform. Process classification is tested in Lisp. */
+bool portal_process_snapshot(portal_string variable, portal_text *result, portal_text *error)
+{
+    (void) variable;
+    (void) error;
+    char *json = malloc(3);
+    if (!json) return false;
+    memcpy(json, "[]", 3);
+    *result = (portal_text) {json, 2};
+    return true;
+}

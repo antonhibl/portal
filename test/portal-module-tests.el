@@ -22,10 +22,10 @@
     (portal--web-appearance 1 . 1)
     (portal--terminal-paste 2 . 3) (portal--terminal-text 1 . 1)
     (portal--terminal-theme 1 . 1) (portal--terminal-themes 0 . 0)
-    (portal--terminal-bindings 1 . 1)
+    (portal--terminal-bindings 1 . 1) (portal--process-snapshot 1 . 1)
     (portal--input 2 . 3)
     (portal--toolbar 1 . 1) (portal--toolbar-theme 1 . 1) (portal--toolbar-action 2 . 2))
-  "The 19 exports of docs/adr/0002 and their arities.")
+  "The module exports and their arities.")
 
 (ert-deftest portal-module-launcher-bindings ()
   (dolist (entry '((portal--launcher-attach 1 . 1) (portal--launcher-show 7 . 7)
@@ -406,3 +406,7 @@
       (delete-process second))))
 
 ;;; portal-module-tests.el ends here
+
+(ert-deftest portal-module-process-snapshot ()
+  (should-not (portal--process-snapshot "PORTAL_TERMINAL"))
+  (should-error (portal--process-snapshot 7) :type 'wrong-type-argument))
