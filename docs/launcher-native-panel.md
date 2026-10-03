@@ -8,6 +8,7 @@ start the app host, use a controller frame, or load a second native module.
 ```text
 portal-launcher-show(buffer)
   validate build and native frame guard
+  capture the previous application before frame creation/selection
   create hidden dedicated Emacs frame, if needed
   attach its EmacsView to a Swift NSPanel
   select the frame, place the panel, enable Emacs redisplay
@@ -47,7 +48,8 @@ Native-compiled Emacs functions can call primitive setters directly. With
 `native-comp-enable-subr-trampolines` disabled, the native-compiled
 `set-frame-parameter` bypassed the initial Lisp advice in the graphical test.
 Enabling now verifies the validated build's installed trampoline registry after
-adding advice. If that trampoline is absent, it removes the hooks and refuses
+adding advice, including the `delete-frame` trampoline used by sessions.
+If a required trampoline is absent, it removes the hooks and refuses
 to create a frame. It does not change the user's native compilation settings.
 Emacs normally installs or compiles the trampoline when adding the advice.
 
@@ -105,8 +107,46 @@ independently exercise rollback and verify that closed panels leave AppKit's
 window list after autoreleased objects drain.
 
 The [README](../README.md#native-launcher-panel-opt-in) documents commands,
-customization and test invocation. The later command-session task owns automatic
-dismissal and active-minibuffer cancellation; this feature refuses to hide an
-active launcher minibuffer. Outbound system drag-and-drop is cancelled. Full
+customization and test invocation. Plain buffer presentation refuses to hide an
+active launcher minibuffer; command sessions unwind it as described below.
+Outbound system drag-and-drop is cancelled. Full
 IME candidate windows, VoiceOver and extended use with the user's configuration
 remain in the daily-use validation task.
+
+## Command sessions
+
+`portal-launcher-present` calls one interactive command synchronously inside a
+unique catch tag. Escape, C-g, hide, another invocation and native focus loss
+throw to that tag, unwinding every nested prompt before cleanup. Ordinary
+command errors propagate through the same cleanup. The original Emacs window
+(or its frame if that window was deleted) is selected without an application
+activation request. Minibuffer ownership, display rules and the emulation keymap
+are dynamically bound; no completion package settings are rewritten.
+
+Deletion advice catches requests before Emacs's active-minibuffer validation.
+Delete and disable requests are performed once, after the command has unwound
+and ownership is cleared. Normal deletion still restores the donor window in
+`delete-frame-functions`. Commands that deliberately select other frames or
+intercept arbitrary throws are outside this bounded interface.
+
+The native `prepare` operation captures the previous `NSRunningApplication`
+before `make-frame` or selection can activate Emacs. Re-presenting an already
+visible panel retains it. Only cancellation/errors request restoration, and
+only if the panel still owns the keyboard and the frontmost application is
+the captured app or Emacs. Success and focus-loss cleanup never request app
+activation. AppKit activation is asynchronous and system-controlled; see
+[Apple's activation API](https://developer.apple.com/documentation/appkit/nsrunningapplication/activate(options:)).
+
+Panel `didResignKeyNotification`, workspace app activation, and a mouse-only
+global event monitor emit `launcher-blur SESSION` through the existing pipe.
+The latter two are needed because a nonactivating panel can retain AppKit key
+status when another app receives input, including the already-frontmost app.
+The app and mouse observers exist only while the panel is presented; they
+require no Accessibility event tap. Native focus loss is coalesced once per
+presentation and suppresses cancellation activation even if AppKit still
+reports the panel as key. The process filter validates
+and queues the ID; a special command-loop event unwinds the matching session,
+including prompts with an overriding completion keymap. Stale IDs are rejected
+both when queuing and dispatching. Hide/detach suppress their own notifications
+and remove the app and mouse observers; detach also removes the panel observer.
+There is no polling timer or extra process.

@@ -85,6 +85,32 @@ Control–Option–Command–P; it toggles the panel from any application:
 The first shortcut invocation shows a plain `*Portal Launcher*` buffer. Later
 invocations reuse the frame and its content, including a buffer supplied to
 `portal-launcher-show`. `M-x portal-launcher-toggle` does the same thing.
+To run an interactive command instead, configure `portal-launcher-command`:
+
+```elisp
+(defun my/launcher-example ()
+  (interactive)
+  (message "Selected %s" (completing-read "Choose: " '("Apple" "Orange") nil t)))
+(setopt portal-launcher-command #'my/launcher-example)
+(portal-launcher-present)      ; run the configured command directly
+;; Or supply a command for just this invocation:
+(portal-launcher-present #'my/launcher-example)
+```
+
+The command uses the panel's own minibuffer and the user's completion setup,
+including Vertico, Orderless and Marginalia. Nested prompts stay in the panel.
+Success hides the panel; Escape, C-g, another invocation, `portal-launcher-hide`,
+or losing keyboard focus cancels the entire session. Errors propagate after
+cleanup. Frame deletion and disabling unwind prompts before releasing the frame.
+Cancellation returns focus to the previous app while the panel still owns the
+keyboard; a successful external action or click-away preserves the destination
+app's focus. Emacs's original window selection is restored without activating
+its application. Display rules and cancellation keys last only for the session.
+
+Commands must be interactive and synchronous. Invoke after any existing
+minibuffer has finished. Commands that deliberately use other frames or catch
+arbitrary throws need explicit wrappers. Set `portal-launcher-command` back to
+nil for the plain reusable buffer; application picking remains a subsequent task.
 
 Change the chord with Customize or `setopt`; changes take effect immediately
 while enabled. For example:
@@ -124,7 +150,8 @@ NS behavior, and a native defect can crash the hosting Emacs. Initially it accep
 only GNU Emacs NS **31.1**, revision
 `a360712c9d272d950d8d8255ef74570f7e90b7d9`. Rebuild Portal and restart Emacs before
 using the new bindings. Native-compiled Emacs also needs a working
-`modify-frame-parameters` trampoline so its setters cannot bypass the frame guard.
+`modify-frame-parameters` and `delete-frame` trampolines so native callers cannot
+bypass the frame guard or delete a frame with live session prompts.
 Leave `native-comp-enable-subr-trampolines` enabled; if the trampoline is missing
 and Emacs cannot compile it, enabling the launcher fails before creating a frame.
 
@@ -142,8 +169,8 @@ focus policy is rejected. Deleting the launcher frame is supported; the next
 show creates a new one. Hide preserves the launcher's content and returns Emacs
 selection to the previous ordinary window without changing that window's buffer.
 
-Application picking and automatic command-session dismissal are subsequent
-tasks. Finish or cancel an active launcher minibuffer before hiding it. Outbound native drag-and-drop is
+For plain buffer presentation outside a command session, finish or cancel an
+active launcher minibuffer before hiding it. Outbound native drag-and-drop is
 cancelled; full IME and VoiceOver validation remains in the daily-use task.
 See [implementation and measured geometry](docs/launcher-native-panel.md).
 
@@ -1407,7 +1434,7 @@ the app sends, in order. Other web views have no bridge.
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
-| `portal-launcher.el` | Opt-in launcher frame lifecycle, shortcut customization, and queued command-loop invocation |
+| `portal-launcher.el` | Opt-in launcher frame lifecycle, shortcut invocation, command sessions and dismissal |
 | `portal-input.el` | Chords that fall through to Emacs, read with the view's buffer's keymaps; focus policy and input notifications |
 | `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
@@ -1854,6 +1881,7 @@ cannot exercise these behaviours:
 emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -L "$PWD/build/elpa/consult-3.10" -L "$PWD/build/elpa/vertico-2.15" \
   -L "$PWD/build/elpa/orderless-1.8" -L "$PWD/build/elpa/org-ql-0.8.10" \
+  -L "$PWD/build/elpa/marginalia-2.13" \
   -L "$PWD/build/elpa/org-super-agenda-1.3" -L "$PWD/build/elpa/ts.el-0.3" \
   -L "$PWD/build/elpa/ov-1.0.6" -L "$PWD/build/elpa/s.el-1.13.1" \
   -L "$PWD/build/elpa/ht.el-2.3" -L "$PWD/build/elpa/dash-2.20.0" -l "$PWD/portal.el" \
@@ -1942,6 +1970,16 @@ geometry on every connected monitor. A test-only Carbon event injector covers
 the installed native callback, pipe parsing, and command-loop show/dismiss under
 a transient keymap. This injection does not establish physical-key or Spaces
 behavior. Run them with subroutine trampolines enabled.
+Command-session tests type native Escape and queue C-g into nested prompts, invoke the
+shortcut again, delete/disable during a prompt and immediately re-enter. They
+exercise stock completion and Vertico/Orderless/Marginalia, propagate a command
+error after hiding, and use the running Finder app to verify cancellation,
+successful external activation and actual native focus-loss delivery. The
+focus test temporarily activates already-running applications, including Finder.
+The NS injector holds synthetic C-g even in an ordinary `read-string`, so that
+key is tested as an Emacs command-loop event. Physical C-g and mouse click-away
+remain hands-on checks in daily-use validation. Session ID
+and stale-record policy are covered by batch ERT and the C notification tests.
 
 Verify the failure reporter without opening windows:
 

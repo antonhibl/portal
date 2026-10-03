@@ -155,6 +155,7 @@ struct LauncherChecks {
                     rejected { try NativeLauncher.attach(title: donor.title) }
                     let oldSession = NativeLauncher.session
                     try launcher.place(placement())
+                    check(NativeLauncher.describe()["watchingFocus"] as? Bool == true)
                     check(NativeLauncher.session > oldSession)
                     let registered = try LauncherShortcut.set("Control-Option-Command-P")
                     hotkey(registered, at: GetCurrentEventTime() - 10)
@@ -173,8 +174,17 @@ struct LauncherChecks {
                     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
                     check(NSScreen.screens.contains { $0.visibleFrame.contains(launcher.panel.frame) })
                     rejected { try launcher.place(placement(199, 407)) }
+                    // Panel notifications carry the current presentation,
+                    // and explicit hide/detach never emit a new dismissal.
+                    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
+                    check(records() == "launcher-blur \(NativeLauncher.session)\n")
+                    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
+                    check(records().isEmpty, "Duplicate focus loss was not coalesced")
                     launcher.hide()
                     check(!launcher.panel.isVisible)
+                    check(NativeLauncher.describe()["watchingFocus"] as? Bool == false)
+                    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
+                    check(records().isEmpty)
                     NativeLauncher.detach()
                     NativeLauncher.detach()
                     check(editor.window === donor && donor.delegate === editor)

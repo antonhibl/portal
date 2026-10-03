@@ -1226,7 +1226,7 @@ key delivery. This run had one connected display. The app-targeted UI key
 injector did not exercise system hotkey delivery, and no human confirmation
 was received. Carry these hands-on checks into [[#launcher-daily-use][daily-use validation]].
 
-** TODO Run an Elisp command in the launcher with reliable dismissal :task:
+** DONE Run an Elisp command in the launcher with reliable dismissal :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-command-session
 :ID: 1ac60e75-be13-4c17-a448-1fca7829e496
@@ -1260,7 +1260,7 @@ prerequisite for this task.
   arbitrary command compatibility is not promised by this task.
 
 *** Acceptance
-- [ ] A real =completing-read= command works with stock completion and
+- [X] A real =completing-read= command works with stock completion and
   Vertico/Orderless/Marginalia, without permanently changing their configuration.
 - [ ] Nested prompts stay in the launcher; Escape, C-g, command errors, a second
   invocation and clicking another app leave no leaked recursive edit or prompt
@@ -1268,10 +1268,81 @@ prerequisite for this task.
 - [ ] Closing after a successful external action does not reactivate the
   previous app over the action's destination; cancellation restores the previous
   app, and click-away preserves the newly selected app.
-- [ ] Deleting the frame or disabling during a session cleans up once and a
+- [X] Deleting the frame or disabling during a session cleans up once and a
   subsequent invocation works. Test stale callbacks as well as the happy path.
-- [ ] Add focused session tests and a real GUI smoke test; existing Portal focus
+- [X] Add focused session tests and a real GUI smoke test; existing Portal focus
   and input checks remain passing.
+
+*** Outcome
+Implemented 2026-10-03. =portal-launcher-present= runs one interactive command
+with a unique session catch tag. =portal-launcher-command= optionally selects
+the shortcut/toggle action; nil preserves plain buffer presentation until the
+application integration task. Escape, C-g, repeated invocation, explicit hide,
+focus loss, deletion and disable unwind nested minibuffers before cleanup.
+Errors propagate after hiding. Deletion/disable finish once outside the session;
+normal Emacs selection is restored without activating its application.
+
+Display rules, the cancellation keymap and minibuffer routing are dynamically
+scoped. Native preparation captures the previous app before frame creation or
+selection. Only cancellation/error cleanup requests focus restoration, gated
+by native ownership. Success and external focus changes never request it.
+
+The nonactivating panel can retain AppKit key status after another app takes
+input, so resignation alone was insufficient in the real external-activation
+smoke test. App-activation observation and a mouse-only global monitor cover
+those paths while presented. Hide/detach remove them; no Accessibility event
+tap, polling timer or extra process is used. Coalesced =launcher-blur SESSION=
+records use the existing pipe and a special command-loop event. Stale records
+cannot unwind a replacement session.
+
+*** Verification
+- =./build.sh= passes; all 30 CTest suites pass, including 17 launcher ERT
+  tests and module/channel checks for the changed native interface.
+- All 11 launcher GUI tests pass in disposable GNU Emacs NS 31.1 at the
+  supported revision, with module assertions. They cover stock completion and
+  Vertico 2.15, Orderless 1.8 and Marginalia 2.13; nested cancellation through
+  Escape/C-g, repeated direct/Carbon invocation, hide, delete and disable;
+  immediate re-entry; errors; native frame focus loss; cancellation preserving
+  the previous app; activation of another running app during a live prompt;
+  and a successful external action retaining its destination.
+- All seven existing graphical input tests pass. Standalone Swift launcher,
+  focus and toolbar checks pass with warnings as errors, including monitor
+  removal on hide and coalescing repeated native focus notifications.
+- Changed Lisp files byte-compile without warnings. =git diff --check= passes.
+  =org-lint= reports no issues; all 37 task IDs/UUIDs are unique, dependency
+  targets and internal task links resolve, and the dependency graph is acyclic.
+  The machine's existing Homebrew GCC =LIBRARY_PATH= workaround was used for
+  native Emacs trampolines; project compiler settings were not changed.
+
+*** Hands-on validation still outstanding
+The two composite acceptance items above remain unchecked because physical
+C-g and system-level mouse click-away have not been confirmed by a person.
+The native AppKit test injector holds synthetic C-g even in ordinary
+=read-string=, so the graphical suite queues that key as an Emacs command-loop
+event. The app-targeted computer-use clicks did not produce a system-level
+outside-click event; those attempts timed out and are not passing evidence.
+Real external application activation and native window focus loss do dismiss
+the active prompt, with no leaked minibuffer and no destination focus theft.
+Carry the physical gestures into [[#launcher-daily-use][daily-use validation]],
+alongside the already-outstanding physical shortcut, Spaces, IME and VoiceOver
+checks. See [[file:docs/launcher-native-panel.md][the implementation notes]] and
+[[file:README.md][usage and test commands]].
+
+*** Review follow-up: exiting during a session
+The shutdown hook previously used normal disable, whose cancellation throw
+escaped =kill-emacs= and skipped later kill hooks. A dedicated shutdown path
+now detaches the native panel and releases registration without canceling the
+command or deleting an active minibuffer frame; Emacs disposes of its frames
+when it exits. Normal session disable and deletion still unwind first.
+
+A subprocess regression reproduced the swallowed exit before the fix. It now
+preserves the requested exit status, runs a later kill hook, detaches/releases
+once and leaves frame disposal to Emacs. All 30 CTest suites (18 launcher ERT
+tests) and all 11 launcher GUI tests pass, as do the build and warning-free
+byte compilation. A separate disposable native GUI process exited with status
+23 from two nested launcher prompts; its later kill hook observed no attached
+panel, registration 0 and a still-live Emacs frame. =git diff --check= and
+=org-lint= pass; task IDs, dependencies and internal links remain valid.
 
 ** TODO Launch macOS applications through the native panel :task:
 :PROPERTIES:

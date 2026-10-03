@@ -6,8 +6,9 @@
 (require 'portal-view)
 
 (declare-function portal--launcher-attach "portal-launcher" (title))
+(declare-function portal--launcher-prepare "portal-launcher" ())
 (declare-function portal--launcher-show "portal-launcher" (width height dx dy screen shadow radius))
-(declare-function portal--launcher-hide "portal-launcher" ())
+(declare-function portal--launcher-hide "portal-launcher" (&optional restore-focus))
 (declare-function portal--launcher-detach "portal-launcher" ())
 (declare-function portal--launcher-inspect "portal-launcher" ())
 (declare-function portal--launcher-shortcut "portal-launcher" (chord))
@@ -16,6 +17,24 @@
 
 (defvar portal-launcher-mode nil)
 (defvar portal-launcher--registration nil "Active native shortcut ID, or nil when disabled.")
+
+(defcustom portal-launcher-command nil
+  "Interactive command run by the launcher shortcut and toggle.
+Nil keeps the reusable buffer presentation.  A command runs synchronously
+inside `portal-launcher-present', with the user's completion configuration.
+Commands that deliberately select other frames require their own wrapper."
+  :type '(choice (const :tag "Show a buffer" nil) function))
+
+(cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
+  tag native-id teardown)
+(defvar portal-launcher--session nil "The active command session, or nil.")
+
+(defconst portal-launcher--session-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [escape] #'portal-launcher-cancel)
+    (define-key map (kbd "C-g") #'portal-launcher-cancel)
+    map)
+  "Keys active only while a launcher command is running.")
 
 (defun portal-launcher--set-shortcut (symbol value)
   "Set SYMBOL to VALUE, rebinding an enabled launcher atomically."
@@ -124,18 +143,35 @@ also be changed directly on the live launcher frame."
     (portal-launcher--restore-selection)
     (setq portal-launcher--frame nil)))
 
+(defun portal-launcher--delete-frame (original &optional frame force)
+  "Unwind the session before ORIGINAL deletes launcher FRAME with FORCE."
+  (if (and portal-launcher--session
+           (eq (or frame (selected-frame)) portal-launcher--frame))
+      (progn
+        (setf (portal-launcher--session-teardown portal-launcher--session) 'delete)
+        (portal-launcher-cancel))
+    (funcall original frame force)))
+
 (defun portal-launcher--hooks (install)
   "INSTALL or remove lifecycle hooks and the native-role guard."
   (if install
       (advice-add 'modify-frame-parameters :around #'portal-launcher--guard-parameters)
     (advice-remove 'modify-frame-parameters #'portal-launcher--guard-parameters))
   (if install
+      (advice-add 'delete-frame :around #'portal-launcher--delete-frame)
+    (advice-remove 'delete-frame #'portal-launcher--delete-frame))
+  (if install
       (setf (alist-get "launcher" portal-view-feature-record-handlers nil nil #'equal)
             #'portal-launcher--queue)
     (setq portal-view-feature-record-handlers
           (assoc-delete-all "launcher" portal-view-feature-record-handlers)))
+  (if install
+      (setf (alist-get "launcher-blur" portal-view-feature-record-handlers nil nil #'equal)
+            #'portal-launcher--queue-blur)
+    (setq portal-view-feature-record-handlers
+          (assoc-delete-all "launcher-blur" portal-view-feature-record-handlers)))
   (dolist (entry '((delete-frame-functions . portal-launcher--before-delete)
-                   (kill-emacs-hook . portal-launcher--disable)))
+                   (kill-emacs-hook . portal-launcher--shutdown)))
     (if install (add-hook (car entry) (cdr entry))
       (remove-hook (car entry) (cdr entry)))))
 
@@ -146,10 +182,26 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
   (when (and (featurep 'native-compile)
              (not (and (boundp 'comp-installed-trampolines-h)
                        (gethash 'modify-frame-parameters comp-installed-trampolines-h))))
-    (user-error "Launcher needs the modify-frame-parameters native trampoline; enable native-comp-enable-subr-trampolines and a working native compiler, then retry")))
+    (user-error "Launcher needs the modify-frame-parameters native trampoline; enable native-comp-enable-subr-trampolines and a working native compiler, then retry"))
+  (when (and (featurep 'native-compile)
+             (not (gethash 'delete-frame comp-installed-trampolines-h)))
+    (user-error "Launcher needs the delete-frame native trampoline; enable native-comp-enable-subr-trampolines and a working native compiler, then retry")))
+
+(defun portal-launcher--shutdown ()
+  "Release native launcher resources without aborting Emacs shutdown."
+  (when (frame-live-p portal-launcher--frame)
+    (portal--launcher-detach)
+    (setq portal-launcher--frame nil))
+  ;; Emacs will dispose of its frames, including any active minibuffer. Do not
+  ;; cancel the command: that throw would abandon kill-emacs and later hooks.
+  (let ((portal-launcher--session nil))
+    (portal-launcher--disable)))
 
 (defun portal-launcher--disable ()
   "Detach and delete the dedicated frame. Safe to call repeatedly."
+  (when portal-launcher--session
+    (setf (portal-launcher--session-teardown portal-launcher--session) 'disable)
+    (portal-launcher-cancel))
   (when (frame-live-p portal-launcher--frame)
     ;; Let delete-frame validate deletion (e.g. an active minibuffer) before
     ;; its hook detaches. If it refuses, keep ownership and guards intact.
@@ -159,7 +211,8 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
     (setq portal-launcher--registration nil))
   (portal-launcher--hooks nil)
   (setq unread-command-events
-        (cl-remove-if (lambda (event) (eq (car-safe event) 'portal-launcher-invoke))
+        (cl-remove-if (lambda (event) (memq (car-safe event)
+                                          '(portal-launcher-invoke portal-launcher-blur)))
                       unread-command-events))
   (setq portal-launcher-mode nil))
 
@@ -177,6 +230,7 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
             (portal-launcher--check-support)
             (portal-view--load)
             (unless (and (fboundp 'portal--launcher-attach)
+                         (fboundp 'portal--launcher-prepare)
                          (fboundp 'portal--launcher-shortcut))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
@@ -216,17 +270,105 @@ This runs in the process filter: never select a frame or call native code."
 ;; Like Portal input handoffs, pipe records become ordinary command events.
 (define-key global-map [portal-launcher-invoke] #'portal-launcher--invoke)
 
+(defun portal-launcher--queue-blur (session &rest fields)
+  "Queue a native focus-loss record for SESSION; reject malformed FIELDS."
+  (when (and portal-launcher--session (null fields) (stringp session)
+             (string-match-p "\\`[0-9]+\\'" session)
+             (eql (string-to-number session)
+                  (portal-launcher--session-native-id portal-launcher--session)))
+    (setq unread-command-events
+          (nconc unread-command-events
+                 (list (list 'portal-launcher-blur (string-to-number session)))))))
+
+(defun portal-launcher--blur (event)
+  "Dismiss only the still-current command session named in EVENT."
+  (interactive "e")
+  (when (and portal-launcher--session
+             (eql (cadr event) (portal-launcher--session-native-id portal-launcher--session)))
+    (throw (portal-launcher--session-tag portal-launcher--session) 'blur)))
+
+;; Focus loss must also unwind a prompt reading a single event or using a
+;; completion package's overriding map. The filter itself never unwinds Lisp.
+(define-key special-event-map [portal-launcher-blur] #'portal-launcher--blur)
+
+;;;###autoload
+(defun portal-launcher-cancel ()
+  "Cancel the entire launcher command, including every nested prompt."
+  (interactive)
+  (if portal-launcher--session
+      (throw (portal-launcher--session-tag portal-launcher--session) 'cancel)
+    (portal-launcher-hide)))
+
+;;;###autoload
+(defun portal-launcher-present (&optional command)
+  "Run interactive COMMAND in the launcher, then hide it and return its value.
+COMMAND defaults to `portal-launcher-command'. A second invocation cancels
+the active session. Escape, C-g, errors and focus loss unwind nested prompts
+before hiding; completion and display settings are scoped to this call.
+Cancellation restores the previous application's focus only if the panel
+still owns it. Success and click-away never activate the previous app.
+Commands that catch arbitrary throws or deliberately select other frames
+are outside this interface. Do not invoke from an existing minibuffer."
+  (interactive)
+  (when portal-launcher--session (portal-launcher-cancel))
+  (setq command (or command portal-launcher-command))
+  (unless (commandp command) (user-error "Launcher command must be interactive: %S" command))
+  (when (active-minibuffer-window)
+    (user-error "Finish the current minibuffer before presenting a launcher command"))
+  (let* ((previous-window (selected-window))
+         (previous-frame (selected-frame))
+         (session (portal-launcher--make-session :tag (make-symbol "launcher-session")))
+         (portal-launcher--session session)
+         (emulation-mode-map-alists
+          (cons `((portal-launcher--session . ,portal-launcher--session-map)) emulation-mode-map-alists))
+         (enable-recursive-minibuffers t)
+         (minibuffer-follows-selected-frame nil)
+         (outcome 'error))
+    (unwind-protect
+        (setq outcome
+              (catch (portal-launcher--session-tag session)
+                (condition-case nil
+                    (progn
+                      (let ((portal-launcher--session nil))
+                        (portal-launcher-show (get-buffer-create "*Portal Launcher*")))
+                      (setf (portal-launcher--session-native-id session)
+                            (plist-get (portal--launcher-inspect) :session))
+                      (let ((default-minibuffer-frame portal-launcher--frame)
+                            (display-buffer-alist nil)
+                            (display-buffer-overriding-action
+                             `((display-buffer-reuse-window display-buffer-pop-up-window)
+                               (reusable-frames . ,portal-launcher--frame)
+                               (inhibit-switch-frame . t)))
+                            (pop-up-frames nil))
+                        (cons 'success (call-interactively command))))
+                  (quit 'cancel))))
+      ;; This runs outside all minibuffers, even when cancellation came from
+      ;; the innermost prompt. Clear ownership before deleting/disabling.
+      (let ((inhibit-quit t) (portal-launcher--session nil))
+        (unwind-protect
+            (when (frame-live-p portal-launcher--frame)
+              (portal--launcher-hide (not (or (consp outcome) (eq outcome 'blur))))
+              (make-frame-invisible portal-launcher--frame t))
+          (cond ((window-live-p previous-window) (select-window previous-window 'norecord))
+                ((frame-live-p previous-frame) (select-frame previous-frame 'norecord)))
+          (setq portal-launcher--return-window nil)
+          (pcase (portal-launcher--session-teardown session)
+            ('delete (when (frame-live-p portal-launcher--frame)
+                       (delete-frame portal-launcher--frame t)))
+            ('disable (portal-launcher--disable))))))
+    (when (consp outcome) (cdr outcome))))
+
 ;;;###autoload
 (defun portal-launcher-toggle ()
-  "Show or hide the launcher, initially with a plain reusable buffer.
-Application picking and automatic command-session dismissal are separate
-features."
+  "Toggle the launcher, running `portal-launcher-command' when configured."
   (interactive)
+  (when portal-launcher--session (portal-launcher-cancel))
   (if (and portal-launcher-mode (plist-get (portal--launcher-inspect) :visible))
       (portal-launcher-hide)
-    (portal-launcher-show
-     (unless (frame-live-p portal-launcher--frame)
-       (get-buffer-create "*Portal Launcher*")))))
+    (if portal-launcher-command (portal-launcher-present)
+      (portal-launcher-show
+       (unless (frame-live-p portal-launcher--frame)
+         (get-buffer-create "*Portal Launcher*"))))))
 
 (defun portal-launcher--create ()
   "Create and attach one new dedicated frame, rolling back on failure."
@@ -275,6 +417,7 @@ Interactively prompt for a buffer. This explicitly opts in to
         (buffer (if buffer (get-buffer buffer)
                   (unless (frame-live-p portal-launcher--frame) (current-buffer)))))
     (unless portal-launcher-mode (portal-launcher-mode 1))
+    (portal--launcher-prepare)
     (unless (frame-live-p portal-launcher--frame) (portal-launcher--create))
     (unless (eq (selected-frame) portal-launcher--frame)
       (setq portal-launcher--return-window (selected-window)))
@@ -286,18 +429,23 @@ Interactively prompt for a buffer. This explicitly opts in to
         (progn
           (select-frame portal-launcher--frame 'norecord)
           (apply #'portal--launcher-show placement)
+          (when portal-launcher--session
+            (setf (portal-launcher--session-native-id portal-launcher--session)
+                  (plist-get (portal--launcher-inspect) :session)))
           ;; Native visibility alone does not enable Emacs redisplay.
           (make-frame-visible portal-launcher--frame)
           (redisplay t)
           portal-launcher--frame)
-      (error (portal-launcher-hide) (signal (car error) (cdr error))))))
+      (error
+       (unless portal-launcher--session (portal-launcher-hide))
+       (signal (car error) (cdr error))))))
 
 ;;;###autoload
 (defun portal-launcher-hide ()
   "Hide the launcher, retaining its frame, buffer and window state.
-Active launcher minibuffers must be finished or cancelled first; command
-session dismissal is a separate feature."
+An active command session is cancelled before hiding its minibuffers."
   (interactive)
+  (when portal-launcher--session (portal-launcher-cancel))
   (when (frame-live-p portal-launcher--frame)
     (when (and (active-minibuffer-window)
                (eq (window-frame (active-minibuffer-window)) portal-launcher--frame))

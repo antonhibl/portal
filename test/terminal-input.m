@@ -43,6 +43,13 @@ static emacs_value targetFrame(emacs_env *env, ptrdiff_t nargs, emacs_value *arg
     return env->intern(env, explicitWindow ? "t" : "nil");
 }
 
+static emacs_value focusTarget(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)args; (void)data;
+    [explicitWindow makeKeyAndOrderFront:nil];
+    return env->intern(env, explicitWindow.isKeyWindow ? "t" : "nil");
+}
+
 static NSArray<NSView *> *descendants(NSView *root)
 {
     NSMutableArray<NSView *> *result = [NSMutableArray array];
@@ -172,6 +179,45 @@ static emacs_value launcherHotkey(emacs_env *env, ptrdiff_t nargs, emacs_value *
     return env->intern(env, status == noErr ? "t" : "nil");
 }
 
+/* Inspect/activate a running app by PID. A string selects a bundle ID, used
+   for Finder in focus tests; no app is launched and no global keys are sent. */
+static emacs_value frontmost(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)data;
+    NSRunningApplication *app = NSWorkspace.sharedWorkspace.frontmostApplication;
+    if (nargs && env->is_not_nil(env, args[0])) {
+        if (env->eq(env, env->type_of(env, args[0]), env->intern(env, "string"))) {
+            ptrdiff_t size = 0;
+            if (!env->copy_string_contents(env, args[0], NULL, &size)) return env->intern(env, "nil");
+            char *bytes = malloc((size_t)size);
+            if (!bytes) return env->intern(env, "nil");
+            if (!env->copy_string_contents(env, args[0], bytes, &size)) { free(bytes); return env->intern(env, "nil"); }
+            app = [NSRunningApplication runningApplicationsWithBundleIdentifier:[NSString stringWithUTF8String:bytes]].firstObject;
+            free(bytes);
+        } else {
+            pid_t pid = (pid_t)env->extract_integer(env, args[0]);
+            if (pid == -1) {
+                for (NSRunningApplication *candidate in NSWorkspace.sharedWorkspace.runningApplications) {
+                    if (candidate.activationPolicy == NSApplicationActivationPolicyRegular && candidate.bundleURL
+                        && ![candidate isEqual:app]
+                        && ![candidate.bundleIdentifier isEqual:NSRunningApplication.currentApplication.bundleIdentifier])
+                        return env->make_integer(env, candidate.processIdentifier);
+                }
+                return env->intern(env, "nil");
+            }
+            app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+        }
+        if (!app.bundleURL) return env->intern(env, "nil");
+        // Exercise an application-launch action from a nonactivating panel.
+        // activateWithOptions alone can be refused when Emacs is inactive.
+        NSWorkspaceOpenConfiguration *configuration = NSWorkspaceOpenConfiguration.configuration;
+        configuration.activates = YES;
+        [NSWorkspace.sharedWorkspace openApplicationAtURL:app.bundleURL
+            configuration:configuration completionHandler:nil];
+    }
+    return app ? env->make_integer(env, app.processIdentifier) : env->intern(env, "nil");
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -202,6 +248,14 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-launcher-hotkey");
     args[1] = env->make_function(env, 2, 2, launcherHotkey,
         "Dispatch a launcher hotkey notification: REGISTRATION PRESSED.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-frontmost");
+    args[1] = env->make_function(env, 0, 1, frontmost,
+        "Return frontmost PID; APP activates PID/bundle ID; -1 finds another regular app without activating it.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-native-focus-target");
+    args[1] = env->make_function(env, 0, 0, focusTarget,
+        "Give the explicitly targeted native frame keyboard focus.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;
 }

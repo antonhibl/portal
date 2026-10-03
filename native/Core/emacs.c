@@ -308,9 +308,15 @@ STRINGS(terminal_themes, portal_terminals_themes(result, error))
 STRINGS(process_snapshot, portal_process_snapshot(a[0], result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
-STRINGS(launcher_hide, portal_launcher_hide(error))
 STRINGS(launcher_detach, portal_launcher_detach(error))
+STRINGS(launcher_prepare, portal_launcher_prepare(error))
 STRINGS(launcher_describe, portal_launcher_describe(result, error))
+
+LISP_FUNCTION(Flauncher_hide)
+{
+    portal_text error = {0};
+    return done(env, portal_launcher_hide(nargs > 0 && env->is_not_nil(env, args[0]), &error), &error);
+}
 
 /* Gate attachment even when the private binding is called directly. The
    platform additionally checks the NS window/view classes before moving them. */
@@ -705,8 +711,10 @@ static const struct export {
      "Attach new hidden launcher frame TITLE on the validated GNU Emacs NS build."},
     {"portal--launcher-show", 7, 7, Flauncher_show, NULL,
      "Present the launcher at WIDTH HEIGHT DX DY SCREEN SHADOW RADIUS, in logical points."},
-    {"portal--launcher-hide", 0, 0, STRINGS_FUNCTION(launcher_hide, RESULT_T),
-     "Hide the launcher, retaining its frame and content."},
+    {"portal--launcher-prepare", 0, 0, STRINGS_FUNCTION(launcher_prepare, RESULT_T),
+     "Capture cancellation focus before creating or selecting a launcher frame."},
+    {"portal--launcher-hide", 0, 1, Flauncher_hide, NULL,
+     "Hide the launcher. Optional RESTORE-FOCUS restores cancellation focus if still owned."},
     {"portal--launcher-detach", 0, 0, STRINGS_FUNCTION(launcher_detach, RESULT_T),
      "Restore the launcher frame's original window BEFORE deleting the Emacs frame."},
     {"portal--launcher-shortcut", 1, 1, Flauncher_shortcut, NULL,

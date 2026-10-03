@@ -68,9 +68,14 @@ public func portalLauncherShow(_ width: Int64, _ height: Int64, _ dx: Int64, _ d
     } != nil
 }
 
+@_cdecl("portal_launcher_prepare")
+public func portalLauncherPrepare(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { NativeLauncher.prepare() } != nil
+}
+
 @_cdecl("portal_launcher_hide")
-public func portalLauncherHide(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    perform(error) { NativeLauncher.attached?.hide() } != nil
+public func portalLauncherHide(_ restoreFocus: Bool, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { NativeLauncher.attached?.hide(restoreFocus: restoreFocus) } != nil
 }
 
 @_cdecl("portal_launcher_detach")

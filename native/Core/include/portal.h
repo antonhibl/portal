@@ -100,9 +100,14 @@ typedef struct portal_rect {
    screen, and reapplies placement when displays change. Describe returns JSON.
    No environment, Lisp value, or Portal view target is retained here. */
 bool portal_launcher_attach(portal_string title, portal_text *error);
+/* Capture the frontmost application BEFORE creating/selecting an Emacs frame.
+   Repeated preparation while presented retains the original application. */
+bool portal_launcher_prepare(portal_text *error);
 bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
                           int64_t screen, bool shadow, int64_t radius, portal_text *error);
-bool portal_launcher_hide(portal_text *error);
+/* RESTORE_FOCUS requests cancellation focus restoration, only while the panel
+   still owns the keyboard. Success and click-away hide without activation. */
+bool portal_launcher_hide(bool restore_focus, portal_text *error);
 bool portal_launcher_detach(portal_text *error);
 bool portal_launcher_describe(portal_text *state, portal_text *error);
 /* Register one physical-key chord, or release it for an empty string. Return
@@ -409,6 +414,8 @@ bool portal_notify(portal_string type, portal_string target, const portal_string
    only copied IDs; Lisp validates registration/session before interactive work.
    Record: "launcher REGISTRATION SESSION". */
 bool portal_launcher_invoked(uint64_t registration, uint64_t session);
+/* The panel lost key status. Record: "launcher-blur SESSION". */
+bool portal_launcher_blurred(uint64_t session);
 /* A timer from portal_timer_start has fired. */
 void portal_timer_fired(uint64_t token);
 

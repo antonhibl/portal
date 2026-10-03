@@ -68,6 +68,11 @@ final class NativeLauncher {
     // Changes only on explicit presentation/lifecycle operations, never layout.
     static private(set) var session: UInt64 = 0
     static private(set) var sessionStarted: TimeInterval = 0
+    private static var pendingApplication: NSRunningApplication?
+
+    static func prepare() {
+        if attached?.presenting != true { pendingApplication = NSWorkspace.shared.frontmostApplication }
+    }
 
     private static func newSession() {
         session += 1
@@ -81,6 +86,12 @@ final class NativeLauncher {
     private let cornerRadius: CGFloat
     private let masksToBounds: Bool
     private var displayObserver: NSObjectProtocol?
+    private var focusObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
+    private var outsideClickMonitor: Any?
+    private var previousApplication: NSRunningApplication?
+    private var presenting = false
+    private var lostFocus = false
     private var placement: Placement?
     private var requested = NSRect.zero
 
@@ -123,6 +134,51 @@ final class NativeLauncher {
                 try? launcher.place(placement, present: false)
             }
         }
+        launcher.focusObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: launcher.panel, queue: .main
+        ) { [weak launcher] _ in
+            MainActor.assumeIsolated {
+                guard let launcher, launcher.presenting else { return }
+                launcher.focusLost()
+            }
+        }
+    }
+
+    private func focusLost() {
+        guard presenting, !lostFocus else { return }
+        lostFocus = true
+        Core.launcherBlurred(session: Self.session)
+    }
+
+    private func watchFocus() throws {
+        guard activationObserver == nil else { return }
+        // A nonactivating panel can retain AppKit key status while another
+        // process takes keyboard focus. A click in the already-frontmost app
+        // need not produce an application activation notification either.
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            MainActor.assumeIsolated {
+                guard app != NSRunningApplication.current else { return }
+                self?.focusLost()
+            }
+        }
+        // Mouse-only monitoring does not require an Accessibility event tap.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.focusLost() }
+        }
+        guard outsideClickMonitor != nil else {
+            stopWatchingFocus()
+            throw NativeError.message("Cannot observe clicks outside the launcher")
+        }
+    }
+
+    private func stopWatchingFocus() {
+        if let observer = activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        activationObserver = nil
+        if let monitor = outsideClickMonitor { NSEvent.removeMonitor(monitor) }
+        outsideClickMonitor = nil
     }
 
     private init(donor: NSWindow, content: NSView, editor: NSView, delegate: any NSWindowDelegate) {
@@ -163,21 +219,44 @@ final class NativeLauncher {
         content.layer?.masksToBounds = true
         panel.setFrame(requested, display: true)
         if present {
+            if !presenting {
+                previousApplication = Self.pendingApplication ?? NSWorkspace.shared.frontmostApplication
+            }
+            Self.pendingApplication = nil
             Self.newSession()
+            presenting = true
+            lostFocus = false
+            try watchFocus()
             panel.makeKeyAndOrderFront(nil)
             panel.makeFirstResponder(editor)
         }
     }
 
-    func hide() {
+    func hide(restoreFocus: Bool = false) {
+        // A nonactivating panel usually leaves the previous app frontmost.
+        // Never activate it after another app has taken the keyboard.
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let restore = restoreFocus && presenting && !lostFocus && panel.isKeyWindow
+            && (frontmost == previousApplication || frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+        let previous = previousApplication
+        presenting = false
+        stopWatchingFocus()
+        previousApplication = nil
+        Self.pendingApplication = nil
         Self.newSession()
         panel.orderOut(nil)
+        if restore, let previous, !previous.isTerminated { previous.activate(options: []) }
     }
 
     func detach() {
+        presenting = false
+        stopWatchingFocus()
+        previousApplication = nil
         Self.newSession()
         if let observer = displayObserver { NotificationCenter.default.removeObserver(observer) }
         displayObserver = nil
+        if let observer = focusObserver { NotificationCenter.default.removeObserver(observer) }
+        focusObserver = nil
         panel.orderOut(nil)
         // Children belong to Emacs. Move them back too, before Emacs deletes
         // them with their parent; do not close an Emacs-owned child ourselves.
@@ -198,6 +277,7 @@ final class NativeLauncher {
     static func detach() {
         attached?.detach()
         attached = nil
+        pendingApplication = nil
     }
 
     static func describe() -> [String: Any] {
@@ -210,6 +290,7 @@ final class NativeLauncher {
         }]
         if let launcher = attached {
             state.merge(["visible": launcher.panel.isVisible, "key": launcher.panel.isKeyWindow,
+                         "watchingFocus": launcher.activationObserver != nil && launcher.outsideClickMonitor != nil,
                          "viewAttached": launcher.editor.window === launcher.panel,
                          "requested": rect(launcher.requested), "actual": rect(launcher.panel.frame),
                          "content": rect(launcher.content.bounds),

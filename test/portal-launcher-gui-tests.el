@@ -7,6 +7,10 @@
 (declare-function portal--launcher-inspect "portal-launcher" ())
 (declare-function portal-test-native-post-key "test-terminal-input" (code flags text &optional windowless))
 (declare-function portal-test-native-target-frame "test-terminal-input" (title))
+(declare-function portal-test-frontmost "test-terminal-input" (&optional app))
+(declare-function portal-test-native-focus-target "test-terminal-input" ())
+(declare-function vertico-mode "vertico" (&optional arg))
+(declare-function marginalia-mode "marginalia" (&optional arg))
 
 (defmacro portal-launcher-gui--with-panel (&rest body)
   (declare (indent 0))
@@ -193,5 +197,186 @@
         (should (plist-get (portal--launcher-inspect) :visible)))
       (portal-launcher-mode -1)
       (should (= 0 (plist-get (portal--launcher-inspect) :registration))))))
+
+(defvar portal-launcher-gui--action nil)
+(defun portal-launcher-gui--act ()
+  (interactive)
+  (funcall portal-launcher-gui--action))
+
+(defun portal-launcher-gui--present (command strokes &optional action)
+  "Run COMMAND with native STROKES typed into its prompts; C-] calls ACTION."
+  (let* ((portal-launcher-gui--action action)
+         ;; A runner may call ERT from a timer, where quit is inhibited. Real
+         ;; command-loop invocation permits native C-g to unwind a minibuffer.
+         (inhibit-quit nil)
+         (quit-flag nil)
+         (map (make-sparse-keymap))
+         (global (current-global-map))
+         (depth (recursion-depth))
+         (timer (run-with-timer
+                 0.1 0.1
+                 (lambda ()
+                   (when (and strokes (active-minibuffer-window))
+                     (portal-view--with-frame-title portal-launcher--frame #'portal-test-native-target-frame)
+                     (let ((stroke (pop strokes)))
+                       ;; Synthetic AppKit C-g gets held by this Emacs build
+                       ;; even in an ordinary read-string. Queue the Emacs
+                       ;; event for this one key; other strokes are native.
+                       (if (eq stroke 'quit)
+                           (setq unread-command-events (append unread-command-events '(7)))
+                         (apply #'portal-test-native-post-key stroke))))))))
+    (set-keymap-parent map global)
+    (keymap-set map "C-]" #'portal-launcher-gui--act)
+    (use-global-map map)
+    (unwind-protect
+        (prog1 (with-timeout (10 (error "Launcher prompt timed out; pending input: %S" strokes))
+                 (portal-launcher-present command))
+          (should-not strokes)
+          (should (= depth (recursion-depth)))
+          (should-not (active-minibuffer-window))
+          (should-not portal-launcher--session)
+          (should-not (plist-get (portal--launcher-inspect) :visible))
+          (when (frame-live-p portal-launcher--frame)
+            (should-not (frame-visible-p portal-launcher--frame))))
+      (cancel-timer timer)
+      (portal-test-native-target-frame nil)
+      (use-global-map global))))
+
+(defun portal-launcher-gui--text (text)
+  (let ((codes '((?a . 0) (?f . 3) (?e . 14) (?r . 15) (?t . 17) (?o . 31)
+                 (?l . 37) (?n . 45) (?i . 34) (?w . 13) (?d . 2) (?- . 27) (?\s . 49))))
+    (mapcar (lambda (char) (list (alist-get char codes) 0 (string char))) text)))
+
+(ert-deftest portal-launcher-gui-session-stock-and-completion-stack ()
+  (portal-launcher-gui--with-panel
+    (require 'vertico)
+    (require 'orderless)
+    (require 'marginalia)
+    (dolist (enhanced '(nil t))
+      (let* ((completion-styles (if enhanced '(orderless basic) '(basic)))
+             (completion-category-defaults nil)
+             (rules display-buffer-alist)
+             (maps emulation-mode-map-alists)
+             frames visible
+             (minibuffer-setup-hook
+              (cons (lambda ()
+                      (push (window-frame (active-minibuffer-window)) frames)
+                      (push (and (frame-visible-p portal-launcher--frame)
+                                 (plist-get (portal--launcher-inspect) :visible)) visible))
+                    minibuffer-setup-hook)))
+        (vertico-mode (if enhanced 1 -1))
+        (marginalia-mode (if enhanced 1 -1))
+        (unwind-protect
+            (should
+             (equal "forward-line"
+                    (portal-launcher-gui--present
+                     (lambda ()
+                       (interactive)
+                       (completing-read
+                        "Command: "
+                        (lambda (string predicate action)
+                          (if (eq action 'metadata) '(metadata (category . command))
+                            (complete-with-action action '("forward-line" "forward-char") string predicate)))
+                        nil t))
+                     (append (portal-launcher-gui--text (if enhanced "line for" "forward-line"))
+                             '((36 0 "\r"))))))
+          (vertico-mode -1)
+          (marginalia-mode -1))
+        (should (equal frames (list portal-launcher--frame)))
+        (should (equal visible '(t)))
+        (should (eq rules display-buffer-alist))
+        (should (eq maps emulation-mode-map-alists))
+        (should (eq (selected-window) ordinary))))))
+
+(ert-deftest portal-launcher-gui-session-nested-dismissal-and-reentry ()
+  (portal-launcher-gui--with-panel
+    (dolist (reason '(escape quit second shortcut hide delete disable))
+      (message "Launcher nested dismissal: %S" reason)
+      (let (frames continued)
+        (progn
+          (portal-launcher-gui--present
+           (lambda ()
+             (interactive)
+             (minibuffer-with-setup-hook
+                 (lambda ()
+                   (push (window-frame (active-minibuffer-window)) frames)
+                   (minibuffer-with-setup-hook
+                       (lambda () (push (window-frame (active-minibuffer-window)) frames))
+                     (completing-read "Inner: " '("alpha") nil t)))
+               (completing-read "Outer: " '("alpha") nil t))
+             (setq continued t))
+           (list (pcase reason ('escape '(53 0 "\e")) ('quit 'quit)
+                        (_ '(30 262144 "\C-]"))))
+           (lambda ()
+             (pcase reason
+               ('second (portal-launcher-present))
+               ('shortcut
+                (portal-test-launcher-hotkey portal-launcher--registration t)
+                (portal-test-launcher-hotkey portal-launcher--registration nil)
+                (portal-view--read-records))
+               ('hide (portal-launcher-hide))
+               ('delete (delete-frame portal-launcher--frame t))
+               ('disable (portal-launcher-mode -1))))))
+        (should-not continued)
+        (should (= (length frames) 2))
+        (should (eq (car frames) (cadr frames)))
+        (should-not (eq (car frames) (window-frame ordinary)))
+        (should (eq ordinary (selected-window)))
+        (when (eq reason 'disable) (should-not portal-launcher-mode))
+        (when (memq reason '(delete disable)) (should-not (frame-live-p (car frames))))
+        (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again))))))))
+
+(ert-deftest portal-launcher-gui-session-command-error ()
+  (portal-launcher-gui--with-panel
+    (let (read-finished)
+      (should-error
+       (portal-launcher-gui--present
+        (lambda () (interactive) (read-string "Before error: ")
+          (setq read-finished t) (error "Command failed"))
+        '((36 0 "\r"))))
+      (should read-finished))
+    (should-not (active-minibuffer-window))
+    (should-not portal-launcher--session)
+    (should-not (plist-get (portal--launcher-inspect) :visible))
+    (should (eq ordinary (selected-window)))
+    (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again))))))
+
+(ert-deftest portal-launcher-gui-session-focus-loss ()
+  (portal-launcher-gui--with-panel
+    (let (continued)
+      (portal-launcher-gui--present
+       (lambda () (interactive) (read-string "Focus away: ") (setq continued t))
+       '((30 262144 "\C-]"))
+       (lambda ()
+         (portal-view--with-frame-title (window-frame ordinary) #'portal-test-native-target-frame)
+         (portal-test-native-focus-target)))
+      (should-not continued)
+      (should (eq ordinary (selected-window))))))
+
+(ert-deftest portal-launcher-gui-z-session-external-focus ()
+  (portal-launcher-gui--with-panel
+    ;; These are already-running, independent applications. Test both external
+    ;; activation during a prompt and a command that opens an app and returns.
+    (let ((previous (portal-test-frontmost)))
+      (portal-launcher-gui--present
+       (lambda () (interactive) (read-string "Cancel: ")) '((53 0 "\e")))
+      (sit-for 0.1)
+      (message "Launcher cancellation frontmost: %S (previous %S)" (portal-test-frontmost) previous)
+      (should (eql previous (portal-test-frontmost))))
+    (let ((destination (portal-test-frontmost -1)) continued)
+      (should destination)
+      (portal-launcher-gui--present
+       (lambda () (interactive) (read-string "Activate another app: ") (setq continued t))
+       '((30 262144 "\C-]")) (lambda () (portal-test-frontmost destination)))
+      (should-not continued)
+      (should (eql destination (portal-test-frontmost))))
+    (let (finder)
+      (portal-launcher-present
+       (lambda () (interactive) (setq finder (portal-test-frontmost "com.apple.finder"))))
+      (with-timeout (3 (error "Successful app launch did not activate Finder"))
+        (while (not (eql finder (portal-test-frontmost))) (sit-for 0.05)))
+      (message "Launcher success frontmost: %S (expected Finder %S)" (portal-test-frontmost) finder)
+      (should (eql finder (portal-test-frontmost)))
+      (should (eq ordinary (selected-window))))))
 
 (provide 'portal-launcher-gui-tests)
