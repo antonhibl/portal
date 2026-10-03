@@ -566,9 +566,65 @@ pass, but the production integration must repeat that regression check.
   app launches/activation, refresh, search, cancellation and recovery after errors.
 - [ ] Record physical fullscreen/Spaces and multi-monitor regression results,
   plus the exact IME and VoiceOver results; limitations are explicit.
-- [ ] Enabling/disabling leaves ordinary Emacs and Portal functionality intact;
+- [X] Enabling/disabling leaves ordinary Emacs and Portal functionality intact;
   the documented rollback removes the launcher shortcut and native resources.
 - [ ] A fresh configured session follows the documented setup successfully, and
   support claims match the builds and workflows actually tested.
 - [ ] The project's build/checks and the new launcher checks pass; attach evidence
   and record any accepted limitations here before marking this task DONE.
+
+*** Implementation and evidence, 2026-10-03
+The [[file:README.md][README]] now gives a persistent opt-in setup, customization,
+M-x.app shortcut migration and rollback. The
+[[file:docs/launcher-daily-use.md][daily-use guide]] records tested versions, the isolated
+configuration, repeatable checks and a hands-on matrix with explicit evidence
+boundaries. Migration removes only the saved launcher shortcut row; M-x's
+URL/org-protocol handlers and unrelated shortcuts remain in place.
+
+Added [[file:test/launcher-daily-use.sh][a focused graphical runner]] and
+[[file:test/portal-launcher-daily-use-tests.el][two native GUI regression tests]]. With native AppKit
+input, configured completion selects an exact fixture app path, enters a spaced
+bang query, cancels empty input/Escape and recovers through another prompt after
+an open error. Completion/theme settings are preserved; external app/browser
+actions in this repeatable test are mocked.
+
+Three setup reload/disable/re-enable cycles with a second ordinary frame,
+a live terminal and a WebKit page retain both view identities and the same
+shell PID. Commands still run in the shell and pages still load after each
+rollback. The dedicated panel, registration and frame guards are released.
+No production Lisp or native implementation changes were needed.
+
+The new tests pass with stock completion and with an isolated copy of the
+active normal session's completion/theme settings: Vertico 20260830.123
+(multiform and directory bindings), Orderless 20260830.1156, Marginalia
+20260821.1231, Modus Themes 20260829.1926 / =modus-vivendi-tinted= and
+JetBrainsMono Nerd Font 17. This is a settings-fragment check, not a complete
+normal-session pass. The active session was inspected read-only.
+
+Verification: =./build.sh= succeeds; all 32 CTest suites pass with the machine's
+existing Homebrew GCC =LIBRARY_PATH= workaround for native trampolines. The
+initial batch run without it failed compiling unrelated subroutine trampolines
+because =emutls_w= was missing from the linker's search path. Native trampolines
+remained enabled. Host formatting/type checks, both native failure-reporter
+tests and warning-as-error byte compilation of the new Lisp tests pass.
+All 14 launcher GUI tests pass together; the focused runner also passes both
+tests with stock and copied local configuration in fresh processes. =org-lint=
+passes, and all 37 task IDs/UUIDs remain unique with valid links and acyclic
+dependencies.
+
+The combined run exposed a GUI test-isolation problem. Native ordinary-window
+mutation/deletion asynchronously activated the previous app during a later
+prompt; the production focus observer correctly cancelled that prompt. A
+four-test reproduction failed, then passed after the shared GUI fixture allowed
+native events to settle during cleanup. The full launcher matrix passes with
+that fixture change. No production focus behavior was changed.
+
+*** Remaining acceptance gates
+Keep this task TODO. The fresh full-init/normal-session workflow, physical
+production fullscreen/Spaces, monitor disconnect/reconnect, Chinese/Japanese
+IME candidate/commit and VoiceOver spoken prompt/candidate navigation still
+need hands-on results. The guide records these as pending/not tested, not as
+accepted limitations or passes. The earlier prototype fullscreen result and
+automated geometry checks do not replace them. The composite final acceptance
+item stays unchecked until required results and any explicit scope decisions
+are recorded here. Do not claim everyday-use validation from this PR alone.

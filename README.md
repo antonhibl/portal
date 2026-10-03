@@ -67,6 +67,10 @@ view while the page keeps running. Killing the buffer closes the page.
 
 ## Native launcher panel (opt-in)
 
+The launcher is still awaiting daily-use validation. See the
+[setup and validation guide](docs/launcher-daily-use.md) for the tested versions,
+fresh-session checks and remaining physical input/accessibility checks.
+
 `portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
 nonactivating macOS panel. It uses Portal's existing module. Loading the feature
 does not create a frame or register a shortcut. Enable the mode to register
@@ -91,6 +95,38 @@ After building and loading Portal:
 ;; M-x launcher-refresh refreshes separately.
 (portal-launcher-mode -1)       ; delete frame and release shortcut
 ```
+
+For a persistent setup, install the pinned dependency above, build Portal, then
+add the following to your init file (replace the directory):
+
+```elisp
+(load "/absolute/path/to/portal/portal.el" nil t)
+(require 'portal-launcher)
+(setopt portal-launcher-shortcut "Control-Option-Command-P"
+        portal-launcher-command #'portal-launcher-applications
+        portal-launcher-size '(720 420)
+        portal-launcher-offset '(0 0))
+(portal-launcher-mode 1)
+```
+
+First try this in a fresh disposable Emacs with your completion/theme setup.
+After that passes, explicitly evaluate the setup in a fresh normal session.
+The launcher runs inside Emacs; it needs neither the app host, a separate
+launcher application nor a per-invocation `emacsclient`. Emacs must already be
+running, and long Lisp work delays invocation.
+
+To migrate from M-x.app, start with a different Portal chord. Record the old
+M-x launcher row's trigger and expression, then remove only that shortcut row
+in M-x Settings before assigning its chord to Portal. Keep M-x running for its
+other shortcuts, `emacs://` and `org-protocol://` bindings. Modifier double-taps
+remain M-x features. See the guide for the migration and rollback checks.
+
+To roll back, run `(portal-launcher-mode -1)` and remove the enable call from
+your init file. This deletes the dedicated panel, releases its global shortcut
+and removes its frame guards. Existing ordinary frames and Portal views remain
+usable. Restore the saved M-x launcher row if you migrated it. The shared native
+module stays loaded for other Portal features; restart Emacs to change its
+binary. Rebuilding or unloading Lisp does not replace a loaded native module.
 
 Type an application name, select it with your completion setup, then Return to
 launch or activate it. `launcher.el` owns the Spotlight index, directory list,
@@ -1939,6 +1975,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -l "$PWD/test/portal-terminal-choose-gui-tests.el" \
   -l "$PWD/test/portal-agents-gui-tests.el" \
   -l "$PWD/test/portal-launcher-gui-tests.el" \
+  -l "$PWD/test/portal-launcher-daily-use-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
