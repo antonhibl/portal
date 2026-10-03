@@ -33,7 +33,11 @@
          (when (buffer-live-p content) (kill-buffer content))
          (when (window-live-p ordinary) (select-window ordinary))
          (dolist (frame (frame-list))
-           (unless (memq frame before) (delete-frame frame t))))
+           (unless (memq frame before) (delete-frame frame t)))
+         ;; Changing/deleting ordinary NS windows can asynchronously activate
+         ;; the previous app. Drain that cleanup before another test starts a
+         ;; session whose focus-loss observer would correctly cancel it.
+         (sit-for 0.2))
        (should-not portal-launcher--frame)
        (should (equal before (frame-list)))
        (should (eq (window-buffer ordinary) ordinary-buffer)))))
