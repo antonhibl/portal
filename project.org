@@ -682,6 +682,28 @@ modules. All prior test commands supplied the missing search path.
   compilation with warnings as errors, Org lint, task graph/link validation and
   diff checks pass. No findings are deferred.
 
+*** Review follow-up: runtime and executable agreement
+Addressed the finding from the review of =d9f422e= in PR #65 on 2026-10-03.
+The earlier identity refactor validated a script position and a recognized
+runtime independently, but did not require them to describe the same runtime.
+This was a missing consistency check in the existing identity contract.
+
+- Script identity now requires the executable's normalized runtime to match
+  the runtime whose argument grammar was parsed. The supported =python= and
+  =python3= aliases remain equivalent. Pi's Node =process.title= exception is
+  limited to a direct =pi= argument name; a script-derived Pi name cannot
+  bypass runtime agreement. No interface, dependency or policy changes.
+- A 243-case matrix exercises every pair of supported argument/executable
+  runtime names for Claude, Codex and Pi through the shared identity entry
+  point. It preserves matching runtimes and aliases while rejecting every
+  mismatch. A real Node process launched with =exec -a bash= reproduces the
+  false Claude row through the native collector; the same script with the
+  correct argument name remains discoverable. Both regressions failed before
+  the fix and pass afterwards. The existing Pi nesting test still passes.
+- Native build, all 28 CTest suites (27 discovery/dashboard ERT tests), host
+  Biome/type checks, changed Lisp byte compilation with warnings as errors,
+  Org lint, task graph/link validation and diff checks pass. Nothing deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex

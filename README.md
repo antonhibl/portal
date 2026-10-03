@@ -483,9 +483,11 @@ suspended (Ctrl-Z) agent disappears until foregrounded. Remote agents, agents
 inside tmux, or launches that remove `PORTAL_TERMINAL` are not discovered.
 The marker must agree with OS ancestry on the same controlling TTY back to
 Emacs; inheriting it inside a nested PTY is insufficient. Native agent binaries
-and known runtime script launches are recognized. Runtime options are parsed by
-their documented arity; unknown options, inline code and ambiguous package tasks
-are not guessed. Such terminals can still be tracked manually.
+and known runtime script launches are recognized. The executable must match the
+runtime whose argument grammar is parsed, allowing supported aliases. Runtime
+options are parsed by their documented arity; unknown options, inline code and
+ambiguous package tasks are not guessed. Such terminals can still be tracked
+manually.
 
 Optional `M-x portal-agents-track` (`t`) tracks any terminal; a prefix argument
 also asks for a label, and `(portal-agents-track BUFFER LABEL)` works from Lisp.
@@ -1709,9 +1711,11 @@ real asynchronous pipes, process identity, nested/spoofed controls, PID reuse,
 hidden/manual collection, bounded failures, pending triggers, and recorded Claude
 lifecycle/compaction/error/trust fixtures replayed through dashboard rows.
 Runtime cases cover option values, attached values, short flag clusters,
-terminators, execution modes and unknown options. With Node installed, CTest
-also runs actual Node processes on PTYs through the native collector and checks
-that a preload named `claude` is not mistaken for the executed script.
+terminators, execution modes, unknown options and every supported runtime pairing
+for Claude, Codex and Pi. With Node installed, CTest also runs actual Node
+processes on PTYs through the native collector and checks
+that a preload named `claude` is not mistaken for the executed script, and that
+Node with a spoofed Bash argument name does not produce an agent row.
 `ctest --test-dir build -R processes` checks Darwin argument parsing, including
 NUL padding and truncation, and launches real nested PTYs with an inherited
 marker to verify TTY ownership. `portal-agents-benchmark-discovery` in

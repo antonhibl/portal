@@ -93,9 +93,11 @@ Optional values use =; short values may be attached or separate.")
     (when (and (member name '("claude" "codex" "pi"))
                (or (equal exe name)
                    (and (equal name "claude") (string-match-p "/claude/versions/[^/]+\\'" path))
-                   (and script (portal-agent-process--runtime exe))
+                   ;; A script position is evidence only for the runtime whose
+                   ;; grammar we parsed, including its supported aliases.
+                   (and script (equal (car runtime) (car (portal-agent-process--runtime exe))))
                    ;; Verified Pi launch: process.title replaces Node's argv.
-                   (and (equal name "pi") (equal exe "node"))))
+                   (and (not runtime) (equal name "pi") (equal exe "node"))))
       name)))
 
 (defun portal-agent-process-sessions (processes owner)

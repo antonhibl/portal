@@ -268,6 +268,77 @@
             (should-not (portal-agents-test--rows))
             (should (= portal-discovery-test--queries 0))))))))
 
+(ert-deftest portal-discovery-runtime-executable-agreement ()
+  ;; Every supported runtime must agree with its executable, across every
+  ;; recognized harness. Python's two names are the only supported aliases.
+  (let ((families '(("node") ("bun") ("deno") ("python" "python3")
+                    ("sh") ("bash") ("zsh") ("fish"))))
+    (dolist (agent '("claude" "codex" "pi"))
+      (dolist (claimed-family families)
+        (dolist (claimed claimed-family)
+          (dolist (actual-family families)
+            (dolist (actual actual-family)
+              (ert-info ((format "%s: argv runtime %s, executable %s" agent claimed actual))
+                (let* ((argv (append (list (concat "/usr/bin/" claimed))
+                                     (when (equal claimed "deno") '("run"))
+                                     (list (concat "/opt/bin/" agent))))
+                       (sessions (portal-agent-process-sessions
+                                  (list (list :pid 10 :tty-parent 42 :environment "42/terminal:1"
+                                              :argv argv :executable (concat "/bin/" actual))) 42)))
+                  (if (eq claimed-family actual-family)
+                      (progn
+                        (should (= (length sessions) 1))
+                        (should (equal (plist-get (cdar sessions) :agent) agent)))
+                    (should-not sessions)))))))))))
+
+(ert-deftest portal-discovery-real-runtime-name-must-match-executable ()
+  (let ((collector (getenv "PORTAL_TEST_PROCESS_SNAPSHOT"))
+        (node (executable-find "node"))
+        (spawn (symbol-function 'make-process)))
+    (skip-unless (and collector node))
+    ;; Resolve launch shims before deliberately replacing the runtime's argv[0].
+    (setq node (car (process-lines node "-p" "process.execPath")))
+    (portal-discovery-test--environment
+      (let* ((terminal (portal-agents-test--open "one/app"))
+             (script (portal-agents-test--path "claude"))
+             (process-environment
+              (cons (format "PORTAL_TERMINAL=%d/%s" (emacs-pid)
+                            (buffer-local-value 'portal-view--target terminal)) process-environment)))
+        (write-region "setInterval(() => {}, 1000);\n" nil script nil 'silent)
+        (cl-letf (((symbol-function 'portal--process-snapshot)
+                   (lambda (variable)
+                     (with-temp-buffer
+                       (should (= (call-process collector nil t nil "--snapshot" variable) 0))
+                       (goto-char (point-min))
+                       (json-parse-buffer :object-type 'plist :array-type 'list)))))
+          (dolist (claimed '("bash" "node"))
+            (let ((process (funcall spawn :name "portal-real-runtime" :buffer nil :noquery t
+                                    :connection-type 'pty
+                                    :command (list "/bin/bash" "--noprofile" "--norc" "-c"
+                                                   "exec -a \"$1\" \"$2\" \"$3\""
+                                                   "portal-test" claimed node script)))
+                  (deadline (+ (float-time) 3)) found)
+              (unwind-protect
+                  (progn
+                    (while (and (not found) (< (float-time) deadline))
+                      (setq found (seq-find (lambda (entry)
+                                              (and (= (plist-get entry :pid) (process-id process))
+                                                   (equal (plist-get entry :argv) (list claimed script))))
+                                            (portal--process-snapshot "PORTAL_TERMINAL")))
+                      (unless found (accept-process-output nil 0.01)))
+                    (should found)
+                    (should (equal (plist-get found :executable) node))
+                    (should (eql (plist-get found :tty-parent) (emacs-pid)))
+                    (portal-agents-test--show)
+                    (if (equal claimed "node")
+                        (progn
+                          (portal-discovery-test--reply
+                           (json-encode (vector (list :pid (process-id process) :status "idle"))))
+                          (should (equal (portal-discovery-test--status terminal) "idle")))
+                      (should-not (portal-agents-test--rows))
+                      (should (= portal-discovery-test--queries 0))))
+                (delete-process process)))))))))
+
 (ert-deftest portal-discovery-real-node-preload-is-not-the-script ()
   (let ((collector (getenv "PORTAL_TEST_PROCESS_SNAPSHOT"))
         (node (executable-find "node"))
