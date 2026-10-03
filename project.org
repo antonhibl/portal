@@ -394,7 +394,7 @@ byte compilation. A separate disposable native GUI process exited with status
 panel, registration 0 and a still-live Emacs frame. =git diff --check= and
 =org-lint= pass; task IDs, dependencies and internal links remain valid.
 
-** TODO Launch macOS applications through the native panel :task:
+** DONE Launch macOS applications through the native panel :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-applications
 :ID: 5650dbd0-e60d-48f9-a15b-4deb54cbdde5
@@ -450,18 +450,77 @@ Current behavior to preserve:
   are outside this first milestone.
 
 *** Acceptance
-- [ ] In the panel, search for and launch a stopped app, then activate an already
+- [X] In the panel, search for and launch a stopped app, then activate an already
   running app. Both receive focus and no normal Emacs frame is raised over them.
-- [ ] Duplicate names, spaces and non-ASCII names select the exact bundle path;
+- [X] Duplicate names, spaces and non-ASCII names select the exact bundle path;
   decorated completion strings never select the wrong entry.
-- [ ] Warm invocation uses the cache; explicit refresh discovers installation
+- [X] Warm invocation uses the cache; explicit refresh discovers installation
   and removal changes. Empty indexes and command failures remain recoverable.
-- [ ] Existing fallback and bang searches open the correctly encoded query in
+- [X] Existing fallback and bang searches open the correctly encoded query in
   the browser; empty input and cancellation perform no external action.
-- [ ] Stock completion and Vertico/Orderless/Marginalia work with useful path
+- [X] Stock completion and Vertico/Orderless/Marginalia work with useful path
   annotations. Preserve the user's configuration and ordinary =M-x launcher=.
 - [ ] Adapter tests use fixtures/mocked external actions; record physical GUI
   launch, activation, refresh and search smoke tests plus cold/warm timings.
+
+*** Outcome
+Implemented 2026-10-03. =portal-launcher-command= now defaults to
+=portal-launcher-applications=, a thin adapter around optional =launcher.el= at
+=731146d95d7d1ff16f48e7a200da873c8d8b375c=. The package loads only when invoked;
+missing installation produces a setup error. Custom commands and the nil/plain
+buffer option remain available without that dependency. No native code or app
+catalog was added. The [[file:README.md][README]] documents installation, invocation,
+refresh, searches and error recovery.
+
+The adapter delegates to the user's completion reader and returns the selected
+string unchanged. Path annotations use the package's actual completion metadata;
+neither annotations nor text properties become a bundle identity. Prefix refresh
+passes through =C-u M-x portal-launcher-present=; =launcher-refresh= and ordinary
+=M-x launcher= keep their existing behavior.
+
+Two deliberate input differences are scoped to the adapter: blank input and
+bangs without queries cancel, including a highlighted app at an untouched
+Vertico prompt; stock completion's default Space binding inserts a literal
+separator, with custom bindings preserved. These package input issues and the
+tested revision's obsolete-macro warnings are recorded in
+[[file:docs/launcher-applications.md][the integration notes]], without patching or globally
+advising the dependency. Empty indexes, stale paths and discovery/open/browser
+errors remain recoverable through existing session cleanup.
+
+*** Verification
+- =./build.sh= succeeds; all 32 CTest suites pass. The launcher suite has 19 ERT
+  tests, and the new applications suite has seven tests against the hash-pinned
+  real package with fixture bundles and mocked external actions. Real stock and
+  Vertico/Orderless/Marginalia minibuffers select duplicate non-ASCII labels and
+  preserve exact paths, spaces, search encoding, cache reuse and explicit refresh.
+- All 12 launcher GUI tests pass. The complete graphical suite passes with 78
+  expected results, zero unexpected and one shell-startup test skipped for its
+  separate harness. This includes all seven existing graphical input tests.
+  An earlier full run overlapped browser UI inspection and dismissed one nested
+  launcher prompt early; the serial rerun passed without a production change.
+- A disposable graphical Emacs launched stopped Calculator and activated the
+  same running process after switching to Finder; each received focus. Prefix
+  refresh indexed 506 applications and Escape returned focus. A real GitHub
+  bang search reached Chrome through OpenIn, and a separate direct-Chrome run
+  passed its focus assertion. UI inspection confirmed both result tabs' query.
+- Cold Spotlight discovery took 1.231 seconds; explicit refresh took 0.431
+  seconds. One thousand cached index reads took 0.079 milliseconds total. These
+  are catalog timings, excluding panel creation, typing and app startup.
+- Changed Lisp files byte-compile with warnings treated as errors. The pinned
+  dependency emits its existing obsolete-macro load warnings. =bun run check=,
+  =bun run typecheck=, native failure-reporter tests and =git diff --check= pass.
+  The machine's existing Homebrew GCC =LIBRARY_PATH= workaround was used for
+  native trampolines; project compiler settings were not changed.
+- =org-lint= passes; all 37 task IDs/UUIDs remain unique, dependency targets and
+  internal task links resolve, and the dependency graph is acyclic.
+
+*** Hands-on validation still outstanding
+The composite physical-GUI acceptance item stays unchecked. The real-app smoke
+tests used native AppKit event injection, not human key presses. Human launch,
+activation, refresh and search checks continue in [[#launcher-daily-use][daily-use validation]],
+along with the existing physical shortcut, fullscreen/Spaces, monitor changes,
+click-away, IME and VoiceOver checks. Both connected Retina monitors passed
+automated exact-geometry checks; that does not establish physical monitor changes.
 
 ** TODO Validate and document the app launcher for everyday use :task:
 :PROPERTIES:

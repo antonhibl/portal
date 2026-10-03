@@ -70,11 +70,52 @@ view while the page keeps running. Killing the buffer closes the page.
 `portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
 nonactivating macOS panel. It uses Portal's existing module. Loading the feature
 does not create a frame or register a shortcut. Enable the mode to register
-Control–Option–Command–P; it toggles the panel from any application:
+Control–Option–Command–P; it opens the application picker from any application.
+Install the optional [launcher.el](https://github.com/xiaoxinghu/launcher.el)
+package first; this is the tested revision:
+
+```elisp
+(use-package launcher
+  :vc (:url "https://github.com/xiaoxinghu/launcher.el"
+       :rev "731146d95d7d1ff16f48e7a200da873c8d8b375c")
+  :commands (launcher launcher-refresh))
+```
+
+After building and loading Portal:
 
 ```elisp
 (require 'portal-launcher)
 (portal-launcher-mode 1)        ; register shortcut, create the frame on first press
+(portal-launcher-present)      ; same app picker, without the global shortcut
+;; C-u M-x portal-launcher-present refreshes before prompting.
+;; M-x launcher-refresh refreshes separately.
+(portal-launcher-mode -1)       ; delete frame and release shortcut
+```
+
+Type an application name, select it with your completion setup, then Return to
+launch or activate it. `launcher.el` owns the Spotlight index, directory list,
+duplicate-name labels, path annotations and `open -a` calls. Warm invocations
+reuse its cache; use explicit refresh after installing or removing an app.
+Its `launcher-app-directories`, `launcher-fallback-search-url` and
+`launcher-bangs` remain customizable. Unmatched text searches the web; `!g`,
+`!yt` and `!gh` followed by a space and query select a search engine.
+
+The default `portal-launcher-command` is `portal-launcher-applications`, a thin
+adapter around `launcher`. It cancels empty/whitespace input and bangs without
+a query, including Return on an untouched prompt with a highlighted candidate.
+Type a name or insert a candidate with Tab before accepting it. In stock
+completion, Space inserts a space in this prompt and Tab completes; explicitly
+customized Space bindings are kept. Ordinary `M-x launcher` is unchanged.
+The package loads only when this command runs; missing installation produces a
+setup error, and other Portal features and custom commands do not require it.
+Discovery, missing-bundle and open errors close the panel and can be retried;
+refresh a stale index before trying a moved app. An empty Spotlight index reports
+an error and is retried on the next invocation. See
+[integration checks and timings](docs/launcher-applications.md).
+
+The explicit buffer API remains available:
+
+```elisp
 (portal-launcher-show (get-buffer-create "*Launcher*"))
 (portal-launcher-resize 713 407)
 (portal-launcher-hide)
@@ -82,10 +123,8 @@ Control–Option–Command–P; it toggles the panel from any application:
 (portal-launcher-mode -1)       ; delete frame and release shortcut
 ```
 
-The first shortcut invocation shows a plain `*Portal Launcher*` buffer. Later
-invocations reuse the frame and its content, including a buffer supplied to
-`portal-launcher-show`. `M-x portal-launcher-toggle` does the same thing.
-To run an interactive command instead, configure `portal-launcher-command`:
+`M-x portal-launcher-toggle` uses the same command as the shortcut. To run
+another interactive command, configure `portal-launcher-command`:
 
 ```elisp
 (defun my/launcher-example ()
@@ -110,7 +149,8 @@ its application. Display rules and cancellation keys last only for the session.
 Commands must be interactive and synchronous. Invoke after any existing
 minibuffer has finished. Commands that deliberately use other frames or catch
 arbitrary throws need explicit wrappers. Set `portal-launcher-command` back to
-nil for the plain reusable buffer; application picking remains a subsequent task.
+nil for the plain reusable buffer, reusing any content supplied to
+`portal-launcher-show`.
 
 Change the chord with Customize or `setopt`; changes take effect immediately
 while enabled. For example:
@@ -1882,6 +1922,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -L "$PWD/build/elpa/consult-3.10" -L "$PWD/build/elpa/vertico-2.15" \
   -L "$PWD/build/elpa/orderless-1.8" -L "$PWD/build/elpa/org-ql-0.8.10" \
   -L "$PWD/build/elpa/marginalia-2.13" \
+  -L "$PWD/build/elpa/launcher-731146d95d7d1ff16f48e7a200da873c8d8b375c" \
   -L "$PWD/build/elpa/org-super-agenda-1.3" -L "$PWD/build/elpa/ts.el-0.3" \
   -L "$PWD/build/elpa/ov-1.0.6" -L "$PWD/build/elpa/s.el-1.13.1" \
   -L "$PWD/build/elpa/ht.el-2.3" -L "$PWD/build/elpa/dash-2.20.0" -l "$PWD/portal.el" \

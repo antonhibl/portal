@@ -4,10 +4,18 @@
 (require 'portal-launcher)
 
 (ert-deftest portal-launcher-load-is-inert ()
+  (should-not (featurep 'launcher))
   (should-not portal-launcher-mode)
   (should-not portal-launcher--frame)
   (should-not (memq #'portal-launcher--before-delete delete-frame-functions))
   (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
+
+(ert-deftest portal-launcher-missing-application-package-explains-setup ()
+  ;; This suite runs in -Q without the optional package on load-path.
+  (should-not (locate-library "launcher"))
+  (should (string-match-p
+           "Install launcher.el.*load-path"
+           (error-message-string (should-error (portal-launcher-applications) :type 'user-error)))))
 
 (ert-deftest portal-launcher-rejects-unsupported-before-loading ()
   (let ((emacs-repository-version "unvalidated")
