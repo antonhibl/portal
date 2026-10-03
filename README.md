@@ -453,12 +453,13 @@ terminals of its kind show.
 
 ### Agent dashboard
 
-Run `claude` or `codex` in an ordinary Portal shell, then open `M-x portal-agents`.
+Run `claude`, `codex` or `pi` in an ordinary Portal shell, then open `M-x portal-agents`.
 The agent appears automatically, even before its first prompt or while waiting
 at a trust dialog. Discovery also finds sessions started before the dashboard
 opened, while it was hidden, or before discovery was enabled. No agent setup
 or per-session tracking is needed. This is tested with Claude Code 2.1.288 and
-Codex CLI 0.155.1.
+Codex CLI 0.155.1 and Pi 0.87.0. Pi activity needs the extension setup below;
+its identity is discovered without setup.
 Rebuild and restart Emacs to give new terminals the discovery marker.
 
 Each row shows its terminal name, agent, assigned project, terminal process
@@ -480,8 +481,49 @@ can read as idle. Custom title settings can invalidate the mapping. Titles are
 terminal-wide and carry no process ID, so this is a best-effort inference from
 the current cache, not proof that a particular run emitted it. Keep Codex's
 default title settings for this source. Notifications and progress do not affect
-Codex activity; focus and notification suppression do not imply idle. Pi
-automatic discovery remains a separate task.
+Codex activity; focus and notification suppression do not imply idle.
+
+Pi rows are labelled **Pi (progress)**. Install the bundled lifecycle extension
+once (from the Portal repository root):
+
+```sh
+mkdir -p ~/.pi/agent/extensions
+cp -i extensions/portal-pi.ts ~/.pi/agent/extensions/portal-pi.ts
+```
+
+Keep Pi's `terminal.showTerminalProgress` off (its default), and disable other
+extensions that write OSC 9;4 progress. Portal does not change Pi settings.
+Then enable this source in Emacs:
+
+```elisp
+(setopt portal-agents-pi-progress t)
+```
+
+Later plain `pi` launches load the extension automatically. In an existing Pi
+session, `/reload` loads it without relaunching. Only Portal TUI sessions emit
+reports; RPC, print mode and terminals outside Portal do not. The extension
+reports working at `agent_start`, waiting during blocking extension UI prompts,
+and idle only when `ctx.isIdle()` agrees, using `agent_settled` after work.
+`agent_end` does not settle retries, automatic compaction or queued continuation.
+Failures and cancellations can settle to idle; idle does not mean success.
+
+Only native progress reports received **after discovery** count. Until then,
+activity is `unknown`, even if an earlier startup report is cached. Opening the
+dashboard and using `/reload` or `/new` provides fresh evidence; a later turn
+also does. A hidden dashboard preserves evidence for a previously discovered
+run and checks its process identity on redisplay. Runs first discovered on
+redisplay wait for new evidence. Reports carry native receipt times so delayed
+metadata and repeated states cannot reuse a report from before discovery.
+
+This is a configured source, not a sender-authenticated protocol: OSC progress
+has no PID. Competing writers or output received late from another process can
+mislead it. Keep the extension as the sole progress writer. Unsupported states,
+missing reports and extension shutdown become unknown. There is no heartbeat:
+silence alone cannot distinguish an unchanged state from a broken extension.
+In Pi 0.87.0, manual compaction success precedes the idle flag clearing and has
+no subsequent settlement event, so it becomes unknown until another lifecycle
+report. Built-in menus are not covered by extension UI prompt events. Hover
+activity to see its source or why evidence is missing.
 
 The dashboard is an ordinary Tabulated List buffer with no native view, web
 page or app host. Move, isearch, or press `S` to sort; `RET` visits the correct
@@ -514,7 +556,8 @@ foreground or is explicitly tracked again; later runs are discovered normally.
 
 While shown, one two-second timer scans processes and reads cached metadata.
 Opening or showing the dashboard scans immediately. Codex activity is read from
-cached titles after a successful scan, without a status subprocess. Title glyph-class and
+cached titles after a successful scan, and Pi reads cached progress without a
+status subprocess. Title glyph-class and
 progress changes trigger asynchronous Claude status queries; spinner animation
 within a class does not. Queries never overlap, time out after five seconds,
 and retry after a transition, every four seconds for unknown status, or at a
@@ -530,8 +573,8 @@ hides the dashboard. `portal-agents-toggle-live-update` or
 `(setq portal-agents-live-update nil)` leaves collection manual: open, show, or
 `g`. Set `portal-agents-live-update-interval` to change the interval the next
 time updates start. Set `portal-agents-discover-claude` or
-`portal-agents-discover-codex` to nil to disable that agent's automatic discovery;
-disable both to retain only manual tracking. Minimized/invisible frames stop
+`portal-agents-discover-codex` or `portal-agents-discover-pi` to nil to disable
+that agent's automatic discovery; disable all three to retain only manual tracking. Minimized/invisible frames stop
 collection at the next tick.
 
 With 100 tracked terminals, a refresh with nothing changed took under 1 ms in
@@ -1733,7 +1776,12 @@ lifecycle/compaction/error/trust fixtures replayed through dashboard rows. Codex
 fixtures cover startup, working, completion, approvals, denial, cancellation and
 model failure. Mixed-agent checks isolate status sources and discovery options,
 reject delayed Claude results after a Codex replacement, and suppress redraws
-for spinner frames and blinking approval markers.
+for spinner frames and blinking approval markers. Pi tests replay recorded tool,
+cancellation and provider-error lifecycles, reject pre-discovery/delayed progress,
+and cover hidden collection, manual refresh, source loss and repeated-state
+redraw suppression. `ctest --test-dir build -R pi-extension` tests the shipped
+extension, including synthetic retry, compaction, nested UI prompts and
+conversation/reload events; these simulations are not live-provider captures.
 Runtime cases cover option values, attached values, short flag clusters,
 terminators, execution modes, unknown options and every supported runtime pairing
 for Claude, Codex and Pi. With Node installed, CTest also runs actual Node
@@ -1744,7 +1792,7 @@ Node with a spoofed Bash argument name does not produce an agent row.
 NUL padding and truncation, and launches real nested PTYs with an inherited
 marker to verify TTY ownership. `portal-agents-benchmark-discovery` in
 `test/portal-agents-benchmark.el` compares 10, 50 and 100 simulated sessions;
-pass `"codex"` to benchmark title inference instead of the default Claude path.
+pass `"codex"` for title inference or `"pi"` for progress instead of Claude.
 
 For the real tmux exclusion test, set `PORTAL_TEST_PROCESS_SNAPSHOT` to the
 absolute path of `build/portal-process-tests`, have tmux on Emacs's `exec-path`,
@@ -1766,6 +1814,29 @@ starts plain Claude and Codex sessions in that directory, sends Codex a harmless
 prompt, checks their separate activity and exact navigation, hides/reopens the
 dashboard, quits/relaunches Codex, and discovers and visits a hidden quick-terminal
 Codex. A spoofed Codex name with an approval title remains a negative control.
+
+For `portal-discovery-gui-mixed-pi-claude-codex`, also set
+`PORTAL_TEST_PI_AGENT_DIR` to a disposable Pi agent directory containing the
+bundled `portal-pi.ts` in `extensions/`, credentials for one harmless request,
+and settings with terminal progress off. The directory must have a project
+trust decision (or `defaultProjectTrust: "never"`) so startup can reach the TUI.
+Install this additional test-only extension in that directory:
+
+```typescript
+export default function (pi) {
+  pi.registerCommand("portal-test-prompt", {
+    description: "Portal smoke test input",
+    handler: async (_args, ctx) => {
+      await ctx.ui.input("Portal smoke test", "Type PORTAL_OK");
+    },
+  });
+}
+```
+
+It launches plain Pi, Claude and optionally Codex in one directory, verifies
+Pi work and dialogs, repeats a dialog with the dashboard hidden, tests `/new`
+and `/reload`, quits/relaunches Pi and visits a hidden quick Pi terminal. It
+uses that temporary Pi directory without changing the user's settings.
 
 The agent dashboard's graphical tests use real terminals and redisplay's window
 hooks. They check that `RET` gives a hidden terminal, one shown in another

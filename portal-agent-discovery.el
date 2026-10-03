@@ -30,8 +30,22 @@ Custom titles and non-approval menus can make that inference inaccurate.
 No Codex setup is required; an absent title means unknown activity."
   :type 'boolean :group 'portal-agents)
 
+(defcustom portal-agents-discover-pi t
+  "Discover foreground Pi sessions without requiring an extension.
+Activity needs the setup described by `portal-agents-pi-progress'."
+  :type 'boolean :group 'portal-agents)
+
+(defcustom portal-agents-pi-progress nil
+  "Read Pi activity from the Portal lifecycle extension's progress reports.
+Enable only after installing extensions/portal-pi.ts and leaving Pi's
+terminal.showTerminalProgress off.  Other progress writers must be disabled.
+Only reports received after discovery count; until then activity is unknown.
+OSC progress has no sender identity, so this source assumes that setup."
+  :type 'boolean :group 'portal-agents)
+
 (cl-defstruct (portal-agent (:constructor portal-agent--create))
   key pid start (name "claude") signal (revision 0) (activity "unknown")
+  (progress-after (floor (* 1000000 (float-time))))
   (reason "Not yet listed (possibly at a trust dialog)") process-error)
 
 (defvar portal-agent-discovery--agents nil "Current foreground agents, in terminal order.")
@@ -91,12 +105,16 @@ agent.  Hiding ends observation and invalidates replies already in flight."
   (let ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
         (agent (portal-agent-discovery--find buffer)))
     (if (not hidden)
-        (setq portal-agent-discovery--hidden
-              (cl-delete key portal-agent-discovery--hidden :key #'car :test #'equal))
+        (progn
+          (when (and agent (portal-agent-discovery--hidden-p agent))
+            (setf (portal-agent-progress-after agent) (floor (* 1000000 (float-time)))))
+          (setq portal-agent-discovery--hidden
+                (cl-delete key portal-agent-discovery--hidden :key #'car :test #'equal)))
       (when agent
         (cl-pushnew (portal-agent-discovery--identity agent) portal-agent-discovery--hidden :test #'equal)
         (cl-incf (portal-agent-revision agent))
         (setf (portal-agent-signal agent) nil)
+        (setf (portal-agent-progress-after agent) (floor (* 1000000 (float-time))))
         (portal-agent-discovery--unknown agent "Status unobserved while untracked")))))
 
 (defun portal-agent-discovery--scan ()
@@ -114,12 +132,15 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
                  (marker (concat prefix (cdr key)))
                  (p (cdr (assoc marker sessions)))
                  (name (plist-get p :agent)))
-            (when (and (member name '("claude" "codex"))
+            (when (and (member name '("claude" "codex" "pi"))
                        (not (buffer-local-value 'portal-terminal--exited buffer)))
               (let ((identity (list key (plist-get p :pid) (plist-get p :start) name)))
                 ;; Preserve an explicitly hidden run while its adapter is off.
                 (push identity identities)
-                (when (if (equal name "claude") portal-agents-discover-claude portal-agents-discover-codex)
+                (when (pcase name
+                        ("claude" portal-agents-discover-claude)
+                        ("codex" portal-agents-discover-codex)
+                        ("pi" portal-agents-discover-pi))
                   (let ((agent (or (cl-find identity old :key #'portal-agent-discovery--identity :test #'equal)
                                    (portal-agent--create :key key :pid (plist-get p :pid)
                                                          :start (plist-get p :start) :name name))))
@@ -169,6 +190,26 @@ titles so redisplay and recovery from a failed scan restore the inference."
           (portal-agent-discovery--unknown agent "Status changed; refreshing")
           (setq changed t))))
     changed))
+
+(defun portal-agent-discovery--pi-activity ()
+  "Read fresh Pi extension progress after a successful process scan.
+The native report time, not metadata delivery time, excludes cached and
+delayed reports predating discovery.  Hidden terminals keep this cache."
+  (dolist (agent (portal-agent-discovery--visible-agents "pi"))
+    (with-current-buffer (car (portal-agent-key agent))
+      (let* ((fresh (and portal-terminal--progress-time
+                         (> portal-terminal--progress-time (portal-agent-progress-after agent))))
+             (activity (and portal-agents-pi-progress fresh
+                            (cdr (assoc portal-terminal--progress
+                                        '(("indeterminate" . "working")
+                                          ("pause" . "waiting") ("remove" . "idle")))))))
+        (setf (portal-agent-activity agent) (or activity "unknown")
+              (portal-agent-reason agent)
+              (cond ((not portal-agents-pi-progress)
+                     "Pi activity needs extensions/portal-pi.ts and portal-agents-pi-progress; disable other progress writers")
+                    ((not fresh) "No Pi progress report since discovery; awaiting lifecycle extension evidence")
+                    (activity "Pi lifecycle extension progress (configured source); no sender ID; idle does not mean success")
+                    (t "Pi progress source unavailable or unsupported (extension shutdown or competing writer)")))))))
 
 (defun portal-agent-discovery--cancel-query ()
   "Release the Claude status query and its resources."
@@ -243,6 +284,7 @@ titles so redisplay and recovery from a failed scan restore the inference."
         ;; Revalidate the process start time before accepting a PID-only answer.
         (when (portal-agent-discovery--scan)
           (portal-agent-discovery--codex-activity)
+          (portal-agent-discovery--pi-activity)
           (when (portal-agent-discovery--observe) (setq portal-agent-discovery--pending t))
           (portal-agent-discovery--apply requested statuses failure))
         (portal-agents--changed)
@@ -302,10 +344,11 @@ titles so redisplay and recovery from a failed scan restore the inference."
   "Discover current agents and schedule status when needed; FORCE queries on show."
   (when (and (not portal-agent-discovery--collecting) (portal-agents--shown-p))
     (let ((portal-agent-discovery--collecting t))
-      (if (not (or portal-agents-discover-claude portal-agents-discover-codex))
+      (if (not (or portal-agents-discover-claude portal-agents-discover-codex portal-agents-discover-pi))
           (progn (portal-agent-discovery--stop) (setq portal-agent-discovery--agents nil))
         (when (portal-agent-discovery--scan)
           (portal-agent-discovery--codex-activity)
+          (portal-agent-discovery--pi-activity)
           (let* ((changed (portal-agent-discovery--observe))
                  (elapsed (- (float-time) portal-agent-discovery--queried))
                  (agents (portal-agent-discovery--visible-agents "claude")))

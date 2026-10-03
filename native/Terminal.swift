@@ -59,6 +59,7 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     /// The process has ended. The view stays, showing its last output.
     var exited = false
     var progress = ""
+    var progressTime = 0
 
     init(directory: String, command: String?, theme: TerminalTheme, marker: String) {
         super.init(frame: .zero)
@@ -82,9 +83,11 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     func terminalDidReportProgress(state: TerminalProgressState, percent: Int?) {
-        let value = "\(state)"
-        guard value != progress else { return }
-        progress = value
+        progress = "\(state)"
+        // Repeated states are still fresh evidence (startup, reload, new run).
+        // Stamp receipt here so delayed metadata cannot masquerade as a report
+        // from a newly discovered process. No timestamp-driven redraws in Lisp.
+        progressTime = Int(Date().timeIntervalSince1970 * 1_000_000)
         session?.changed()
     }
     func terminalDidChangeTitle(_ title: String) {
@@ -170,6 +173,7 @@ final class TerminalSession: PortalView {
          ("pwd", .string(terminal.workingDirectory)),
          ("exited", .flag(terminal.exited)),
          ("progress", .string(terminal.progress)),
+         ("progress-time", .integer(terminal.progressTime)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
          ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]
