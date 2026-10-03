@@ -171,7 +171,7 @@ also be changed directly on the live launcher frame."
     (setq portal-view-feature-record-handlers
           (assoc-delete-all "launcher-blur" portal-view-feature-record-handlers)))
   (dolist (entry '((delete-frame-functions . portal-launcher--before-delete)
-                   (kill-emacs-hook . portal-launcher--disable)))
+                   (kill-emacs-hook . portal-launcher--shutdown)))
     (if install (add-hook (car entry) (cdr entry))
       (remove-hook (car entry) (cdr entry)))))
 
@@ -186,6 +186,16 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
   (when (and (featurep 'native-compile)
              (not (gethash 'delete-frame comp-installed-trampolines-h)))
     (user-error "Launcher needs the delete-frame native trampoline; enable native-comp-enable-subr-trampolines and a working native compiler, then retry")))
+
+(defun portal-launcher--shutdown ()
+  "Release native launcher resources without aborting Emacs shutdown."
+  (when (frame-live-p portal-launcher--frame)
+    (portal--launcher-detach)
+    (setq portal-launcher--frame nil))
+  ;; Emacs will dispose of its frames, including any active minibuffer. Do not
+  ;; cancel the command: that throw would abandon kill-emacs and later hooks.
+  (let ((portal-launcher--session nil))
+    (portal-launcher--disable)))
 
 (defun portal-launcher--disable ()
   "Detach and delete the dedicated frame. Safe to call repeatedly."

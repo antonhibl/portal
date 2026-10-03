@@ -79,7 +79,7 @@
           (portal-launcher-mode -1)
           (portal-launcher-mode -1)
           (should-not (memq #'portal-launcher--before-delete delete-frame-functions))
-          (should-not (memq #'portal-launcher--disable kill-emacs-hook))
+          (should-not (memq #'portal-launcher--shutdown kill-emacs-hook))
           (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
       (portal-launcher--hooks nil))))
 
@@ -259,5 +259,47 @@
       (should-error (portal-launcher-present (lambda () (interactive) (ert-fail "Ran without panel")))))
     (should-not portal-launcher--session)
     (should (equal hidden '(t)))))
+
+(ert-deftest portal-launcher-shutdown-preserves-exit-and-later-hooks ()
+  ;; A real kill-emacs in another process catches nonlocal exits that a
+  ;; mocked kill-emacs or an isolated run-hooks would miss.
+  (with-temp-buffer
+    (let ((status
+           (call-process
+            (expand-file-name invocation-name invocation-directory) nil t nil
+            "--batch" "-Q" "-L" (file-name-directory (locate-library "portal-launcher"))
+            "--eval"
+            (prin1-to-string
+             '(progn
+                (require 'portal-launcher)
+                (let ((native-comp-enable-subr-trampolines nil)
+                      (portal-launcher-mode t)
+                      (portal-launcher--registration 1)
+                      (portal-launcher--frame (selected-frame))
+                      (frame (selected-frame))
+                      (detached 0) (released 0) (deleted 0))
+                  (cl-letf (((symbol-function 'portal-launcher-show) #'ignore)
+                            ((symbol-function 'portal--launcher-inspect) (lambda () '(:session 1)))
+                            ((symbol-function 'portal--launcher-hide) #'ignore)
+                            ((symbol-function 'make-frame-invisible) #'ignore)
+                            ((symbol-function 'portal--launcher-detach) (lambda () (cl-incf detached)))
+                            ((symbol-function 'portal--launcher-shortcut)
+                             (lambda (chord) (when (equal chord "") (cl-incf released))))
+                            ((symbol-function 'delete-frame) (lambda (&rest _) (cl-incf deleted))))
+                    (portal-launcher--hooks t)
+                    (add-hook 'kill-emacs-hook
+                              (lambda ()
+                                (princ (format "later-hook: %S\n"
+                                               (list detached released deleted
+                                                     portal-launcher-mode
+                                                     portal-launcher--registration
+                                                     (and (frame-live-p frame) t)))))
+                              90)
+                    (portal-launcher-present (lambda () (interactive) (kill-emacs 23)))
+                    ;; Reaching here means the launcher swallowed shutdown.
+                    (setq kill-emacs-hook nil)
+                    (kill-emacs 99))))))))
+      (should (= status 23))
+      (should (string-match-p "later-hook: (1 1 0 nil nil t)" (buffer-string))))))
 
 (provide 'portal-launcher-tests)

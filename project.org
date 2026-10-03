@@ -1243,6 +1243,22 @@ alongside the already-outstanding physical shortcut, Spaces, IME and VoiceOver
 checks. See [[file:docs/launcher-native-panel.md][the implementation notes]] and
 [[file:README.md][usage and test commands]].
 
+*** Review follow-up: exiting during a session
+The shutdown hook previously used normal disable, whose cancellation throw
+escaped =kill-emacs= and skipped later kill hooks. A dedicated shutdown path
+now detaches the native panel and releases registration without canceling the
+command or deleting an active minibuffer frame; Emacs disposes of its frames
+when it exits. Normal session disable and deletion still unwind first.
+
+A subprocess regression reproduced the swallowed exit before the fix. It now
+preserves the requested exit status, runs a later kill hook, detaches/releases
+once and leaves frame disposal to Emacs. All 30 CTest suites (18 launcher ERT
+tests) and all 11 launcher GUI tests pass, as do the build and warning-free
+byte compilation. A separate disposable native GUI process exited with status
+23 from two nested launcher prompts; its later kill hook observed no attached
+panel, registration 0 and a still-live Emacs frame. =git diff --check= and
+=org-lint= pass; task IDs, dependencies and internal links remain valid.
+
 ** TODO Launch macOS applications through the native panel :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-applications
