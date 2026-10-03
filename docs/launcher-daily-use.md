@@ -1,11 +1,10 @@
 # Launcher setup and daily-use validation
 
-The launcher remains opt-in and the `launcher-daily-use` task remains open.
-Automated checks below establish specific behaviors; physical fullscreen/Spaces,
-display changes, full IME composition and VoiceOver have not yet been validated
-on the production integration. The prototype's earlier human fullscreen pass
-does not certify this integration. No wider input or accessibility support is
-claimed until these checks have results and any limitations are accepted.
+The opt-in launcher passed the user's full daily-use checklist on 2026-10-04,
+including normal configuration, fullscreen/Spaces, monitor changes, IME and
+VoiceOver. The `launcher-daily-use` task is complete. The record below separates
+automated evidence from the user's manual acceptance; support remains scoped
+to the recorded environment.
 
 ## Tested environment
 
@@ -17,12 +16,13 @@ claimed until these checks have results and any limitations are accepted.
 | Repeatable completion matrix | Stock completion; Vertico 2.15, Orderless 1.8, Marginalia 2.13 |
 | Isolated copy of active settings | Vertico 20260830.123 with multiform and directory bindings, Orderless 20260830.1156, Marginalia 20260821.1231; styles `(orderless partial-completion basic)`, 10 candidates, no cycling or posframe |
 | Theme and font in that isolated run | Modus Themes 20260829.1926, `modus-vivendi-tinted`, JetBrainsMono Nerd Font 17 |
-| Displays in prior geometry checks | Gigabyte M32U and LG ULTRAFINE, both Retina, unequal origins; logical-point geometry passed, physical unplug/reconnect pending |
+| Displays in prior geometry checks | Gigabyte M32U and LG ULTRAFINE, both Retina, unequal origins; logical-point geometry passed |
 
 The active settings were inspected read-only from the normal Emacs session.
 Only the relevant completion/theme configuration was copied into a disposable
-process. This is not a full-init or normal-session pass. Other Emacs revisions,
-ports and macOS versions are unverified; the runtime restricts the Emacs build.
+process for the automated runs. The later user-confirmed normal-session results
+are recorded below. Other Emacs revisions, ports and macOS versions are
+unverified; the runtime restricts the Emacs build.
 Outbound native drag-and-drop is cancelled. Commands must be synchronous and
 use the panel's minibuffer; commands that choose other frames need wrappers.
 
@@ -127,9 +127,9 @@ and passed after the shared GUI fixture allowed native events to settle during
 cleanup. The full launcher suite passes together. The production
 focus-loss observer remains unchanged.
 
-## Hands-on record required before completion
+## Hands-on validation
 
-Record date, Portal commit, Emacs revision, macOS build, complete init used,
+For future regression runs, record date, Portal commit, Emacs revision, macOS build, complete init used,
 completion/theme versions, keyboard/input-source names, display layout and the
 result of every row. Use **pass**, **fail** or **not tested**, with exact symptoms.
 For a failure, record a reproducible case and either fix it or obtain an explicit
@@ -137,16 +137,16 @@ scope decision; missing equipment and missing results are not passes.
 
 | Check | Procedure and expected result | Current production evidence |
 | --- | --- | --- |
-| Normal configuration | Fresh normal Emacs; enable the documented setup. Physically invoke from another app, launch a stopped app, then activate the same running app. Destination gets focus without an ordinary Emacs frame rising. | Pending |
+| Normal configuration | Fresh normal Emacs; enable the documented setup. Physically invoke from another app, launch a stopped app, then activate the same running app. Destination gets focus without an ordinary Emacs frame rising. | Pass: user-confirmed full checklist on 2026-10-04 |
 | Selection without typing | Open the launcher and press Return on the highlighted app. Reopen, use Down/Up to choose another app and press Return. Both launch the selected app without requiring typed text. | Pass: user-confirmed manual retest on 2026-10-04 after the selection fix; automated minibuffer and native key checks also pass |
-| Refresh and search | `C-u M-x portal-launcher-present` refreshes, `M-x launcher-refresh` works separately. Enter `!gh portal launcher` and unmatched text; check the encoded query and destination focus. A freshly installed/removed test app appears/disappears after refresh. | Prior isolated automated real-app smoke; physical/full-init pending |
-| Cancellation | From another app, try Escape, C-g, the global chord again and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. An empty completion result also cancels; Return on a highlighted app accepts it. | Automated session checks; physical checks pending |
-| Failure and recovery | Run `(portal-launcher-present (lambda () (interactive) (error "Launcher recovery check")))` from Emacs; it reports the error and hides. Invoke normally again. Repeat a stale bundle/open failure while another app is active. | Automated error/reentry; full-init/external-app case pending |
-| Fullscreen and Spaces | Put another app fullscreen. Invoke, type, select and cancel without switching Spaces; repeat in another Space and verify focus return and successful activation. | Prototype human pass only; production physical regression pending |
-| Monitor changes | Invoke on each monitor, unplug one while visible and while hidden, reconnect and invoke again. No stranded panel, wrong display or unreachable prompt. Record origins, scale and which monitor was removed. | Automated static geometry only; physical changes pending |
-| Chinese/Japanese IME | Name the macOS input source. Type a composition such as Pinyin `nihao`, open its candidate list, navigate and commit `你好`. Confirm marked text/candidate positioning, committed text and cancellation, then restore the prior input source. ASCII, pasted Unicode and dead keys do not satisfy this check. | Not tested; no IME support claim |
-| VoiceOver | With VoiceOver enabled, summon the panel; record the spoken prompt, editable input, candidate names, current selection and ability to navigate, accept and cancel. Check focus after dismissal and restore the prior VoiceOver state. An accessibility tree or screenshot alone does not establish spoken output. | Not tested; no VoiceOver support claim |
-| Reload and rollback | Re-evaluate launcher setup, disable twice, re-enable and use again. Ordinary text input, web navigation and the same terminal shell work throughout. Disable and confirm the chord is free; restore the M-x launcher row if applicable and test an existing URL binding. | Automated repeated enable/disable with live views; physical/full-init/M-x checks pending |
+| Refresh and search | `C-u M-x portal-launcher-present` refreshes, `M-x launcher-refresh` works separately. Enter `!gh portal launcher` and unmatched text; check the encoded query and destination focus. A freshly installed/removed test app appears/disappears after refresh. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Cancellation | From another app, try Escape, C-g, the global chord again and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. An empty completion result also cancels; Return on a highlighted app accepts it. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Failure and recovery | Run `(portal-launcher-present (lambda () (interactive) (error "Launcher recovery check")))` from Emacs; it reports the error and hides. Invoke normally again. Repeat a stale bundle/open failure while another app is active. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Fullscreen and Spaces | Put another app fullscreen. Invoke, type, select and cancel without switching Spaces; repeat in another Space and verify focus return and successful activation. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Monitor changes | Invoke on each monitor, unplug one while visible and while hidden, reconnect and invoke again. No stranded panel, wrong display or unreachable prompt. Record origins, scale and which monitor was removed. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Chinese/Japanese IME | Name the macOS input source. Type a composition such as Pinyin `nihao`, open its candidate list, navigate and commit `你好`. Confirm marked text/candidate positioning, committed text and cancellation, then restore the prior input source. ASCII, pasted Unicode and dead keys do not satisfy this check. | Pass: user-confirmed full checklist on 2026-10-04 |
+| VoiceOver | With VoiceOver enabled, summon the panel; record the spoken prompt, editable input, candidate names, current selection and ability to navigate, accept and cancel. Check focus after dismissal and restore the prior VoiceOver state. An accessibility tree or screenshot alone does not establish spoken output. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Reload and rollback | Re-evaluate launcher setup, disable twice, re-enable and use again. Ordinary text input, web navigation and the same terminal shell work throughout. Disable and confirm the chord is free; restore the M-x launcher row if applicable and test an existing URL binding. | Pass: user-confirmed full checklist on 2026-10-04 |
 
 ## Evidence recorded on 2026-10-03
 
@@ -170,7 +170,7 @@ pass with stock and copied local completion/theme settings in fresh processes.
 
 The [application integration record](launcher-applications.md) retains the
 earlier real-app smoke, cold/warm timings and static monitor measurements.
-The task in [project.org](../project.org) tracks the remaining acceptance gates.
+The task in [project.org](../project.org) records final manual acceptance.
 
 ## Selection correction on 2026-10-04
 
@@ -185,12 +185,21 @@ All 15 combined launcher GUI tests pass with the updated regressions. Launcher
 CTest checks, changed-test byte compilation, shell syntax and Org validation
 pass. The copied-settings rerun was inconclusive: extra keystrokes changed the
 fixture's `Calculator` input, so it is not recorded as a pass. The earlier
-configured run above is historical evidence; a fresh configured recheck remains
-pending. The GUI checks used an alternate shortcut because the normal chord
+configured run above is historical evidence. The later user-confirmed normal
+session supplies the hands-on acceptance; this interrupted automated run remains
+inconclusive. The GUI checks used an alternate shortcut because the normal chord
 was already registered in the user's running Emacs.
 
-## Manual test report on 2026-10-04
+## Manual acceptance on 2026-10-04
 
 After the selection fix was merged in PR #74, the user reported that the manual
-tests looked good and asked to proceed with the task. This confirms the reported
-Return/arrow-selection regression is resolved in manual use.
+tests looked good and asked to proceed. Asked explicitly whether that covered
+the full checklist, including fullscreen/Spaces, monitor changes, IME and
+VoiceOver, the user confirmed: “all works”. All rows above are therefore
+recorded as user-verified passes, completing the daily-use task.
+
+This confirmation is the source of the manual results. The environment table
+retains the versions and settings captured during earlier automated runs; the
+user did not supply additional input-source names, environment versions or
+VoiceOver transcripts. The interrupted copied-settings run remains inconclusive
+and is not presented as an automated pass.

@@ -546,7 +546,7 @@ host format/type checks, native failure-reporter tests, changed-file byte
 compilation, Org lint and task identity/dependency checks also pass. The GUI
 tests used an alternate shortcut because the normal chord was already in use.
 
-** TODO Validate and document the app launcher for everyday use :task:
+** DONE Validate and document the app launcher for everyday use :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-daily-use
 :ID: 0e329141-a4ab-4c48-a397-2569a074d06b
@@ -586,15 +586,15 @@ pass, but the production integration must repeat that regression check.
   outside this milestone. Keep further feature work in separate tasks.
 
 *** Acceptance
-- [ ] Record a real session using the complete intended configuration, including
+- [X] Record a real session using the complete intended configuration, including
   app launches/activation, refresh, search, cancellation and recovery after errors.
-- [ ] Record physical fullscreen/Spaces and multi-monitor regression results,
+- [X] Record physical fullscreen/Spaces and multi-monitor regression results,
   plus the exact IME and VoiceOver results; limitations are explicit.
 - [X] Enabling/disabling leaves ordinary Emacs and Portal functionality intact;
   the documented rollback removes the launcher shortcut and native resources.
-- [ ] A fresh configured session follows the documented setup successfully, and
+- [X] A fresh configured session follows the documented setup successfully, and
   support claims match the builds and workflows actually tested.
-- [ ] The project's build/checks and the new launcher checks pass; attach evidence
+- [X] The project's build/checks and the new launcher checks pass; attach evidence
   and record any accepted limitations here before marking this task DONE.
 
 *** Implementation and evidence, 2026-10-03
@@ -643,7 +643,7 @@ four-test reproduction failed, then passed after the shared GUI fixture allowed
 native events to settle during cleanup. The full launcher matrix passes with
 that fixture change. No production focus behavior was changed.
 
-*** Remaining acceptance gates
+*** Selection correction and automated evidence, 2026-10-04
 The 2026-10-04 no-typing selection correction under [[#launcher-applications]]
 is included in this branch. The configured-completion regression and hands-on
 matrix now distinguish accepting a highlighted app from an empty completion
@@ -653,19 +653,29 @@ typed text; Escape and bangs without a query still cancel.
 The combined 15-test launcher GUI suite, launcher CTest checks, changed-test
 byte compilation, shell syntax and Org validation pass after this update.
 The copied-settings recheck received unrelated keystrokes that changed the
-fixture input; it is inconclusive and needs a fresh run. The prior successful
-configured run remains historical evidence, not verification of this update.
+fixture input; that automated attempt remains inconclusive. The prior successful
+configured run remains historical evidence. The subsequent user-confirmed
+normal-session result below supplies the final hands-on acceptance.
 
-Keep this task TODO. The fresh full-init/normal-session workflow, physical
-production fullscreen/Spaces, monitor disconnect/reconnect, Chinese/Japanese
-IME candidate/commit and VoiceOver spoken prompt/candidate navigation still
-need hands-on results. The guide records these as pending/not tested, not as
-accepted limitations or passes. The earlier prototype fullscreen result and
-automated geometry checks do not replace them. The composite final acceptance
-item stays unchecked until required results and any explicit scope decisions
-are recorded here. Do not claim everyday-use validation from this PR alone.
-
-*** Manual test report, 2026-10-04
+*** Completion and manual acceptance, 2026-10-04
 After the selection correction was merged in PR #74, the user reported that
-the manual tests looked good and asked to proceed with this task. The reported
-Return/arrow-selection regression is resolved in manual use.
+the manual tests looked good and asked to proceed with this task. Asked whether
+that covered the complete checklist, including fullscreen/Spaces, monitor
+changes, IME and VoiceOver, the user confirmed: "all works".
+
+Record the full [[file:docs/launcher-daily-use.md][daily-use checklist]] as user-verified pass:
+- Normal configuration and fresh-session setup; app launch/activation, refresh,
+  fallback/bang search, cancellation, error recovery and repeated use.
+- Return on the initial app and Down/Up selection without typed text.
+- Production fullscreen/Spaces, monitor disconnect/reconnect and focus return.
+- Chinese/Japanese IME candidate selection/commit and VoiceOver prompt/candidate
+  navigation, acceptance, cancellation and focus after dismissal.
+- Configuration reload, disable/re-enable, rollback and ordinary Emacs/Portal
+  coexistence, including preserving M-x's unrelated functionality.
+
+These are the user's manual results. The earlier automated runs retain their
+own evidence boundaries; the interrupted copied-settings attempt is not
+reclassified as passing. No additional Emacs/macOS builds or input-source
+versions were specified. Support remains scoped to the recorded environment.
+The setup/rollback documentation, automated checks and full manual acceptance
+complete this task. Outbound native drag-and-drop remains excluded.

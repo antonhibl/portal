@@ -67,9 +67,9 @@ view while the page keeps running. Killing the buffer closes the page.
 
 ## Native launcher panel (opt-in)
 
-The launcher is still awaiting daily-use validation. See the
+The launcher passed the user's daily-use checklist on 2026-10-04. See the
 [setup and validation guide](docs/launcher-daily-use.md) for the tested versions,
-fresh-session checks and remaining physical input/accessibility checks.
+fresh-session procedure and manual input/accessibility results.
 
 `portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
 nonactivating macOS panel. It uses Portal's existing module. Loading the feature
@@ -247,7 +247,8 @@ selection to the previous ordinary window without changing that window's buffer.
 
 For plain buffer presentation outside a command session, finish or cancel an
 active launcher minibuffer before hiding it. Outbound native drag-and-drop is
-cancelled; full IME and VoiceOver validation remains in the daily-use task.
+cancelled. The [daily-use guide](docs/launcher-daily-use.md) records the user's
+IME and VoiceOver validation.
 See [implementation and measured geometry](docs/launcher-native-panel.md).
 
 ## Shared keyboard controls
@@ -2056,7 +2057,7 @@ successful external activation and actual native focus-loss delivery. The
 focus test temporarily activates already-running applications, including Finder.
 The NS injector holds synthetic C-g even in an ordinary `read-string`, so that
 key is tested as an Emacs command-loop event. Physical C-g and mouse click-away
-remain hands-on checks in daily-use validation. Session ID
+are covered by the user's recorded daily-use acceptance. Session ID
 and stale-record policy are covered by batch ERT and the C notification tests.
 
 Verify the failure reporter without opening windows:
