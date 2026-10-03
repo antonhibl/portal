@@ -41,6 +41,10 @@ enum Core {
         }
     }
 
+    static func launcherInvoked(registration: UInt64, session: UInt64) {
+        portal_launcher_invoked(registration, session)
+    }
+
     /// What the core answers when a page asks to navigate.
     enum Navigation { case allow, external, emacs }
 

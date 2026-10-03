@@ -97,6 +97,10 @@ bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
 bool portal_launcher_hide(portal_text *error);
 bool portal_launcher_detach(portal_text *error);
 bool portal_launcher_describe(portal_text *state, portal_text *error);
+/* Register one physical-key chord, or release it for an empty string. Return
+   a never-reused registration ID (0 when disabled). Failed changes preserve
+   the previous registration. Repeating the same chord keeps its ID. */
+bool portal_launcher_shortcut(portal_string chord, uint64_t *registration, portal_text *error);
 
 /* A view kind (CONTEXT.md). */
 typedef enum portal_kind { PORTAL_WEB, PORTAL_TERMINAL } portal_kind;
@@ -393,6 +397,10 @@ void portal_timer_start(uint64_t token, uint64_t milliseconds);
    announces them here. */
 bool portal_notify(portal_string type, portal_string target, const portal_string *fields,
                    size_t count);
+/* Launcher feature event, independent of the view registry. The backend sends
+   only copied IDs; Lisp validates registration/session before interactive work.
+   Record: "launcher REGISTRATION SESSION". */
+bool portal_launcher_invoked(uint64_t registration, uint64_t session);
 /* A timer from portal_timer_start has fired. */
 void portal_timer_fired(uint64_t token);
 

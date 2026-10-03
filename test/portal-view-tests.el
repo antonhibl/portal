@@ -396,5 +396,17 @@ Return the view's target."
                        (portal-input-literal (,other 5 0))
                        (portal-input-escape (,other 7 0))))))))
 
+(ert-deftest portal-view-feature-records-coexist-with-view-records ()
+  (portal-view-test--environment
+    (let ((target (portal-view-test--open "view")) features
+          (origin (current-buffer)))
+      (let ((portal-view-feature-record-handlers
+             (list (cons "launcher" (lambda (&rest fields)
+                                      (push (cons (current-buffer) fields) features))))))
+        (portal-view-test--handling '("ping")
+          (portal-fake-native-send (format "launcher 17 3\nping %s 1\nlauncher 17 4\n" target))
+          (should (equal features `((,origin "17" "4") (,origin "17" "3"))))
+          (should (equal portal-view-test--handled `(("ping" ,origin (,target "1"))))))))))
+
 (provide 'portal-view-tests)
 ;;; portal-view-tests.el ends here

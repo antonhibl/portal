@@ -1029,3 +1029,12 @@ bool portal_launcher_describe(portal_text *state, portal_text *error)
     *state = (portal_text) {json.data, json.length};
     return true;
 }
+
+/* Binding conversion only; real registration/conflicts use Carbon in native checks. */
+bool portal_launcher_shortcut(portal_string chord, uint64_t *registration, portal_text *error)
+{
+    if (is(chord, "conflict"))
+        return fail(error, "Shortcut conflict");
+    *registration = chord.length ? 42 : 0;
+    return true;
+}
