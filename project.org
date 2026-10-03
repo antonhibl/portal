@@ -21,9 +21,272 @@ not built-in Org enforcement. Groups and prose links imply no dependencies.
 are preserved independently; completion dates have not been invented.
 
 * Launcher :launcher:
-The first milestone is a global macOS application launcher whose UI is a real
-Emacs buffer. Portal supplies a small native presentation layer; Elisp keeps the
-commands, completion and customization. The existing =launcher.el= supplies the
-first command. Later M-x.app features, including URL scheme handling,
-=org-protocol=, modifier double-taps and multiple shortcut bindings, are outside
-this milestone.
+Portal supplies native panel presentation and independent global shortcut
+registration. User configuration chooses the Elisp functions, completion UI and
+bindings. Application discovery, search and launching belong to the separate
+=launcher.el= package; Portal should not install it or choose it as a default.
+This follows the completed application-launcher milestone retained in
+[[file:project.org_archive][the task archive]]. Other Portal features are unchanged by this scope.
+
+Presentation and registration have separate lifetimes. Calling
+=portal-launcher-present= shows one interaction; it does not register a shortcut.
+=portal-global-shortcut-set= maintains a named registration until it is replaced
+or removed. A user command composes the two:
+
+#+begin_src emacs-lisp
+(defun my/app-launcher ()
+  (interactive)
+  (portal-launcher-present #'launcher :kind 'minibuffer))
+
+(portal-global-shortcut-set
+ 'app-launcher "Control-Option-Command-P" #'my/app-launcher)
+;; (portal-global-shortcut-remove 'app-launcher)
+#+end_src
+
+The interfaces above are the target of the TODO tasks below, not yet available
+in the current implementation. URL scheme handling, =org-protocol=, modifier
+double-taps and a launcher/provider registration framework remain out of scope.
+
+** TODO Invoke arbitrary Elisp through independent named global shortcuts :task:
+:PROPERTIES:
+:CUSTOM_ID: global-shortcut-registrations
+:ID: 96e2b23a-cd60-4553-80a8-d46a682da72f
+:END:
+
+*** Problem and outcome
+The current shortcut implementation owns one chord and routes it directly to
+the launcher toggle. Expose reusable shortcut infrastructure that invokes user
+functions, supports multiple bindings and works without a launcher panel.
+The existing native shortcut and notification path provide the starting point.
+
+*** Interface and decisions
+#+begin_src emacs-lisp
+(portal-global-shortcut-set NAME CHORD FUNCTION)
+(portal-global-shortcut-remove NAME)
+#+end_src
+
+- NAME is a stable symbol identifying the registration. Setting an existing
+  name replaces its chord and callback; removing an absent name is harmless.
+- Accept interactive commands through =call-interactively= and other
+  zero-argument functions through =funcall=. Lambdas can capture arguments.
+  Keep Lisp callbacks in Lisp; native records carry registration identities.
+- Re-evaluating configuration must not accumulate registrations or handlers.
+  A conflicting or invalid replacement preserves the old chord and callback.
+  Two names cannot own the same normalized chord; report a conflict rather
+  than taking another registration's binding.
+- Registration and dispatch do not show a panel, select a frame or activate
+  Emacs. Emacs must be running; busy Lisp can delay callback execution.
+  Preserve and document the existing physical-key notation and supported keys.
+
+*** Plan
+- Generalize [[file:native/LauncherShortcut.swift][the single native shortcut]] into independent
+  registrations, with matching bindings in [[file:native/Core/emacs.c][the C module]] and a small public
+  Elisp module. Reuse [[file:portal-view.el][feature notifications]] and the existing pipe.
+- Native callbacks and process filters only send/queue records. Dispatch Lisp
+  from the command loop. Invalidate stale events after removal, key changes or
+  callback replacement, including replacement on the same chord. Prevent held
+  keys from repeating without tying generic delivery to a panel session ID.
+- Release registrations on module unload and Emacs exit. Removing one binding
+  or deleting/disabling a panel must not affect unrelated registrations.
+- Keep any interim legacy launcher registration as an explicit client of the
+  new mechanism; final migration is in [[#launcher-user-configuration][user-configured launchers]].
+  Document error reporting and return values before implementing the interface.
+
+*** Acceptance
+- [ ] Two named shortcuts invoke different callbacks, including a plain lambda,
+  with no launcher frame or Portal view open and no automatic focus change.
+- [ ] Repeated setup, changing a callback on the same chord, changing the chord
+  and repeated removal leave no duplicates; old chords are released.
+- [ ] Invalid functions/chords and native registration conflicts preserve all
+  existing bindings; a callback error does not disable other shortcuts.
+- [ ] Queued events from removed/replaced registrations are ignored; legitimate
+  callbacks still execute through the command loop during ordinary Emacs use.
+- [ ] Batch routing tests, native registration/conflict/cleanup checks and a
+  physical-key smoke test from another app pass. Distinguish injected events
+  from physical delivery in the evidence; relevant existing checks pass.
+
+** TODO Choose minibuffer or buffer presentation for each launcher invocation :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-presentation-options
+:ID: 2b718e9b-1d6b-4fdc-bab3-efd229d65447
+:END:
+
+*** Problem and outcome
+The fixed =(minibuffer . t)= frame leaves an empty buffer and mode line above
+completion UIs. Extend the existing presentation function so each caller
+chooses a minibuffer-only panel or a normal buffer UI, without registering a
+shortcut or changing the user's completion configuration.
+
+*** Interface and decisions
+#+begin_src emacs-lisp
+(portal-launcher-present #'my-picker :kind 'minibuffer)
+(portal-launcher-present #'my-command :kind 'buffer :mode-line nil)
+(portal-launcher-present (lambda () (read-string "Name: "))
+                         :kind 'minibuffer)
+#+end_src
+
+- Accept interactive commands and ordinary zero-argument functions/lambdas.
+  Preserve interactive prefix arguments and return successful function values.
+- Default =:kind= to =buffer= for existing explicit callers. =minibuffer= shows
+  only the prompt and inline completion UI; =buffer= permits ordinary buffer
+  windows and has a minibuffer available for nested prompts.
+- =:mode-line= defaults to t, honoring each buffer's own format; nil suppresses
+  mode lines only in the launcher's windows. Minibuffer-only presentation has
+  no mode line. Do not change shared buffers' appearance in ordinary frames.
+- Completion, display rules and presentation options are scoped to the call.
+  Retain close-on-return behavior here; persistent buffer interaction is the
+  separate [[#launcher-persistent-buffer][persistent buffer task]].
+
+*** Plan
+- Extend [[file:portal-launcher.el][the existing public presentation function]] and validation.
+  Reuse cancellation, nested-prompt cleanup, result/error propagation and
+  focus restoration rather than introducing a second session implementation.
+- Use Emacs's minibuffer-only frame role, as demonstrated in
+  [[https://github.com/xiaoxinghu/m-x/blob/main/elisp/present.el][M-x's present.el]], rather than merely hiding the empty buffer's mode line.
+  Frame roles are guarded: safely detach/recreate or otherwise manage separate
+  compatible frames when the requested kind changes. Never mutate a live
+  attached frame into an incompatible role or leave a minibuffer orphaned.
+- Keep existing geometry customizations. Before implementation, record the
+  height policy for minibuffer-only frames and how stock completion's separate
+  =*Completions*= buffer is handled. Avoid blank upper space and clipped
+  candidates; document when a command needing extra windows requires =buffer=.
+- Apply mode-line policy to windows created during a presentation as well as
+  its initial window; restore state after success, cancellation or failure.
+  Update public docstrings and examples alongside the implementation.
+
+*** Acceptance
+- [ ] A real Vertico picker occupies a minibuffer-only panel with no empty
+  normal buffer or intervening mode line; typing, navigation and Return work.
+- [ ] A buffer UI can show or suppress its mode line, including after switching
+  buffers or splitting a window, without changing another frame's appearance.
+- [ ] Interactive commands, prefix arguments and ordinary lambdas work;
+  invalid options/callbacks fail before modifying native presentation state.
+- [ ] Alternating presentation kinds and mode-line settings does not leak
+  frames, windows or options. Ordinary prompts and supported completion
+  configurations retain their behavior after the panel closes.
+- [ ] Nested prompts, Escape, C-g, repeated invocation, click-away, errors,
+  frame deletion and disable preserve existing cleanup and focus guarantees.
+- [ ] Batch contract tests and real graphical layout/input checks pass, with
+  visual evidence for both kinds and relevant native geometry/focus checks.
+
+** TODO Keep custom buffer UIs interactive after their setup function returns :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-persistent-buffer
+:ID: e21d74b9-3d4c-412c-93a3-84961f7109f4
+:DEPENDS_ON: launcher-presentation-options
+:END:
+
+*** Problem and outcome
+A dashboard or hello-world function usually creates a buffer and returns.
+The current session immediately hides that buffer. Add explicit session
+lifetime control so a caller can finish setup and leave a usable panel open.
+
+*** Blocked by
+[[#launcher-presentation-options][Per-invocation presentation]] supplies buffer layout, ordinary function
+callbacks and scoped appearance settings.
+
+*** Interface and decisions
+#+begin_src emacs-lisp
+(portal-launcher-present
+ (lambda ()
+   (switch-to-buffer (get-buffer-create "*Hello*"))
+   (erase-buffer)
+   (insert "Hello world!")
+   (special-mode))
+ :kind 'buffer :mode-line nil :keep-open t)
+#+end_src
+
+- =:keep-open= defaults to nil independently of =:kind=. A prompt normally
+  closes on return; a buffer setup function can explicitly keep its UI open.
+- Keep one active presentation, with working buffer keymaps and session-local
+  cancellation while open. Do not ask callers to manage recursive edits,
+  session identifiers or native teardown.
+- Keep ownership of user buffers with their callers. Hiding a persistent
+  presentation must not kill the supplied buffer or discard its contents.
+
+*** Plan
+- Extend the existing session lifecycle to include the period after setup
+  returns. Preserve display rules, key handling and focus-loss delivery for
+  the whole interaction, including minibuffers opened by later buffer commands.
+- Before implementation, record whether =:keep-open t= waits for dismissal or
+  returns immediately, its return-value behavior, and whether it is valid with
+  =:kind 'minibuffer=. Document these choices as part of the public contract.
+- Preserve second-invocation dismissal, explicit =portal-launcher-hide= and
+  =portal-launcher-cancel=, error cleanup, deletion and disable. Ensure later
+  command errors and queued blur events cannot strand or dismiss a newer UI.
+- Test through a small real buffer UI with a local command that opens a prompt;
+  no external application package is needed.
+
+*** Acceptance
+- [ ] The hello-world example remains visible after its setup function finishes;
+  a local buffer command and a subsequent minibuffer prompt accept real input.
+- [ ] Omitting =:keep-open= retains close-on-return semantics and existing
+  command results. Invalid lifetime/layout combinations fail before display.
+- [ ] Escape, C-g, click-away, a second invocation, hide, deletion and disable
+  clean up the complete interaction without leaked recursive edits or hooks.
+- [ ] Setup failures and later command failures are recoverable; a new
+  presentation works, user buffers survive, and stale events are ignored.
+- [ ] Cancellation restores focus appropriately; successful external actions
+  and click-away retain their destination's focus. Relevant batch and real
+  graphical session/input checks pass.
+
+** TODO Compose application launchers entirely in user configuration :task:
+:PROPERTIES:
+:CUSTOM_ID: launcher-user-configuration
+:ID: 51adf5cf-063f-4ae1-8c07-9b646becc88b
+:DEPENDS_ON: global-shortcut-registrations launcher-presentation-options launcher-persistent-buffer
+:END:
+
+*** Problem and outcome
+Portal currently defaults to =portal-launcher-applications=, contains
+application-specific input policies and downloads =launcher.el= for its tests.
+Finish the separation: Portal exposes reusable presentation and shortcut
+functions, while user configuration chooses and connects application commands.
+
+*** Blocked by
+- [[#global-shortcut-registrations][Independent named shortcuts]] supplies optional system-wide invocation.
+- [[#launcher-presentation-options][Presentation options]] supplies compact pickers and buffer presentation.
+- [[#launcher-persistent-buffer][Persistent buffer interaction]] supplies the custom UI example and lifecycle.
+
+*** Plan and decisions
+- Remove =portal-launcher-applications=, the default application command and
+  application-package loading from Portal. Presenting a panel must not
+  implicitly register any chord; loading either infrastructure module is inert.
+- Replace the old mode/shortcut/command setup with documented explicit calls.
+  Before removal, inventory existing public entry points and record which are
+  retained, deprecated or removed, with migration examples. Any compatibility
+  support must not retain an implicit application action or shortcut binding.
+- Move the application's responsibility for accepting highlighted selections,
+  empty results, bang queries and stock Space input out of Portal. Inspect the
+  current =launcher.el= behavior; record required upstream fixes or provide an
+  explicit user-config wrapper recipe when still needed. Do not silently drop
+  the existing selection behavior or edit the user's configuration in this task.
+- Remove the pinned application package download and application-specific test
+  target from [[file:CMakeLists.txt][the build]]. Replace presentation coverage with generic prompt
+  and buffer fixtures, preserving tests of completion, focus and dismissal.
+  Optional completion-library fixtures may remain for infrastructure coverage.
+- Update [[file:README.md][the setup documentation]] and [[file:docs/launcher-native-panel.md][panel documentation]] with a minimal
+  picker, persistent hello-world buffer, separate shortcut setup/removal and an
+  optional =launcher.el= recipe. Clearly separate historical integration
+  evidence in [[file:docs/launcher-applications.md][the application notes]] from the new setup.
+- Exercise two user-defined launchers plus a shortcut that does not present a
+  panel. Scope this work to launcher infrastructure; leave unrelated Portal
+  features and external repositories unchanged.
+
+*** Acceptance
+- [ ] With =launcher.el= absent, Portal loads and all infrastructure examples
+  and automated checks run; loading/presenting claims no global key by default.
+- [ ] The same user command works via M-x, an ordinary Emacs binding and a
+  named global shortcut, with presentation options supplied in user config.
+- [ ] The documented application recipe shows only its minibuffer, accepts
+  Return and arrow selection without typed text, and preserves documented
+  refresh, cancellation, search and focus behavior. Any required external
+  version or wrapper is stated explicitly.
+- [ ] Named shortcuts remain independent across panel dismissal, deletion and
+  configuration reload; the persistent hello-world recipe stays usable.
+- [ ] No application discovery/search policy or mandatory =launcher.el= build
+  dependency remains in Portal; relevant project, native and graphical checks
+  pass using generic fixtures. Record the separate optional integration smoke
+  test and its exact environment rather than claiming it as a core dependency.
+- [ ] Migration examples identify replacements for the old defaults, mode and
+  shortcut settings, and provide explicit cleanup/rollback instructions.
