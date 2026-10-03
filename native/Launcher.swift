@@ -65,6 +65,14 @@ final class LauncherPanel: NSPanel {
 @MainActor
 final class NativeLauncher {
     static var attached: NativeLauncher?
+    // Changes only on explicit presentation/lifecycle operations, never layout.
+    static private(set) var session: UInt64 = 0
+    static private(set) var sessionStarted: TimeInterval = 0
+
+    private static func newSession() {
+        session += 1
+        sessionStarted = ProcessInfo.processInfo.systemUptime
+    }
     let panel: LauncherPanel
     private let content: NSView
     private let editor: NSView
@@ -155,14 +163,19 @@ final class NativeLauncher {
         content.layer?.masksToBounds = true
         panel.setFrame(requested, display: true)
         if present {
+            Self.newSession()
             panel.makeKeyAndOrderFront(nil)
             panel.makeFirstResponder(editor)
         }
     }
 
-    func hide() { panel.orderOut(nil) }
+    func hide() {
+        Self.newSession()
+        panel.orderOut(nil)
+    }
 
     func detach() {
+        Self.newSession()
         if let observer = displayObserver { NotificationCenter.default.removeObserver(observer) }
         displayObserver = nil
         panel.orderOut(nil)
@@ -191,7 +204,7 @@ final class NativeLauncher {
         func rect(_ value: NSRect) -> [Double] {
             [value.minX, value.minY, value.width, value.height]
         }
-        var state: [String: Any] = ["attached": attached != nil, "screens": NSScreen.screens.map {
+        var state: [String: Any] = ["attached": attached != nil, "session": session, "registration": LauncherShortcut.token, "screens": NSScreen.screens.map {
             ["name": $0.localizedName, "frame": rect($0.frame), "visible": rect($0.visibleFrame),
              "scale": $0.backingScaleFactor] as [String: Any]
         }]

@@ -32,7 +32,7 @@ let package = Package(
         ], path: ".", exclude: ["Core", "Info.plist"],
            sources: ["Backend.swift", "CoreCalls.swift", "NativeHost.swift", "NativeInput.swift",
                      "Views.swift", "WebView.swift", "Terminal.swift", "Toolbar.swift",
-                     "WebToolbar.swift", "Launcher.swift"],
+                     "WebToolbar.swift", "Launcher.swift", "LauncherShortcut.swift"],
            swiftSettings: [.unsafeFlags(["-warnings-as-errors"])])
     ]
 )

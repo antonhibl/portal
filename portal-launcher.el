@@ -10,8 +10,32 @@
 (declare-function portal--launcher-hide "portal-launcher" ())
 (declare-function portal--launcher-detach "portal-launcher" ())
 (declare-function portal--launcher-inspect "portal-launcher" ())
+(declare-function portal--launcher-shortcut "portal-launcher" (chord))
 
 (defgroup portal-launcher nil "An Emacs buffer in a native macOS panel." :group 'frames)
+
+(defvar portal-launcher-mode nil)
+(defvar portal-launcher--registration nil "Active native shortcut ID, or nil when disabled.")
+
+(defun portal-launcher--set-shortcut (symbol value)
+  "Set SYMBOL to VALUE, rebinding an enabled launcher atomically."
+  (unless (and (stringp value) (> (length value) 0))
+    (user-error "Launcher shortcut must be a nonempty chord string"))
+  (when portal-launcher-mode
+    (setq portal-launcher--registration (portal--launcher-shortcut value)))
+  (set-default symbol value))
+
+(defcustom portal-launcher-shortcut "Control-Option-Command-P"
+  "Global physical-key chord registered while `portal-launcher-mode' is on.
+Use hyphen-separated Control, Option, Command and/or Shift followed by A-Z,
+0-9, Space or F1-F20, for example Control-Option-Command-P. Names are case
+insensitive; each modifier may occur once. At least one of Control, Option
+or Command is required. Letters and digits name US keyboard positions,
+independent of the active input layout or Emacs modifier remapping. Fn,
+Caps Lock, punctuation, key sequences and left/right modifiers are unsupported.
+Use Customize or `setopt' to rebind immediately; a conflict retains the old
+value and registration. After `setq', enable the mode again to apply it."
+  :type 'string :set #'portal-launcher--set-shortcut)
 
 (defcustom portal-launcher-size '(720 420)
   "Launcher width and height in AppKit logical points, at least 200 by 100.
@@ -61,7 +85,6 @@ also be changed directly on the live launcher frame."
   "Immutable parameters of the dedicated launcher frame.")
 (defvar portal-launcher--frame nil "The dedicated frame, or nil before creation.")
 (defvar portal-launcher--return-window nil "Ordinary window selected before presentation.")
-(defvar portal-launcher-mode nil)
 (defvar comp-installed-trampolines-h)
 
 (defun portal-launcher--check-support ()
@@ -106,6 +129,11 @@ also be changed directly on the live launcher frame."
   (if install
       (advice-add 'modify-frame-parameters :around #'portal-launcher--guard-parameters)
     (advice-remove 'modify-frame-parameters #'portal-launcher--guard-parameters))
+  (if install
+      (setf (alist-get "launcher" portal-view-feature-record-handlers nil nil #'equal)
+            #'portal-launcher--queue)
+    (setq portal-view-feature-record-handlers
+          (assoc-delete-all "launcher" portal-view-feature-record-handlers)))
   (dolist (entry '((delete-frame-functions . portal-launcher--before-delete)
                    (kill-emacs-hook . portal-launcher--disable)))
     (if install (add-hook (car entry) (cdr entry))
@@ -126,13 +154,20 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
     ;; Let delete-frame validate deletion (e.g. an active minibuffer) before
     ;; its hook detaches. If it refuses, keep ownership and guards intact.
     (delete-frame portal-launcher--frame t))
+  (when portal-launcher--registration
+    (portal--launcher-shortcut "")
+    (setq portal-launcher--registration nil))
   (portal-launcher--hooks nil)
+  (setq unread-command-events
+        (cl-remove-if (lambda (event) (eq (car-safe event) 'portal-launcher-invoke))
+                      unread-command-events))
   (setq portal-launcher-mode nil))
 
 ;;;###autoload
 (define-minor-mode portal-launcher-mode
   "Opt in to Portal's build-restricted native launcher.
-Enabling loads the existing Portal module but creates no frame or shortcut.
+Enabling registers `portal-launcher-shortcut' through the existing Portal
+module, without creating a frame. Repeated enable applies any changed chord.
 Disabling restores the native window before deleting the dedicated frame.
 A native defect can crash the hosting Emacs; start in a disposable Emacs."
   :global t :group 'portal-launcher
@@ -141,17 +176,57 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
           (progn
             (portal-launcher--check-support)
             (portal-view--load)
-            (unless (fboundp 'portal--launcher-attach)
+            (unless (and (fboundp 'portal--launcher-attach)
+                         (fboundp 'portal--launcher-shortcut))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
-            (portal-launcher--check-guard))
+            (portal-launcher--check-guard)
+            (unless (and (stringp portal-launcher-shortcut) (> (length portal-launcher-shortcut) 0))
+              (user-error "Launcher shortcut must be a nonempty chord string"))
+            (setq portal-launcher--registration (portal--launcher-shortcut portal-launcher-shortcut)))
         (error
-         (unless (frame-live-p portal-launcher--frame) (portal-launcher--hooks nil))
-         (setq portal-launcher-mode (and (frame-live-p portal-launcher--frame) t))
+         (unless portal-launcher--registration (portal-launcher--hooks nil))
+         (setq portal-launcher-mode (and portal-launcher--registration t))
          (signal (car error) (cdr error))))
     (condition-case error
         (portal-launcher--disable)
       (error (setq portal-launcher-mode t) (signal (car error) (cdr error))))))
+
+(defun portal-launcher--queue (registration &rest fields)
+  "Parse a launcher record and queue its REGISTRATION and session FIELDS.
+This runs in the process filter: never select a frame or call native code."
+  (when (and portal-launcher-mode portal-launcher--registration
+             (stringp registration) (string-match-p "\\`[0-9]+\\'" registration)
+             (= (length fields) 1) (string-match-p "\\`[0-9]+\\'" (car fields))
+             (= (string-to-number registration) portal-launcher--registration))
+    (setq unread-command-events
+          (nconc unread-command-events
+                 (list (list 'portal-launcher-invoke
+                             (list portal-launcher--registration (string-to-number (car fields)))))))))
+
+(defun portal-launcher--invoke (event)
+  "Toggle the launcher for EVENT if its registration and session still exist."
+  (interactive "e")
+  (pcase-let ((`(,registration ,session) (cadr event)))
+    (when (and portal-launcher-mode portal-launcher--registration
+               (eql registration portal-launcher--registration)
+               (eql session (plist-get (portal--launcher-inspect) :session)))
+      (portal-launcher-toggle))))
+
+;; Like Portal input handoffs, pipe records become ordinary command events.
+(define-key global-map [portal-launcher-invoke] #'portal-launcher--invoke)
+
+;;;###autoload
+(defun portal-launcher-toggle ()
+  "Show or hide the launcher, initially with a plain reusable buffer.
+Application picking and automatic command-session dismissal are separate
+features."
+  (interactive)
+  (if (and portal-launcher-mode (plist-get (portal--launcher-inspect) :visible))
+      (portal-launcher-hide)
+    (portal-launcher-show
+     (unless (frame-live-p portal-launcher--frame)
+       (get-buffer-create "*Portal Launcher*")))))
 
 (defun portal-launcher--create ()
   "Create and attach one new dedicated frame, rolling back on failure."

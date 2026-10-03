@@ -30,7 +30,7 @@
 (ert-deftest portal-module-launcher-bindings ()
   (dolist (entry '((portal--launcher-attach 1 . 1) (portal--launcher-show 7 . 7)
                    (portal--launcher-hide 0 . 0) (portal--launcher-detach 0 . 0)
-                   (portal--launcher-inspect 0 . 0)))
+                   (portal--launcher-inspect 0 . 0) (portal--launcher-shortcut 1 . 1)))
     (should (equal (func-arity (car entry)) (cdr entry))))
   (portal--launcher-detach)
   (let ((emacs-version "31.1")
@@ -64,6 +64,13 @@
       (portal--launcher-detach))
     (should (= 0 (plist-get (portal--launcher-inspect) :attached)))
     (should-error (portal--launcher-show 720 420 0 0 -1 t 14))))
+
+(ert-deftest portal-module-launcher-shortcut-binding ()
+  (dolist (value (list nil 3 [1] (string #xd800) (string-to-unibyte "\377")))
+    (should-error (portal--launcher-shortcut value)))
+  (should-error (portal--launcher-shortcut "conflict"))
+  (should (= (portal--launcher-shortcut "Control-Option-Command-P") 42))
+  (should (= (portal--launcher-shortcut "") 0)))
 
 (defun portal-module-tests--next-id ()
   "Open and close a view; return the ID the backend gives the next one."

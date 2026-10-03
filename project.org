@@ -743,7 +743,7 @@ support restrictions, commands, configuration and the in-process crash risk.
 - =org-lint= reports no issues; all 37 tasks across this file and its archive
   retain unique IDs, resolving links/dependencies and an acyclic dependency graph.
 
-** TODO Summon the launcher with a configurable global shortcut :task:
+** DONE Summon the launcher with a configurable global shortcut :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-global-shortcut
 :ID: fbf937b4-7cdc-4960-acd4-5a1615f981c8
@@ -780,13 +780,62 @@ being implemented.
 - [ ] A physical shortcut from another app presents the panel on the pointer's
   monitor; a second press dismisses it. Repeat over a foreground fullscreen app
   without switching Spaces, and across monitor/Space changes.
-- [ ] Changing the chord releases the old one; conflicts and repeated
+- [X] Changing the chord releases the old one; conflicts and repeated
   enable/disable cycles leave no duplicate or orphaned registrations.
-- [ ] Invocation still works with no web/terminal Portal view open; their native
+- [X] Invocation still works with no web/terminal Portal view open; their native
   records continue to be delivered when such views are present.
-- [ ] Delayed events after disable or reconfiguration are ignored; busy Emacs
+- [X] Delayed events after disable or reconfiguration are ignored; busy Emacs
   remains a documented limitation rather than a claimed responsiveness guarantee.
-- [ ] Event-routing tests and the relevant native and project checks pass.
+- [X] Event-routing tests and the relevant native and project checks pass.
+
+*** Outcome
+Implemented 2026-10-03. Enabling =portal-launcher-mode= registers one exclusive
+Carbon hotkey in Swift, defaulting to =Control-Option-Command-P=. A press toggles
+the dedicated panel, initially showing a plain =*Portal Launcher*= buffer;
+caller-supplied content is reused. Loading remains inert. Customize or =setopt=
+rebinding takes effect immediately, keeping the prior option and registration
+on failure. Repeated enable is idempotent; disable, unload and exit release it.
+The [[file:README.md][README]] documents supported modifier/key notation, physical US key
+positions, input-layout behavior, conflicts and busy-Emacs limitations.
+
+The native callback sends =launcher REGISTRATION SESSION= over the existing
+notification pipe through an explicit feature event, without a Portal view or
+retained Emacs values. The process filter parses and queues an ordinary command
+event; the command loop selects the frame and toggles visibility. Registration
+IDs are never reused. Presentation IDs and native timestamps reject old events
+after reconfiguration, disable or a newer presentation. Held keys do not repeat;
+rapid queued presses from the old presentation are discarded. There are no blur
+events in this task; automatic command-session dismissal remains separate.
+
+*** Verification
+- =./build.sh= succeeds; all 26 CTest suites pass, including 11 launcher ERT
+  tests, feature/view routing coexistence, pipe backpressure/reconnection, and
+  native binding validation.
+- All six launcher graphical tests pass in disposable GNU Emacs NS 31.1 at
+  the supported revision. The new test covers the installed Carbon callback,
+  pipe, real command loop under a temporary keymap, show/dismiss without views,
+  rebinding and rejecting a queued event after explicit presentation.
+- The complete graphical suite passes: 72 expected, 0 unexpected, 1 skipped.
+  The skipped shell-startup test uses its separate harness. An initial dashboard
+  title-update timeout did not recur in three isolated runs of this branch,
+  baseline comparisons, or the final full run; no dashboard code was changed.
+- All three standalone native checks pass, including focus and toolbar checks.
+  Standalone Swift launcher checks use actual Carbon registrations: conflicts
+  preserve the active chord, replacement releases the old chord, old IDs and
+  timestamps are ignored, held keys produce one record, and 20 enable/disable
+  cycles leave the chord available. Existing geometry/attachment checks pass.
+- Lisp byte-compiles with warnings as errors. =bun run check=,
+  =bun run typecheck= and the native failure-reporter tests pass. Local Emacs
+  native compilation required =LIBRARY_PATH= to include Homebrew GCC's
+  =libemutls_w.a= directory; no compiler settings were changed in the project.
+- =org-lint= reports no issues in either task file; all 37 tasks retain unique
+  IDs, resolving internal links/dependencies and an acyclic dependency graph.
+
+The physical-key/fullscreen/Space/monitor acceptance above remains unchecked:
+callback injection proves the application path but does not establish physical
+key delivery. This run had one connected display. The app-targeted UI key
+injector did not exercise system hotkey delivery, and no human confirmation
+was received. Carry these hands-on checks into [[#launcher-daily-use][daily-use validation]].
 
 ** TODO Run an Elisp command in the launcher with reliable dismissal :task:
 :PROPERTIES:

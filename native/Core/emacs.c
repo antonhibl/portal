@@ -339,6 +339,21 @@ LISP_FUNCTION(Flauncher_attach)
     return result;
 }
 
+LISP_FUNCTION(Flauncher_shortcut)
+{
+    portal_text chord = {0}, error = {0};
+    uint64_t registration = 0;
+    emacs_value result = NULL;
+    if (read_text(env, args[0], &chord)) {
+        if (portal_launcher_shortcut(borrow(chord), &registration, &error))
+            result = env->make_integer(env, (intmax_t) registration);
+        else
+            fail(env, &error);
+    }
+    free(chord.data);
+    return result;
+}
+
 LISP_FUNCTION(Flauncher_show)
 {
     int64_t values[6];
@@ -691,6 +706,8 @@ static const struct export {
      "Hide the launcher, retaining its frame and content."},
     {"portal--launcher-detach", 0, 0, STRINGS_FUNCTION(launcher_detach, RESULT_T),
      "Restore the launcher frame's original window BEFORE deleting the Emacs frame."},
+    {"portal--launcher-shortcut", 1, 1, Flauncher_shortcut, NULL,
+     "Register physical CHORD (empty string disables); return registration ID or 0."},
     {"portal--launcher-inspect", 0, 0, STRINGS_FUNCTION(launcher_describe, RESULT_JSON),
      "Return launcher attachment, visibility and native geometry as a plist."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},

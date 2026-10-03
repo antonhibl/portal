@@ -2,6 +2,7 @@
 /* Test-only event injection inside the disposable Emacs process.  Exercises
    AppKit event dispatch without Accessibility permission or global key events. */
 #import <AppKit/AppKit.h>
+#import <Carbon/Carbon.h>
 #import <WebKit/WebKit.h>
 #include <emacs-module.h>
 #include <stdlib.h>
@@ -154,6 +155,23 @@ static emacs_value webEval(emacs_env *env, ptrdiff_t nargs, emacs_value *args, v
     return env->intern(env, "nil");
 }
 
+/* Deliver a Carbon notification to the installed production handler. This
+   tests callback -> pipe -> command loop, not physical/global key detection. */
+static emacs_value launcherHotkey(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)data;
+    EventHotKeyID key = {0x5072744c, (UInt32)env->extract_integer(env, args[0])};
+    EventRef event = NULL;
+    OSStatus status = CreateEvent(NULL, kEventClassKeyboard,
+        env->is_not_nil(env, args[1]) ? kEventHotKeyPressed : kEventHotKeyReleased,
+        GetCurrentEventTime(), 0, &event);
+    if (status != noErr) return env->intern(env, "nil");
+    SetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, sizeof key, &key);
+    status = SendEventToEventTarget(event, GetApplicationEventTarget());
+    ReleaseEvent(event);
+    return env->intern(env, status == noErr ? "t" : "nil");
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -180,6 +198,10 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-native-target-frame");
     args[1] = env->make_function(env, 1, 1, targetFrame,
         "Target a frame with TITLE for local test injection; nil restores active-window targeting.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-launcher-hotkey");
+    args[1] = env->make_function(env, 2, 2, launcherHotkey,
+        "Dispatch a launcher hotkey notification: REGISTRATION PRESSED.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;
 }

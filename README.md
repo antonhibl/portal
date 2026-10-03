@@ -69,16 +69,55 @@ view while the page keeps running. Killing the buffer closes the page.
 
 `portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
 nonactivating macOS panel. It uses Portal's existing module. Loading the feature
-does not create a frame or register a shortcut; an explicit show opts in:
+does not create a frame or register a shortcut. Enable the mode to register
+Control–Option–Command–P; it toggles the panel from any application:
 
 ```elisp
 (require 'portal-launcher)
+(portal-launcher-mode 1)        ; register shortcut, create the frame on first press
 (portal-launcher-show (get-buffer-create "*Launcher*"))
 (portal-launcher-resize 713 407)
 (portal-launcher-hide)
 (portal-launcher-show)          ; same frame and content
-(portal-launcher-mode -1)       ; restore native ownership, then delete frame
+(portal-launcher-mode -1)       ; delete frame and release shortcut
 ```
+
+The first shortcut invocation shows a plain `*Portal Launcher*` buffer. Later
+invocations reuse the frame and its content, including a buffer supplied to
+`portal-launcher-show`. `M-x portal-launcher-toggle` does the same thing.
+
+Change the chord with Customize or `setopt`; changes take effect immediately
+while enabled. For example:
+
+```elisp
+(setopt portal-launcher-shortcut "Control-Option-Command-L")
+```
+
+The notation is case-insensitive, hyphen-separated modifier names (`Control`,
+`Option`, `Command`, `Shift`) followed by `A`–`Z`, `0`–`9`, `Space`, or `F1`–`F20`.
+At least one of Control, Option or Command is required, with no duplicate
+modifiers. Letters and digits refer to **US physical key positions**, independent
+of the input layout and Emacs's `ns-*-modifier` settings. Shift must be explicit;
+capital letters in the notation do not imply it. Fn, Caps Lock, punctuation,
+left/right modifier distinctions and multi-key sequences are unsupported.
+Function keys require the keyboard to send the function key rather than its
+media action. The default does not claim Command-Space.
+
+A chord that macOS reports as unavailable raises an error and retains the
+previous registration; failed `setopt` also retains the previous option value.
+Repeated enable is idempotent, successful rebind releases the old chord, and
+`portal-launcher-mode -1`, unloading, or exiting releases the registration.
+After changing the option with `setq`, enable the mode again to apply it.
+System-reserved shortcuts and other hotkey utilities can still intercept keys;
+choose another chord if one registers but is not delivered.
+
+The Swift Carbon handler uses Portal's existing notification pipe, even with no
+web or terminal views open. It does not launch a subprocess or require an
+Accessibility event tap. The process filter only queues an event; the Emacs
+command loop performs the toggle. Emacs must be running, and busy Lisp delays
+invocation. Held keys do not repeat. Events from old registrations or older
+presentations are discarded, including rapid presses still queued when the
+first press changes the presentation. There is no responsiveness guarantee.
 
 Start in a disposable graphical Emacs. This feature depends on internal Emacs
 NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
@@ -103,9 +142,8 @@ focus policy is rejected. Deleting the launcher frame is supported; the next
 show creates a new one. Hide preserves the launcher's content and returns Emacs
 selection to the previous ordinary window without changing that window's buffer.
 
-This is the panel lifecycle feature. Global shortcuts, application picking and
-automatic command-session dismissal are subsequent tasks. Finish or cancel an
-active launcher minibuffer before hiding it. Outbound native drag-and-drop is
+Application picking and automatic command-session dismissal are subsequent
+tasks. Finish or cancel an active launcher minibuffer before hiding it. Outbound native drag-and-drop is
 cancelled; full IME and VoiceOver validation remains in the daily-use task.
 See [implementation and measured geometry](docs/launcher-native-panel.md).
 
@@ -637,7 +675,7 @@ Build the test-only AppKit event injector (no Accessibility permission required)
 ```sh
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
   -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
-  -framework AppKit -framework WebKit \
+  -framework AppKit -framework WebKit -framework Carbon \
   -o build/test-terminal-input.dylib
 emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
@@ -1288,6 +1326,7 @@ the app sends, in order. Other web views have no bridge.
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
+| `portal-launcher.el` | Opt-in launcher frame lifecycle, shortcut customization, and queued command-loop invocation |
 | `portal-input.el` | Chords that fall through to Emacs, read with the view's buffer's keymaps; focus policy and input notifications |
 | `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
@@ -1310,6 +1349,8 @@ the app sends, in order. Other web views have no bridge.
 | `native/Core/include/portal.h` | The platform interface: the primitives a platform implements ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record or reporting what a page did, the shared scripts' glue, and the timer primitive |
+| `native/Launcher.swift` | Dedicated NSPanel attachment, Emacs NS compatibility, placement, and presentation identity |
+| `native/LauncherShortcut.swift` | One Carbon global hotkey registration, conflict-safe rebinding, and native event delivery |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, storage, loading, what pages report to the core, and the bridge's WebKit glue |
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
@@ -1685,12 +1726,13 @@ for core in channel views input terminals web toolbar; do
 done
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   -I native/Core/include -import-objc-header test/native-core.h \
-  native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift native/Launcher.swift \
+  native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
+  native/Launcher.swift native/LauncherShortcut.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
   build/web.o build/toolbar.o \
-  -framework AppKit -framework WebKit -o build/check-focus
+  -framework AppKit -framework WebKit -framework Carbon -o build/check-focus
 build/check-focus
 ```
 
@@ -1731,10 +1773,16 @@ For the launcher's native checks, replace `test/native-focus.swift` and
 `build/check-focus` in that command with `test/native-launcher.swift` and
 `build/check-launcher`. They exercise negative monitor origins, offset/clamping
 rules, display-change notifications, attachment rejection and rollback, donor
-restoration and panel release. The graphical `portal-launcher-gui-` tests use
+restoration and panel release. They also exercise real Carbon registration,
+conflicts, atomic rebinding, old-chord release, stale event IDs/timestamps, held-key
+suppression, and pipe delivery without views over 20 enable/disable cycles.
+The graphical `portal-launcher-gui-` tests use
 the real Emacs NS view, including repeated show/hide and delete/recreate,
 appearance/font changes, child-frame deletion, native keyboard input and exact
-geometry on every connected monitor. Run them with subroutine trampolines enabled.
+geometry on every connected monitor. A test-only Carbon event injector covers
+the installed native callback, pipe parsing, and command-loop show/dismiss under
+a transient keymap. This injection does not establish physical-key or Spaces
+behavior. Run them with subroutine trampolines enabled.
 
 Verify the failure reporter without opening windows:
 

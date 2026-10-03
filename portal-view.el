@@ -35,6 +35,12 @@ TARGET's buffer current.  It runs inside a process filter, so it must
 never prompt; it queues commands through `unread-command-events'.
 Records for unknown targets, or of types with no handler, are dropped.")
 
+(defvar portal-view-feature-record-handlers nil
+  "Handlers for records independent of a Portal view, as (TYPE . FUNCTION).
+FUNCTION receives the record's remaining words, without selecting a buffer.
+Like view handlers it runs in a process filter and only queues interactive
+work for the command loop. Feature record types take precedence over views.")
+
 (defvar portal-view--channel nil "The pipe process that receives native records.")
 (defvar portal-view--pending "" "The start of a record whose end is still to come.")
 
@@ -93,11 +99,13 @@ RECEIVER must queue interactive work for the command loop, not run it here."
 Errors are only reported: the records after this one must still arrive."
   (with-demoted-errors "Portal record: %S"
     (pcase-let* ((`(,type ,target . ,fields) (split-string record " "))
-                 (handler (cdr (assoc type portal-view-record-handlers)))
-                 (buffer (and handler target (portal-view--target-buffer target))))
-      (when buffer
-        (with-current-buffer buffer
-          (apply handler target fields))))))
+                 (feature-handler (cdr (assoc type portal-view-feature-record-handlers)))
+                 (handler (cdr (assoc type portal-view-record-handlers))))
+      (if feature-handler
+          (apply feature-handler target fields)
+        (when-let* ((buffer (and handler target (portal-view--target-buffer target))))
+          (with-current-buffer buffer
+            (apply handler target fields)))))))
 
 (defun portal-view--target-buffer (target)
   "Return the live buffer whose view is TARGET, or nil."
