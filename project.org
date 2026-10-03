@@ -704,7 +704,7 @@ This was a missing consistency check in the existing identity contract.
   Biome/type checks, changed Lisp byte compilation with warnings as errors,
   Org lint, task graph/link validation and diff checks pass. Nothing deferred.
 
-** TODO Discover Codex sessions automatically and show their live status :task:
+** DONE Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex
 :ID: f23b441d-dd0c-45e1-a365-47b2e021f2e3
@@ -745,21 +745,82 @@ The spike proved it with Codex CLI 0.155.1; no further prerequisite.
 - *Latency target:* as Claude's for the row; activity at the next refresh.
 
 *** Plan and acceptance
-- [ ] Use the selected identity and activity sources. If an app-server observer
+- [X] Use the selected identity and activity sources. If an app-server observer
   is selected, verify access to the server owning that terminal session; a new
   unrelated server or directory match is insufficient. Do not move sessions,
   take over approvals or require a replacement TUI. Label any inferred status.
-- [ ] Plain CLI launches and already-running sessions appear without tracking or
+- [X] Plain CLI launches and already-running sessions appear without tracking or
   a special launcher. Opening/hiding/reopening the dashboard and focus changes
   do not prevent discovery or turn suppressed notifications into false idle.
-- [ ] Replay verified startup, work, completion, approval/input waits, interruption,
+- [X] Replay verified startup, work, completion, approval/input waits, interruption,
   failure and source-loss evidence. Unknown states explain their missing evidence.
   Quit/relaunch and delayed events obey the shared incarnation contract.
-- [ ] A real mixed Claude/Codex smoke test includes two sessions in one directory,
+- [X] A real mixed Claude/Codex smoke test includes two sessions in one directory,
   hidden/quick terminals and =RET= to the exact buffer, with no duplicate rows
   or cross-agent state. Non-agent terminal signals remain negative controls.
-- [ ] Document tested versions, minimum setup, source confidence and measured
+- [X] Document tested versions, minimum setup, source confidence and measured
   latency; keep the dashboard responsive and pass existing plus new checks.
+
+*** Outcome
+Plain Codex launches now share the existing foreground process collector and
+dashboard. =portal-agents-discover-codex= defaults to true independently of
+Claude discovery. Session identity includes agent kind, buffer, native target,
+PID and process start time; the shared hiding, tracking and replacement rules
+apply to both agents. A manual label merges into the same row.
+
+=Codex (title)= labels the default row, and the activity tooltip identifies
+its inferred source. A successful scan reads cached titles: leading braille
+means working, =Action Required= means waiting, another nonblank title means
+idle, and absent/blank titles mean unknown with an explanation. Native metadata
+continues while terminals or the dashboard are hidden; redisplay infers from the
+current cache. Codex starts no status subprocess and cannot trigger or receive
+Claude status queries. Claude query failures do not invalidate Codex activity;
+a failed process scan makes both process and activity unknown until recovery.
+
+The title contract remains approximate: startup spinners, custom titles and
+non-approval menus can mislead; failure and cancellation can look idle. Titles
+have no process ID, so cached terminal text cannot prove which process wrote it.
+No screen reader, app-server observer, agent configuration changes or approval
+handling were added. Notifications and progress do not determine Codex activity.
+Queued continuation, compaction, retries and patch approvals remain unverified
+as recorded above; this change does not claim new evidence for those cases.
+
+*** Verification
+- =./build.sh= passes; all 29 CTest suites pass. The discovery suite includes
+  32 ERT tests with all results expected, including existing dashboard tests.
+  Biome and TypeScript pass, and changed production Lisp byte-compiles with
+  warnings treated as errors.
+- Codex fixture replay verifies first prompt, working, completion, approval,
+  denial, cancellation and model failure through rendered dashboard rows.
+  Additional tests exercise blank/missing titles, source loss and recovery,
+  independent discovery options, mixed status sources, hidden/manual refresh,
+  PID reuse, changed agent kind, terminal replacement, delayed replies and
+  spoofed executable/title controls. Spinner and approval-marker animation
+  produce no redraw when the displayed facts are unchanged.
+- The real =portal-discovery-gui-mixed-codex-claude= smoke test passes in a
+  disposable graphical Emacs 31.1 with Codex CLI 0.155.1 and Claude Code 2.1.288.
+  Plain sessions share one trusted directory; checks cover a pre-existing run,
+  working/idle, correct =RET= focus, hidden/reopened dashboard, quit/relaunch,
+  a hidden quick-terminal Codex and a non-agent control, without manual tracking
+  or duplicate rows. Launch-to-row measured 0.225 s and prompt-to-working
+  2.085 s with the default two-second interval; these are local observations.
+- Both existing agent-dashboard graphical tests pass, covering focus, other
+  frames, quick panels and visible-only updates. The first run hit an initial
+  focus assertion; rerunning with a three-second Emacs startup delay passed.
+- =portal-agents-benchmark-discovery= now accepts ="codex"=. In batch Emacs,
+  200 iterations per case with simulated process snapshots measured:
+
+  | Sessions | Collection ms | Unchanged tick ms | Changed tick ms |
+  |----------+---------------+-------------------+-----------------|
+  |       10 |         0.232 |             0.303 |           0.839 |
+  |       50 |         1.436 |             1.671 |           3.651 |
+  |      100 |         3.121 |             3.612 |           7.631 |
+
+  Changed means all title text changes; native scanning and graphical redisplay
+  are excluded from these simulated timings. No additional timer was added.
+- Org lint, all 37 task IDs, dependency targets/cycles and internal task links
+  pass. The existing GCC =LIBRARY_PATH= workaround recorded in the Claude task
+  was needed for this machine's native Emacs test trampolines.
 
 ** TODO Discover Pi sessions automatically and show their live status :task:
 :PROPERTIES:

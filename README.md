@@ -453,22 +453,35 @@ terminals of its kind show.
 
 ### Agent dashboard
 
-Run `claude` in an ordinary Portal shell, then open `M-x portal-agents`.
-Claude appears automatically, even before its first prompt or while waiting at
-a trust dialog. Discovery also finds sessions started before the dashboard
-opened, while it was hidden, or before discovery was enabled. No Claude setup
-or per-session tracking is needed. This is tested with Claude Code 2.1.287.
+Run `claude` or `codex` in an ordinary Portal shell, then open `M-x portal-agents`.
+The agent appears automatically, even before its first prompt or while waiting
+at a trust dialog. Discovery also finds sessions started before the dashboard
+opened, while it was hidden, or before discovery was enabled. No agent setup
+or per-session tracking is needed. This is tested with Claude Code 2.1.288 and
+Codex CLI 0.155.1.
 Rebuild and restart Emacs to give new terminals the discovery marker.
 
 Each row shows its terminal name, agent, assigned project, terminal process
-state, agent activity, current directory and reported title. Activity comes
+state, agent activity, current directory and reported title. Claude activity comes
 from [`claude agents --json`](https://code.claude.com/docs/en/agent-view#list-sessions-as-json):
 `busy` becomes `working`, and `waiting` and `idle` keep their names. **Idle does
 not mean success.** At startup, at a trust dialog, on an unsupported status, or
 when the status command fails, activity is `unknown`; hover it for the reason.
 A process-discovery failure also makes Process `unknown` until recovery.
 Set `portal-agents-claude-program` to an absolute path if Claude is not on Emacs's
-`exec-path`. Codex and Pi automatic discovery are separate planned tasks.
+`exec-path`.
+
+Codex rows are labelled **Codex (title)**: activity is inferred from its default
+terminal title. A leading braille spinner means `working`, `Action Required`
+means `waiting`, another nonempty title means `idle`, and a missing or blank
+title means `unknown`. Hover activity for its source and limitations. Startup
+can read as working before the first prompt; non-approval menus and model errors
+can read as idle. Custom title settings can invalidate the mapping. Titles are
+terminal-wide and carry no process ID, so this is a best-effort inference from
+the current cache, not proof that a particular run emitted it. Keep Codex's
+default title settings for this source. Notifications and progress do not affect
+Codex activity; focus and notification suppression do not imply idle. Pi
+automatic discovery remains a separate task.
 
 The dashboard is an ordinary Tabulated List buffer with no native view, web
 page or app host. Move, isearch, or press `S` to sort; `RET` visits the correct
@@ -479,8 +492,8 @@ directory does not change its identity. Two agents in the same directory remain
 distinct.
 
 Discovery uses foreground processes tied to the exact terminal, never titles,
-progress bars or project paths. Exiting Claude removes its automatic row even
-while the shell keeps running; relaunching starts with fresh activity. A
+progress bars or project paths. Exiting an agent removes its automatic row even
+while the shell keeps running; relaunching creates a new agent session. A
 suspended (Ctrl-Z) agent disappears until foregrounded. Remote agents, agents
 inside tmux, or launches that remove `PORTAL_TERMINAL` are not discovered.
 The marker must agree with OS ancestry on the same controlling TTY back to
@@ -493,14 +506,15 @@ manually.
 
 Optional `M-x portal-agents-track` (`t`) tracks any terminal; a prefix argument
 also asks for a label, and `(portal-agents-track BUFFER LABEL)` works from Lisp.
-An explicit label overrides “Claude” without creating a second row. Manually
+An explicit label overrides the agent label without creating a second row. Manually
 tracked terminals remain after program exit, marked `exited`, until closed or
 untracked. Other harnesses have unknown activity. `portal-agents-untrack` (`u`)
 leaves the program running and hides a discovered run until it leaves the
 foreground or is explicitly tracked again; later runs are discovered normally.
 
 While shown, one two-second timer scans processes and reads cached metadata.
-Opening or showing the dashboard scans immediately. Title glyph-class and
+Opening or showing the dashboard scans immediately. Codex activity is read from
+cached titles after a successful scan, without a status subprocess. Title glyph-class and
 progress changes trigger asynchronous Claude status queries; spinner animation
 within a class does not. Queries never overlap, time out after five seconds,
 and retry after a transition, every four seconds for unknown status, or at a
@@ -515,8 +529,10 @@ selection, each window's position and keyboard focus. `g` refreshes and `q`
 hides the dashboard. `portal-agents-toggle-live-update` or
 `(setq portal-agents-live-update nil)` leaves collection manual: open, show, or
 `g`. Set `portal-agents-live-update-interval` to change the interval the next
-time updates start. Set `portal-agents-discover-claude` to nil to retain only
-manual tracking. Minimized/invisible frames stop collection at the next tick.
+time updates start. Set `portal-agents-discover-claude` or
+`portal-agents-discover-codex` to nil to disable that agent's automatic discovery;
+disable both to retain only manual tracking. Minimized/invisible frames stop
+collection at the next tick.
 
 With 100 tracked terminals, a refresh with nothing changed took under 1 ms in
 graphical Emacs and redrew nothing. When every title changed, it took about
@@ -1713,7 +1729,11 @@ gives the chosen terminal the keyboard once the minibuffer closes.
 Automatic discovery has batch tests in `ctest --test-dir build -R agent-discovery`:
 real asynchronous pipes, process identity, nested/spoofed controls, PID reuse,
 hidden/manual collection, bounded failures, pending triggers, and recorded Claude
-lifecycle/compaction/error/trust fixtures replayed through dashboard rows.
+lifecycle/compaction/error/trust fixtures replayed through dashboard rows. Codex
+fixtures cover startup, working, completion, approvals, denial, cancellation and
+model failure. Mixed-agent checks isolate status sources and discovery options,
+reject delayed Claude results after a Codex replacement, and suppress redraws
+for spinner frames and blinking approval markers.
 Runtime cases cover option values, attached values, short flag clusters,
 terminators, execution modes, unknown options and every supported runtime pairing
 for Claude, Codex and Pi. With Node installed, CTest also runs actual Node
@@ -1723,7 +1743,8 @@ Node with a spoofed Bash argument name does not produce an agent row.
 `ctest --test-dir build -R processes` checks Darwin argument parsing, including
 NUL padding and truncation, and launches real nested PTYs with an inherited
 marker to verify TTY ownership. `portal-agents-benchmark-discovery` in
-`test/portal-agents-benchmark.el` compares 10, 50 and 100 simulated sessions.
+`test/portal-agents-benchmark.el` compares 10, 50 and 100 simulated sessions;
+pass `"codex"` to benchmark title inference instead of the default Claude path.
 
 For the real tmux exclusion test, set `PORTAL_TEST_PROCESS_SNAPSHOT` to the
 absolute path of `build/portal-process-tests`, have tmux on Emacs's `exec-path`,
@@ -1735,9 +1756,16 @@ tmux runs inheriting their Portal terminal's marker.
 
 For the opt-in real-Claude smoke test, set `PORTAL_TEST_CLAUDE_DIRECTORY` to an
 already trusted project, load `test/portal-agent-discovery-gui-tests.el` in a
-fresh graphical Emacs, and run ERT selector `^portal-discovery-gui-`. It starts
+fresh graphical Emacs, and run `portal-discovery-gui-plain-claude`. It starts
 plain Claude sessions, sends one harmless prompt, verifies automatic rows and
 working/idle, navigation and exit/relaunch, then closes its terminals.
+
+For `portal-discovery-gui-mixed-codex-claude`, also set
+`PORTAL_TEST_CODEX_DIRECTORY` to a project already trusted by both agents. It
+starts plain Claude and Codex sessions in that directory, sends Codex a harmless
+prompt, checks their separate activity and exact navigation, hides/reopens the
+dashboard, quits/relaunches Codex, and discovers and visits a hidden quick-terminal
+Codex. A spoofed Codex name with an approval title remains a negative control.
 
 The agent dashboard's graphical tests use real terminals and redisplay's window
 hooks. They check that `RET` gives a hidden terminal, one shown in another

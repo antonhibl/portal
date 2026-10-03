@@ -1,4 +1,4 @@
-;;; portal-agent-discovery-gui-tests.el --- Real Claude smoke test -*- lexical-binding: t; -*-
+;;; portal-agent-discovery-gui-tests.el --- Real agent smoke tests -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Opt in with PORTAL_TEST_CLAUDE_DIRECTORY pointing at an already trusted project.
 ;; Starts plain Claude sessions, sends one harmless prompt, then exits them.
@@ -143,6 +143,74 @@
         (portal-discovery-gui--type quick "claude")
         (portal-terminal-quick-dismiss)
         (portal-discovery-gui--wait (lambda () (portal-agents-gui--row quick)) 3)
+        (with-selected-window right (portal-agents-gui--visit quick))
+        (should (equal (portal-agents-gui--view quick)
+                       (list (portal-terminal-quick--window) t)))
+        (portal-terminal-quick-dismiss)
+        (should (portal-agents-gui--row quick)))
+      (should-not portal-agents--tracked)
+      (select-window window))))
+
+(ert-deftest portal-discovery-gui-mixed-codex-claude ()
+  ;; Both variables opt into real agents in one already trusted directory.
+  (skip-unless (and (getenv "PORTAL_TEST_CODEX_DIRECTORY")
+                    (getenv "PORTAL_TEST_CLAUDE_DIRECTORY")))
+  (portal-agents-gui--environment
+    (let* ((default-directory (file-name-as-directory (getenv "PORTAL_TEST_CODEX_DIRECTORY")))
+           (portal-agents-live-update-interval 2)
+           (codex (portal-agents-gui--open "codex-smoke"))
+           (claude (portal-agents-gui--open "claude-mixed-smoke"))
+           (control (portal-agents-gui--open "codex-control"))
+           (window (selected-window))
+           (right (split-window-right)))
+      (portal-agents-gui--wait 1)
+      (portal-discovery-gui--type codex "codex")
+      (portal-discovery-gui--type claude "claude")
+      (portal-agents-gui--wait 4)
+      (with-selected-window right (portal-agents))
+      (should (equal (nth 1 (portal-agents-gui--row codex)) "Codex (title)"))
+      (should (equal (nth 1 (portal-agents-gui--row claude)) "Claude"))
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row claude)) "idle")))
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row codex)) "idle")))
+      (portal-discovery-gui--type control
+                                "printf '\\033]0;[ ! ] Action Required | portal\\007\\033]9;4;3\\007'; bash -c 'exec -a codex sleep 5'")
+      (portal-discovery-gui--type codex "Reply with exactly PORTAL_OK. Do not use tools.")
+      (let ((start (float-time)))
+        (portal-discovery-gui--wait
+         (lambda () (equal (nth 4 (portal-agents-gui--row codex)) "working")) 30)
+        (message "CODEX prompt-to-working %.3f s" (- (float-time) start)))
+      (should (equal (nth 4 (portal-agents-gui--row claude)) "idle"))
+      (should-not (portal-agents-gui--row control))
+      (portal-discovery-gui--wait
+       (lambda () (equal (nth 4 (portal-agents-gui--row codex)) "idle")) 60)
+      (with-selected-window right
+        (portal-agents-gui--visit codex)
+        (should (equal (portal-agents-gui--view codex) (list right t)))
+        (portal-agents))
+      (set-window-buffer right (get-buffer-create "*scratch*"))
+      (portal-agents-gui--settle)
+      (should-not portal-agents--timer)
+      (should-not portal-agent-discovery--process)
+      (portal-discovery-gui--type codex "/quit")
+      (portal-agents-gui--wait 3)
+      (with-selected-window right (portal-agents))
+      (should-not (portal-agents-gui--row codex))
+      (should (portal-agents-gui--row claude))
+      (should-not (plist-get (portal-terminal-metadata codex) :exited))
+      (let ((start (float-time)))
+        (portal-discovery-gui--type codex "codex")
+        (portal-discovery-gui--wait (lambda () (portal-agents-gui--row codex)) 3)
+        (message "CODEX launch-to-row %.3f s" (- (float-time) start)))
+      (select-window window)
+      (portal-terminal-quick--show default-directory)
+      (let ((quick (current-buffer)))
+        (portal-agents-gui--wait 1)
+        (portal-discovery-gui--type quick "codex")
+        (portal-terminal-quick-dismiss)
+        (portal-discovery-gui--wait (lambda () (portal-agents-gui--row quick)) 3)
+        (should (= (length portal-agent-discovery--agents) 3))
         (with-selected-window right (portal-agents-gui--visit quick))
         (should (equal (portal-agents-gui--view quick)
                        (list (portal-terminal-quick--window) t)))
