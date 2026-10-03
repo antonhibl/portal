@@ -214,7 +214,7 @@ both, and for any collection."
       (let* ((buffers (portal-terminal-buffers))
              (processes
               (cl-loop for buffer in buffers for pid from 100
-                       collect (list :pid pid :start "100.000001" :ancestors '(1)
+                       collect (list :pid pid :start "100.000001" :ancestors '(1) :tty-parent (emacs-pid)
                                      :environment (format "%s/%s" (emacs-pid)
                                                           (buffer-local-value 'portal-view--target buffer))
                                      :argv '("claude") :executable "/opt/claude/versions/2.1.287"))))

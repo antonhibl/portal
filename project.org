@@ -612,6 +612,55 @@ interfaces, dependencies or collection policy.
   byte compilation with warnings treated as errors pass. The discovery suite
   now runs 22 ERT tests. No findings are deferred.
 
+*** Review follow-up: identity evidence and state ownership
+Addressed both findings from the review of =032731d= in PR #65 on 2026-10-03.
+The user also requested a root-cause correction across the repeated reviews.
+
+The previous fixes were too local to each example. Identity used permissive
+heuristics: an inherited marker stood in for terminal ownership, and the first
+non-option argument stood in for an executed script. Freshness policy was split
+between dashboard commands and discovery, making combinations of hide, disable,
+retrack and late replies easy to overlook. Synthetic snapshots reproduced those
+assumptions, so more tests alone did not challenge them. The invalid UTF-8 finding
+was a separate native adapter contract problem, already covered by byte tests.
+
+- [[file:portal-agent-process.el][Process identity]] now has one pure entry point
+  returning unambiguous outer agent processes per terminal marker. It requires
+  both the exact marker and uninterrupted same-TTY ancestry back to Emacs.
+  Inherited markers on nested PTYs, including attached and detached tmux panes,
+  cannot establish ownership. Missing ancestry supplies no identity evidence.
+- The native snapshot adds TTY and first-ancestor-outside-TTY facts. Real Portal
+  testing exposed a root-owned macOS =login= ancestor, so the implementation
+  refines the spike's UID-only snapshot to =KERN_PROC_ALL= for ancestry. Arguments
+  and returned candidates are still restricted to the current user's foreground
+  processes; classification remains Lisp policy. No new dependency is needed.
+- Runtime script selection uses a closed grammar with known option arities,
+  attached/separate values, short flag clusters and option terminators. Unknown
+  options, inline/module/task execution and check/help/version modes supply no
+  evidence. Thus =node --require /tmp/claude app.js= cannot become Claude, while
+  =node --require preload /opt/bin/claude= remains discoverable. This intentionally
+  favors missing an unfamiliar launch over claiming a false identity; manual
+  tracking remains available. Extend the grammar with documented arities and
+  contract tests, not another blacklist exception.
+- Discovery now owns hide/show transitions, hidden identities, request revisions
+  and activity invalidation together. Dashboard commands call that transition
+  instead of modifying its state. Existing lifecycle regressions continue to
+  cover live/manual refresh, hidden and late replies, and tracking while disabled.
+- Both new regressions failed before the implementation. The runtime contract
+  replaces private parser examples with 36 launch cases exercised through
+  dashboard rows and query counts. CTest also executes real Node preload/script
+  cases through the native collector, and native tests launch nested PTYs with
+  inherited markers. The new graphical test proves the foreign marker exists,
+  a direct run stays visible, and tmux remains excluded before and after a
+  verified client attachment. No Claude credentials or requests are needed.
+- Native build, all 27 CTest suites (25 discovery/dashboard ERT tests), host
+  Biome/type checks, changed Lisp byte compilation with warnings as errors, Org
+  lint, task graph/link validation and diff checks pass. Nothing is deferred.
+  Fifty native snapshots with the real direct/nested fixtures averaged 0.492 ms,
+  maximum 0.938 ms. Simulated collection at 10/50/100 sessions measured
+  0.052/0.575/1.529 ms; unchanged ticks 0.069/0.753/2.150 ms; changed ticks
+  0.603/2.598/6.061 ms. These are local observations, not deadlines.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex

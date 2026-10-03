@@ -481,6 +481,11 @@ progress bars or project paths. Exiting Claude removes its automatic row even
 while the shell keeps running; relaunching starts with fresh activity. A
 suspended (Ctrl-Z) agent disappears until foregrounded. Remote agents, agents
 inside tmux, or launches that remove `PORTAL_TERMINAL` are not discovered.
+The marker must agree with OS ancestry on the same controlling TTY back to
+Emacs; inheriting it inside a nested PTY is insufficient. Native agent binaries
+and known runtime script launches are recognized. Runtime options are parsed by
+their documented arity; unknown options, inline code and ambiguous package tasks
+are not guessed. Such terminals can still be tracked manually.
 
 Optional `M-x portal-agents-track` (`t`) tracks any terminal; a prefix argument
 also asks for a label, and `(portal-agents-track BUFFER LABEL)` works from Lisp.
@@ -1344,6 +1349,9 @@ the app sends, in order. Other web views have no bridge.
 | `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
 | `portal-terminal-quick.el` | Project scratch terminals, bottom panel, and callable toggle command |
+| `portal-agent-process.el` | Pure process identity: TTY ownership, runtime launch grammar, and outer-agent selection |
+| `portal-agent-discovery.el` | Agent incarnations, hide/show transitions, activity invalidation and asynchronous collection |
+| `portal-agents.el` | Manual terminal labels, dashboard rows, visibility and user commands |
 | `portal-project.el` | Each frame's editing context, and project roots through `portal-project-function` |
 | `portal-server.el` | Lazy shared-process startup, readiness, logs, and shutdown |
 | `host/server.ts` | Local HTTP server and parent-process lifetime |
@@ -1696,9 +1704,22 @@ Automatic discovery has batch tests in `ctest --test-dir build -R agent-discover
 real asynchronous pipes, process identity, nested/spoofed controls, PID reuse,
 hidden/manual collection, bounded failures, pending triggers, and recorded Claude
 lifecycle/compaction/error/trust fixtures replayed through dashboard rows.
+Runtime cases cover option values, attached values, short flag clusters,
+terminators, execution modes and unknown options. With Node installed, CTest
+also runs actual Node processes on PTYs through the native collector and checks
+that a preload named `claude` is not mistaken for the executed script.
 `ctest --test-dir build -R processes` checks Darwin argument parsing, including
-NUL padding and truncation. `portal-agents-benchmark-discovery` in
+NUL padding and truncation, and launches real nested PTYs with an inherited
+marker to verify TTY ownership. `portal-agents-benchmark-discovery` in
 `test/portal-agents-benchmark.el` compares 10, 50 and 100 simulated sessions.
+
+For the real tmux exclusion test, set `PORTAL_TEST_PROCESS_SNAPSHOT` to the
+absolute path of `build/portal-process-tests`, have tmux on Emacs's `exec-path`,
+and run `portal-discovery-gui-inherited-tmux-marker` from
+`test/portal-agent-discovery-gui-tests.el` in a fresh graphical Emacs. It uses
+an isolated tmux socket and a fixture executable; no Claude credentials or
+requests are needed. It verifies a direct run alongside attached and detached
+tmux runs inheriting their Portal terminal's marker.
 
 For the opt-in real-Claude smoke test, set `PORTAL_TEST_CLAUDE_DIRECTORY` to an
 already trusted project, load `test/portal-agent-discovery-gui-tests.el` in a

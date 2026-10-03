@@ -5,6 +5,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'portal-terminal)
+(require 'portal-agent-process)
 
 (declare-function portal--process-snapshot "portal-view" (variable))
 (declare-function portal-agents--shown-p "portal-agents" ())
@@ -33,39 +34,6 @@ Use an absolute path if Claude is not on Emacs's `exec-path'."
 (defvar portal-agent-discovery--pending nil "A trigger arrived during the query.")
 (defvar portal-agent-discovery--queried 0 "Time the last query started.")
 (defvar portal-agent-discovery--collecting nil "Prevent recursive collection.")
-
-(defun portal-agent-discovery--runtime-p (name)
-  "Whether NAME is a runtime that can execute an agent script."
-  (member name '("node" "bun" "deno" "python" "python3" "sh" "bash" "zsh" "fish")))
-
-(defun portal-agent-discovery--name (process)
-  "Classify PROCESS from argv and its executable, never from a title."
-  (let* ((argv (append (plist-get process :argv) nil))
-         (name (file-name-nondirectory (or (car argv) "")))
-         (path (or (plist-get process :executable) ""))
-         (exe (file-name-nondirectory path))
-         script)
-    (when (portal-agent-discovery--runtime-p name)
-      (setq name "")
-      (catch 'script
-        (dolist (arg (cdr argv))
-          ;; These flags run inline code, not a script named by another argument.
-          (when (or (member arg '("-e" "--eval" "-p" "--print" "-c" "-m"))
-                    (string-match-p "\\`--\\(?:eval\\|print\\)=" arg)
-                    (string-match-p "\\`-[^-]*[cep]" arg))
-            (throw 'script nil))
-          (unless (string-prefix-p "-" arg)
-            (setq name (file-name-nondirectory arg) script t)
-            (throw 'script t)))))
-    ;; Recognize other harnesses only to reject Claude nested underneath them.
-    ;; Their own discovery/activity remains in the dependent tasks.
-    (when (and (member name '("claude" "codex" "pi"))
-               (or (equal exe name)
-                   (and (equal name "claude") (string-match-p "/claude/versions/[^/]+\\'" path))
-                   (and script (portal-agent-discovery--runtime-p exe))
-                   ;; Pi sets Node's process.title, replacing its script argv.
-                   (and (equal name "pi") (equal exe "node"))))
-      name)))
 
 (defun portal-agent-discovery--class (title)
   "Classify TITLE's leading glyph solely as a status-query trigger."
@@ -104,6 +72,25 @@ Use an absolute path if Claude is not on Emacs's `exec-path'."
   "Invalidate AGENT's activity with REASON."
   (setf (portal-agent-activity agent) "unknown" (portal-agent-reason agent) reason))
 
+(defun portal-agent-discovery--hidden-p (agent)
+  "Whether AGENT's incarnation was explicitly hidden."
+  (member (portal-agent-discovery--identity agent) portal-agent-discovery--hidden))
+
+(defun portal-agent-discovery--set-hidden (buffer hidden)
+  "Set whether BUFFER's discovered run is HIDDEN, owning all invalidation.
+Showing clears the terminal session's hidden identities even without a cached
+agent.  Hiding ends observation and invalidates replies already in flight."
+  (let ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
+        (agent (portal-agent-discovery--find buffer)))
+    (if (not hidden)
+        (setq portal-agent-discovery--hidden
+              (cl-delete key portal-agent-discovery--hidden :key #'car :test #'equal))
+      (when agent
+        (cl-pushnew (portal-agent-discovery--identity agent) portal-agent-discovery--hidden :test #'equal)
+        (cl-incf (portal-agent-revision agent))
+        (setf (portal-agent-signal agent) nil)
+        (portal-agent-discovery--unknown agent "Status unobserved while untracked")))))
+
 (defun portal-agent-discovery--scan ()
   "Reconcile a foreground snapshot with terminal buffers.  Return success.
 Unchanged incarnations retain their objects; results can only update those
@@ -112,26 +99,15 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
       (let* ((processes (and (fboundp 'portal--process-snapshot)
                              (append (portal--process-snapshot "PORTAL_TERMINAL") nil)))
              (prefix (format "%s/" (emacs-pid)))
-             (candidates (seq-filter
-                          (lambda (p)
-                            (and (string-prefix-p prefix (or (plist-get p :environment) ""))
-                                 (portal-agent-discovery--name p))) processes))
+             (sessions (portal-agent-process-sessions processes (emacs-pid)))
              (old portal-agent-discovery--agents) agents)
         (dolist (buffer (portal-terminal-buffers nil t))
           (let* ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
                  (marker (concat prefix (cdr key)))
-                 (matching (seq-filter (lambda (p) (equal marker (plist-get p :environment))) candidates))
-                 (outer (seq-remove
-                         (lambda (p)
-                           (seq-some (lambda (ancestor) (memql (plist-get ancestor :pid)
-                                                               (append (plist-get p :ancestors) nil)))
-                                     matching)) matching)))
-            ;; Ambiguous unrelated foreground agents in one TTY are not guessed.
-            (when (and (= (length outer) 1)
-                       (equal (portal-agent-discovery--name (car outer)) "claude")
+                 (p (cdr (assoc marker sessions))))
+            (when (and (equal (plist-get p :agent) "claude")
                        (not (buffer-local-value 'portal-terminal--exited buffer)))
-              (let* ((p (car outer))
-                     (identity (list key (plist-get p :pid) (plist-get p :start)))
+              (let* ((identity (list key (plist-get p :pid) (plist-get p :start)))
                      (agent (or (cl-find identity old :key #'portal-agent-discovery--identity :test #'equal)
                                 (portal-agent--create :key key :pid (plist-get p :pid)
                                                       :start (plist-get p :start)))))
@@ -151,7 +127,7 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
 (defun portal-agent-discovery--visible-agents ()
   "Return the discovered agents not explicitly hidden."
   (seq-remove (lambda (a) (or (not (portal-agent-discovery--live-p a))
-                             (member (portal-agent-discovery--identity a) portal-agent-discovery--hidden)))
+                             (portal-agent-discovery--hidden-p a)))
               portal-agent-discovery--agents))
 
 (defun portal-agent-discovery--observe ()

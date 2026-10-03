@@ -66,8 +66,7 @@ A session whose program exited stays while its buffer keeps its view."
   "Whether BUFFER is manually tracked or has a visible discovered agent."
   (or (portal-agents--tracked-p buffer)
       (let ((agent (portal-agent-discovery--find buffer)))
-        (and agent (not (member (portal-agent-discovery--identity agent)
-                               portal-agent-discovery--hidden))))))
+        (and agent (not (portal-agent-discovery--hidden-p agent))))))
 
 (defun portal-agents--facts ()
   "Return (KEY LABEL METADATA) rows, merging manual and automatic sessions."
@@ -271,9 +270,7 @@ closes or is replaced.  A program exiting does not end it."
       (user-error "Not a terminal: %s" buffer))
     (let ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
           (session (portal-agents--tracked-p buffer)))
-      ;; Hidden identities outlive the agent cache when discovery is disabled.
-      (setq portal-agent-discovery--hidden
-            (cl-delete key portal-agent-discovery--hidden :key #'car :test #'equal))
+      (portal-agent-discovery--set-hidden buffer nil)
       (unless session
         (setq session (list key)
               portal-agents--tracked (append portal-agents--tracked (list session))))
@@ -295,13 +292,7 @@ tracked again.  A later run is discovered normally."
          (agent (portal-agent-discovery--find buffer)))
     (unless (or session agent) (user-error "Not a tracked or discovered terminal: %s" buffer))
     (setq portal-agents--tracked (delq session portal-agents--tracked))
-    (when agent
-      (cl-pushnew (portal-agent-discovery--identity agent) portal-agent-discovery--hidden :test #'equal)
-      ;; Hidden runs are not observed.  Reject outstanding replies and require
-      ;; a fresh observation if this incarnation is tracked again.
-      (cl-incf (portal-agent-revision agent))
-      (setf (portal-agent-signal agent) nil)
-      (portal-agent-discovery--unknown agent "Status unobserved while untracked"))
+    (portal-agent-discovery--set-hidden buffer t)
     (portal-agents--changed)))
 
 (defun portal-agents-visit ()

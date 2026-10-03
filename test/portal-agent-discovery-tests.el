@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'portal-agents-tests
          (expand-file-name "portal-agents-tests" (file-name-directory (or load-file-name (bound-and-true-p byte-compile-current-file) buffer-file-name))))
+(declare-function portal--process-snapshot "portal-view" (variable))
 
 (defvar portal-discovery-test--processes nil)
 (defvar portal-discovery-test--queries 0)
@@ -35,6 +36,7 @@
 (defun portal-discovery-test--process (buffer pid &optional start)
   "Process snapshot entry for BUFFER, PID and START."
   (list :pid pid :start (or start "100.000001")
+        :tty-parent (emacs-pid)
         :environment (format "%d/%s" (emacs-pid) (buffer-local-value 'portal-view--target buffer))
         :executable "/home/test/.local/share/claude/versions/2.1.287"
         :argv '("claude") :ancestors '(1)))
@@ -178,19 +180,6 @@
     (let* ((terminal (portal-agents-test--open "one/app"))
            (parent (portal-discovery-test--process terminal 10))
            (child (plist-put (portal-discovery-test--process terminal 20) :ancestors '(15 10 1))))
-      (dolist (argv '(("node" "/opt/bin/claude") ("bun" "/opt/bin/claude")
-                      ("python3" "/opt/bin/claude") ("bash" "/opt/bin/claude")))
-        (should (equal "claude" (portal-agent-discovery--name
-                                (list :argv argv :executable (concat "/bin/" (car argv)))))))
-      (dolist (process '((:argv ("claude") :executable "/bin/sleep")
-                         (:argv ("claude") :executable "/bin/node")
-                         (:argv ("claude" "-lc" "sleep 10") :executable "/bin/bash")
-                         (:argv ("node" "-e" "claude") :executable "/bin/node")
-                         (:argv ("bash" "-c" "claude") :executable "/bin/bash")
-                         (:argv ("bash" "-lc" "claude") :executable "/bin/bash")
-                         (:argv ("node" "--eval=1" "claude") :executable "/bin/node")
-                         (:argv ("claude") :executable "/opt/not-claude/versions/1")))
-        (should-not (portal-agent-discovery--name process)))
       (setq portal-discovery-test--processes (list child parent))
       (portal-agents-test--show)
       (should (= (length portal-agent-discovery--agents) 1))
@@ -209,6 +198,121 @@
             (list (plist-put (copy-sequence child) :environment "999999/terminal:1")))
       (portal-agents--tick)
       (should-not (portal-agents-test--rows)))))
+
+(ert-deftest portal-discovery-marker-needs-terminal-ownership ()
+  (dolist (owner '(nil 0 999999))
+    (portal-discovery-test--environment
+      (let* ((terminal (portal-agents-test--open "one/app"))
+             (foreign (plist-put (portal-discovery-test--process terminal 10) :tty-parent owner)))
+        ;; A nested PTY can inherit the exact marker and be foregrounded there.
+        (setq portal-discovery-test--processes (list foreign))
+        (portal-agents-test--show)
+        (should-not (portal-agents-test--rows))
+        (should (= portal-discovery-test--queries 0))
+        ;; A real run in the owning TTY is unaffected by that inherited marker.
+        (setq portal-discovery-test--processes
+              (list foreign (portal-discovery-test--process terminal 20)))
+        (portal-agents--tick)
+        (portal-discovery-test--reply "[{\"pid\":20,\"status\":\"waiting\"}]")
+        (should (equal (portal-discovery-test--status terminal) "waiting"))))))
+
+(ert-deftest portal-discovery-runtime-launch-contract ()
+  ;; Exercise script selection through actual dashboard rows, not parser internals.
+  (dolist (case '((("node" "--require" "/tmp/claude" "app.js") "/bin/node" nil)
+                  (("node" "-r/tmp/claude" "app.js") "/bin/node" nil)
+                  (("node" "--require=/tmp/claude" "app.js") "/bin/node" nil)
+                  (("node" "--import" "/tmp/claude" "app.js") "/bin/node" nil)
+                  (("node" "--future-option" "/tmp/claude") "/bin/node" nil)
+                  (("node" "--future-option=value" "/tmp/claude") "/bin/node" nil)
+                  (("node" "-e" "claude") "/bin/node" nil)
+                  (("node" "--eval=1" "claude") "/bin/node" nil)
+                  (("node" "--check" "/tmp/claude") "/bin/node" nil)
+                  (("node" "--require") "/bin/node" nil)
+                  (("node" "/opt/bin/claude") "/bin/node" t)
+                  (("node" "--require" "preload" "/opt/bin/claude") "/bin/node" t)
+                  (("node" "-rpreload" "--no-warnings" "/opt/bin/claude") "/bin/node" t)
+                  (("node" "--" "/opt/bin/claude" "--eval" "app.js") "/bin/node" t)
+                  (("bun" "--preload" "/tmp/claude" "app.js") "/bin/bun" nil)
+                  (("bun" "--preload" "preload" "/opt/bin/claude") "/bin/bun" t)
+                  (("bun" "run" "/opt/bin/claude") "/bin/bun" t)
+                  (("bun" "run" "claude") "/bin/bun" nil)
+                  (("deno" "eval" "claude") "/bin/deno" nil)
+                  (("deno" "run" "--config" "/tmp/claude" "app.js") "/bin/deno" nil)
+                  (("deno" "run" "--allow-read" "/opt/bin/claude") "/bin/deno" t)
+                  (("python3" "-W" "claude" "app.py") "/bin/python3" nil)
+                  (("python3" "-Wclaude" "app.py") "/bin/python3" nil)
+                  (("python3" "-uB" "-W" "ignore" "/opt/bin/claude") "/bin/python3" t)
+                  (("python3" "-m" "claude") "/bin/python3" nil)
+                  (("bash" "-o" "claude" "app.sh") "/bin/bash" nil)
+                  (("bash" "--rcfile" "/tmp/claude" "app.sh") "/bin/bash" nil)
+                  (("bash" "-eux" "/opt/bin/claude") "/bin/bash" t)
+                  (("bash" "-lc" "claude") "/bin/bash" nil)
+                  (("zsh" "-o" "claude" "app.sh") "/bin/zsh" nil)
+                  (("fish" "-C" "claude" "app.fish") "/bin/fish" nil)
+                  (("fish" "--no-config" "/opt/bin/claude") "/bin/fish" t)
+                  (("claude") "/bin/sleep" nil)
+                  (("claude" "-e" "setInterval(() => {}, 1000)") "/bin/node" nil)
+                  (("claude") "/opt/not-claude/versions/1" nil)
+                  (("claude") "/bin/claude" t)))
+    (ert-info ((format "Launch: %S" case))
+      (portal-discovery-test--environment
+        (let* ((terminal (portal-agents-test--open "one/app"))
+               (process (portal-discovery-test--process terminal 10)))
+          (setq portal-discovery-test--processes
+                (list (plist-put (plist-put process :argv (nth 0 case)) :executable (nth 1 case))))
+          (portal-agents-test--show)
+          (if (nth 2 case)
+              (progn
+                (portal-discovery-test--reply "[{\"pid\":10,\"status\":\"idle\"}]")
+                (should (equal (portal-discovery-test--status terminal) "idle")))
+            (should-not (portal-agents-test--rows))
+            (should (= portal-discovery-test--queries 0))))))))
+
+(ert-deftest portal-discovery-real-node-preload-is-not-the-script ()
+  (let ((collector (getenv "PORTAL_TEST_PROCESS_SNAPSHOT"))
+        (node (executable-find "node"))
+        (spawn (symbol-function 'make-process)))
+    (skip-unless (and collector node))
+    (portal-discovery-test--environment
+      (let* ((terminal (portal-agents-test--open "one/app"))
+             (claude (portal-agents-test--path "claude"))
+             (other (portal-agents-test--path "app.js"))
+             (process-environment
+              (cons (format "PORTAL_TERMINAL=%d/%s" (emacs-pid)
+                            (buffer-local-value 'portal-view--target terminal)) process-environment)))
+        (dolist (file (list claude other))
+          (write-region "setInterval(() => {}, 1000);\n" nil file nil 'silent))
+        ;; Keep the native OS collector real; only the status command is faked.
+        (cl-letf (((symbol-function 'portal--process-snapshot)
+                   (lambda (variable)
+                     (with-temp-buffer
+                       (should (= (call-process collector nil t nil "--snapshot" variable) 0))
+                       (goto-char (point-min))
+                       (json-parse-buffer :object-type 'plist :array-type 'list)))))
+          (dolist (script (list other claude))
+            (let ((process (funcall spawn :name "portal-real-node" :buffer nil :noquery t
+                                    :connection-type 'pty
+                                    :command (list node "--require" claude script)))
+                  (deadline (+ (float-time) 3)) found)
+              (unwind-protect
+                  (progn
+                    (while (and (not found) (< (float-time) deadline))
+                      (setq found (seq-find (lambda (entry)
+                                              (and (= (plist-get entry :pid) (process-id process))
+                                                   (equal (file-name-nondirectory (plist-get entry :executable)) "node")))
+                                            (portal--process-snapshot "PORTAL_TERMINAL")))
+                      (unless found (accept-process-output nil 0.01)))
+                    (should found)
+                    (should (eql (plist-get found :tty-parent) (emacs-pid)))
+                    (portal-agents-test--show)
+                    (if (equal script claude)
+                        (progn
+                          (portal-discovery-test--reply
+                           (json-encode (vector (list :pid (process-id process) :status "idle"))))
+                          (should (equal (portal-discovery-test--status terminal) "idle")))
+                      (should-not (portal-agents-test--rows))
+                      (should (= portal-discovery-test--queries 0))))
+                (delete-process process)))))))))
 
 (ert-deftest portal-discovery-pending-transitions-pid-reuse-and-late-results ()
   (portal-discovery-test--environment

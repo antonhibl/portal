@@ -107,6 +107,24 @@ static bool failed(portal_text *error, const char *message)
     return false;
 }
 
+/* First ancestor outside this process's controlling TTY.  Zero means that
+   incomplete ancestry or a cycle prevents proving where the TTY originates.
+   This is an OS fact, not an agent or environment-marker policy. */
+static pid_t tty_parent(const struct kinfo_proc *procs, size_t count, size_t index)
+{
+    dev_t tty = procs[index].kp_eproc.e_tdev;
+    if (tty == NODEV) return 0;
+    for (size_t depth = 0; depth < count; depth++) {
+        pid_t parent = procs[index].kp_eproc.e_ppid;
+        size_t above = 0;
+        while (above < count && procs[above].kp_proc.p_pid != parent) above++;
+        if (above == count) return 0;
+        if (procs[above].kp_eproc.e_tdev != tty) return parent;
+        index = above;
+    }
+    return 0;
+}
+
 bool portal_process_snapshot(portal_string variable, portal_text *result, portal_text *error)
 {
     if (!variable.length || memchr(variable.data, 0, variable.length)
@@ -116,7 +134,10 @@ bool portal_process_snapshot(portal_string variable, portal_text *result, portal
     size_t size = sizeof argmax;
     if (sysctl(argmib, 2, &argmax, &size, NULL, 0) < 0 || argmax <= 0)
         return failed(error, "Cannot read process argument limit");
-    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_UID, (int) getuid()};
+    /* Ancestry must include other users: macOS login can keep a root-owned
+       parent between our terminal shell and Emacs. Read arguments only for
+       this user's foreground candidates below. */
+    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
     struct kinfo_proc *procs = NULL;
     size_t length = 0;
     /* Processes can start between sizing and reading. Retry a bounded number. */
@@ -145,7 +166,8 @@ collected:;
     fputc('[', out);
     for (size_t i = 0; i < count; i++) {
         const struct kinfo_proc *k = &procs[i];
-        if (k->kp_eproc.e_tdev == NODEV || k->kp_eproc.e_pgid != k->kp_eproc.e_tpgid
+        if (k->kp_eproc.e_ucred.cr_uid != getuid()
+            || k->kp_eproc.e_tdev == NODEV || k->kp_eproc.e_pgid != k->kp_eproc.e_tpgid
             || k->kp_proc.p_stat == SSTOP || k->kp_proc.p_stat == SZOMB) continue;
         int argsmib[] = {CTL_KERN, KERN_PROCARGS2, k->kp_proc.p_pid};
         size = (size_t) argmax;
@@ -159,9 +181,13 @@ collected:;
         if (proc_pidinfo(k->kp_proc.p_pid, PROC_PIDTBSDINFO, 0, &b, sizeof b) != sizeof b
             || b.pbi_start_tvsec != (uint64_t) k->kp_proc.p_starttime.tv_sec
             || b.pbi_start_tvusec != (uint64_t) k->kp_proc.p_starttime.tv_usec
+            || b.pbi_ppid != (uint32_t) k->kp_eproc.e_ppid
+            || b.e_tdev != (uint32_t) k->kp_eproc.e_tdev
+            || b.pbi_status == SSTOP || b.pbi_status == SZOMB
             || b.pbi_pgid != b.e_tpgid || b.e_tdev == (uint32_t) NODEV) continue;
-        fprintf(out, "%s{\"pid\":%d,\"start\":\"%llu.%06llu\",\"executable\":",
-                comma ? "," : "", k->kp_proc.p_pid, b.pbi_start_tvsec, b.pbi_start_tvusec);
+        fprintf(out, "%s{\"pid\":%d,\"start\":\"%llu.%06llu\",\"tty\":%u,\"tty-parent\":%d,\"executable\":",
+                comma ? "," : "", k->kp_proc.p_pid, b.pbi_start_tvsec, b.pbi_start_tvusec,
+                b.e_tdev, tty_parent(procs, count, i));
         comma = true;
         string(out, path);
         fputs(",\"environment\":", out); string(out, parsed.value);

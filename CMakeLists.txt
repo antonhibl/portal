@@ -95,7 +95,9 @@ if(BUILD_TESTING)
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(agents PROPERTIES TIMEOUT 30)
     add_test(NAME agent-discovery
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PORTAL_TEST_PROCESS_SNAPSHOT=$<TARGET_FILE:portal-process-tests>"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-agent-discovery-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(agent-discovery PROPERTIES TIMEOUT 30)
