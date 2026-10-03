@@ -191,3 +191,11 @@ bool portal_launcher_invoked(uint64_t registration, uint64_t session)
     return portal_channel_send((portal_string) {"launcher", 8},
                                (portal_string) {registration_word, (size_t) r}, &field, 1);
 }
+
+bool portal_launcher_blurred(uint64_t session)
+{
+    char word[32];
+    int length = snprintf(word, sizeof word, "%" PRIu64, session);
+    return portal_channel_send((portal_string) {"launcher-blur", 13},
+                               (portal_string) {word, (size_t) length}, NULL, 0);
+}

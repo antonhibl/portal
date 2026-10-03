@@ -990,11 +990,18 @@ bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
     return true;
 }
 
-bool portal_launcher_hide(portal_text *error)
+bool portal_launcher_hide(bool restore_focus, portal_text *error)
 {
+    (void) restore_focus;
     (void) error;
     launcher_calls++;
     launcher_visible = false;
+    return true;
+}
+
+bool portal_launcher_prepare(portal_text *error)
+{
+    (void) error;
     return true;
 }
 

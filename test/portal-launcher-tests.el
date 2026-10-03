@@ -32,6 +32,8 @@
   (let ((comp-installed-trampolines-h (make-hash-table)))
     (should-error (portal-launcher--check-guard) :type 'user-error)
     (puthash 'modify-frame-parameters t comp-installed-trampolines-h)
+    (should-error (portal-launcher--check-guard) :type 'user-error)
+    (puthash 'delete-frame t comp-installed-trampolines-h)
     (should-not (portal-launcher--check-guard))))
 
 (ert-deftest portal-launcher-failed-enable-removes-partial-hooks ()
@@ -41,6 +43,7 @@
     (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
               ((symbol-function 'portal-view--load) #'ignore)
               ((symbol-function 'portal--launcher-attach) #'ignore)
+              ((symbol-function 'portal--launcher-prepare) #'ignore)
               ((symbol-function 'portal--launcher-shortcut) #'ignore))
       (should-error (portal-launcher-mode 1) :type 'user-error)
       (should-not portal-launcher-mode)
@@ -68,16 +71,17 @@
              '((fullscreen . fullboth))))))
 
 (ert-deftest portal-launcher-disable-removes-hooks-without-a-frame ()
-  (unwind-protect
-      (progn
-        (portal-launcher--hooks t)
-        (portal-launcher--hooks t)
-        (portal-launcher-mode -1)
-        (portal-launcher-mode -1)
-        (should-not (memq #'portal-launcher--before-delete delete-frame-functions))
-        (should-not (memq #'portal-launcher--disable kill-emacs-hook))
-        (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
-    (portal-launcher--hooks nil)))
+  (let ((native-comp-enable-subr-trampolines nil))
+    (unwind-protect
+        (progn
+          (portal-launcher--hooks t)
+          (portal-launcher--hooks t)
+          (portal-launcher-mode -1)
+          (portal-launcher-mode -1)
+          (should-not (memq #'portal-launcher--before-delete delete-frame-functions))
+          (should-not (memq #'portal-launcher--disable kill-emacs-hook))
+          (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
+      (portal-launcher--hooks nil))))
 
 (defmacro portal-launcher-test--registration (&rest body)
   "Exercise Lisp enable/rebind with a native registration stand-in."
@@ -91,6 +95,7 @@
                ((symbol-function 'portal-launcher--check-guard) #'ignore)
                ((symbol-function 'portal-view--load) #'ignore)
                ((symbol-function 'portal--launcher-attach) #'ignore)
+               ((symbol-function 'portal--launcher-prepare) #'ignore)
                ((symbol-function 'portal--launcher-shortcut)
                 (lambda (chord)
                   (when (equal chord "conflict") (error "Shortcut conflict"))
@@ -174,5 +179,85 @@
       (should portal-launcher-mode)
       (should (= before portal-launcher--registration))
       (should-not (equal native-chord "")))))
+
+(ert-deftest portal-launcher-command-validation-precedes-native-work ()
+  (cl-letf (((symbol-function 'portal-launcher-show) (lambda (&rest _) (ert-fail "Presented invalid command"))))
+    (dolist (command '(nil identity 42))
+      (let ((portal-launcher-command command))
+        (should-error (portal-launcher-present) :type 'user-error)))))
+
+(defmacro portal-launcher-test--session (&rest body)
+  "Exercise real session unwinding with only the native frame stubbed."
+  (declare (indent 0))
+  `(let ((portal-launcher--frame (selected-frame))
+         (native-comp-enable-subr-trampolines nil)
+         (portal-launcher--session nil) (unread-command-events nil)
+         (hidden nil) (session-id 10) (deleted 0) (disabled 0))
+     (cl-letf (((symbol-function 'portal-launcher-show) #'ignore)
+               ((symbol-function 'portal--launcher-inspect) (lambda () (list :session session-id)))
+               ((symbol-function 'portal--launcher-hide) (lambda (&optional restore) (push restore hidden)))
+               ((symbol-function 'make-frame-invisible) #'ignore)
+               ((symbol-function 'delete-frame) (lambda (&rest _) (cl-incf deleted)))
+               ((symbol-function 'portal-launcher--disable) (lambda () (cl-incf disabled))))
+       ,@body)))
+
+(ert-deftest portal-launcher-command-success-error-and-quit ()
+  (portal-launcher-test--session
+    (let ((old-rules display-buffer-alist)
+          (old-maps emulation-mode-map-alists))
+      (should (= 42 (portal-launcher-present (lambda () (interactive) 42))))
+      (should (equal hidden '(nil)))
+      (should-error (portal-launcher-present (lambda () (interactive) (error "Command failed"))))
+      (should (equal hidden '(t nil)))
+      (should-not (portal-launcher-present (lambda () (interactive) (signal 'quit nil))))
+      (should (equal hidden '(t t nil)))
+      (should (eq old-rules display-buffer-alist))
+      (should (eq old-maps emulation-mode-map-alists))
+      (should-not portal-launcher--session))))
+
+(ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
+  (portal-launcher-test--session
+    (dolist (dismiss '(portal-launcher-present portal-launcher-toggle portal-launcher-hide portal-launcher-cancel))
+      (portal-launcher-present
+       (lambda () (interactive) (funcall dismiss) (ert-fail "Command survived dismissal"))))
+    (should (equal hidden '(t t t t)))))
+
+(ert-deftest portal-launcher-blur-is-queued-and-session-scoped ()
+  (portal-launcher-test--session
+    (portal-launcher-present
+     (lambda ()
+       (interactive)
+       (dolist (value '(nil "9" "-10" "10x" "10\n")) (portal-launcher--queue-blur value))
+       (portal-launcher--queue-blur "10" "extra")
+       (should-not unread-command-events)
+       (portal-launcher--queue-blur "10")
+       (should (equal unread-command-events '((portal-launcher-blur 10))))
+       (portal-launcher--blur '(portal-launcher-blur 9))
+       (portal-launcher--blur (pop unread-command-events))
+       (ert-fail "Command survived focus loss")))
+    (should (equal hidden '(nil)))
+    (cl-incf session-id)
+    (should (eq 'new (portal-launcher-present
+                     (lambda () (interactive) (portal-launcher--blur '(portal-launcher-blur 10)) 'new))))
+    (portal-launcher--queue-blur "11")
+    (should-not unread-command-events)))
+
+(ert-deftest portal-launcher-session-defers-deletion-until-unwound ()
+  (portal-launcher-test--session
+    (portal-launcher-present
+     (lambda ()
+       (interactive)
+       (portal-launcher--delete-frame (lambda (&rest _) (ert-fail "Deleted during command")))
+       (ert-fail "Continued after delete request")))
+    (should (= deleted 1))
+    (should (= disabled 0))
+    (should (equal hidden '(t)))))
+
+(ert-deftest portal-launcher-show-failure-restores-session-bindings ()
+  (portal-launcher-test--session
+    (cl-letf (((symbol-function 'portal-launcher-show) (lambda (&rest _) (error "Cannot present"))))
+      (should-error (portal-launcher-present (lambda () (interactive) (ert-fail "Ran without panel")))))
+    (should-not portal-launcher--session)
+    (should (equal hidden '(t)))))
 
 (provide 'portal-launcher-tests)

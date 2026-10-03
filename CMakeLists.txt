@@ -116,6 +116,7 @@ if(BUILD_TESTING)
         "elpa.gnu.org/packages/embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
         "elpa.gnu.org/packages/vertico-2.15=5c3492edb1e0020da711d9a4213a3878e90e7af8e2e6375757901f4b399872ff"
         "elpa.gnu.org/packages/orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa"
+        "elpa.gnu.org/packages/marginalia-2.13=e1b228d1d4aa4648982aa79ebb9a2e1d2824b7cd40e01d39ed541f1b7663edba"
         "elpa.gnu.org/packages/dash-2.20.0=28f84b0905f84520163f5dd2087e47cac042bd27b7ec34eeb293f1ada7d36cb2"
         "elpa.nongnu.org/nongnu/evil-1.15.0=1840cc67172a0d7cfbc58dc25eca95dff1375e6a06ddf7bc0ce9034c5ba32f32"
         "elpa.nongnu.org/nongnu/goto-chg-1.7.5=5e6dbb79355e0db5e3b5e5b8643da0738a7b69b9c0b787982b06edc0369abbc8")

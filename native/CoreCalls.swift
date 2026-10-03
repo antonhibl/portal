@@ -45,6 +45,10 @@ enum Core {
         portal_launcher_invoked(registration, session)
     }
 
+    static func launcherBlurred(session: UInt64) {
+        portal_launcher_blurred(session)
+    }
+
     /// What the core answers when a page asks to navigate.
     enum Navigation { case allow, external, emacs }
 
