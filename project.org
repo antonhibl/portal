@@ -664,3 +664,8 @@ accepted limitations or passes. The earlier prototype fullscreen result and
 automated geometry checks do not replace them. The composite final acceptance
 item stays unchecked until required results and any explicit scope decisions
 are recorded here. Do not claim everyday-use validation from this PR alone.
+
+*** Manual test report, 2026-10-04
+After the selection correction was merged in PR #74, the user reported that
+the manual tests looked good and asked to proceed with this task. The reported
+Return/arrow-selection regression is resolved in manual use.

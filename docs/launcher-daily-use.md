@@ -138,7 +138,7 @@ scope decision; missing equipment and missing results are not passes.
 | Check | Procedure and expected result | Current production evidence |
 | --- | --- | --- |
 | Normal configuration | Fresh normal Emacs; enable the documented setup. Physically invoke from another app, launch a stopped app, then activate the same running app. Destination gets focus without an ordinary Emacs frame rising. | Pending |
-| Selection without typing | Open the launcher and press Return on the highlighted app. Reopen, use Down/Up to choose another app and press Return. Both launch the selected app without requiring typed text. | Automated minibuffer and native key checks; physical/full-init checks pending |
+| Selection without typing | Open the launcher and press Return on the highlighted app. Reopen, use Down/Up to choose another app and press Return. Both launch the selected app without requiring typed text. | Pass: user-confirmed manual retest on 2026-10-04 after the selection fix; automated minibuffer and native key checks also pass |
 | Refresh and search | `C-u M-x portal-launcher-present` refreshes, `M-x launcher-refresh` works separately. Enter `!gh portal launcher` and unmatched text; check the encoded query and destination focus. A freshly installed/removed test app appears/disappears after refresh. | Prior isolated automated real-app smoke; physical/full-init pending |
 | Cancellation | From another app, try Escape, C-g, the global chord again and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. An empty completion result also cancels; Return on a highlighted app accepts it. | Automated session checks; physical checks pending |
 | Failure and recovery | Run `(portal-launcher-present (lambda () (interactive) (error "Launcher recovery check")))` from Emacs; it reports the error and hides. Invoke normally again. Repeat a stale bundle/open failure while another app is active. | Automated error/reentry; full-init/external-app case pending |
@@ -188,3 +188,9 @@ fixture's `Calculator` input, so it is not recorded as a pass. The earlier
 configured run above is historical evidence; a fresh configured recheck remains
 pending. The GUI checks used an alternate shortcut because the normal chord
 was already registered in the user's running Emacs.
+
+## Manual test report on 2026-10-04
+
+After the selection fix was merged in PR #74, the user reported that the manual
+tests looked good and asked to proceed with the task. This confirms the reported
+Return/arrow-selection regression is resolved in manual use.
