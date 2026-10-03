@@ -65,6 +65,50 @@ To open a local HTML file programmatically:
 In a web buffer, `g` loads the page again and `q` (`quit-window`) hides the
 view while the page keeps running. Killing the buffer closes the page.
 
+## Native launcher panel (opt-in)
+
+`portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
+nonactivating macOS panel. It uses Portal's existing module. Loading the feature
+does not create a frame or register a shortcut; an explicit show opts in:
+
+```elisp
+(require 'portal-launcher)
+(portal-launcher-show (get-buffer-create "*Launcher*"))
+(portal-launcher-resize 713 407)
+(portal-launcher-hide)
+(portal-launcher-show)          ; same frame and content
+(portal-launcher-mode -1)       ; restore native ownership, then delete frame
+```
+
+Start in a disposable graphical Emacs. This feature depends on internal Emacs
+NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
+only GNU Emacs NS **31.1**, revision
+`a360712c9d272d950d8d8255ef74570f7e90b7d9`. Rebuild Portal and restart Emacs before
+using the new bindings. Native-compiled Emacs also needs a working
+`modify-frame-parameters` trampoline so its setters cannot bypass the frame guard.
+Leave `native-comp-enable-subr-trampolines` enabled; if the trampoline is missing
+and Emacs cannot compile it, enabling the launcher fails before creating a frame.
+
+Customize `portal-launcher-size` (default `(720 420)`), `portal-launcher-offset`
+(`(0 0)`, positive right/down), `portal-launcher-screen` (nil uses the pointer's
+monitor), `portal-launcher-font`, `portal-launcher-shadow`, and
+`portal-launcher-corner-radius`. Show again to apply them. Size and offsets use
+AppKit logical points, independent of Retina scale. The panel centers within the
+monitor's usable area, clamps onscreen, and repositions when displays change.
+`portal-launcher-frame-parameters` supplies initial colors, fringes and borders.
+
+Fonts, buffers and appearance remain ordinary Emacs customization. The frame's
+native role is fixed: changing decorations, fullscreen, parentage, toolbars or
+focus policy is rejected. Deleting the launcher frame is supported; the next
+show creates a new one. Hide preserves the launcher's content and returns Emacs
+selection to the previous ordinary window without changing that window's buffer.
+
+This is the panel lifecycle feature. Global shortcuts, application picking and
+automatic command-session dismissal are subsequent tasks. Finish or cancel an
+active launcher minibuffer before hiding it. Outbound native drag-and-drop is
+cancelled; full IME and VoiceOver validation remains in the daily-use task.
+See [implementation and measured geometry](docs/launcher-native-panel.md).
+
 ## Shared keyboard controls
 
 Emacs is the system, and each native view an app running in it, as a page runs
@@ -1625,6 +1669,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -l "$PWD/test/portal-tasks-view-gui-tests.el" \
   -l "$PWD/test/portal-terminal-choose-gui-tests.el" \
   -l "$PWD/test/portal-agents-gui-tests.el" \
+  -l "$PWD/test/portal-launcher-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
@@ -1640,7 +1685,7 @@ for core in channel views input terminals web toolbar; do
 done
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   -I native/Core/include -import-objc-header test/native-core.h \
-  native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
+  native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift native/Launcher.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
@@ -1681,6 +1726,15 @@ helpers for test expectations, and `runChecks` at the entry point to report thro
 errors. This keeps ordinary test failures from triggering macOS crash dialogs;
 crashes in the native code under test are still reported by macOS. The checks
 still open real windows to exercise AppKit and WebKit.
+
+For the launcher's native checks, replace `test/native-focus.swift` and
+`build/check-focus` in that command with `test/native-launcher.swift` and
+`build/check-launcher`. They exercise negative monitor origins, offset/clamping
+rules, display-change notifications, attachment rejection and rollback, donor
+restoration and panel release. The graphical `portal-launcher-gui-` tests use
+the real Emacs NS view, including repeated show/hide and delete/recreate,
+appearance/font changes, child-frame deletion, native keyboard input and exact
+geometry on every connected monitor. Run them with subroutine trampolines enabled.
 
 Verify the failure reporter without opening windows:
 
@@ -1770,7 +1824,7 @@ from a page that has gone is ignored; and that a closed view hears nothing. It c
 oldest first, stopping at one that fails.
 
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
-the 20 functions and their arities, the input functions' conversion of chords and
+the 24 functions and their arities, the input functions' conversion of chords and
 binding JSON, the toolbar theme's conversion of face colors, and the conversion of
 options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,

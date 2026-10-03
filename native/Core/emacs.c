@@ -307,6 +307,55 @@ STRINGS(web_receive, portal_web_views_receive(a[0], result, error))
 STRINGS(terminal_themes, portal_terminals_themes(result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
+STRINGS(launcher_hide, portal_launcher_hide(error))
+STRINGS(launcher_detach, portal_launcher_detach(error))
+STRINGS(launcher_describe, portal_launcher_describe(result, error))
+
+/* Gate attachment even when the private binding is called directly. The
+   platform additionally checks the NS window/view classes before moving them. */
+LISP_FUNCTION(Flauncher_attach)
+{
+    const char *names[] = {"emacs-version", "emacs-repository-version"};
+    const char *supported[] = {"31.1", "a360712c9d272d950d8d8255ef74570f7e90b7d9"};
+    for (size_t i = 0; i < 2; i++) {
+        emacs_value name = symbol(env, names[i]);
+        emacs_value actual = env->funcall(env, symbol(env, "symbol-value"), 1, &name);
+        emacs_value expected = env->make_string(env, supported[i], (ptrdiff_t) strlen(supported[i]));
+        emacs_value pair[] = {actual, expected};
+        emacs_value equal = env->funcall(env, symbol(env, "equal"), 2, pair);
+        if (!returning(env))
+            return NULL;
+        if (!env->is_not_nil(env, equal)) {
+            signal_error(env, "Portal launcher requires GNU Emacs NS 31.1 revision "
+                         "a360712c9d272d950d8d8255ef74570f7e90b7d9", NULL);
+            return NULL;
+        }
+    }
+    portal_text title = {0}, error = {0};
+    emacs_value result = NULL;
+    if (read_text(env, args[0], &title))
+        result = done(env, portal_launcher_attach(borrow(title), &error), &error);
+    free(title.data);
+    return result;
+}
+
+LISP_FUNCTION(Flauncher_show)
+{
+    int64_t values[6];
+    for (size_t i = 0; i < 6; i++) {
+        values[i] = env->extract_integer(env, args[i == 5 ? 6 : i]);
+        if (!returning(env))
+            return NULL;
+    }
+    if (values[0] < 200 || values[1] < 100 || values[4] < -1 || values[5] < 0) {
+        signal_error(env, "Launcher needs size >= 200x100, screen >= -1 and radius >= 0", NULL);
+        return NULL;
+    }
+    portal_text error = {0};
+    return done(env, portal_launcher_show(values[0], values[1], values[2], values[3],
+                                          values[4], env->is_not_nil(env, args[5]), values[5],
+                                          &error), &error);
+}
 
 LISP_FUNCTION(Fopen)
 {
@@ -634,6 +683,16 @@ static const struct export {
      "Atomically replace runtime binding profiles from JSON."},
     {"portal--input", 2, 3, Finput, NULL,
      "Perform ACTION on native TARGET, optionally validating its handoff SERIAL."},
+    {"portal--launcher-attach", 1, 1, Flauncher_attach, NULL,
+     "Attach new hidden launcher frame TITLE on the validated GNU Emacs NS build."},
+    {"portal--launcher-show", 7, 7, Flauncher_show, NULL,
+     "Present the launcher at WIDTH HEIGHT DX DY SCREEN SHADOW RADIUS, in logical points."},
+    {"portal--launcher-hide", 0, 0, STRINGS_FUNCTION(launcher_hide, RESULT_T),
+     "Hide the launcher, retaining its frame and content."},
+    {"portal--launcher-detach", 0, 0, STRINGS_FUNCTION(launcher_detach, RESULT_T),
+     "Restore the launcher frame's original window BEFORE deleting the Emacs frame."},
+    {"portal--launcher-inspect", 0, 0, STRINGS_FUNCTION(launcher_describe, RESULT_JSON),
+     "Return launcher attachment, visibility and native geometry as a plist."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
     {"portal--toolbar-theme", 1, 1, Ftoolbar_theme, NULL,
      "Apply toolbar face colors from JSON RGB arrays."},
