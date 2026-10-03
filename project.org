@@ -661,6 +661,27 @@ was a separate native adapter contract problem, already covered by byte tests.
   0.052/0.575/1.529 ms; unchanged ticks 0.069/0.753/2.150 ms; changed ticks
   0.603/2.598/6.061 ms. These are local observations, not deadlines.
 
+*** Review follow-up: direct package loading
+Addressed the startup finding from the review of =ad604dd= in PR #65 on
+2026-10-03. The documented =emacs -Q -l /absolute/path/portal.el= launch could
+not resolve sibling features without =-L=. Reproduction failed even earlier
+at the existing =portal-view= dependency, before reaching the new discovery
+modules. All prior test commands supplied the missing search path.
+
+- The package entry point now registers its own directory before loading any
+  features, covering both immediate and deferred sibling dependencies. This
+  restores the documented launch contract without changing user setup or the
+  discovery design. The optional Consult mode also has its missing compiler
+  declaration, keeping the entry point's byte compilation warning-free.
+- The new =startup= CTest suite runs a fresh Emacs without =-L= or a fake native
+  backend. It loads the absolute entry point from an unrelated directory and
+  checks all top-level features, discovery modules and user commands. The test
+  failed before the fix and passes afterwards; direct source and byte-compiled
+  entry-point loads also succeed without =-L=.
+- Native build, all 28 CTest suites, host Biome/type checks, changed Lisp byte
+  compilation with warnings as errors, Org lint, task graph/link validation and
+  diff checks pass. No findings are deferred.
+
 ** TODO Discover Codex sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-codex

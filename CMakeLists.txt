@@ -53,6 +53,13 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(launcher PROPERTIES TIMEOUT 30)
+    # Exercise the documented absolute-path entry point in a fresh Emacs.
+    # Do not add the package directory with -L: Portal must load its own siblings.
+    add_test(NAME startup
+        COMMAND "${EMACS}" --batch -Q
+            -l "${CMAKE_SOURCE_DIR}/test/portal-startup-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(startup PROPERTIES TIMEOUT 30)
     add_executable(portal-process-tests test/portal-process-tests.c)
     target_include_directories(portal-process-tests PRIVATE native/Core/include)
     target_compile_options(portal-process-tests PRIVATE -Wall -Wextra -Werror)

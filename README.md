@@ -1571,6 +1571,10 @@ Tested with macOS 27.0, Swift 6.4, and Emacs 31.1 with `--module-assertions`.
 C and Swift compile with warnings treated as errors; Lisp byte compilation also
 passes without warnings.
 
+`ctest --test-dir build -R startup` loads `portal.el` by absolute path in a
+fresh `emacs --batch -Q`, without `-L` or a fake backend, and verifies that
+Portal's features and commands are available from an unrelated directory.
+
 Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
 pane after a split, `portal-preview-html` reusing its buffer, `g`, `q` and
