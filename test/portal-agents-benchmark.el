@@ -208,8 +208,8 @@ both, and for any collection."
 
 (defun portal-agents-benchmark-discovery (&optional name)
   "Compare collection and rendering at 10, 50 and 100 sessions of NAME.
-NAME defaults to Claude; pass \"codex\" to measure title inference."
-  (let ((name (or name "claude")) lines)
+NAME defaults to Claude; pass \"codex\" or \"pi\" for their adapters."
+  (let ((name (or name "claude")) (portal-agents-pi-progress t) lines)
     (dolist (count '(10 50 100))
       (portal-agents-benchmark--start count)
       (let* ((buffers (portal-terminal-buffers))
@@ -223,6 +223,11 @@ NAME defaults to Claude; pass \"codex\" to measure title inference."
         (cl-letf (((symbol-function 'portal--process-snapshot) (lambda (_) processes))
                    ((symbol-function 'portal-agent-discovery--query) #'ignore))
           (portal-agent-discovery--collect)
+          (when (equal name "pi")
+            (dolist (buffer buffers)
+              (with-current-buffer buffer
+                (setq portal-terminal--progress "indeterminate"
+                      portal-terminal--progress-time (floor (* 1000000 (float-time)))))))
           (dolist (agent portal-agent-discovery--agents)
             (setf (portal-agent-activity agent) "working" (portal-agent-reason agent) "Benchmark"))
           (setq portal-agent-discovery--queried (float-time))

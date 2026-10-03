@@ -130,6 +130,16 @@ int main(int count, char **args)
     memset(bytes, 'x', sizeof bytes);
     argc = 1; memcpy(bytes, &argc, sizeof argc);
     assert(!parse_arguments(bytes, sizeof bytes, variable, &parsed));
+    /* Pi sets process.title = "pi": original argc survives while Node zeroes
+       the remaining argv area. The environment starts after that padding. */
+    const char renamed[] = "/bin/node\0\0pi\0\0\0\0\0\0\0PORTAL_TERMINAL=42/terminal:9\0X=y\0";
+    argc = 4;
+    memset(bytes, 0, sizeof bytes);
+    memcpy(bytes, &argc, sizeof argc);
+    memcpy(bytes + sizeof argc, renamed, sizeof renamed);
+    assert(parse_arguments(bytes, sizeof argc + sizeof renamed, variable, &parsed));
+    assert(parsed.argc == 4 && !strcmp(parsed.argv, "pi"));
+    assert(!strcmp(parsed.value, "42/terminal:9"));
     /* JSON strings must escape control bytes and quotes in paths and markers. */
     char *json = NULL;
     size_t length = 0;

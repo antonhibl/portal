@@ -65,6 +65,8 @@ if(BUILD_TESTING)
     target_compile_options(portal-process-tests PRIVATE -Wall -Wextra -Werror)
     add_test(NAME processes COMMAND portal-process-tests)
     set_tests_properties(processes PROPERTIES TIMEOUT 30)
+    add_test(NAME pi-extension COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/portal-pi.test.ts")
+    set_tests_properties(pi-extension PROPERTIES TIMEOUT 30)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
     add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions

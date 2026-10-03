@@ -181,6 +181,20 @@ a folder, loose, in no project."
       (portal-metadata-test--report terminal :progress "remove")
       (should (equal (portal-metadata-test--get terminal :progress) "remove")))))
 
+(ert-deftest portal-terminal-metadata-preserves-native-progress-time ()
+  (portal-metadata-test--environment
+    (let ((terminal (portal-metadata-test--open "one/app")))
+      (portal-metadata-test--report terminal :progress "remove" :progress-time 100)
+      (should (= (buffer-local-value 'portal-terminal--progress-time terminal) 100))
+      ;; Delivery of unrelated metadata cannot make old progress fresh.
+      (portal-metadata-test--report terminal :title "π - app")
+      (should (= (buffer-local-value 'portal-terminal--progress-time terminal) 100))
+      (portal-metadata-test--report terminal :progress "remove" :progress-time 200)
+      (should (= (buffer-local-value 'portal-terminal--progress-time terminal) 200))
+      (dolist (invalid '(nil 0 -1 "200"))
+        (portal-metadata-test--report terminal :progress-time invalid)
+        (should-not (buffer-local-value 'portal-terminal--progress-time terminal))))))
+
 (ert-deftest portal-terminal-metadata-reads-changes-made-while-opening ()
   (portal-metadata-test--environment
     ;; The native module drops a record sent before its target is open, so a

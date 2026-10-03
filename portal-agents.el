@@ -80,7 +80,7 @@ A session whose program exited stays while its buffer keeps its view."
        (let* ((key (car session))
               (agent (cl-find key agents :key #'portal-agent-key :test #'equal))
               (metadata (portal-terminal-metadata (car key))))
-         ;; Progress is never displayed; only Claude uses it as a query trigger.
+         ;; Raw progress is not displayed; adapters own its interpretation.
          (setq metadata (plist-put metadata :progress nil))
          (when agent
            (setq metadata (plist-put metadata :title
@@ -88,8 +88,10 @@ A session whose program exited stays while its buffer keeps its view."
            (setq metadata (append metadata (list :activity (portal-agent-activity agent)
                                                  :reason (portal-agent-reason agent)
                                                  :process-error (portal-agent-process-error agent)))))
-         (list key (or (cdr session) (and agent (if (equal (portal-agent-name agent) "codex")
-                                                  "Codex (title)" "Claude"))) metadata))) sessions)))
+         (list key (or (cdr session) (and agent (pcase (portal-agent-name agent)
+                                                 ("codex" "Codex (title)")
+                                                 ("pi" "Pi (progress)")
+                                                 (_ "Claude")))) metadata))) sessions)))
 
 (defun portal-agents--rows (facts)
   "Return a row for each of FACTS, from `portal-agents--facts'.

@@ -822,7 +822,7 @@ as recorded above; this change does not claim new evidence for those cases.
   pass. The existing GCC =LIBRARY_PATH= workaround recorded in the Claude task
   was needed for this machine's native Emacs test trampolines.
 
-** TODO Discover Pi sessions automatically and show their live status :task:
+** DONE Discover Pi sessions automatically and show their live status :task:
 :PROPERTIES:
 :CUSTOM_ID: agent-discovery-pi
 :ID: e2d79329-b507-4a41-a355-cb4846ef2ba8
@@ -869,21 +869,106 @@ The spike proved identity with no setup and the extension's lifecycle with Pi
   and reload. Fixtures: =pi-*.jsonl= in [[file:test/fixtures/agent-signals][test/fixtures/agent-signals]].
 
 *** Plan and acceptance
-- [ ] Identify Pi independently of generic progress output. If the selected source
+- [X] Identify Pi independently of generic progress output. If the selected source
   is a lifecycle extension, initialize identity and activity on startup, validate
   =agent_settled= and =ctx.isIdle()= for the tested version, and avoid competing
   progress writers. Do not assume an =agent_end= or progress-clear means settled.
-- [ ] Normal launches after any documented one-time setup and existing running
+- [X] Normal launches after any documented one-time setup and existing running
   sessions are discovered without per-session registration or relaunch. Hidden
   terminals and an unopened dashboard do not lose identity or activity evidence.
-- [ ] Replay work, retries, compaction, queued continuation, cancellation, failure
+- [X] Replay work, retries, compaction, queued continuation, cancellation, failure
   and input dialogs. Test reload/conversation changes, source loss, exit/relaunch
   and stale events; report unsupported evidence as unknown.
-- [ ] A real Pi/Claude smoke test verifies separate sessions in one directory,
+- [X] A real Pi/Claude smoke test verifies separate sessions in one directory,
   ordinary/quick/hidden terminals and correct =RET= destinations. Include Codex
   when available and reject non-agent signals without changing shared UI behavior.
-- [ ] Document tested versions, setup, freshness and measured latency; verify
+- [X] Document tested versions, setup, freshness and measured latency; verify
   extension/collector cleanup, responsiveness and existing plus new checks.
+
+*** Outcome
+Pi now uses the shared foreground process collector, incarnation rules and
+agent dashboard. =portal-agents-discover-pi= defaults to true independently of
+Claude and Codex; plain launches, including already-running Pi and hidden quick
+terminals, need no tracking. Pi cannot issue or receive Claude status queries.
+Manual labels merge into the same row; navigation, untracking and process exit
+retain the shared behavior.
+
+The production extension is [[file:extensions/portal-pi.ts][extensions/portal-pi.ts]],
+with one-time installation and =portal-agents-pi-progress= setup documented in
+[[file:README.md][README.md]]. Activity is opt-in because generic OSC progress
+cannot prove that the extension is installed or is the sole writer. No user
+settings were changed. The spike extension remains historical evidence.
+
+The extension only writes for Portal TUI sessions. It reports work, nested
+extension UI prompts and settlement, using =agent_settled= and =ctx.isIdle()=;
+it never treats =agent_end= as settlement. Session startup/new/resume/fork reset
+prompt bookkeeping, reload shuts down the old source, and shutdown emits an
+unsupported/error progress state so losing the source becomes unknown.
+
+Native progress metadata now includes receipt time in Unix microseconds,
+including repeated states. Pi accepts only reports received after discovering
+that process incarnation (or retracking it), so old cached progress and delayed
+metadata delivery cannot initialize another run. Native metadata still updates
+while hidden; redisplay revalidates the process and recovers the last report for
+an unchanged incarnation. There is no new timer, status subprocess or hidden
+process scan. Initial discovery is unknown until a fresh report; =/reload=,
+=/new= or a later turn provides it even for an already-running session.
+
+*** Evidence limits
+Pi 0.87.0's installed source and upstream lifecycle documentation confirm that
+=agent_settled= follows automatic continuation and that =isIdle()= includes
+active runs and compaction. Manual compaction success is emitted before its
+compaction flag clears and has no subsequent settlement event: the extension
+reports unknown there until another lifecycle report. Failure/cancellation may
+settle to idle without implying success. Built-in menus are not extension UI
+prompts. Real retry and automatic-compaction provider traces remain unavailable;
+those paths, resume/fork and nested prompts use synthetic lifecycle replay.
+
+Progress is a configured source, not a sender-authenticated protocol. Competing
+writers or another process's terminal output received after discovery can still
+mislead it; native timestamps exclude delayed metadata, not delayed PTY output.
+The documented setup keeps Pi's built-in terminal progress off and requires the
+extension to be the sole writer. There is no heartbeat, so silence cannot prove
+an extension failed. Missing/unsupported evidence is labelled unknown.
+
+*** Verification
+- =./build.sh= and all 31 CTest suites pass. Discovery has 37 passing ERT
+  tests, including the real Node/PTY identity controls. Added checks cover Pi
+  identity, source setup, state mapping, delayed reports, PID reuse, retracking,
+  hidden/manual collection, mixed sources, failure recovery and unchanged-row
+  redraw suppression. Native parser tests cover Node's renamed/NUL-padded argv;
+  terminal metadata tests check native receipt timestamps.
+- Five Bun extension tests (54 assertions) replay recorded Pi 0.87.0 tool,
+  queued-work, cancellation and provider-failure events, plus synthetic retry,
+  compaction, nested dialogs, reload and conversation changes. They verify no
+  output outside Portal TUI sessions and no output after shutdown.
+- =portal-discovery-gui-mixed-pi-claude-codex= passes in a disposable graphical
+  Emacs 31.1 with Pi 0.87.0, Claude Code 2.1.288 and Codex CLI 0.155.1. Plain
+  launches share one directory. Checks include pre-existing Pi, one harmless
+  tool turn, real extension input dialogs, hidden-dashboard recovery, =/new=,
+  =/reload=, exit/relaunch and exact ordinary/quick-terminal RET destinations.
+  A temporary Pi agent directory installs the extension once and uses the
+  already-configured OpenRouter provider; the user's settings are untouched.
+  With the default two-second refresh interval, prompt-to-working was 1.785 s
+  and launch-to-row was 1.982 s. These are local observations, not guarantees.
+- Biome and host TypeScript checks pass. The extension and its tests also
+  type-check against the installed Pi 0.87.0 declarations. Changed production
+  Lisp byte-compiles with warnings treated as errors.
+- In batch Emacs, 200 iterations per case with simulated Pi process snapshots
+  measured the following; native scanning and graphical redisplay are excluded:
+
+  | Sessions | Collection ms | Unchanged tick ms | Changed tick ms | Unchanged KB |
+  |----------+---------------+-------------------+-----------------+--------------|
+  |       10 |         0.382 |             0.523 |           1.260 |        117.4 |
+  |       50 |         2.477 |             3.053 |           5.398 |        632.0 |
+  |      100 |         6.470 |             8.267 |          13.838 |       1556.7 |
+
+  Changed means all titles change. The graphical smoke test keeps navigation
+  responsive, and batch checks show no redraw for repeated progress states and
+  no timer or discovery while hidden. The existing GCC =LIBRARY_PATH= workaround
+  was used for native Emacs trampolines.
+- Org lint, unique task IDs, dependency targets/cycles and internal task links
+  pass across =project.org= and =project.org_archive=.
 
 * Launcher :launcher:
 The first milestone is a global macOS application launcher whose UI is a real
