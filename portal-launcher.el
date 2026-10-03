@@ -4,6 +4,11 @@
 ;; Opt-in and build-restricted: this moves Emacs's internal NS view. A native
 ;; defect can crash Emacs. Loading this file creates no frame or shortcut.
 (require 'portal-view)
+(require 'subr-x)
+
+(declare-function launcher "launcher" (&optional refresh))
+(declare-function launcher--bang-for-input "launcher" (input))
+(defvar launcher-bangs)
 
 (declare-function portal--launcher-attach "portal-launcher" (title))
 (declare-function portal--launcher-prepare "portal-launcher" ())
@@ -18,12 +23,55 @@
 (defvar portal-launcher-mode nil)
 (defvar portal-launcher--registration nil "Active native shortcut ID, or nil when disabled.")
 
-(defcustom portal-launcher-command nil
+(defcustom portal-launcher-command #'portal-launcher-applications
   "Interactive command run by the launcher shortcut and toggle.
+The default uses the optional launcher.el package for apps and web searches.
 Nil keeps the reusable buffer presentation.  A command runs synchronously
 inside `portal-launcher-present', with the user's completion configuration.
 Commands that deliberately select other frames require their own wrapper."
   :type '(choice (const :tag "Show a buffer" nil) function))
+
+;;;###autoload
+(defun portal-launcher-applications (&optional refresh)
+  "Pick an application or web search with the optional launcher.el package.
+This is the default command inside `portal-launcher-present'. With prefix
+argument REFRESH, rebuild the package's Spotlight cache before prompting.
+Use `launcher-refresh' to refresh separately. Empty input (even with a
+preselected completion candidate) and bangs without a query cancel.
+The user's completion reader, app identities and search settings are kept;
+ordinary `launcher' invocations are unchanged."
+  (interactive "P")
+  (unless (require 'launcher nil t)
+    (user-error "Install launcher.el from https://github.com/xiaoxinghu/launcher.el and add it to load-path (see Portal README)"))
+  (let* ((reader completing-read-function)
+         (completing-read-function
+          (lambda (&rest arguments)
+            ;; Capture input before the reader inserts a highlighted candidate
+            ;; on Return. An untouched/blank prompt must not launch that app.
+            (let (input)
+              (let* ((choice
+                      (minibuffer-with-setup-hook
+                          (lambda ()
+                            (setq input "")
+                            ;; Stock completion binds Space to word completion,
+                            ;; which eats the separator in "!g query". Keep Tab
+                            ;; completion and any explicitly customized binding.
+                            (when (eq (key-binding " ") #'minibuffer-complete-word)
+                              (use-local-map (copy-keymap (current-local-map)))
+                              (local-set-key " " #'self-insert-command))
+                            (add-hook 'pre-command-hook
+                                      (lambda () (setq input (minibuffer-contents-no-properties)))
+                                      nil t))
+                        (let ((completing-read-function reader))
+                          (apply reader arguments))))
+                     (bang (launcher--bang-for-input choice)))
+                (when (or (string-blank-p (or input choice))
+                          (string-blank-p choice)
+                          (assoc-string (string-trim choice) launcher-bangs)
+                          (and bang (string-blank-p (substring choice (1+ (length (car bang)))))))
+                  (signal 'quit nil))
+                choice)))))
+    (launcher refresh)))
 
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
   tag native-id teardown)
