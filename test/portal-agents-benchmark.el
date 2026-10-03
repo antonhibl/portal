@@ -206,9 +206,10 @@ both, and for any collection."
     (kill-emacs 0)))
 
 
-(defun portal-agents-benchmark-discovery ()
-  "Compare automatic collection and rendering at 10, 50 and 100 sessions."
-  (let (lines)
+(defun portal-agents-benchmark-discovery (&optional name)
+  "Compare collection and rendering at 10, 50 and 100 sessions of NAME.
+NAME defaults to Claude; pass \"codex\" to measure title inference."
+  (let ((name (or name "claude")) lines)
     (dolist (count '(10 50 100))
       (portal-agents-benchmark--start count)
       (let* ((buffers (portal-terminal-buffers))
@@ -217,7 +218,7 @@ both, and for any collection."
                        collect (list :pid pid :start "100.000001" :ancestors '(1) :tty-parent (emacs-pid)
                                      :environment (format "%s/%s" (emacs-pid)
                                                           (buffer-local-value 'portal-view--target buffer))
-                                     :argv '("claude") :executable "/opt/claude/versions/2.1.287"))))
+                                     :argv (list name) :executable (concat "/opt/bin/" name)))))
         (setq portal-agents--tracked nil)
         (cl-letf (((symbol-function 'portal--process-snapshot) (lambda (_) processes))
                    ((symbol-function 'portal-agent-discovery--query) #'ignore))

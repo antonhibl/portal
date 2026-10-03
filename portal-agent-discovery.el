@@ -1,4 +1,4 @@
-;;; portal-agent-discovery.el --- Foreground Claude discovery -*- lexical-binding: t; -*-
+;;; portal-agent-discovery.el --- Foreground agent discovery -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Process identity and activity collection, independent of table rendering.
@@ -23,8 +23,15 @@ foregrounded.  Terminals must have been started by a build with discovery."
 Use an absolute path if Claude is not on Emacs's `exec-path'."
   :type 'string :group 'portal-agents)
 
+(defcustom portal-agents-discover-codex t
+  "Discover foreground Codex sessions when the dashboard is refreshed.
+Activity is inferred from Codex's default terminal title, not an API report.
+Custom titles and non-approval menus can make that inference inaccurate.
+No Codex setup is required; an absent title means unknown activity."
+  :type 'boolean :group 'portal-agents)
+
 (cl-defstruct (portal-agent (:constructor portal-agent--create))
-  key pid start signal (revision 0) (activity "unknown")
+  key pid start (name "claude") signal (revision 0) (activity "unknown")
   (reason "Not yet listed (possibly at a trust dialog)") process-error)
 
 (defvar portal-agent-discovery--agents nil "Current foreground agents, in terminal order.")
@@ -55,7 +62,8 @@ Use an absolute path if Claude is not on Emacs's `exec-path'."
 
 (defun portal-agent-discovery--identity (agent)
   "Return AGENT's terminal and process incarnation."
-  (list (portal-agent-key agent) (portal-agent-pid agent) (portal-agent-start agent)))
+  (list (portal-agent-key agent) (portal-agent-pid agent) (portal-agent-start agent)
+        (portal-agent-name agent)))
 
 (defun portal-agent-discovery--live-p (agent)
   "Whether AGENT's buffer still owns its original terminal view."
@@ -100,23 +108,27 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
                              (append (portal--process-snapshot "PORTAL_TERMINAL") nil)))
              (prefix (format "%s/" (emacs-pid)))
              (sessions (portal-agent-process-sessions processes (emacs-pid)))
-             (old portal-agent-discovery--agents) agents)
+             (old portal-agent-discovery--agents) agents identities)
         (dolist (buffer (portal-terminal-buffers nil t))
           (let* ((key (cons buffer (buffer-local-value 'portal-view--target buffer)))
                  (marker (concat prefix (cdr key)))
-                 (p (cdr (assoc marker sessions))))
-            (when (and (equal (plist-get p :agent) "claude")
+                 (p (cdr (assoc marker sessions)))
+                 (name (plist-get p :agent)))
+            (when (and (member name '("claude" "codex"))
                        (not (buffer-local-value 'portal-terminal--exited buffer)))
-              (let* ((identity (list key (plist-get p :pid) (plist-get p :start)))
-                     (agent (or (cl-find identity old :key #'portal-agent-discovery--identity :test #'equal)
-                                (portal-agent--create :key key :pid (plist-get p :pid)
-                                                      :start (plist-get p :start)))))
-                (setf (portal-agent-process-error agent) nil)
-                (push agent agents)))))
+              (let ((identity (list key (plist-get p :pid) (plist-get p :start) name)))
+                ;; Preserve an explicitly hidden run while its adapter is off.
+                (push identity identities)
+                (when (if (equal name "claude") portal-agents-discover-claude portal-agents-discover-codex)
+                  (let ((agent (or (cl-find identity old :key #'portal-agent-discovery--identity :test #'equal)
+                                   (portal-agent--create :key key :pid (plist-get p :pid)
+                                                         :start (plist-get p :start) :name name))))
+                    (setf (portal-agent-process-error agent) nil)
+                    (push agent agents)))))))
         (setq portal-agent-discovery--agents (nreverse agents)
               portal-agent-discovery--hidden
               (cl-intersection portal-agent-discovery--hidden
-                               (mapcar #'portal-agent-discovery--identity portal-agent-discovery--agents) :test #'equal))
+                               identities :test #'equal))
         t)
     (error
      (dolist (agent portal-agent-discovery--agents)
@@ -124,16 +136,32 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
        (portal-agent-discovery--unknown agent (concat "Discovery failed: " (error-message-string err))))
      nil)))
 
-(defun portal-agent-discovery--visible-agents ()
-  "Return the discovered agents not explicitly hidden."
+(defun portal-agent-discovery--visible-agents (&optional name)
+  "Return discovered agents not explicitly hidden, optionally only NAME."
   (seq-remove (lambda (a) (or (not (portal-agent-discovery--live-p a))
+                             (and name (not (equal name (portal-agent-name a))))
                              (portal-agent-discovery--hidden-p a)))
               portal-agent-discovery--agents))
 
+(defun portal-agent-discovery--codex-activity ()
+  "Infer Codex activity from cached titles after a successful process scan.
+Notifications and progress supply no evidence here.  Re-read even unchanged
+titles so redisplay and recovery from a failed scan restore the inference."
+  (dolist (agent (portal-agent-discovery--visible-agents "codex"))
+    (let* ((title (buffer-local-value 'portal-terminal--title (car (portal-agent-key agent))))
+           (activity (cond ((or (null title) (string-blank-p title)) "unknown")
+                           ((string-match-p "\\`[⠀-⣿]" title) "working")
+                           ((let ((case-fold-search nil)) (string-match-p "Action Required" title)) "waiting")
+                           (t "idle"))))
+      (setf (portal-agent-activity agent) activity
+            (portal-agent-reason agent)
+            (if (equal activity "unknown") "No Codex terminal title; activity unavailable"
+              "Inferred from Codex terminal title; custom titles and menus can mislead; idle does not mean success")))))
+
 (defun portal-agent-discovery--observe ()
-  "Notice all title/progress transitions, even while a query is in flight."
+  "Notice Claude title/progress transitions, even while a query is in flight."
   (let (changed)
-    (dolist (agent (portal-agent-discovery--visible-agents))
+    (dolist (agent (portal-agent-discovery--visible-agents "claude"))
       (let ((signal (portal-agent-discovery--signal (car (portal-agent-key agent)))))
         (unless (equal signal (portal-agent-signal agent))
           (setf (portal-agent-signal agent) signal)
@@ -142,8 +170,8 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
           (setq changed t))))
     changed))
 
-(defun portal-agent-discovery--stop ()
-  "Cancel collection and release query resources.  Keep identities for redisplay."
+(defun portal-agent-discovery--cancel-query ()
+  "Release the Claude status query and its resources."
   (when portal-agent-discovery--timeout (cancel-timer portal-agent-discovery--timeout))
   (setq portal-agent-discovery--timeout nil portal-agent-discovery--pending nil)
   (when-let* ((process portal-agent-discovery--process))
@@ -151,7 +179,11 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
     (set-process-sentinel process #'ignore)
     (delete-process process)
     (dolist (buffer (list (process-buffer process) (process-get process 'stderr)))
-      (when (buffer-live-p buffer) (kill-buffer buffer))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(defun portal-agent-discovery--stop ()
+  "Cancel collection and release query resources.  Keep identities for redisplay."
+  (portal-agent-discovery--cancel-query)
   (dolist (agent portal-agent-discovery--agents)
     (portal-agent-discovery--unknown agent "Refresh paused")))
 
@@ -210,6 +242,7 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
       (when (and portal-agents-discover-claude (portal-agents--shown-p))
         ;; Revalidate the process start time before accepting a PID-only answer.
         (when (portal-agent-discovery--scan)
+          (portal-agent-discovery--codex-activity)
           (when (portal-agent-discovery--observe) (setq portal-agent-discovery--pending t))
           (portal-agent-discovery--apply requested statuses failure))
         (portal-agents--changed)
@@ -221,7 +254,7 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
   "Request status asynchronously, with one process and a five-second deadline."
   (if portal-agent-discovery--process
       (setq portal-agent-discovery--pending t)
-    (when-let* ((agents (portal-agent-discovery--visible-agents)))
+    (when-let* ((agents (portal-agent-discovery--visible-agents "claude")))
       (let ((buffer (generate-new-buffer " *portal-claude-status*"))
             (stderr (generate-new-buffer " *portal-claude-errors*"))
             ;; A dashboard may have been opened from a remote buffer.
@@ -269,12 +302,14 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
   "Discover current agents and schedule status when needed; FORCE queries on show."
   (when (and (not portal-agent-discovery--collecting) (portal-agents--shown-p))
     (let ((portal-agent-discovery--collecting t))
-      (if (not portal-agents-discover-claude)
+      (if (not (or portal-agents-discover-claude portal-agents-discover-codex))
           (progn (portal-agent-discovery--stop) (setq portal-agent-discovery--agents nil))
         (when (portal-agent-discovery--scan)
+          (portal-agent-discovery--codex-activity)
           (let* ((changed (portal-agent-discovery--observe))
                  (elapsed (- (float-time) portal-agent-discovery--queried))
-                 (agents (portal-agent-discovery--visible-agents)))
+                 (agents (portal-agent-discovery--visible-agents "claude")))
+            (unless agents (portal-agent-discovery--cancel-query))
             (when (and agents
                        (or force changed (> elapsed 30)
                            (and (> elapsed 4) (seq-some (lambda (a) (equal (portal-agent-activity a) "unknown")) agents))))
@@ -283,7 +318,9 @@ objects, so replacement, exit, PID reuse and late replies cannot create rows."
 (defun portal-agent-discovery--metadata-changed ()
   "Use a cached terminal transition to trigger status while live and shown."
   (when (and portal-agents-discover-claude portal-agents-live-update
-             (portal-agents--shown-p) (portal-agent-discovery--find (current-buffer))
+             (portal-agents--shown-p)
+             (let ((agent (portal-agent-discovery--find (current-buffer))))
+               (and agent (equal (portal-agent-name agent) "claude")))
              (portal-agent-discovery--observe))
     (portal-agent-discovery--query)))
 

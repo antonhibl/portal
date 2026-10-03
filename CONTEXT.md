@@ -41,8 +41,8 @@ An automatically discovered agent running in a terminal's foreground. A new run 
 _Avoid_: identifying an agent by its terminal title or project
 
 **Agent activity**:
-Whether an agent is working, idle or waiting for input, as reported by a verified source, or unknown when that source cannot say. Idle does not mean successful task completion.
-_Avoid_: inferring activity from process state or titles
+Whether an agent is working, idle or waiting for input, reported by a verified source or explicitly labelled as inferred, or unknown when evidence is unavailable. Idle does not mean successful task completion.
+_Avoid_: treating inferred activity as reported fact, inferring activity from process liveness
 
 ## Web content
 

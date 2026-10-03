@@ -1,7 +1,7 @@
 ;;; portal-agents.el --- A live list of agent sessions -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Automatically discovered Claude sessions and optional manually tracked
+;; Automatically discovered agent sessions and optional manually tracked
 ;; terminals share one ordinary table. Collection lives in portal-agent-discovery;
 ;; rendering uses cached metadata and preserves unchanged rows and window positions.
 
@@ -80,7 +80,7 @@ A session whose program exited stays while its buffer keeps its view."
        (let* ((key (car session))
               (agent (cl-find key agents :key #'portal-agent-key :test #'equal))
               (metadata (portal-terminal-metadata (car key))))
-         ;; Progress is a query trigger, not a displayed fact, for every row.
+         ;; Progress is never displayed; only Claude uses it as a query trigger.
          (setq metadata (plist-put metadata :progress nil))
          (when agent
            (setq metadata (plist-put metadata :title
@@ -88,7 +88,8 @@ A session whose program exited stays while its buffer keeps its view."
            (setq metadata (append metadata (list :activity (portal-agent-activity agent)
                                                  :reason (portal-agent-reason agent)
                                                  :process-error (portal-agent-process-error agent)))))
-         (list key (or (cdr session) (and agent "Claude")) metadata))) sessions)))
+         (list key (or (cdr session) (and agent (if (equal (portal-agent-name agent) "codex")
+                                                  "Codex (title)" "Claude"))) metadata))) sessions)))
 
 (defun portal-agents--rows (facts)
   "Return a row for each of FACTS, from `portal-agents--facts'.
@@ -283,7 +284,7 @@ closes or is replaced.  A program exiting does not end it."
   "Remove terminal BUFFER from the agent dashboard; its program keeps running.
 BUFFER is a buffer or its name.  Interactively, untrack the terminal on this
 line of the dashboard, or else read a listed terminal's name.
-A discovered Claude run stays hidden until it leaves the foreground or is
+A discovered agent run stays hidden until it leaves the foreground or is
 tracked again.  A later run is discovered normally."
   (interactive (list (or (portal-agents--at-point)
                          (portal-agents--read "Untrack terminal: " #'portal-agents--listed-p))))
@@ -328,12 +329,13 @@ With prefix ARG, turn them on if ARG is positive, and off otherwise."
   "u" #'portal-agents-untrack)
 
 (define-derived-mode portal-agents-mode tabulated-list-mode "Agents"
-  "The agent dashboard: discovered Claude sessions and manually tracked terminals.
+  "The agent dashboard: discovered agent sessions and manually tracked terminals.
 Each row shows a terminal's buffer, the agent label it was tracked with,
 its assigned project, whether its program runs, its activity, its
 directory and the title its program set.  A running program may be
 working, idle or waiting: Claude reports activity through its status command;
-other terminals stay unknown.  Hover activity for its source or unknown reason.
+Codex activity is inferred from its default title.  Other terminals stay
+unknown.  Hover activity for its source or unknown reason.
 Idle does not mean success.  Titles omit a leading activity marker.
 
 \\[portal-agents-visit] visits a terminal with the keyboard.
@@ -356,7 +358,7 @@ While shown, the list refreshes itself; see `portal-agents-live-update'.
 
 ;;;###autoload
 (defun portal-agents ()
-  "Show discovered Claude sessions and optionally tracked terminals.
+  "Show discovered agent sessions and optionally tracked terminals.
 There is one dashboard.  It is an ordinary text buffer, with no native view.
 See `portal-agents-mode'."
   (interactive)
