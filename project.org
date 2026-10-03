@@ -644,6 +644,18 @@ native events to settle during cleanup. The full launcher matrix passes with
 that fixture change. No production focus behavior was changed.
 
 *** Remaining acceptance gates
+The 2026-10-04 no-typing selection correction under [[#launcher-applications]]
+is included in this branch. The configured-completion regression and hands-on
+matrix now distinguish accepting a highlighted app from an empty completion
+result. Return must accept the initial app or an arrow-selected app without
+typed text; Escape and bangs without a query still cancel.
+
+The combined 15-test launcher GUI suite, launcher CTest checks, changed-test
+byte compilation, shell syntax and Org validation pass after this update.
+The copied-settings recheck received unrelated keystrokes that changed the
+fixture input; it is inconclusive and needs a fresh run. The prior successful
+configured run remains historical evidence, not verification of this update.
+
 Keep this task TODO. The fresh full-init/normal-session workflow, physical
 production fullscreen/Spaces, monitor disconnect/reconnect, Chinese/Japanese
 IME candidate/commit and VoiceOver spoken prompt/candidate navigation still

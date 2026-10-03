@@ -93,7 +93,7 @@ interacting with other apps. `EMACS` can select a different executable, which
 must match the build's header and supported revision. Run the README's combined
 graphical suite to exercise the existing launcher lifecycle, focus, geometry
 and completion matrix as well. Use its selector `"^portal-launcher-"` instead
-of `"^portal-"` to run just the 14 launcher tests.
+of `"^portal-"` to run just the 15 launcher tests.
 
 To check an isolated completion/theme fragment without changing your init:
 
@@ -124,7 +124,7 @@ deleting an ordinary native window can asynchronously activate the previous
 application. A subsequent prompt correctly cancelled on that activation before
 the harness finished typing. A four-test reproduction failed before the change
 and passed after the shared GUI fixture allowed native events to settle during
-cleanup. The full 14-test launcher suite now passes together. The production
+cleanup. The full launcher suite passes together. The production
 focus-loss observer remains unchanged.
 
 ## Hands-on record required before completion
@@ -138,8 +138,9 @@ scope decision; missing equipment and missing results are not passes.
 | Check | Procedure and expected result | Current production evidence |
 | --- | --- | --- |
 | Normal configuration | Fresh normal Emacs; enable the documented setup. Physically invoke from another app, launch a stopped app, then activate the same running app. Destination gets focus without an ordinary Emacs frame rising. | Pending |
+| Selection without typing | Open the launcher and press Return on the highlighted app. Reopen, use Down/Up to choose another app and press Return. Both launch the selected app without requiring typed text. | Automated minibuffer and native key checks; physical/full-init checks pending |
 | Refresh and search | `C-u M-x portal-launcher-present` refreshes, `M-x launcher-refresh` works separately. Enter `!gh portal launcher` and unmatched text; check the encoded query and destination focus. A freshly installed/removed test app appears/disappears after refresh. | Prior isolated automated real-app smoke; physical/full-init pending |
-| Cancellation | From another app, try Escape, C-g, the global chord again, blank Return and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. | Automated session checks; physical checks pending |
+| Cancellation | From another app, try Escape, C-g, the global chord again and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. An empty completion result also cancels; Return on a highlighted app accepts it. | Automated session checks; physical checks pending |
 | Failure and recovery | Run `(portal-launcher-present (lambda () (interactive) (error "Launcher recovery check")))` from Emacs; it reports the error and hides. Invoke normally again. Repeat a stale bundle/open failure while another app is active. | Automated error/reentry; full-init/external-app case pending |
 | Fullscreen and Spaces | Put another app fullscreen. Invoke, type, select and cancel without switching Spaces; repeat in another Space and verify focus return and successful activation. | Prototype human pass only; production physical regression pending |
 | Monitor changes | Invoke on each monitor, unplug one while visible and while hidden, reconnect and invoke again. No stranded panel, wrong display or unreachable prompt. Record origins, scale and which monitor was removed. | Automated static geometry only; physical changes pending |
@@ -170,3 +171,20 @@ pass with stock and copied local completion/theme settings in fresh processes.
 The [application integration record](launcher-applications.md) retains the
 earlier real-app smoke, cold/warm timings and static monitor measurements.
 The task in [project.org](../project.org) tracks the remaining acceptance gates.
+
+## Selection correction on 2026-10-04
+
+The user's manual check found that Return on a highlighted app did nothing
+until text was typed. The adapter now accepts the completion reader's result;
+the earlier empty-input cancellation policy is superseded. The configured
+completion test now checks selection without typing, empty results from stock
+completion, Escape and a bang without a query. The hands-on matrix above includes
+both initial and arrow-key selection.
+
+All 15 combined launcher GUI tests pass with the updated regressions. Launcher
+CTest checks, changed-test byte compilation, shell syntax and Org validation
+pass. The copied-settings rerun was inconclusive: extra keystrokes changed the
+fixture's `Calculator` input, so it is not recorded as a pass. The earlier
+configured run above is historical evidence; a fresh configured recheck remains
+pending. The GUI checks used an alternate shortcut because the normal chord
+was already registered in the user's running Emacs.

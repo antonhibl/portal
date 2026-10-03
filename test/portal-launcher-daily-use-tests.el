@@ -7,6 +7,7 @@
 (require 'portal-launcher-gui-tests)
 (defvar launcher--apps)
 (defvar launcher--current-entries)
+(defvar launcher-bangs)
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--launcher-inspect "portal-launcher" ())
 
@@ -34,7 +35,16 @@
          nil (append (portal-launcher-gui--text "!gh portal launcher") '((36 0 "\r"))))
         (should (equal (pop actions) "https://github.com/search?q=portal%20launcher"))
         (portal-launcher-gui--present nil '((53 0 "\e")))
-        (portal-launcher-gui--present nil '((36 0 "\r")))
+        (portal-launcher-gui--present
+         nil (append (portal-launcher-gui--text "!gh ") '((36 0 "\r"))))
+        (should-not actions)
+        ;; The configured reader may accept a highlighted app with no text.
+        ;; Stock completion has no selection and returns an empty result.
+        (let ((launcher-bangs nil) (minibuffer-history nil))
+          (portal-launcher-gui--present nil '((36 0 "\r"))))
+        (when (bound-and-true-p vertico-mode)
+          (should (equal (pop actions)
+                         '("open" nil nil nil "-a" "/System/Applications/Calculator.app"))))
         (should-not actions))
       (cl-letf (((symbol-function 'call-process)
                  (lambda (&rest _) (error "Daily-use fixture: open failed"))))
