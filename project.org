@@ -457,7 +457,7 @@ Current behavior to preserve:
 - [X] Warm invocation uses the cache; explicit refresh discovers installation
   and removal changes. Empty indexes and command failures remain recoverable.
 - [X] Existing fallback and bang searches open the correctly encoded query in
-  the browser; empty input and cancellation perform no external action.
+  the browser; empty completion results and cancellation perform no external action.
 - [X] Stock completion and Vertico/Orderless/Marginalia work with useful path
   annotations. Preserve the user's configuration and ordinary =M-x launcher=.
 - [ ] Adapter tests use fixtures/mocked external actions; record physical GUI
@@ -478,10 +478,11 @@ neither annotations nor text properties become a bundle identity. Prefix refresh
 passes through =C-u M-x portal-launcher-present=; =launcher-refresh= and ordinary
 =M-x launcher= keep their existing behavior.
 
-Two deliberate input differences are scoped to the adapter: blank input and
-bangs without queries cancel, including a highlighted app at an untouched
-Vertico prompt; stock completion's default Space binding inserts a literal
-separator, with custom bindings preserved. These package input issues and the
+The initial adapter cancelled blank typed input and bangs without queries,
+including a highlighted app at an untouched Vertico prompt. The highlighted-app
+policy is superseded by the selection correction recorded below. Stock
+completion's default Space binding inserts a literal separator, with custom
+bindings preserved. These package input issues and the
 tested revision's obsolete-macro warnings are recorded in
 [[file:docs/launcher-applications.md][the integration notes]], without patching or globally
 advising the dependency. Empty indexes, stale paths and discovery/open/browser
@@ -521,6 +522,29 @@ activation, refresh and search checks continue in [[#launcher-daily-use][daily-u
 along with the existing physical shortcut, fullscreen/Spaces, monitor changes,
 click-away, IME and VoiceOver checks. Both connected Retina monitors passed
 automated exact-geometry checks; that does not establish physical monitor changes.
+
+*** Follow-up: accept app selections without typed input
+On 2026-10-04 the user reported that Return on the initial highlighted app, or
+on an app selected with arrows, did nothing until a character was typed. The
+adapter recorded raw minibuffer input before completion accepted a candidate
+and rejected it when blank, even though the reader returned the exact app label.
+
+Use the reader's final result to determine cancellation. Return now accepts
+the highlighted app without requiring typed text, including the initial app
+and selections made with Down/Up. Empty/whitespace results, bangs without a
+query and Escape/C-g still cancel. This supersedes the original no-typing
+policy above and requires no changes to =launcher.el= or the native panel.
+
+Two regression tests use real Vertico/Orderless minibuffers and exact fixture
+bundle paths; both failed before the fix because no launch occurred. The new
+GUI regression exercises Return, Down/Return and Down/Up/Return in the native
+panel. These use mocked external actions and do not count as the remaining
+physical daily-use acceptance checks.
+
+Verification: all 32 CTest suites and all 13 native launcher GUI tests pass;
+host format/type checks, native failure-reporter tests, changed-file byte
+compilation, Org lint and task identity/dependency checks also pass. The GUI
+tests used an alternate shortcut because the normal chord was already in use.
 
 ** TODO Validate and document the app launcher for everyday use :task:
 :PROPERTIES:

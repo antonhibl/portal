@@ -151,6 +151,31 @@
             (execute-kbd-macro (vconcat [f10] text [f11 return]))))
       (use-global-map global))))
 
+(defun portal-launcher-app-test--accept-highlight (keys index)
+  "Accept app INDEX using KEYS without inserting any minibuffer text."
+  (portal-launcher-app-test--environment
+    (let ((launcher-bangs nil)
+          (minibuffer-history nil)
+          (vertico-sort-function #'identity)
+          (completion-styles '(orderless basic)))
+      (launcher-refresh)
+      (vertico-mode 1)
+      (unwind-protect
+          (progn
+            (portal-launcher-app-test--type
+             keys (lambda () (should (equal (minibuffer-contents-no-properties) ""))))
+            (should (equal actions
+                           (list (list "open" nil nil nil "-a"
+                                       (cdr (nth index launcher--apps)))))))
+        (vertico-mode -1)))))
+
+(ert-deftest portal-launcher-app-accepts-first-highlight-without-typing ()
+  (portal-launcher-app-test--accept-highlight [] 0))
+
+(ert-deftest portal-launcher-app-accepts-arrow-selection-without-typing ()
+  (portal-launcher-app-test--accept-highlight [down] 1)
+  (portal-launcher-app-test--accept-highlight [down up] 0))
+
 (ert-deftest portal-launcher-app-real-completion-and-bang-input ()
   (portal-launcher-app-test--environment
     (dolist (enhanced '(nil t))
@@ -179,9 +204,12 @@
                  (should-not (all-completions "" minibuffer-completion-table))))
               (should (equal (pop actions)
                              (concat "https://github.com/search?q=" (url-hexify-string "café & 中文"))))
-              ;; With no bang candidates, Vertico highlights an actual app at
-              ;; an empty prompt. Return must still do nothing.
+              ;; A selected app is a nonempty result even with no typed text.
+              ;; Stock completion returns an empty string and still cancels.
               (let ((launcher-bangs nil)) (portal-launcher-app-test--type ""))
+              (when enhanced
+                (should (equal (pop actions)
+                               (list "open" nil nil nil "-a" (car (last paths))))))
               (should-not actions)
               (should (eq reader completing-read-function)))
           (vertico-mode -1)

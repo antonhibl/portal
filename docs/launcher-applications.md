@@ -24,11 +24,11 @@ all candidates with an empty string.
 
 Two presentation policies are scoped to this invocation:
 
-- Blank input and a configured bang with no query cancel the command session.
-  Input is recorded before the reader inserts a highlighted candidate on Return,
-  so an empty Vertico prompt cannot launch its first app. Type a name or insert a
-  candidate with Tab before accepting it. Cancellation uses the existing session
-  cleanup and focus-return behavior.
+- A blank completion result and a configured bang with no query cancel the
+  command session. Return accepts the highlighted app even when the search text
+  is empty, including the initial candidate and selection with arrow keys.
+  The reader's final result determines the action. Cancellation uses the existing
+  session cleanup and focus-return behavior.
 - Stock completion's default Space binding completes words and consumes the
   separator needed to enter a bang query. In this prompt, that default binding is
   replaced with literal Space; Tab still completes. An explicitly customized
@@ -95,6 +95,24 @@ points. This is automated input and geometry evidence, not human confirmation
 of physical shortcut delivery, fullscreen/Spaces, monitor unplugging or click-away.
 Those checks, the user's complete configuration, IME and VoiceOver remain in
 the `launcher-daily-use` task. The physical GUI acceptance item remains unchecked.
+
+## Selection correction on 2026-10-04
+
+The initial adapter treated empty typed text as cancellation even when completion
+returned a valid highlighted app. It now checks the final completion result.
+Return on the first app and Down/Up navigation followed by Return work without
+typing. Actual empty results and bangs without a query still cancel.
+
+Two regression tests reproduce both reported cases with real Vertico/Orderless
+minibuffers and exact fixture paths; both failed before the fix. A native-panel
+test covers Return, Down/Return and Down/Up/Return using AppKit key events and
+mocked app launches. The original stock/enhanced completion checks now follow
+the same policy. No dependency or native implementation changed.
+
+All 32 CTest suites and all 13 launcher GUI tests pass, along with host
+format/type checks, native failure-reporter tests, changed-file byte compilation
+and Org task validation. The GUI run used a test-only alternate shortcut because
+the normal chord was already registered by the user's running Emacs.
 
 ## Discovery timing
 

@@ -101,9 +101,9 @@ Its `launcher-app-directories`, `launcher-fallback-search-url` and
 `!yt` and `!gh` followed by a space and query select a search engine.
 
 The default `portal-launcher-command` is `portal-launcher-applications`, a thin
-adapter around `launcher`. It cancels empty/whitespace input and bangs without
-a query, including Return on an untouched prompt with a highlighted candidate.
-Type a name or insert a candidate with Tab before accepting it. In stock
+adapter around `launcher`. Return accepts the highlighted app, including the
+first candidate or one selected with arrow keys, without requiring typed text.
+An empty/whitespace completion result or a bang without a query cancels. In stock
 completion, Space inserts a space in this prompt and Tab completes; explicitly
 customized Space bindings are kept. Ordinary `M-x launcher` is unchanged.
 The package loads only when this command runs; missing installation produces a
