@@ -36,8 +36,8 @@ Commands that deliberately select other frames require their own wrapper."
   "Pick an application or web search with the optional launcher.el package.
 This is the default command inside `portal-launcher-present'. With prefix
 argument REFRESH, rebuild the package's Spotlight cache before prompting.
-Use `launcher-refresh' to refresh separately. Empty input (even with a
-preselected completion candidate) and bangs without a query cancel.
+Use `launcher-refresh' to refresh separately. Accept a selected application
+even when no text was typed. Empty results and bangs without a query cancel.
 The user's completion reader, app identities and search settings are kept;
 ordinary `launcher' invocations are unchanged."
   (interactive "P")
@@ -46,31 +46,25 @@ ordinary `launcher' invocations are unchanged."
   (let* ((reader completing-read-function)
          (completing-read-function
           (lambda (&rest arguments)
-            ;; Capture input before the reader inserts a highlighted candidate
-            ;; on Return. An untouched/blank prompt must not launch that app.
-            (let (input)
-              (let* ((choice
-                      (minibuffer-with-setup-hook
-                          (lambda ()
-                            (setq input "")
-                            ;; Stock completion binds Space to word completion,
-                            ;; which eats the separator in "!g query". Keep Tab
-                            ;; completion and any explicitly customized binding.
-                            (when (eq (key-binding " ") #'minibuffer-complete-word)
-                              (use-local-map (copy-keymap (current-local-map)))
-                              (local-set-key " " #'self-insert-command))
-                            (add-hook 'pre-command-hook
-                                      (lambda () (setq input (minibuffer-contents-no-properties)))
-                                      nil t))
-                        (let ((completing-read-function reader))
-                          (apply reader arguments))))
-                     (bang (launcher--bang-for-input choice)))
-                (when (or (string-blank-p (or input choice))
-                          (string-blank-p choice)
-                          (assoc-string (string-trim choice) launcher-bangs)
-                          (and bang (string-blank-p (substring choice (1+ (length (car bang)))))))
-                  (signal 'quit nil))
-                choice)))))
+            ;; The reader's result includes a candidate accepted with Return
+            ;; or arrow navigation, even when the search text stayed empty.
+            (let* ((choice
+                    (minibuffer-with-setup-hook
+                        (lambda ()
+                          ;; Stock completion binds Space to word completion,
+                          ;; which eats the separator in "!g query". Keep Tab
+                          ;; completion and any explicitly customized binding.
+                          (when (eq (key-binding " ") #'minibuffer-complete-word)
+                            (use-local-map (copy-keymap (current-local-map)))
+                            (local-set-key " " #'self-insert-command)))
+                      (let ((completing-read-function reader))
+                        (apply reader arguments))))
+                   (bang (launcher--bang-for-input choice)))
+              (when (or (string-blank-p choice)
+                        (assoc-string (string-trim choice) launcher-bangs)
+                        (and bang (string-blank-p (substring choice (1+ (length (car bang)))))))
+                (signal 'quit nil))
+              choice))))
     (launcher refresh)))
 
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))

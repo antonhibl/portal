@@ -14,6 +14,7 @@
 (defvar launcher--apps)
 (defvar launcher--current-entries)
 (defvar launcher-bangs)
+(defvar vertico-sort-function)
 
 (defmacro portal-launcher-gui--with-panel (&rest body)
   (declare (indent 0))
@@ -287,6 +288,9 @@
                  nil (append (portal-launcher-gui--text "!gh portal launcher") '((36 0 "\r"))))
                 (should (equal (pop actions) "https://github.com/search?q=portal%20launcher"))
                 (let ((launcher-bangs nil)) (portal-launcher-gui--present nil '((36 0 "\r"))))
+                (when enhanced
+                  (should (equal (pop actions)
+                                 '("open" nil nil nil "-a" "/System/Applications/Calculator.app"))))
                 (portal-launcher-gui--present nil '((53 0 "\e")))
                 (should-not actions))
             (vertico-mode -1)
@@ -294,6 +298,32 @@
         (should (eq reader completing-read-function))
         (should (eq ordinary (selected-window)))
         (should-not launcher--current-entries)))))
+
+(ert-deftest portal-launcher-gui-accepts-selection-without-typing ()
+  (require 'launcher)
+  (require 'vertico)
+  (require 'orderless)
+  (portal-launcher-gui--with-panel
+    (let ((launcher--apps '(("Calculator" . "/System/Applications/Calculator.app")
+                            ("Calendar" . "/System/Applications/Calendar.app")))
+          (launcher--current-entries nil)
+          (launcher-bangs nil)
+          (minibuffer-history nil)
+          (vertico-sort-function #'identity)
+          (completion-styles '(orderless basic))
+          actions)
+      (vertico-mode 1)
+      (unwind-protect
+          (cl-letf (((symbol-function 'call-process)
+                     (lambda (&rest arguments) (push arguments actions) 0)))
+            (dolist (selection '(("Calculator" (36 0 "\r"))
+                                 ("Calendar" (125 0 "\uf701") (36 0 "\r"))
+                                 ("Calculator" (125 0 "\uf701") (126 0 "\uf700") (36 0 "\r"))))
+              (portal-launcher-gui--present nil (cdr selection))
+              (should (equal (pop actions)
+                             (list "open" nil nil nil "-a"
+                                   (cdr (assoc (car selection) launcher--apps)))))))
+        (vertico-mode -1)))))
 
 (ert-deftest portal-launcher-gui-session-stock-and-completion-stack ()
   (portal-launcher-gui--with-panel
