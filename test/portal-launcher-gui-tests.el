@@ -534,7 +534,21 @@ OPTIONS are `portal-launcher-present' keywords and values."
           (should-not (window-parameter (frame-first-window portal-launcher--frame) 'mode-line-format))
           (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions))
           (should (eq format (buffer-local-value 'mode-line-format ordinary-buffer)))
-          (should (= ordinary-height (window-mode-line-height ordinary))))))))
+          (should (= ordinary-height (window-mode-line-height ordinary)))))
+      ;; A window's own mode-line parameter outlasts both settings, and an
+      ;; explicit show leaves it alone.
+      (let ((window (frame-first-window portal-launcher--frame))
+            (custom '("Custom mode line")))
+        (set-window-parameter window 'mode-line-format custom)
+        (dolist (mode-line '(nil t))
+          (should (equal (if mode-line custom 'none)
+                         (portal-launcher-present
+                          (lambda () (window-parameter (selected-window) 'mode-line-format))
+                          :mode-line mode-line)))
+          (should (equal custom (window-parameter window 'mode-line-format))))
+        (portal-launcher-show content)
+        (should (equal custom (window-parameter window 'mode-line-format)))
+        (portal-launcher-hide)))))
 
 (ert-deftest portal-launcher-gui-alternating-kinds ()
   (require 'vertico)

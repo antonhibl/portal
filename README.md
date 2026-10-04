@@ -265,7 +265,8 @@ dedicated frame; presenting the same kind again reuses it.
 `:mode-line nil` hides the mode lines of the panel's windows, including windows
 created and buffers switched during the call; the default, t, shows each
 buffer's own. It sets the `mode-line-format` window parameter, so the same
-buffers keep their mode lines in other frames. A minibuffer panel has none.
+buffers keep their mode lines in other frames, and restores each window's
+earlier parameter when the panel hides. A minibuffer panel has none.
 
 The function is an interactive command, called with `call-interactively` so it
 sees a prefix argument, or any function of no arguments, called with `funcall`.

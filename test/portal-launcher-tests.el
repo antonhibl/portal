@@ -287,6 +287,33 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
     (should (equal hidden '(nil nil nil nil nil)))
     (should-not portal-launcher--session)))
 
+(ert-deftest portal-launcher-loads-autoloads-to-check-arguments ()
+  ;; An autoloaded function that is not a command is called at once, so it
+  ;; is loaded to count its arguments before anything is shown or cancelled.
+  (let* ((directory (make-temp-file "portal-launcher-lazy" t))
+         (load-path (cons directory load-path)))
+    (unwind-protect
+        (progn
+          (dolist (library '(("portal-launcher-test-lazy-1" . "(x) x")
+                             ("portal-launcher-test-lazy-0" . "() 'lazy")))
+            (with-temp-file (expand-file-name (concat (car library) ".el") directory)
+              (insert ";;; -*- lexical-binding: t; -*-\n"
+                      (format "(defun %s--run %s)\n(provide '%s)\n"
+                              (car library) (cdr library) (car library))))
+            (autoload (intern (concat (car library) "--run")) (car library)))
+          (cl-letf (((symbol-function 'portal-launcher--show) (lambda (&rest _) (ert-fail "Presented")))
+                    ((symbol-function 'portal-launcher-cancel) (lambda () (ert-fail "Cancelled"))))
+            (let ((portal-launcher--session (portal-launcher--make-session :tag (make-symbol "active"))))
+              (should-error (portal-launcher-present 'portal-launcher-test-lazy-1--run)
+                            :type 'user-error)))
+          (portal-launcher-test--session
+            (should (autoloadp (symbol-function 'portal-launcher-test-lazy-0--run)))
+            (should (eq 'lazy (portal-launcher-present 'portal-launcher-test-lazy-0--run)))))
+      (dolist (name '(portal-launcher-test-lazy-1 portal-launcher-test-lazy-0))
+        (fmakunbound (intern (format "%s--run" name)))
+        (setq features (delq name features)))
+      (delete-directory directory t))))
+
 (defun portal-launcher-test--command ()
   (interactive)
   'command)
@@ -336,6 +363,18 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should (equal '(ignore) window-buffer-change-functions))
       (should (= 1 (length (window-list frame 'never))))
       (should-not (window-parameter (selected-window) 'mode-line-format))
+      ;; A window's own mode-line parameter outlasts either setting.
+      (set-window-parameter (selected-window) 'mode-line-format '("custom"))
+      (should (eq 'none (portal-launcher-present
+                         (lambda ()
+                           (run-hook-with-args 'window-buffer-change-functions frame)
+                           (window-parameter (selected-window) 'mode-line-format))
+                         :mode-line nil)))
+      (should (equal '("custom") (window-parameter (selected-window) 'mode-line-format)))
+      (should (equal '("custom") (portal-launcher-present
+                                  (lambda () (window-parameter (selected-window) 'mode-line-format)))))
+      (should (equal '("custom") (window-parameter (selected-window) 'mode-line-format)))
+      (set-window-parameter (selected-window) 'mode-line-format nil)
       ;; A layout from before the call stays; only the call's windows go,
       ;; and a show that fails deletes nothing.
       (let ((kept (split-window)))

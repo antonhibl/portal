@@ -334,10 +334,9 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
 
 (defun portal-launcher--check-function (function)
   "Signal a `user-error' unless FUNCTION is a command or takes no arguments.
-An autoloaded function is not loaded to count its arguments."
+`func-arity' loads an autoloaded function that is not a command."
   (unless (and (functionp function)
                (or (commandp function)
-                   (autoloadp (indirect-function function))
                    (zerop (car (func-arity function)))))
     (user-error "Launcher needs a command or a function of no arguments, not %S" function)))
 
@@ -354,28 +353,31 @@ An autoloaded function is not loaded to count its arguments."
       (user-error "Launcher :mode-line must be t or nil, not %S" mode-line))
     (list kind mode-line)))
 
-(defun portal-launcher--mode-lines (show)
-  "SHOW or hide the mode lines of the buffer launcher's windows.
-A window parameter leaves the buffers' own `mode-line-format' unchanged."
-  (dolist (window (window-list portal-launcher--frame 'never))
-    (set-window-parameter window 'mode-line-format (unless show 'none))))
+(defvar portal-launcher--mode-line-parameters nil
+  "Launcher windows whose mode lines the presentation hid, as (WINDOW . VALUE).
+VALUE is the window's earlier `mode-line-format' parameter.")
 
 (defun portal-launcher--hide-mode-lines (frame)
-  "Hide the mode lines of launcher FRAME's windows, including new ones."
-  (when (eq frame portal-launcher--frame) (portal-launcher--mode-lines nil)))
+  "Hide the mode lines of launcher FRAME's windows, including new ones.
+A window parameter leaves the buffers' own `mode-line-format' unchanged;
+each window's earlier parameter is kept to restore."
+  (when (eq frame portal-launcher--frame)
+    (dolist (window (window-list frame 'never))
+      (unless (assq window portal-launcher--mode-line-parameters)
+        (push (cons window (window-parameter window 'mode-line-format))
+              portal-launcher--mode-line-parameters)
+        (set-window-parameter window 'mode-line-format 'none)))))
 
 (defun portal-launcher--restore-windows (windows)
-  "Delete the buffer launcher's windows other than WINDOWS; show mode lines.
+  "Delete the buffer launcher's windows other than WINDOWS.
 WINDOWS were its windows when the presentation's function started, or nil
 if it never started.  One window always stays."
-  (when (portal-launcher--live-p 'buffer)
-    (when windows
-      (let ((ignore-window-parameters t))
-        (dolist (window (window-list portal-launcher--frame 'never))
-          (unless (or (memq window windows)
-                      (not (cdr (window-list portal-launcher--frame 'never))))
-            (delete-window window)))))
-    (portal-launcher--mode-lines t)))
+  (when (and windows (portal-launcher--live-p 'buffer))
+    (let ((ignore-window-parameters t))
+      (dolist (window (window-list portal-launcher--frame 'never))
+        (unless (or (memq window windows)
+                    (not (cdr (window-list portal-launcher--frame 'never))))
+          (delete-window window))))))
 
 ;;;###autoload
 (defun portal-launcher-present (&optional function &rest options)
@@ -430,6 +432,7 @@ not invoke from an existing minibuffer."
            (minibuffer-follows-selected-frame nil)
            ;; The panel keeps its native placement; Emacs must not fit it.
            (resize-mini-frames nil)
+           (portal-launcher--mode-line-parameters nil)
            (windows nil)
            (outcome 'error))
       (unwind-protect
@@ -469,6 +472,9 @@ not invoke from an existing minibuffer."
                 (make-frame-invisible portal-launcher--frame t)
                 (portal-launcher--restore-windows windows))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
+            (pcase-dolist (`(,window . ,value) portal-launcher--mode-line-parameters)
+              (when (window-live-p window)
+                (set-window-parameter window 'mode-line-format value)))
             (cond ((window-live-p previous-window) (select-window previous-window 'norecord))
                   ((frame-live-p previous-frame) (select-frame previous-frame 'norecord)))
             (setq portal-launcher--return-window nil)
@@ -537,8 +543,8 @@ Interactively prompt for a buffer. This explicitly opts in to
 
 (defun portal-launcher--show (kind buffer mode-line)
   "Show the launcher for KIND of presentation and return its frame.
-A buffer launcher shows BUFFER if non-nil, and its windows' mode lines if
-MODE-LINE. A frame made for the other kind is deleted and replaced."
+A buffer launcher shows BUFFER if non-nil, and hides its windows' mode
+lines unless MODE-LINE. A frame made for the other kind is replaced."
   (when (and buffer (not (buffer-live-p (get-buffer buffer))))
     (user-error "Launcher buffer is not live: %s" buffer))
   (let ((placement (portal-launcher--placement))
@@ -555,7 +561,7 @@ MODE-LINE. A frame made for the other kind is deleted and replaced."
       (setq portal-launcher--return-window (selected-window)))
     (when (eq kind 'buffer)
       (when buffer (set-window-buffer (frame-selected-window portal-launcher--frame) buffer))
-      (portal-launcher--mode-lines mode-line))
+      (unless mode-line (portal-launcher--hide-mode-lines portal-launcher--frame)))
     (when portal-launcher-font
       (let ((frame-inhibit-implied-resize t))
         (set-frame-font portal-launcher-font nil (list portal-launcher--frame))))

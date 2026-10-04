@@ -268,8 +268,8 @@ Recorded before implementation.
   window's mode line without changing its buffer's =mode-line-format=. With
   =:mode-line nil=, the panel's windows get it before the panel shows, and a
   session-scoped =window-buffer-change-functions= hook gives it to windows
-  created or switched during the call. Cleanup removes the hook, clears the
-  parameter and deletes the windows the call created.
+  created or switched during the call. Cleanup removes the hook, restores each
+  window's earlier parameter and deletes the windows the call created.
 
 *** Plan
 - Extend [[file:portal-launcher.el][the existing public presentation function]] and validation.
@@ -320,7 +320,11 @@ selected restored selection to the launcher's own window, leaving a hidden
 frame selected, or, once a kind change had deleted it, restored nothing. The
 session now returns to the window the launcher was shown from. After Codex's
 review, cleanup deletes only the windows the call created; it first deleted
-all but one, losing a split made in an explicitly shown panel.
+all but one, losing a split made in an explicitly shown panel. It also
+restores each window's earlier =mode-line-format= parameter, which it first
+cleared, as did every =portal-launcher-show=, and =func-arity= now loads a
+noninteractive autoload to check it takes no arguments; it was first accepted
+unloaded, so one needing an argument failed only after the panel showed.
 
 The README, docstrings and [[file:docs/launcher-native-panel.md][panel documentation]] describe the options,
 the height and =*Completions*= policy and when a command needs =buffer=. The
@@ -339,8 +343,11 @@ from its Emacs view's IOSurface; the injector's builds now link IOSurface.
   displays no buffer and binds =resize-mini-frames= nil. A buffer one with
   =:mode-line nil= hides new windows' mode lines through its hook. Success,
   errors, quit and cancellation each leave one window, no parameter and no
-  hook. A split from before the call survives it and a failed show; the old
-  cleanup fails this check.
+  hook. A split from before the call survives it and a failed show, and a
+  window's own =mode-line-format= parameter survives either setting. An
+  autoloaded function that needs an argument is rejected before any show or
+  cancellation, while one taking none is accepted. Each of these checks fails
+  on the code before its fix.
 - Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 17
   =portal-launcher-gui-= tests (4 new) and the 2 daily-use tests passed 19 of
   19 in three runs. Two runs failed =portal-launcher-gui-session-command-error=:
