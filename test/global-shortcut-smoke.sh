@@ -4,7 +4,8 @@
 # automated tests only inject. Run after ./build.sh, in a desktop session. It
 # starts a disposable Emacs that sets two shortcuts, a command and a lambda,
 # and records each call with the app in front. Override the chords with
-# PORTAL_SMOKE_FIRST and PORTAL_SMOKE_SECOND if another app has them.
+# PORTAL_SMOKE_FIRST and PORTAL_SMOKE_SECOND if another app has them, and the
+# two minutes allowed with PORTAL_SMOKE_SECONDS.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
@@ -13,10 +14,11 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
     -o "$root/build/test-terminal-input.dylib"
 first=${PORTAL_SMOKE_FIRST:-Control-Option-Command-8}
 second=${PORTAL_SMOKE_SECOND:-Control-Option-Command-9}
+seconds=${PORTAL_SMOKE_SECONDS:-120}
 log=$(mktemp -t portal-global-shortcut-smoke)
 echo "Switch to another app, then press $first and $second once each."
-echo "Emacs quits once both have run; it gives up after two minutes."
-export PORTAL_SMOKE_ROOT="$root" PORTAL_SMOKE_LOG="$log" \
+echo "Emacs quits once both have run; it gives up after $seconds seconds."
+export PORTAL_SMOKE_ROOT="$root" PORTAL_SMOKE_LOG="$log" PORTAL_SMOKE_SECONDS="$seconds" \
     PORTAL_SMOKE_FIRST="$first" PORTAL_SMOKE_SECOND="$second"
 status=0
 "${EMACS:-/Applications/Emacs.app/Contents/MacOS/Emacs}" -Q -l "$root/portal.el" \
@@ -42,9 +44,10 @@ status=0
                                           (quote portal-smoke-command))
               (portal-global-shortcut-set (quote smoke-lambda) (getenv "PORTAL_SMOKE_SECOND")
                                           (lambda () (funcall record (quote lambda))))
-              (run-at-time 120 nil (lambda ()
-                                     (write-region "Timed out\n" nil log t (quote silent))
-                                     (kill-emacs 2)))
+              (run-at-time (string-to-number (getenv "PORTAL_SMOKE_SECONDS")) nil
+                           (lambda ()
+                             (write-region "Timed out\n" nil log t (quote silent))
+                             (kill-emacs 2)))
               (with-current-buffer "*scratch*"
                 (erase-buffer)
                 (insert (format "Switch to another app, then press %s and %s.\n"

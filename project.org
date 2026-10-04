@@ -43,11 +43,11 @@ or removed. A user command composes the two:
 ;; (portal-global-shortcut-remove 'app-launcher)
 #+end_src
 
-The interfaces above are the target of the TODO tasks below, not yet available
-in the current implementation. URL scheme handling, =org-protocol=, modifier
+=portal-global-shortcut-set= and =portal-global-shortcut-remove= are available;
+the presentation options above are the target of the TODO tasks below. URL scheme handling, =org-protocol=, modifier
 double-taps and a launcher/provider registration framework remain out of scope.
 
-** TODO Invoke arbitrary Elisp through independent named global shortcuts :task:
+** DONE Invoke arbitrary Elisp through independent named global shortcuts :task:
 :PROPERTIES:
 :CUSTOM_ID: global-shortcut-registrations
 :ID: 96e2b23a-cd60-4553-80a8-d46a682da72f
@@ -89,8 +89,11 @@ Recorded before implementation.
 - =portal-global-shortcut-remove= returns t when NAME was set and nil
   otherwise. It signals only if the system cannot release the chord, and then
   keeps NAME.
-- An error in FUNCTION is the command loop's to report, as for any command;
-  every registration stays.
+- An error in FUNCTION is shown as a message naming NAME, and every
+  registration stays; =debug-on-error= still enters the debugger. Revised
+  during implementation: the first version left errors to the command loop,
+  whose report empties =unread-command-events= and so dropped other
+  shortcuts' waiting presses (see Outcome).
 - The C core owns registrations: chord parsing and normalization, IDs, held
   keys and records. The platform registers and releases one hot key and
   reports its presses and releases; =portal_launcher_shortcut= and the
@@ -104,7 +107,8 @@ Recorded before implementation.
   toggles that presentation.
 
 *** Plan
-- Generalize [[file:native/LauncherShortcut.swift][the single native shortcut]] into independent
+- Generalize the single native shortcut, =native/LauncherShortcut.swift= (now
+  [[file:native/Hotkeys.swift][native/Hotkeys.swift]]), into independent
   registrations, with matching bindings in [[file:native/Core/emacs.c][the C module]] and a small public
   Elisp module. Reuse [[file:portal-view.el][feature notifications]] and the existing pipe.
 - Native callbacks and process filters only send/queue records. Dispatch Lisp
@@ -118,17 +122,80 @@ Recorded before implementation.
   Document error reporting and return values before implementing the interface.
 
 *** Acceptance
-- [ ] Two named shortcuts invoke different callbacks, including a plain lambda,
+- [X] Two named shortcuts invoke different callbacks, including a plain lambda,
   with no launcher frame or Portal view open and no automatic focus change.
-- [ ] Repeated setup, changing a callback on the same chord, changing the chord
+- [X] Repeated setup, changing a callback on the same chord, changing the chord
   and repeated removal leave no duplicates; old chords are released.
-- [ ] Invalid functions/chords and native registration conflicts preserve all
+- [X] Invalid functions/chords and native registration conflicts preserve all
   existing bindings; a callback error does not disable other shortcuts.
-- [ ] Queued events from removed/replaced registrations are ignored; legitimate
+- [X] Queued events from removed/replaced registrations are ignored; legitimate
   callbacks still execute through the command loop during ordinary Emacs use.
-- [ ] Batch routing tests, native registration/conflict/cleanup checks and a
+- [X] Batch routing tests, native registration/conflict/cleanup checks and a
   physical-key smoke test from another app pass. Distinguish injected events
   from physical delivery in the evidence; relevant existing checks pass.
+
+*** Outcome
+[[file:portal-global-shortcut.el][portal-global-shortcut.el]] provides =portal-global-shortcut-set= and
+=portal-global-shortcut-remove= with the contract above; =portal.el= loads it,
+inertly. The README's Global shortcuts section documents the notation,
+delivery, errors and limits. A press reaches the command loop as the event
+=(portal-global-shortcut (ID))=: a bare number there is read as a buffer
+position, as a probe showed.
+
+[[file:native/Core/shortcuts.c][native/Core/shortcuts.c]] owns the rules: notation and its normal form,
+registrations, IDs, held keys and =shortcut ID= records. Re-setting the same
+chord keeps its platform registration under a new ID, and a new chord is
+registered before the old one is released. [[file:native/Hotkeys.swift][native/Hotkeys.swift]] replaces
+=LauncherShortcut.swift=: =portal.h= now asks only to register and release a
+hot key and hears presses and releases. =portal_launcher_shortcut=, the
+=launcher= record and the panel-session check on presses are gone.
+=portal-launcher-mode= sets and removes the shortcut =portal-launcher=, so a
+press waiting while the panel is shown some other way now toggles it.
+
+A probe in Emacs 31.1 NS showed =command-error-default-function= empties
+=unread-command-events= after any command error. The dispatcher therefore
+reports a function's error itself, with =condition-case-unless-debug=, so the
+next shortcut's queued press still runs. A press in the middle of a key
+sequence or a single-key prompt is read there and calls nothing; the README
+states this limit.
+
+*** Verification
+- =./build.sh= and all 34 CTest suites pass, including the new
+  =shortcuts-core= (the C core with the fake platform and a real pipe) and
+  =global-shortcut= (11 ERT tests of the Lisp module on the real C core
+  through the fake-backend module), and the updated =module=, =launcher=,
+  =startup= and =channel= suites. The standalone =native/Core= project's 8
+  suites and the native failure-reporter tests pass.
+- Standalone native checks with real Carbon: =check-shortcuts= passes. It
+  covers registration, a competing in-process registration standing in for
+  another app, re-setting a chord without losing it, release on rebind and
+  removal, stale, unknown and held events, records with no view open, handler
+  removal and 20 set/remove cycles, using F13-F16. Its events go to the
+  installed Carbon handler, not the keyboard. =check-launcher=, =check-focus=
+  and =check-toolbar= pass.
+- Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 4
+  =portal-global-shortcut-gui-= tests pass. They inject events into the
+  production Carbon handler with =portal-test-hotkey=, so they show the
+  handler, core, pipe and real command loop, not physical delivery. Two
+  shortcuts, a lambda and a command, ran while ChatGPT stayed frontmost, with
+  no launcher frame or Portal view and no frame or window change. They also
+  cover an error with a queued press behind it, a same-chord replacement,
+  removal, held and doubled presses, and a minibuffer prompt.
+- The 13 launcher GUI and 2 daily-use tests pass, and the full combined
+  graphical suite ran 86 tests: 85 passed and
+  =portal-terminal-start-uses-shell-startup= skipped, as it needs
+  =PORTAL_TEST_SHELL_DIRECTORY=. The runner moved the launcher's chord to
+  Control-Option-Command-F17: the user's running Emacs holds the default, and
+  Carbon refused it with -9878.
+- Physical keys, 2026-10-04: [[file:test/global-shortcut-smoke.sh][test/global-shortcut-smoke.sh]] ran a
+  disposable Emacs while the user, with ChatGPT in front, pressed
+  Control-Option-Command-8 (a command) and Control-Option-Command-9 (a lambda).
+  Its log recorded both calls, at 18:41:25 and 18:41:35, with ChatGPT still
+  in front and Emacs not activated; the script exited 0. The agent shell lacks
+  Accessibility permission, so no system-level synthetic keys were posted.
+- Changed Lisp, including tests, byte-compiles without warnings; the module
+  test file keeps its existing warnings about module functions. Org lint, task
+  IDs, dependencies and internal links pass.
 
 ** TODO Choose minibuffer or buffer presentation for each launcher invocation :task:
 :PROPERTIES:
