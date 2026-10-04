@@ -10,6 +10,8 @@
 (defvar launcher-bangs)
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--launcher-inspect "portal-launcher" ())
+(declare-function portal--shortcuts "portal-global-shortcut" ())
+(declare-function portal--shortcut-chord "portal-global-shortcut" (chord))
 
 (ert-deftest portal-launcher-daily-use-configured-completion ()
   ;; Unlike the stock/enhanced matrix, keep the caller's completion and theme
@@ -82,10 +84,12 @@
             (dotimes (cycle 3)
               (portal-terminal-unfocus)
               (portal-launcher-mode 1)
-              (let ((registration portal-launcher--registration))
+              (let ((shortcuts (length (portal--shortcuts))))
                 ;; Re-evaluate the launcher setup as a configuration reload does.
                 (portal-launcher-mode 1)
-                (should (= registration portal-launcher--registration)))
+                (should (= shortcuts (length (portal--shortcuts))))
+                (should (= 1 (cl-count 'portal-launcher portal-global-shortcut--registrations
+                                       :key #'car))))
               (portal-launcher-gui--present
                (lambda () (interactive) (read-string "Coexistence: "))
                '((53 0 "\e")))
@@ -94,7 +98,10 @@
                 (portal-launcher-mode -1)
                 (should-not (frame-live-p panel)))
               (should-not (plist-get (portal--launcher-inspect) :attached))
-              (should (= 0 (plist-get (portal--launcher-inspect) :registration)))
+              (should-not (assq 'portal-launcher portal-global-shortcut--registrations))
+              (should-not (cl-find (portal--shortcut-chord portal-launcher-shortcut)
+                                   (portal--shortcuts)
+                                   :key (lambda (shortcut) (plist-get shortcut :chord))))
               (should-not (advice-member-p #'portal-launcher--guard-parameters
                                           'modify-frame-parameters))
               (should-not (advice-member-p #'portal-launcher--delete-frame 'delete-frame))

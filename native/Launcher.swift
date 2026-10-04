@@ -67,7 +67,6 @@ final class NativeLauncher {
     static var attached: NativeLauncher?
     // Changes only on explicit presentation/lifecycle operations, never layout.
     static private(set) var session: UInt64 = 0
-    static private(set) var sessionStarted: TimeInterval = 0
     private static var pendingApplication: NSRunningApplication?
 
     static func prepare() {
@@ -76,7 +75,6 @@ final class NativeLauncher {
 
     private static func newSession() {
         session += 1
-        sessionStarted = ProcessInfo.processInfo.systemUptime
     }
     let panel: LauncherPanel
     private let content: NSView
@@ -284,7 +282,7 @@ final class NativeLauncher {
         func rect(_ value: NSRect) -> [Double] {
             [value.minX, value.minY, value.width, value.height]
         }
-        var state: [String: Any] = ["attached": attached != nil, "session": session, "registration": LauncherShortcut.token, "screens": NSScreen.screens.map {
+        var state: [String: Any] = ["attached": attached != nil, "session": session, "screens": NSScreen.screens.map {
             ["name": $0.localizedName, "frame": rect($0.frame), "visible": rect($0.visibleFrame),
              "scale": $0.backingScaleFactor] as [String: Any]
         }]

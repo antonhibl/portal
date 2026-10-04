@@ -373,21 +373,17 @@ static void test_descriptor_ownership(void)
 
 static void test_launcher_without_views(void)
 {
-    CHECK(!portal_launcher_invoked(0, 1));
     CHECK(portal_channel_connect(-1));
-    CHECK(portal_launcher_invoked(42, 7));
+    CHECK(portal_launcher_blurred(7));
     struct pipe pipe = open_pipe();
     CHECK(portal_channel_connect(pipe.write));
-    CHECK(took(pipe, 0, "launcher 42 7\n"));
-    CHECK(portal_launcher_blurred(7));
     CHECK(took(pipe, 0, "launcher-blur 7\n"));
     size_t filled = fill(pipe);
-    CHECK(portal_launcher_invoked(43, UINT64_MAX));
     CHECK(portal_launcher_blurred(UINT64_MAX));
     CHECK(notify("select", "web:1", NULL));
     CHECK(took(pipe, filled, ""));
     portal_fake_fire_timers();
-    CHECK(took(pipe, 0, "launcher 43 18446744073709551615\nlauncher-blur 18446744073709551615\nselect web:1\n"));
+    CHECK(took(pipe, 0, "launcher-blur 18446744073709551615\nselect web:1\n"));
     CHECK(portal_channel_connect(-1));
     close(pipe.read);
 }

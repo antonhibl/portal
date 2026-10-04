@@ -2,7 +2,8 @@
 /* The notification pipe, as the rest of the core uses it.  channel.c
    implements these and, for the platform, portal_timer_fired from portal.h.
    Only the core and tests include this header: the platform sends records
-   through portal_notify or the launcher feature events, and never connects the pipe. */
+   through portal_notify or the launcher's and hot keys' events, and never
+   connects the pipe. */
 #ifndef PORTAL_CHANNEL_H
 #define PORTAL_CHANNEL_H
 

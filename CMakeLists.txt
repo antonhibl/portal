@@ -53,6 +53,13 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(launcher PROPERTIES TIMEOUT 30)
+    # The Lisp module on the real C core, with the fake backend's hot keys.
+    add_test(NAME global-shortcut
+        COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
+            "${EMACS}" --batch -Q --module-assertions -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-global-shortcut-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(global-shortcut PROPERTIES TIMEOUT 30)
     # Optional runtime dependency; test its real completion/index behavior at
     # the documented revision without installing it into the user's Emacs.
     set(launcher_revision "731146d95d7d1ff16f48e7a200da873c8d8b375c")

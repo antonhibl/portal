@@ -1037,13 +1037,66 @@ bool portal_launcher_describe(portal_text *state, portal_text *error)
     return true;
 }
 
-/* Binding conversion only; real registration/conflicts use Carbon in native checks. */
-bool portal_launcher_shortcut(portal_string chord, uint64_t *registration, portal_text *error)
+/* System-wide hot keys.  The fake registers any chord but F19, which it
+   says another application has, and, like macOS, refuses a chord it already
+   has; the core must never ask for one twice.  It cannot release F18, to
+   test what the core does when a release fails.  Real registration uses
+   Carbon in the standalone checks. */
+enum { MAX_HOTKEYS = 64 };
+static struct hotkey {
+    uint64_t hotkey;
+    uint32_t key, modifiers;
+} hotkeys[MAX_HOTKEYS];
+static size_t hotkey_count;
+
+bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
+                            portal_text *error)
 {
-    if (is(chord, "conflict"))
-        return fail(error, "Shortcut conflict");
-    *registration = chord.length ? 42 : 0;
+    if (refused(error))
+        return false;
+    if (key == PORTAL_FUNCTION_KEY + 19)
+        return fail(error, "Another application has this chord");
+    for (size_t i = 0; i < hotkey_count; i++)
+        if (hotkeys[i].hotkey == hotkey || (hotkeys[i].key == key && hotkeys[i].modifiers == modifiers))
+            return fail(error, "The fake already has this hot key");
+    if (!hotkey || hotkey_count == MAX_HOTKEYS)
+        return fail(error, "The fake cannot register hot key %llu", (unsigned long long) hotkey);
+    hotkeys[hotkey_count++] = (struct hotkey) {hotkey, key, modifiers};
     return true;
+}
+
+bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    for (size_t i = 0; i < hotkey_count; i++) {
+        if (hotkeys[i].hotkey == hotkey) {
+            if (hotkeys[i].key == PORTAL_FUNCTION_KEY + 18)
+                return fail(error, "The fake cannot release F18");
+            memmove(&hotkeys[i], &hotkeys[i + 1], (--hotkey_count - i) * sizeof *hotkeys);
+            return true;
+        }
+    }
+    return true;
+}
+
+const char *portal_fake_hotkeys(void)
+{
+    static char text[MAX_HOTKEYS * 24];
+    size_t length = 0;
+    text[0] = '\0';
+    for (size_t i = 0; i < hotkey_count; i++) {
+        uint32_t key = hotkeys[i].key;
+        char name[8];
+        if (key > PORTAL_FUNCTION_KEY)
+            snprintf(name, sizeof name, "F%u", (unsigned) (key - PORTAL_FUNCTION_KEY));
+        else
+            snprintf(name, sizeof name, "%s", key == ' ' ? "Space" : (char[]) {(char) key, 0});
+        length += (size_t) snprintf(text + length, sizeof text - length, "%s%llu:%s+%u",
+                                    i ? " " : "", (unsigned long long) hotkeys[i].hotkey, name,
+                                    (unsigned) hotkeys[i].modifiers);
+    }
+    return text;
 }
 
 /* No processes in the fake platform. Process classification is tested in Lisp. */

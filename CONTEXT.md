@@ -44,6 +44,12 @@ _Avoid_: identifying an agent by its terminal title or project
 Whether an agent is working, idle or waiting for input, reported by a verified source or explicitly labelled as inferred, or unknown when evidence is unavailable. Idle does not mean successful task completion.
 _Avoid_: treating inferred activity as reported fact, inferring activity from process liveness
 
+## System-wide
+
+**Global shortcut**:
+A chord, named by a symbol, that calls a Lisp function when pressed in any application, from Emacs's command loop and without activating Emacs. Setting the name again replaces its chord and function; a press from before that, or from before its removal, is ignored. The launcher's chord is one of them.
+_Avoid_: hotkey (the platform's primitive that registers a chord), launcher shortcut
+
 ## Web content
 
 **Hosted app**:

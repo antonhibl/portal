@@ -38,8 +38,9 @@ struct portal_fake_request {
 /* Take the oldest request not taken yet into *REQUEST; false for none. */
 bool portal_fake_request(struct portal_fake_request *request);
 
-/* While REFUSE, every view, web and terminal primitive fails without doing
-   anything, as a platform does when called on the wrong thread. */
+/* While REFUSE, every view, web, terminal and hot key primitive fails
+   without doing anything, as a platform does when called on the wrong
+   thread. */
 void portal_fake_refuse(bool refuse);
 
 /* End TERMINAL's process, as when its shell exits: it describes itself as
@@ -48,6 +49,11 @@ void portal_fake_exit(portal_view *terminal);
 /* TERMINAL's program sets its TITLE and reports its DIRECTORY, as a real
    one does with escape sequences, and the fake reports the change. */
 void portal_fake_report(portal_view *terminal, const char *title, const char *directory);
+
+/* The registered hot keys, oldest first, such as "3:P+14 5:F12+2":
+   each one's hot key, its key and its portal_modifier bits.  Valid until the
+   next call. */
+const char *portal_fake_hotkeys(void);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);
