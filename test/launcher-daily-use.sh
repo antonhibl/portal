@@ -5,7 +5,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
     -I "$(cat "$root/build/emacs-include.txt")" "$root/test/terminal-input.m" \
-    -framework AppKit -framework WebKit -framework Carbon \
+    -framework AppKit -framework WebKit -framework Carbon -framework IOSurface \
     -o "$root/build/test-terminal-input.dylib"
 set -- -Q --module-assertions -L "$root" -L "$root/test"
 for package in "$root"/build/elpa/*; do

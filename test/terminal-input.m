@@ -3,6 +3,7 @@
    AppKit event dispatch without Accessibility permission or global key events. */
 #import <AppKit/AppKit.h>
 #import <Carbon/Carbon.h>
+#import <IOSurface/IOSurface.h>
 #import <WebKit/WebKit.h>
 #include <emacs-module.h>
 #include <stdlib.h>
@@ -219,6 +220,49 @@ static emacs_value frontmost(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     return app ? env->make_integer(env, app.processIdentifier) : env->intern(env, "nil");
 }
 
+/* Save what Emacs last drew in the targeted frame as a PNG at FILE. This
+   reads the surface Emacs gave its view's layer, not the screen, so it needs
+   no Screen Recording permission and shows no window decoration. */
+static emacs_value capture(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)data;
+    emacs_value nilValue = env->intern(env, "nil");
+    ptrdiff_t size = 0;
+    if (!env->copy_string_contents(env, args[0], NULL, &size)) return nilValue;
+    char *bytes = malloc((size_t)size);
+    if (!bytes) return nilValue;
+    if (!env->copy_string_contents(env, args[0], bytes, &size)) { free(bytes); return nilValue; }
+    NSString *path = [NSString stringWithUTF8String:bytes];
+    free(bytes);
+    NSView *content = explicitWindow.contentView;
+    if (!content || !path) return nilValue;
+    for (NSView *view in [@[content] arrayByAddingObjectsFromArray:descendants(content)]) {
+        if (![view isKindOfClass:NSClassFromString(@"EmacsView")]) continue;
+        // Emacs's layer takes its newest surface only when displayed; do now
+        // what Core Animation would do at its next commit.
+        [view.layer displayIfNeeded];
+        id contents = view.layer.contents;
+        if (!contents || CFGetTypeID((__bridge CFTypeRef)contents) != IOSurfaceGetTypeID()) return nilValue;
+        IOSurfaceRef surface = (__bridge IOSurfaceRef)contents;
+        IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL);
+        CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+        CGContextRef context = CGBitmapContextCreate(
+            IOSurfaceGetBaseAddress(surface), IOSurfaceGetWidth(surface), IOSurfaceGetHeight(surface),
+            8, IOSurfaceGetBytesPerRow(surface), space,
+            (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+        CGImageRef image = context ? CGBitmapContextCreateImage(context) : NULL;
+        CGContextRelease(context);
+        CGColorSpaceRelease(space);
+        IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
+        if (!image) return nilValue;
+        NSData *png = [[[NSBitmapImageRep alloc] initWithCGImage:image]
+                          representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        CGImageRelease(image);
+        return env->intern(env, [png writeToFile:path atomically:YES] ? "t" : "nil");
+    }
+    return nilValue;
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -257,6 +301,10 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-native-focus-target");
     args[1] = env->make_function(env, 0, 0, focusTarget,
         "Give the explicitly targeted native frame keyboard focus.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-capture-target");
+    args[1] = env->make_function(env, 1, 1, capture,
+        "Save what Emacs last drew in the targeted frame as a PNG at FILE.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;
 }
