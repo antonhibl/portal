@@ -232,6 +232,44 @@ shortcut or changing the user's completion configuration.
   Retain close-on-return behavior here; persistent buffer interaction is the
   separate [[#launcher-persistent-buffer][persistent buffer task]].
 
+*** Presentation policy
+Recorded before implementation.
+- =portal-launcher-present= takes FUNCTION, then the keywords =:kind= and
+  =:mode-line=. A =user-error= rejects a FUNCTION that is neither a command
+  nor callable with no arguments, an unknown keyword or missing value, a
+  =:kind= other than =buffer= or =minibuffer= and a =:mode-line= other than t
+  or nil. It does so before any frame or native state changes, and before an
+  active session is cancelled.
+- There is one dedicated frame at a time, and its role, =minibuffer= included,
+  stays fixed. A request for the other kind deletes it through the existing
+  path, which detaches before deletion, then creates a frame of that kind.
+- Height: a minibuffer panel has =portal-launcher-size=, like a buffer panel;
+  there is no new geometry option. Its only window is the minibuffer, so the
+  prompt is the panel's first line and the completion UI follows directly
+  below it. Unused lines stay empty below, never above. The session binds
+  =resize-mini-frames= to nil, so Emacs cannot resize the natively placed
+  panel. Vertico does not resize a frame's root minibuffer window; it shows
+  =vertico-count= candidates, 10 by default, which the default 420-point
+  panel holds. A UI that asks for more lines than the panel holds is clipped
+  at the bottom: lower its count or raise the height.
+- =*Completions*=: in a minibuffer panel, every buffer display the call
+  requests shows nothing (=display-buffer-no-window=). Stock completion's list
+  appears neither in the panel nor in another frame, where Emacs would
+  otherwise put it; Tab still completes and Return accepts. An inline UI, such
+  as Vertico, Icomplete's vertical mode or Fido, shows candidates in the
+  panel. With =:kind 'buffer=, the list appears in a launcher window, as now.
+  Commands that display or preview buffers, or need a buffer window, require
+  =buffer=.
+- The function runs with =*Portal Launcher*= current in both kinds, rather
+  than the inactive minibuffer's buffer that selecting a minibuffer-only frame
+  makes current.
+- Mode lines: the window parameter =mode-line-format=, set to =none=, hides a
+  window's mode line without changing its buffer's =mode-line-format=. With
+  =:mode-line nil=, the panel's windows get it before the panel shows, and a
+  session-scoped =window-buffer-change-functions= hook gives it to windows
+  created or switched during the call. Cleanup removes the hook, clears the
+  parameter and deletes the call's extra windows, leaving one.
+
 *** Plan
 - Extend [[file:portal-launcher.el][the existing public presentation function]] and validation.
   Reuse cancellation, nested-prompt cleanup, result/error propagation and
