@@ -42,7 +42,7 @@
          ;; Changing/deleting ordinary NS windows can asynchronously activate
          ;; the previous app. Drain that cleanup before another test starts a
          ;; session whose focus-loss observer would correctly cancel it.
-         (sit-for 0.2))
+         (portal-launcher-gui--settle-focus))
        (should-not portal-launcher--frame)
        (should (equal before (frame-list)))
        (should (eq (window-buffer ordinary) ordinary-buffer)))))
@@ -51,6 +51,18 @@
   (redisplay t)
   (accept-process-output nil 0.05)
   (redisplay t))
+
+(defun portal-launcher-gui--settle-focus ()
+  "Wait, up to 3 s, until the frontmost app has not changed for 0.5 s.
+AppKit can report an activation after the next session has started to
+watch focus. `sit-for' would return at once while input is pending."
+  (let ((deadline (+ (float-time) 3))
+        (front (portal-test-frontmost))
+        (since (float-time)))
+    (while (and (< (float-time) deadline) (< (- (float-time) since) 0.5))
+      (accept-process-output nil 0.05)
+      (let ((now (portal-test-frontmost)))
+        (unless (eql now front) (setq front now since (float-time)))))))
 
 (ert-deftest portal-launcher-gui-real-buffer-and-reuse ()
   (portal-launcher-gui--with-panel

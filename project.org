@@ -343,10 +343,14 @@ from its Emacs view's IOSurface; the injector's builds now link IOSurface.
   cleanup fails this check.
 - Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 17
   =portal-launcher-gui-= tests (4 new) and the 2 daily-use tests passed 19 of
-  19 in three runs. One earlier run failed =portal-launcher-gui-session-command-error=
-  once: the session ended before Return arrived, as a stray focus change does.
-  It passed alone and in every later run, and the kind-switching tests passed
-  three repeated runs.
+  19 in three runs. Two runs failed =portal-launcher-gui-session-command-error=:
+  its session ended before Return arrived. Instrumented, the frontmost app
+  changed after the previous test, which changes the ordinary frame's
+  decorations, and AppKit reported that activation only after this test's
+  next session had started to watch focus. The fixture's =(sit-for 0.2)=,
+  which returns at once while input is pending, now waits until the frontmost
+  app has been unchanged for 0.5 s. The suite then passed 19 of 19 in four
+  more runs, with no focus loss in that test.
 - A real Vertico picker, typed into with native key events, ran in minibuffer
   panels of 720×420 and 640×320 points. From inside the prompt: the minibuffer
   was the panel's only window and its root, began at the top of the text area
