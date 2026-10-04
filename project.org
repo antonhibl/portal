@@ -135,7 +135,7 @@ Recorded before implementation.
   from physical delivery in the evidence; relevant existing checks pass.
 
 *** Outcome
-[[file:portal-global-shortcut.el][portal-global-shortcut.el]] provides =portal-global-shortcut-set= and
+Implemented in PR #76. [[file:portal-global-shortcut.el][portal-global-shortcut.el]] provides =portal-global-shortcut-set= and
 =portal-global-shortcut-remove= with the contract above; =portal.el= loads it,
 inertly. The README's Global shortcuts section documents the notation,
 delivery, errors and limits. A press reaches the command loop as the event
