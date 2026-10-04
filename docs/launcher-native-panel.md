@@ -1,15 +1,16 @@
 # Dedicated launcher panel
 
-`portal-launcher.el` owns one dedicated frame; `native/Launcher.swift` owns its
-NSPanel attachment. The C module converts arguments through the existing
+`portal-launcher.el` owns one dedicated frame at a time; `native/Launcher.swift`
+owns its NSPanel attachment. The C module converts arguments through the existing
 `portal.h` platform interface. A launcher is not a Portal view kind and does not
 start the app host, use a controller frame, or load a second native module.
 
 ```text
-portal-launcher-show(buffer)
+portal-launcher-show(buffer), or a session of portal-launcher-present
   validate build and native frame guard
+  delete a frame made for the other presentation kind
   capture the previous application before frame creation/selection
-  create hidden dedicated Emacs frame, if needed
+  create hidden dedicated Emacs frame for the kind, if needed
   attach its EmacsView to a Swift NSPanel
   select the frame, place the panel, enable Emacs redisplay
 
@@ -115,13 +116,15 @@ remain in the daily-use validation task.
 
 ## Command sessions
 
-`portal-launcher-present` calls one interactive command synchronously inside a
-unique catch tag. Escape, C-g, hide, another invocation and native focus loss
-throw to that tag, unwinding every nested prompt before cleanup. Ordinary
-command errors propagate through the same cleanup. The original Emacs window
-(or its frame if that window was deleted) is selected without an application
-activation request. Minibuffer ownership, display rules and the emulation keymap
-are dynamically bound; no completion package settings are rewritten.
+`portal-launcher-present` calls one interactive command, or function of no
+arguments, synchronously inside a unique catch tag. Escape, C-g, hide, another
+invocation and native focus loss throw to that tag, unwinding every nested
+prompt before cleanup. Ordinary errors propagate through the same cleanup. The
+original Emacs window (or its frame if that window was deleted) is selected
+without an application activation request; when the launcher itself was
+selected, that is the window it was shown from. Minibuffer ownership, display
+rules and the emulation keymap are dynamically bound; no completion package
+settings are rewritten.
 
 Deletion advice catches requests before Emacs's active-minibuffer validation.
 Delete and disable requests are performed once, after the command has unwound
@@ -150,3 +153,56 @@ including prompts with an overriding completion keymap. Stale IDs are rejected
 both when queuing and dispatching. Hide/detach suppress their own notifications
 and remove the app and mouse observers; detach also removes the panel observer.
 There is no polling timer or extra process.
+
+## Presentation kinds
+
+`portal-launcher-present` takes `:kind` and `:mode-line`. A `buffer`
+presentation uses the frame described above, which has its own minibuffer. A
+`minibuffer` presentation uses a minibuffer-only frame, `(minibuffer . only)`,
+whose root window is the minibuffer, as M-x's
+[present.el](https://github.com/xiaoxinghu/m-x/blob/main/elisp/present.el)
+does; hiding a mode line would still leave the empty buffer window. The
+native-role guard compares requests with the role of the frame's kind.
+
+A frame's `minibuffer` parameter cannot change, so a request for the other kind
+deletes the dedicated frame through the usual path, detaching it in
+`delete-frame-functions`, and then creates one of that kind. The deletion comes
+before the previous application is captured, since detaching forgets it. No
+minibuffer is active then: a session refuses to start inside one and defers its
+own deletions until it has unwound. In the graphical tests on 2026-10-04, a
+session's show took 20–37 ms when it created a frame, as every change of kind
+does, and about 5 ms when it reused one. The native panel does not know the kind: attachment, placement and
+focus handling are the same.
+
+Both kinds have `portal-launcher-size`. In a minibuffer frame, the minibuffer
+starts at the top of the text area and fills it; Vertico does not resize a root
+minibuffer window, and unused lines stay blank below the candidates. The
+session binds `resize-mini-frames` to nil, so a user setting cannot make Emacs
+resize the frame under its native placement.
+
+In a minibuffer session, `display-buffer-overriding-action` is
+`display-buffer-no-window` with `allow-no-window`. Without it, Emacs puts a
+buffer that a minibuffer-only frame displays, such as `*Completions*`, in the
+last ordinary frame. The function runs with `*Portal Launcher*` current:
+selecting a minibuffer-only frame would otherwise make the inactive
+minibuffer's buffer current.
+
+`:mode-line nil` sets the `mode-line-format` window parameter of each launcher
+window to `none` before the panel shows, so buffers keep their own
+`mode-line-format` elsewhere. A `window-buffer-change-functions` hook, added
+for the session only, sets it on windows that redisplay finds new or showing
+another buffer. Cleanup, after hiding, deletes all but the first launcher
+window and clears the parameter; `portal-launcher-show` clears it too.
+
+The graphical tests captured these from the surface Emacs drew into, so they
+lack the panel's corners and shadow; the text is test output. Vertico in a
+720×420 minibuffer panel, after typing `al` and Down:
+
+![Vertico in a minibuffer panel](evidence/launcher-minibuffer-vertico.png)
+
+A buffer panel split during the call, with each window's mode line, then with
+`:mode-line nil`:
+
+![A split buffer panel with mode lines](evidence/launcher-buffer-mode-lines.png)
+
+![The same split with :mode-line nil](evidence/launcher-buffer-no-mode-lines.png)

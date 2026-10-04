@@ -233,20 +233,60 @@ another interactive command, configure `portal-launcher-command`:
 (portal-launcher-present #'my/launcher-example)
 ```
 
-The command uses the panel's own minibuffer and the user's completion setup,
-including Vertico, Orderless and Marginalia. Nested prompts stay in the panel.
+Each call chooses how the panel looks, without registering a shortcut or
+changing the completion setup:
+
+```elisp
+;; Only the prompt and an inline completion UI, such as Vertico:
+(portal-launcher-present #'my/launcher-example :kind 'minibuffer)
+;; Any function of no arguments; its value is returned:
+(portal-launcher-present (lambda () (read-string "Name: ")) :kind 'minibuffer)
+;; A buffer window without mode lines:
+(portal-launcher-present #'my/buffer-command :kind 'buffer :mode-line nil)
+```
+
+`:kind 'buffer`, the default, shows a buffer window above the panel's own
+minibuffer, as before. Buffers the function displays appear in the panel, and
+windows it creates there are deleted when the panel hides. `:kind 'minibuffer`
+makes the whole panel a minibuffer: the prompt is its first line, an inline
+completion UI follows directly below, and unused lines stay empty at the
+bottom. Buffers the function displays appear nowhere, so stock completion's
+`*Completions*` list is not shown, though Tab still completes and Return
+accepts; Vertico, Icomplete's vertical mode or Fido show candidates in the
+panel. Commands that display or preview buffers, split windows or otherwise
+need a buffer window require `buffer`.
+
+Both kinds have `portal-launcher-size`, and Emacs does not fit the panel to its
+content. A completion UI that asks for more lines than the panel holds is
+clipped at the bottom; the default 420 points hold Vertico's default 10
+candidates. Lower the count or raise the height. Changing kind replaces the
+dedicated frame; presenting the same kind again reuses it.
+
+`:mode-line nil` hides the mode lines of the panel's windows, including windows
+created and buffers switched during the call; the default, t, shows each
+buffer's own. It sets the `mode-line-format` window parameter, so the same
+buffers keep their mode lines in other frames. A minibuffer panel has none.
+
+The function is an interactive command, called with `call-interactively` so it
+sees a prefix argument, or any function of no arguments, called with `funcall`.
+It runs with the buffer `*Portal Launcher*` current, in the panel's own
+minibuffer and with the user's completion setup, including Vertico, Orderless
+and Marginalia. Nested prompts stay in the panel. An invalid function or option
+signals an error before anything is shown.
+
 Success hides the panel; Escape, C-g, another invocation, `portal-launcher-hide`,
 or losing keyboard focus cancels the entire session. Errors propagate after
 cleanup. Frame deletion and disabling unwind prompts before releasing the frame.
 Cancellation returns focus to the previous app while the panel still owns the
 keyboard; a successful external action or click-away preserves the destination
 app's focus. Emacs's original window selection is restored without activating
-its application. Display rules and cancellation keys last only for the session.
+its application. Display rules, presentation options and cancellation keys last
+only for the session.
 
-Commands must be interactive and synchronous. Invoke after any existing
-minibuffer has finished. Commands that deliberately use other frames or catch
-arbitrary throws need explicit wrappers. Set `portal-launcher-command` back to
-nil for the plain reusable buffer, reusing any content supplied to
+Functions must be synchronous. Invoke after any existing minibuffer has
+finished. Functions that deliberately use other frames or catch arbitrary
+throws need explicit wrappers. Set `portal-launcher-command` back to nil for
+the plain reusable buffer, reusing any content supplied to
 `portal-launcher-show`.
 
 The mode's chord is the [global shortcut](#global-shortcuts) named
@@ -906,7 +946,7 @@ Build the test-only AppKit event injector (no Accessibility permission required)
 ```sh
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -bundle \
   -I "$(cat build/emacs-include.txt)" test/terminal-input.m \
-  -framework AppKit -framework WebKit -framework Carbon \
+  -framework AppKit -framework WebKit -framework Carbon -framework IOSurface \
   -o build/test-terminal-input.dylib
 emacs -Q --module-assertions -L "$PWD" -l "$PWD/portal.el" \
   --eval "(module-load \"$PWD/build/test-terminal-input.dylib\")" \
@@ -2139,6 +2179,22 @@ and stale-record policy are covered by batch ERT and the C notification tests.
 The launcher's shortcut is a global shortcut there: the injected press shows
 and hides the panel through the real command loop, and one from before the
 mode was enabled again is ignored.
+
+Presentation tests run a real Vertico picker in a minibuffer panel at two
+sizes. From inside the prompt they check that the minibuffer is the panel's
+only window, starts at the top and fills it, that ten candidates show
+unclipped with no mode line, and that the native geometry is as requested;
+typing, Down and Return select a candidate. In a minibuffer panel, stock
+completion completes with Tab and shows `*Completions*` nowhere. A buffer panel
+shows or hides the mode lines of its window, a split and switched buffers,
+while the ordinary window on the same buffer keeps its own. Alternating kinds
+and mode-line settings keeps one launcher frame and restores every session
+setting; afterward, ordinary prompts with stock completion and Vertico use the
+ordinary frame as before. The dismissal, error, focus-loss and cancellation
+focus tests run in both kinds. With `PORTAL_LAUNCHER_SCREENSHOTS` set to a
+directory, these tests save pictures of the panel there. The injector's
+`portal-test-capture-target` reads them from the surface Emacs drew into, so it
+needs no Screen Recording permission; they show no panel shadow or corners.
 
 The graphical `portal-global-shortcut-gui-` tests send hot key events to the
 installed Carbon handler with `portal-test-hotkey`, with no Portal view or

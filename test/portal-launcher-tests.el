@@ -73,6 +73,22 @@
      (lambda (_frame parameters) (setq passed parameters)) nil
      '((parent-frame . nil) (undecorated . t) (font . "Menlo 18") (ns-appearance . dark)))
     (should (equal passed '((font . "Menlo 18") (ns-appearance . dark)))))
+  (let ((portal-launcher--frame (selected-frame)) passed)
+    (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'minibuffer)))
+      (should-error
+       (portal-launcher--guard-parameters
+        (lambda (&rest _) (ert-fail "Mutated frame")) nil '((minibuffer . t)))
+       :type 'user-error)
+      (portal-launcher--guard-parameters
+       (lambda (_frame parameters) (setq passed parameters)) nil
+       '((minibuffer . only) (undecorated . t) (font . "Menlo 18"))))
+    (should (equal passed '((font . "Menlo 18")))))
+  ;; Each kind's role is the buffer role but for the minibuffer.
+  (dolist (kind '(minibuffer minibuffer buffer))
+    (should (equal (assq-delete-all 'minibuffer (copy-alist (portal-launcher--frame-role kind)))
+                   (assq-delete-all 'minibuffer (copy-alist portal-launcher--role)))))
+  (should (equal (assq 'minibuffer (portal-launcher--frame-role 'minibuffer)) '(minibuffer . only)))
+  (should (equal (assq 'minibuffer portal-launcher--role) '(minibuffer . t)))
   (let (portal-launcher--frame)
     (should (equal
              (portal-launcher--guard-parameters (lambda (_frame parameters) parameters)
@@ -205,10 +221,24 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should-not (equal native-chord "")))))
 
 (ert-deftest portal-launcher-command-validation-precedes-native-work ()
-  (cl-letf (((symbol-function 'portal-launcher-show) (lambda (&rest _) (ert-fail "Presented invalid command"))))
-    (dolist (command '(nil identity 42))
+  (cl-letf (((symbol-function 'portal-launcher--show) (lambda (&rest _) (ert-fail "Presented invalid command")))
+            ((symbol-function 'portal-launcher-cancel) (lambda () (ert-fail "Cancelled the session"))))
+    (dolist (command (list nil 'identity 42 "string" (lambda (_x) nil)))
       (let ((portal-launcher-command command))
-        (should-error (portal-launcher-present) :type 'user-error)))))
+        (should-error (portal-launcher-present) :type 'user-error)))
+    ;; Invalid options, even with a valid function, change nothing; an active
+    ;; session would be cancelled before anything is shown.
+    (let ((portal-launcher--session (portal-launcher--make-session :tag (make-symbol "active"))))
+      (dolist (options '((:kind) (:kind nil) (:kind window) (:kind minibuffer :mode-line)
+                         (:mode-line none) (:mode-line 0) (:size 3) (minibuffer)))
+        (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error))
+      (should-error (portal-launcher-present (lambda (_x) nil) :kind 'minibuffer) :type 'user-error))))
+
+(ert-deftest portal-launcher-options-default-to-a-buffer-with-mode-lines ()
+  (should (equal (portal-launcher--options nil) '(buffer t)))
+  (should (equal (portal-launcher--options '(:kind minibuffer)) '(minibuffer t)))
+  (should (equal (portal-launcher--options '(:mode-line nil :kind buffer)) '(buffer nil)))
+  (should (equal (portal-launcher--options '(:kind minibuffer :mode-line nil)) '(minibuffer nil))))
 
 (defmacro portal-launcher-test--session (&rest body)
   "Exercise real session unwinding with only the native frame stubbed."
@@ -216,8 +246,9 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
   `(let ((portal-launcher--frame (selected-frame))
          (native-comp-enable-subr-trampolines nil)
          (portal-launcher--session nil) (unread-command-events nil)
-         (hidden nil) (session-id 10) (deleted 0) (disabled 0))
-     (cl-letf (((symbol-function 'portal-launcher-show) #'ignore)
+         (hidden nil) (shown nil) (session-id 10) (deleted 0) (disabled 0))
+     (cl-letf (((symbol-function 'portal-launcher--show)
+                (lambda (kind _buffer mode-line) (push (list kind mode-line) shown)))
                ((symbol-function 'portal--launcher-inspect) (lambda () (list :session session-id)))
                ((symbol-function 'portal--launcher-hide) (lambda (&optional restore) (push restore hidden)))
                ((symbol-function 'make-frame-invisible) #'ignore)
@@ -238,6 +269,74 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should (eq old-rules display-buffer-alist))
       (should (eq old-maps emulation-mode-map-alists))
       (should-not portal-launcher--session))))
+
+(ert-deftest portal-launcher-calls-commands-and-functions ()
+  (portal-launcher-test--session
+    (should (eq 'value (portal-launcher-present (lambda () 'value))))
+    (should (equal "*Portal Launcher*" (portal-launcher-present (lambda () (buffer-name)) :kind 'minibuffer)))
+    ;; A command reads the caller's prefix argument; a plain function is not
+    ;; called interactively.
+    (let ((current-prefix-arg '(4)))
+      (should (equal '(4) (portal-launcher-present (lambda (arg) (interactive "P") arg))))
+      (should (equal '((4) nil) (portal-launcher-present
+                               (lambda (&optional arg) (list current-prefix-arg arg))
+                               :kind 'minibuffer))))
+    (let ((portal-launcher-command #'portal-launcher-test--command))
+      (should (eq 'command (portal-launcher-present nil :kind 'buffer :mode-line nil))))
+    (should (equal shown '((buffer nil) (minibuffer t) (buffer t) (minibuffer t) (buffer t))))
+    (should (equal hidden '(nil nil nil nil nil)))
+    (should-not portal-launcher--session)))
+
+(defun portal-launcher-test--command ()
+  (interactive)
+  'command)
+
+(ert-deftest portal-launcher-presentation-settings-are-scoped ()
+  (portal-launcher-test--session
+    (let ((resize-mini-frames 'user-setting)
+          (window-buffer-change-functions (list #'ignore))
+          (frame (selected-frame))
+          (other (get-buffer-create " *launcher test*")))
+      ;; A minibuffer presentation displays no buffer, here or elsewhere.
+      (should (equal '(nil nil 1)
+                     (portal-launcher-present
+                      (lambda ()
+                        (list (display-buffer other) resize-mini-frames
+                              (length (window-list frame 'never))))
+                      :kind 'minibuffer)))
+      (should-not (get-buffer-window other t))
+      ;; A buffer presentation hides new windows' mode lines through the
+      ;; session's redisplay hook, then deletes them and clears the parameter.
+      (should (equal '((none none) (portal-launcher--hide-mode-lines ignore))
+                     (portal-launcher-present
+                      (lambda ()
+                        (let ((window (display-buffer other)))
+                          (run-hook-with-args 'window-buffer-change-functions frame)
+                          (list (mapcar (lambda (window) (window-parameter window 'mode-line-format))
+                                        (list (selected-window) window))
+                                window-buffer-change-functions)))
+                      :mode-line nil)))
+      (should (equal '(ignore) window-buffer-change-functions))
+      (should (eq resize-mini-frames 'user-setting))
+      (should (= 1 (length (window-list frame 'never))))
+      (should-not (window-parameter (selected-window) 'mode-line-format))
+      ;; With mode lines, the hook is absent and new windows still go.
+      (should (equal '(nil (ignore))
+                     (portal-launcher-present
+                      (lambda ()
+                        (list (window-parameter (display-buffer other) 'mode-line-format)
+                              window-buffer-change-functions)))))
+      (should (= 1 (length (window-list frame 'never))))
+      ;; Errors and cancellation restore the same state.
+      (dolist (ending (list (lambda () (error "Command failed")) (lambda () (signal 'quit nil))
+                            #'portal-launcher-cancel))
+        (ignore-errors
+          (portal-launcher-present
+           (lambda () (display-buffer other) (funcall ending)) :mode-line nil)))
+      (should (equal '(ignore) window-buffer-change-functions))
+      (should (= 1 (length (window-list frame 'never))))
+      (should-not (window-parameter (selected-window) 'mode-line-format))
+      (kill-buffer other))))
 
 (ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
   (portal-launcher-test--session
@@ -279,7 +378,7 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
 
 (ert-deftest portal-launcher-show-failure-restores-session-bindings ()
   (portal-launcher-test--session
-    (cl-letf (((symbol-function 'portal-launcher-show) (lambda (&rest _) (error "Cannot present"))))
+    (cl-letf (((symbol-function 'portal-launcher--show) (lambda (&rest _) (error "Cannot present"))))
       (should-error (portal-launcher-present (lambda () (interactive) (ert-fail "Ran without panel")))))
     (should-not portal-launcher--session)
     (should (equal hidden '(t)))))
@@ -304,7 +403,7 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
                       (portal-launcher--frame (selected-frame))
                       (frame (selected-frame))
                       (detached 0) (released 0) (deleted 0))
-                  (cl-letf (((symbol-function 'portal-launcher-show) #'ignore)
+                  (cl-letf (((symbol-function 'portal-launcher--show) #'ignore)
                             ((symbol-function 'portal--launcher-inspect) (lambda () '(:session 1)))
                             ((symbol-function 'portal--launcher-hide) #'ignore)
                             ((symbol-function 'make-frame-invisible) #'ignore)

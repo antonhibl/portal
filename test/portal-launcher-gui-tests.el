@@ -10,12 +10,16 @@
 (declare-function portal-test-native-target-frame "test-terminal-input" (title))
 (declare-function portal-test-frontmost "test-terminal-input" (&optional app))
 (declare-function portal-test-native-focus-target "test-terminal-input" ())
+(declare-function portal-test-capture-target "test-terminal-input" (file))
 (declare-function vertico-mode "vertico" (&optional arg))
 (declare-function marginalia-mode "marginalia" (&optional arg))
 (defvar launcher--apps)
 (defvar launcher--current-entries)
 (defvar launcher-bangs)
 (defvar vertico-sort-function)
+(defvar vertico-count)
+(defvar vertico--candidates-ov)
+(defvar vertico--index)
 
 (defmacro portal-launcher-gui--with-panel (&rest body)
   (declare (indent 0))
@@ -222,8 +226,9 @@
   (interactive)
   (funcall portal-launcher-gui--action))
 
-(defun portal-launcher-gui--present (command strokes &optional action)
-  "Run COMMAND with native STROKES typed into its prompts; C-] calls ACTION."
+(defun portal-launcher-gui--present (command strokes &optional action options)
+  "Run COMMAND with native STROKES typed into its prompts; C-] calls ACTION.
+OPTIONS are `portal-launcher-present' keywords and values."
   (let* ((portal-launcher-gui--action action)
          ;; A runner may call ERT from a timer, where quit is inhibited. Real
          ;; command-loop invocation permits native C-g to unwind a minibuffer.
@@ -249,7 +254,7 @@
     (use-global-map map)
     (unwind-protect
         (prog1 (with-timeout (10 (error "Launcher prompt timed out; pending input: %S" strokes))
-                 (portal-launcher-present command))
+                 (apply #'portal-launcher-present command options))
           (should-not strokes)
           (should (= depth (recursion-depth)))
           (should-not (active-minibuffer-window))
@@ -376,12 +381,219 @@
         (should (eq maps emulation-mode-map-alists))
         (should (eq (selected-window) ordinary))))))
 
+;; Set PORTAL_LAUNCHER_SCREENSHOTS to a directory to keep pictures of the panel.
+(defun portal-launcher-gui--capture (name)
+  "Save the panel's Emacs drawing as NAME.png in $PORTAL_LAUNCHER_SCREENSHOTS."
+  (when-let* ((directory (getenv "PORTAL_LAUNCHER_SCREENSHOTS")))
+    (redisplay t)
+    (portal-view--with-frame-title portal-launcher--frame #'portal-test-native-target-frame)
+    (unwind-protect
+        (should (portal-test-capture-target (expand-file-name (concat name ".png") directory)))
+      (portal-test-native-target-frame nil))))
+
+(defun portal-launcher-gui--minibuffer-layout ()
+  "Describe the minibuffer launcher's layout, from inside its prompt."
+  (redisplay t)
+  (let* ((frame portal-launcher--frame)
+         (mini (active-minibuffer-window))
+         (state (portal--launcher-inspect)))
+    (list :input (minibuffer-contents)
+          :kind (portal-launcher--kind frame)
+          :windows (equal (window-list frame t) (list mini))
+          :root (eq (frame-root-window frame) mini)
+          :top (- (cadr (window-pixel-edges mini)) (frame-internal-border-width frame))
+          :spare (- (frame-pixel-height frame) (* 2 (frame-internal-border-width frame))
+                    (window-pixel-height mini))
+          :clipped (- (cdr (window-text-pixel-size mini nil nil nil nil t))
+                      (window-pixel-height mini))
+          :mode-line (window-mode-line-height mini)
+          ;; Vertico starts its candidates with a newline and ends each with one.
+          :candidates (and (bound-and-true-p vertico--candidates-ov)
+                           (1- (cl-count ?\n (overlay-get vertico--candidates-ov 'before-string))))
+          :index (bound-and-true-p vertico--index)
+          :size (list (frame-pixel-width frame) (frame-pixel-height frame))
+          :native (equal (plist-get state :requested) (plist-get state :actual))
+          :actual (plist-get state :actual))))
+
+(ert-deftest portal-launcher-gui-minibuffer-panel-vertico ()
+  (require 'vertico)
+  (portal-launcher-gui--with-panel
+    (dolist (size '((720 420) (640 320)))
+      (let ((portal-launcher-size size)
+            (vertico-sort-function nil) (vertico-count 10)
+            (completion-styles '(basic)) (completion-category-defaults nil)
+            layouts)
+        (vertico-mode 1)
+        (unwind-protect
+            (should
+             (equal "al02"
+                    (portal-launcher-gui--present
+                     (lambda ()
+                       (minibuffer-with-setup-hook
+                           (lambda ()
+                             (add-hook 'post-command-hook
+                                       (lambda () (push (portal-launcher-gui--minibuffer-layout) layouts))
+                                       90 t))
+                         (completing-read
+                          "Pick: " (cons "beta" (mapcar (lambda (n) (format "al%02d" n))
+                                                        (number-sequence 1 15)))
+                          nil t)))
+                     (append (portal-launcher-gui--text "al")
+                             '((125 0 "\uf701"))
+                             ;; A no-op key, so the layout after Down is
+                             ;; pictured once Vertico has redrawn.
+                             '((30 262144 "\C-]")) '((36 0 "\r")))
+                     (lambda () (portal-launcher-gui--capture (format "minibuffer-vertico-%dx%d" (car size) (cadr size))))
+                     '(:kind minibuffer))))
+          (vertico-mode -1))
+        (let ((layout (cadr layouts)))
+          (message "Launcher minibuffer layout %S: %S" size layout)
+          (should (equal (plist-get layout :input) "al"))
+          (should (eq (plist-get layout :kind) 'minibuffer))
+          ;; The minibuffer is the panel's only window: no buffer or mode line
+          ;; above it, and the prompt starts at the top of the text area.
+          (should (plist-get layout :windows))
+          (should (plist-get layout :root))
+          (should (= 0 (plist-get layout :top)))
+          (should (= 0 (plist-get layout :spare)))
+          (should (= 0 (plist-get layout :mode-line)))
+          ;; Ten candidates of fifteen, the second selected, none clipped.
+          (should (= 10 (plist-get layout :candidates)))
+          (should (= 1 (plist-get layout :index)))
+          (should (<= (plist-get layout :clipped) 0))
+          (should (equal (plist-get layout :size) size))
+          (should (plist-get layout :native))
+          (should (equal (cddr (plist-get layout :actual)) size)))))))
+
+(ert-deftest portal-launcher-gui-minibuffer-panel-stock-completion ()
+  (portal-launcher-gui--with-panel
+    (let ((windows (window-list (window-frame ordinary) t))
+          shown)
+      ;; Tab completes and Return accepts, but *Completions* shows nowhere.
+      (should
+       (equal "alpha"
+              (portal-launcher-gui--present
+               (lambda ()
+                 (minibuffer-with-setup-hook
+                     (lambda ()
+                       (add-hook 'post-command-hook
+                                 (lambda ()
+                                   (push (list (minibuffer-contents)
+                                               (get-buffer-window "*Completions*" t))
+                                         shown))
+                                 90 t))
+                   (completing-read "Pick: " '("alpha" "alps" "beta") nil t)))
+               (append (portal-launcher-gui--text "a") '((48 0 "\t") (48 0 "\t"))
+                       (portal-launcher-gui--text "ha") '((36 0 "\r")))
+               nil '(:kind minibuffer))))
+      (should (member '("alp" nil) shown))
+      (should-not (cl-some #'cadr shown))
+      (should (equal windows (window-list (window-frame ordinary) t))))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-mode-lines ()
+  (portal-launcher-gui--with-panel
+    (let ((format (buffer-local-value 'mode-line-format ordinary-buffer))
+          (ordinary-height (window-mode-line-height ordinary)))
+      (should (> ordinary-height 0))
+      (dolist (mode-line '(t nil))
+        (let ((heights
+               (portal-launcher-present
+                (lambda ()
+                  (cl-flet ((height (window) (redisplay t) (window-mode-line-height window)))
+                    (let* ((first (selected-window))
+                           (initial (height first))
+                           (second (split-window first))
+                           (split (height second)))
+                      ;; Both launcher windows switch buffers; one shows the
+                      ;; ordinary window's buffer.
+                      (switch-to-buffer ordinary-buffer)
+                      (set-window-buffer second content)
+                      (with-current-buffer content (insert (format "Mode lines: %s\n" mode-line)))
+                      (prog1 (list initial split (height first) (height second)
+                                   (window-mode-line-height ordinary))
+                        (portal-launcher-gui--capture (format "buffer-mode-line-%s" mode-line))))))
+                :mode-line mode-line)))
+          (message "Launcher mode lines %S: %S" mode-line heights)
+          (should (equal (car (last heights)) ordinary-height))
+          (should (cl-every (if mode-line (lambda (height) (> height 0)) #'zerop) (butlast heights)))
+          ;; The call's split is gone, and the parameter and hook with it.
+          (should (equal (window-list portal-launcher--frame 'never)
+                         (list (frame-first-window portal-launcher--frame))))
+          (should-not (window-parameter (frame-first-window portal-launcher--frame) 'mode-line-format))
+          (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions))
+          (should (eq format (buffer-local-value 'mode-line-format ordinary-buffer)))
+          (should (= ordinary-height (window-mode-line-height ordinary))))))))
+
+(ert-deftest portal-launcher-gui-alternating-kinds ()
+  (require 'vertico)
+  (portal-launcher-gui--with-panel
+    (let ((settings (list display-buffer-alist display-buffer-overriding-action resize-mini-frames
+                          window-buffer-change-functions emulation-mode-map-alists
+                          enable-recursive-minibuffers default-minibuffer-frame pop-up-frames
+                          completing-read-function))
+          (frames (length (frame-list)))
+          timings)
+      ;; Presenting while an explicitly shown launcher is selected returns to
+      ;; the window it was shown from, even when the frame is replaced.
+      (dolist (kind '(buffer minibuffer))
+        (portal-launcher-show content)
+        (should (eq (selected-frame) portal-launcher--frame))
+        (should (eq kind (portal-launcher-present (lambda () kind) :kind kind)))
+        (should (eq (selected-window) ordinary)))
+      (dolist (options '((:kind minibuffer) (:kind buffer :mode-line nil) (:kind minibuffer)
+                         (:mode-line t) (:kind buffer :mode-line nil) (:kind minibuffer :mode-line nil)
+                         (:kind minibuffer) ()))
+        (let* ((kind (or (plist-get options :kind) 'buffer))
+               (start (float-time))
+               (state (portal-launcher-gui--present
+                       (lambda ()
+                         (push (list options (- (float-time) start)) timings)
+                         (list (portal-launcher--kind portal-launcher--frame) (length (frame-list))
+                               (read-string "Name: ")))
+                       (append (portal-launcher-gui--text "ok") '((36 0 "\r"))) nil options)))
+          (should (equal state (list kind (1+ frames) "ok")))
+          (should (= (length (frame-list)) (1+ frames)))
+          (should (plist-get (portal--launcher-inspect) :attached))
+          (should (portal-launcher--live-p kind))
+          (when (eq kind 'buffer)
+            (should (= 1 (length (window-list portal-launcher--frame 'never))))
+            (should-not (window-parameter (frame-first-window portal-launcher--frame) 'mode-line-format)))
+          (should (equal settings
+                         (list display-buffer-alist display-buffer-overriding-action resize-mini-frames
+                               window-buffer-change-functions emulation-mode-map-alists
+                               enable-recursive-minibuffers default-minibuffer-frame pop-up-frames
+                               completing-read-function)))))
+      (message "Launcher show times (s): %S" (nreverse timings))
+      ;; Ordinary prompts behave as before, in the ordinary frame, with stock
+      ;; completion's list there and with Vertico.
+      (dolist (enhanced '(nil t))
+        (vertico-mode (if enhanced 1 -1))
+        (unwind-protect
+            (let (minibuffer-frame completions-frame)
+              (should
+               (equal "alpha"
+                      (minibuffer-with-setup-hook
+                          (lambda ()
+                            (setq minibuffer-frame (window-frame (active-minibuffer-window)))
+                            (add-hook 'post-command-hook
+                                      (lambda ()
+                                        (when-let* ((window (get-buffer-window "*Completions*" t)))
+                                          (setq completions-frame (window-frame window))))
+                                      nil t))
+                        (let ((unread-command-events
+                               (listify-key-sequence (kbd (if enhanced "a l p h a RET"
+                                                            "a l TAB TAB h a RET")))))
+                          (completing-read "Pick: " '("alpha" "alps") nil t)))))
+              (should (eq minibuffer-frame (window-frame ordinary)))
+              (unless enhanced (should (eq completions-frame (window-frame ordinary)))))
+          (vertico-mode -1))))))
+
 (ert-deftest portal-launcher-gui-session-nested-dismissal-and-reentry ()
   (portal-launcher-gui--with-panel
-    (dolist (reason '(escape quit second shortcut hide delete disable))
-      (message "Launcher nested dismissal: %S" reason)
-      (let (frames continued)
-        (progn
+    (dolist (kind '(buffer minibuffer))
+      (dolist (reason '(escape quit second shortcut hide delete disable))
+        (message "Launcher nested dismissal: %S %S" kind reason)
+        (let (frames continued)
           (portal-launcher-gui--present
            (lambda ()
              (interactive)
@@ -404,53 +616,65 @@
                 (portal-view--read-records))
                ('hide (portal-launcher-hide))
                ('delete (delete-frame portal-launcher--frame t))
-               ('disable (portal-launcher-mode -1))))))
-        (should-not continued)
-        (should (= (length frames) 2))
-        (should (eq (car frames) (cadr frames)))
-        (should-not (eq (car frames) (window-frame ordinary)))
-        (should (eq ordinary (selected-window)))
-        (when (eq reason 'disable) (should-not portal-launcher-mode))
-        (when (memq reason '(delete disable)) (should-not (frame-live-p (car frames))))
-        (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again))))))))
+               ('disable (portal-launcher-mode -1))))
+           (list :kind kind))
+          (should-not continued)
+          (should (= (length frames) 2))
+          (should (eq (car frames) (cadr frames)))
+          (should-not (eq (car frames) (window-frame ordinary)))
+          (when (frame-live-p (car frames))
+            (should (eq kind (portal-launcher--kind (car frames)))))
+          (should (eq ordinary (selected-window)))
+          (when (eq reason 'disable) (should-not portal-launcher-mode))
+          (when (memq reason '(delete disable)) (should-not (frame-live-p (car frames))))
+          ;; Re-entry works, in a buffer launcher even after a minibuffer one.
+          (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again))))
+          (should (portal-launcher--live-p 'buffer)))))))
 
 (ert-deftest portal-launcher-gui-session-command-error ()
   (portal-launcher-gui--with-panel
-    (let (read-finished)
-      (should-error
-       (portal-launcher-gui--present
-        (lambda () (interactive) (read-string "Before error: ")
-          (setq read-finished t) (error "Command failed"))
-        '((36 0 "\r"))))
-      (should read-finished))
-    (should-not (active-minibuffer-window))
-    (should-not portal-launcher--session)
-    (should-not (plist-get (portal--launcher-inspect) :visible))
-    (should (eq ordinary (selected-window)))
-    (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again))))))
+    (dolist (kind '(buffer minibuffer))
+      (let (read-finished)
+        (should (equal '(error "Command failed")
+                       (should-error
+                        (portal-launcher-gui--present
+                         (lambda () (read-string "Before error: ")
+                           (setq read-finished t) (error "Command failed"))
+                         '((36 0 "\r")) nil (list :kind kind :mode-line nil)))))
+        (should read-finished))
+      (should-not (active-minibuffer-window))
+      (should-not portal-launcher--session)
+      (should-not (plist-get (portal--launcher-inspect) :visible))
+      (should (eq ordinary (selected-window)))
+      (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions))
+      (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again) :kind kind))))))
 
 (ert-deftest portal-launcher-gui-session-focus-loss ()
   (portal-launcher-gui--with-panel
-    (let (continued)
-      (portal-launcher-gui--present
-       (lambda () (interactive) (read-string "Focus away: ") (setq continued t))
-       '((30 262144 "\C-]"))
-       (lambda ()
-         (portal-view--with-frame-title (window-frame ordinary) #'portal-test-native-target-frame)
-         (portal-test-native-focus-target)))
-      (should-not continued)
-      (should (eq ordinary (selected-window))))))
+    (dolist (kind '(buffer minibuffer))
+      (let (continued)
+        (portal-launcher-gui--present
+         (lambda () (interactive) (read-string "Focus away: ") (setq continued t))
+         '((30 262144 "\C-]"))
+         (lambda ()
+           (portal-view--with-frame-title (window-frame ordinary) #'portal-test-native-target-frame)
+           (portal-test-native-focus-target))
+         (list :kind kind))
+        (should-not continued)
+        (should (eq ordinary (selected-window)))))))
 
 (ert-deftest portal-launcher-gui-z-session-external-focus ()
   (portal-launcher-gui--with-panel
     ;; These are already-running, independent applications. Test both external
     ;; activation during a prompt and a command that opens an app and returns.
     (let ((previous (portal-test-frontmost)))
-      (portal-launcher-gui--present
-       (lambda () (interactive) (read-string "Cancel: ")) '((53 0 "\e")))
-      (sit-for 0.1)
-      (message "Launcher cancellation frontmost: %S (previous %S)" (portal-test-frontmost) previous)
-      (should (eql previous (portal-test-frontmost))))
+      (dolist (kind '(buffer minibuffer buffer))
+        (portal-launcher-gui--present
+         (lambda () (interactive) (read-string "Cancel: ")) '((53 0 "\e")) nil (list :kind kind))
+        (sit-for 0.1)
+        (message "Launcher %s cancellation frontmost: %S (previous %S)"
+                 kind (portal-test-frontmost) previous)
+        (should (eql previous (portal-test-frontmost)))))
     (let ((destination (portal-test-frontmost -1)) continued)
       (should destination)
       (portal-launcher-gui--present
