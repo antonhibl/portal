@@ -564,6 +564,15 @@ OPTIONS are `portal-launcher-present' keywords and values."
                                enable-recursive-minibuffers default-minibuffer-frame pop-up-frames
                                completing-read-function)))))
       (message "Launcher show times (s): %S" (nreverse timings))
+      ;; A split made in an explicitly shown panel outlives a presentation;
+      ;; the window the call creates does not.
+      (portal-launcher-show content)
+      (let ((kept (split-window (frame-first-window portal-launcher--frame))))
+        (portal-launcher-hide)
+        (portal-launcher-present (lambda () (split-window)) :mode-line nil)
+        (should (window-live-p kept))
+        (should (= 2 (length (window-list portal-launcher--frame 'never))))
+        (should (eq (selected-window) ordinary)))
       ;; Ordinary prompts behave as before, in the ordinary frame, with stock
       ;; completion's list there and with Vertico.
       (dolist (enhanced '(nil t))

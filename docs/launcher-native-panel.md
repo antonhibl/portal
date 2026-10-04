@@ -191,8 +191,9 @@ minibuffer's buffer current.
 window to `none` before the panel shows, so buffers keep their own
 `mode-line-format` elsewhere. A `window-buffer-change-functions` hook, added
 for the session only, sets it on windows that redisplay finds new or showing
-another buffer. Cleanup, after hiding, deletes all but the first launcher
-window and clears the parameter; `portal-launcher-show` clears it too.
+another buffer. Cleanup, after hiding, clears the parameter and deletes the
+windows the call created, keeping those from before it, such as a split made
+in an explicitly shown panel; `portal-launcher-show` clears the parameter too.
 
 The graphical tests captured these from the surface Emacs drew into, so they
 lack the panel's corners and shadow; the text is test output. Vertico in a

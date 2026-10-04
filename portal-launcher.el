@@ -364,11 +364,17 @@ A window parameter leaves the buffers' own `mode-line-format' unchanged."
   "Hide the mode lines of launcher FRAME's windows, including new ones."
   (when (eq frame portal-launcher--frame) (portal-launcher--mode-lines nil)))
 
-(defun portal-launcher--restore-windows ()
-  "Leave a buffer launcher one window, showing its buffer's mode line."
+(defun portal-launcher--restore-windows (windows)
+  "Delete the buffer launcher's windows other than WINDOWS; show mode lines.
+WINDOWS were its windows when the presentation's function started, or nil
+if it never started.  One window always stays."
   (when (portal-launcher--live-p 'buffer)
-    (let ((ignore-window-parameters t))
-      (delete-other-windows (frame-first-window portal-launcher--frame)))
+    (when windows
+      (let ((ignore-window-parameters t))
+        (dolist (window (window-list portal-launcher--frame 'never))
+          (unless (or (memq window windows)
+                      (not (cdr (window-list portal-launcher--frame 'never))))
+            (delete-window window)))))
     (portal-launcher--mode-lines t)))
 
 ;;;###autoload
@@ -382,12 +388,12 @@ sees any prefix argument, or a function of no arguments, called with
 OPTIONS are keywords, each followed by its value:
 :kind `buffer', the default, shows a buffer window above the panel's own
   minibuffer. Buffers that FUNCTION displays show in the panel, and windows
-  it creates there are deleted when the panel hides. `minibuffer' makes the
-  whole panel a minibuffer: its prompts and an inline completion UI, such
-  as Vertico, start at the top, and unused lines stay empty below. Buffers
-  that FUNCTION displays, including stock completion's *Completions* list,
-  show nowhere, so commands that display buffers or need windows require
-  `buffer'.
+  it creates there are deleted when the panel hides; earlier ones stay.
+  `minibuffer' makes the whole panel a minibuffer: its prompts and an inline
+  completion UI, such as Vertico, start at the top, and unused lines stay
+  empty below. Buffers that FUNCTION displays, including stock completion's
+  *Completions* list, show nowhere, so commands that display buffers or need
+  windows require `buffer'.
 :mode-line nil hides the mode lines of the panel's windows, including ones
   that FUNCTION creates, without changing how their buffers look elsewhere.
   t, the default, shows each buffer's own. A minibuffer panel has none.
@@ -424,6 +430,7 @@ not invoke from an existing minibuffer."
            (minibuffer-follows-selected-frame nil)
            ;; The panel keeps its native placement; Emacs must not fit it.
            (resize-mini-frames nil)
+           (windows nil)
            (outcome 'error))
       (unwind-protect
           (setq outcome
@@ -432,6 +439,8 @@ not invoke from an existing minibuffer."
                       (let ((buffer (get-buffer-create "*Portal Launcher*")))
                         (let ((portal-launcher--session nil))
                           (portal-launcher--show kind buffer mode-line))
+                        (when (eq kind 'buffer)
+                          (setq windows (window-list portal-launcher--frame 'never)))
                         (setf (portal-launcher--session-native-id session)
                               (plist-get (portal--launcher-inspect) :session))
                         (when (and (eq kind 'buffer) (not mode-line))
@@ -458,7 +467,7 @@ not invoke from an existing minibuffer."
               (when (frame-live-p portal-launcher--frame)
                 (portal--launcher-hide (not (or (consp outcome) (eq outcome 'blur))))
                 (make-frame-invisible portal-launcher--frame t)
-                (portal-launcher--restore-windows))
+                (portal-launcher--restore-windows windows))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
             (cond ((window-live-p previous-window) (select-window previous-window 'norecord))
                   ((frame-live-p previous-frame) (select-frame previous-frame 'norecord)))

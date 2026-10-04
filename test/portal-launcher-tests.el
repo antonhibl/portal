@@ -336,6 +336,17 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should (equal '(ignore) window-buffer-change-functions))
       (should (= 1 (length (window-list frame 'never))))
       (should-not (window-parameter (selected-window) 'mode-line-format))
+      ;; A layout from before the call stays; only the call's windows go,
+      ;; and a show that fails deletes nothing.
+      (let ((kept (split-window)))
+        (portal-launcher-present (lambda () (display-buffer other) (split-window)) :mode-line nil)
+        (should (= 2 (length (window-list frame 'never))))
+        (should (window-live-p kept))
+        (cl-letf (((symbol-function 'portal-launcher--show) (lambda (&rest _) (error "Cannot present"))))
+          (should-error (portal-launcher-present #'ignore)))
+        (should (window-live-p kept))
+        (should-not (window-parameter kept 'mode-line-format))
+        (delete-window kept))
       (kill-buffer other))))
 
 (ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
