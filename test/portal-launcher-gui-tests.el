@@ -240,7 +240,8 @@ watch focus. `sit-for' would return at once while input is pending."
 
 (defun portal-launcher-gui--present (command strokes &optional action options)
   "Run COMMAND with native STROKES typed into its prompts; C-] calls ACTION.
-OPTIONS are `portal-launcher-present' keywords and values."
+OPTIONS are `portal-launcher-present' keywords and values.  With
+:keep-open, STROKES also go to the panel's buffer after COMMAND returns."
   (let* ((portal-launcher-gui--action action)
          ;; A runner may call ERT from a timer, where quit is inhibited. Real
          ;; command-loop invocation permits native C-g to unwind a minibuffer.
@@ -252,7 +253,8 @@ OPTIONS are `portal-launcher-present' keywords and values."
          (timer (run-with-timer
                  0.1 0.1
                  (lambda ()
-                   (when (and strokes (active-minibuffer-window))
+                   ;; Deeper means a prompt, or a persistent panel's buffer.
+                   (when (and strokes (> (recursion-depth) depth))
                      (portal-view--with-frame-title portal-launcher--frame #'portal-test-native-target-frame)
                      (let ((stroke (pop strokes)))
                        ;; Synthetic AppKit C-g gets held by this Emacs build
@@ -698,18 +700,194 @@ OPTIONS are `portal-launcher-present' keywords and values."
         (should-not continued)
         (should (eq ordinary (selected-window)))))))
 
+(defvar portal-launcher-gui--prompts nil
+  "For each prompt a hello command opened, whether it was in the panel.")
+
+(defun portal-launcher-gui--hello (&rest bindings)
+  "Set up the hello-world UI, with local BINDINGS of (KEY . COMMAND).
+The local command n reads a name in the minibuffer and greets it."
+  (switch-to-buffer (get-buffer-create "*Hello*"))
+  (let ((inhibit-read-only t)) (erase-buffer) (insert "Hello world!"))
+  (special-mode)
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map (current-local-map))
+    (keymap-set map "n" #'portal-launcher-gui--greet)
+    (pcase-dolist (`(,key . ,command) bindings) (keymap-set map key command))
+    (use-local-map map)))
+
+(defun portal-launcher-gui--greet ()
+  "Greet a name read from the minibuffer."
+  (interactive)
+  (let ((name (minibuffer-with-setup-hook
+                  (lambda ()
+                    (push (eq (window-frame (active-minibuffer-window)) portal-launcher--frame)
+                          portal-launcher-gui--prompts))
+                (read-string "Name: ")))
+        (inhibit-read-only t))
+    (goto-char (point-max))
+    (insert "\nHello " name "!")))
+
+(defun portal-launcher-gui--check-unwound ()
+  "Check that a persistent presentation left no hooks or session."
+  (should-not portal-launcher--session)
+  (should-not (memq #'portal-launcher--dismiss-if-blurred (default-value 'post-command-hook)))
+  (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions))
+  (should-not (cl-find 'portal-launcher-blur unread-command-events :key #'car-safe)))
+
+(ert-deftest portal-launcher-gui-persistent-buffer ()
+  (portal-launcher-gui--with-panel
+    (unwind-protect
+        (let ((depth (recursion-depth)) (portal-launcher-gui--prompts nil) state)
+          ;; The setup function returns at once; a local command, then its
+          ;; prompt, read native keys in the panel.
+          (should-not
+           (portal-launcher-gui--present
+            #'portal-launcher-gui--hello
+            (append (portal-launcher-gui--text "nok") '((36 0 "\r") (30 262144 "\C-]") (53 0 "\e")))
+            (lambda ()
+              (redisplay t)
+              (setq state (list :session (and portal-launcher--session t)
+                                :depth (- (recursion-depth) depth)
+                                :visible (and (frame-visible-p portal-launcher--frame)
+                                              (plist-get (portal--launcher-inspect) :visible))
+                                :key (plist-get (portal--launcher-inspect) :key)
+                                :window (eq (window-frame) portal-launcher--frame)
+                                :buffer (buffer-name) :text (buffer-string)
+                                :mode-line (window-mode-line-height)))
+              (portal-launcher-gui--capture "persistent-hello"))
+            '(:kind buffer :mode-line nil :keep-open t)))
+          (message "Launcher persistent buffer: %S" state)
+          (should (equal state '(:session t :depth 1 :visible t :key t :window t :buffer "*Hello*"
+                                 :text "Hello world!\nHello ok!" :mode-line 0)))
+          (should (equal portal-launcher-gui--prompts '(t)))
+          (portal-launcher-gui--check-unwound)
+          (should (eq ordinary (selected-window)))
+          ;; Hiding kept the buffer and its contents.
+          (should (equal "Hello world!\nHello ok!" (with-current-buffer "*Hello*" (buffer-string))))
+          ;; Without :keep-open the panel hides as the function returns.
+          (should (eq 'closed (portal-launcher-present (lambda () (portal-launcher-gui--hello) 'closed)
+                                                       :mode-line nil)))
+          (should-not (plist-get (portal--launcher-inspect) :visible)))
+      (kill-buffer "*Hello*"))))
+
+(ert-deftest portal-launcher-gui-persistent-dismissal-and-reentry ()
+  (portal-launcher-gui--with-panel
+    (unwind-protect
+        (dolist (prompt '(nil t))
+          (dolist (reason '(escape quit second shortcut hide delete disable focus))
+            (message "Launcher persistent dismissal: %S %S" (if prompt 'prompt 'buffer) reason)
+            (let ((portal-launcher-gui--prompts nil) frame)
+              (should-not
+               (portal-launcher-gui--present
+                (lambda () (setq frame portal-launcher--frame) (portal-launcher-gui--hello))
+                (append (when prompt (portal-launcher-gui--text "na"))
+                        (list (pcase reason ('escape '(53 0 "\e")) ('quit 'quit)
+                                     (_ '(30 262144 "\C-]")))))
+                (lambda ()
+                  (pcase reason
+                    ('second (portal-launcher-present))
+                    ('shortcut
+                     (portal-test-hotkey (portal-launcher-gui--hotkey) t)
+                     (portal-test-hotkey (portal-launcher-gui--hotkey) nil)
+                     (portal-view--read-records))
+                    ('hide (portal-launcher-hide))
+                    ('delete (delete-frame portal-launcher--frame t))
+                    ('disable (portal-launcher-mode -1))
+                    ('focus
+                     (portal-view--with-frame-title (window-frame ordinary)
+                                                    #'portal-test-native-target-frame)
+                     (portal-test-native-focus-target))))
+                '(:mode-line nil :keep-open t)))
+              (should (equal portal-launcher-gui--prompts (and prompt '(t))))
+              (portal-launcher-gui--check-unwound)
+              (should (eq ordinary (selected-window)))
+              (should (equal "Hello world!" (with-current-buffer "*Hello*" (buffer-string))))
+              (should (eq (and (frame-live-p frame) t) (not (memq reason '(delete disable)))))
+              (when (eq reason 'disable) (should-not portal-launcher-mode))
+              (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again)))))))
+      (kill-buffer "*Hello*"))))
+
+(ert-deftest portal-launcher-gui-persistent-command-errors ()
+  (portal-launcher-gui--with-panel
+    (unwind-protect
+        (let ((messages (with-current-buffer "*Messages*" (point-max-marker))) state)
+          ;; A later command's error is reported; then a command and its
+          ;; prompt still work, until Escape.
+          (should-not
+           (portal-launcher-gui--present
+            (lambda ()
+              (portal-launcher-gui--hello
+               (cons "e" (lambda () (interactive) (error "Later command failed")))))
+            (append (portal-launcher-gui--text "enok") '((36 0 "\r") (30 262144 "\C-]") (53 0 "\e")))
+            (lambda ()
+              (setq state (list (and portal-launcher--session t)
+                                (plist-get (portal--launcher-inspect) :visible)
+                                (buffer-string))))
+            '(:keep-open t)))
+          (should (equal state '(t t "Hello world!\nHello ok!")))
+          (should (with-current-buffer "*Messages*"
+                    (save-excursion
+                      (goto-char messages)
+                      (search-forward "Later command failed" nil t))))
+          (portal-launcher-gui--check-unwound)
+          ;; Focus lost while a command runs, then discarded with the queued
+          ;; input by Emacs's error report, still hides the panel, from the
+          ;; buffer and from a prompt.
+          (dolist (prompt '(nil t))
+            (let (queued)
+              (should-not
+               (portal-launcher-gui--present
+                #'portal-launcher-gui--hello
+                (append (when prompt (portal-launcher-gui--text "n")) '((30 262144 "\C-]")))
+                (lambda ()
+                  (portal-view--with-frame-title (window-frame ordinary)
+                                                 #'portal-test-native-target-frame)
+                  (portal-test-native-focus-target)
+                  (with-timeout (3 (error "The panel did not lose focus"))
+                    (while (not (portal-launcher--session-blurred portal-launcher--session))
+                      (accept-process-output nil 0.05)))
+                  (setq queued (and (cl-find 'portal-launcher-blur unread-command-events :key #'car-safe) t))
+                  (error "Failed after focus loss"))
+                '(:keep-open t)))
+              (should queued)
+              (portal-launcher-gui--check-unwound)
+              (should (eq ordinary (selected-window)))))
+          (should (eq 'again (portal-launcher-present (lambda () (interactive) 'again)))))
+      (kill-buffer "*Hello*"))))
+
 (ert-deftest portal-launcher-gui-z-session-external-focus ()
   (portal-launcher-gui--with-panel
     ;; These are already-running, independent applications. Test both external
     ;; activation during a prompt and a command that opens an app and returns.
     (let ((previous (portal-test-frontmost)))
-      (dolist (kind '(buffer minibuffer buffer))
+      (dolist (options '((:kind buffer) (:kind minibuffer) (:kind buffer) (:keep-open t)))
         (portal-launcher-gui--present
-         (lambda () (interactive) (read-string "Cancel: ")) '((53 0 "\e")) nil (list :kind kind))
+         (if (plist-get options :keep-open) #'portal-launcher-gui--hello
+           (lambda () (interactive) (read-string "Cancel: ")))
+         '((53 0 "\e")) nil options)
         (sit-for 0.1)
-        (message "Launcher %s cancellation frontmost: %S (previous %S)"
-                 kind (portal-test-frontmost) previous)
+        (message "Launcher %S cancellation frontmost: %S (previous %S)"
+                 options (portal-test-frontmost) previous)
         (should (eql previous (portal-test-frontmost)))))
+    ;; A persistent panel's command that activates another app leaves that
+    ;; app in front, as the panel hides on losing focus.
+    (dolist (app (list (portal-test-frontmost -1) "com.apple.finder"))
+      (let (activated)
+        (should app)
+        (portal-launcher-gui--present
+         (lambda ()
+           (portal-launcher-gui--hello
+            (cons "o" (lambda () (interactive) (setq activated (portal-test-frontmost app))))))
+         (portal-launcher-gui--text "o") nil '(:keep-open t))
+        (with-timeout (3 (error "The panel's command did not activate %S" app))
+          (while (not (eql activated (portal-test-frontmost))) (sit-for 0.05)))
+        (message "Launcher persistent activation frontmost: %S (expected %S)"
+                 (portal-test-frontmost) activated)
+        (should (eql activated (portal-test-frontmost)))
+        (should (eq ordinary (selected-window)))
+        ;; AppKit can report the activation once the next session watches.
+        (portal-launcher-gui--settle-focus)))
+    (kill-buffer "*Hello*")
     (let ((destination (portal-test-frontmost -1)) continued)
       (should destination)
       (portal-launcher-gui--present

@@ -230,15 +230,20 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
     ;; session would be cancelled before anything is shown.
     (let ((portal-launcher--session (portal-launcher--make-session :tag (make-symbol "active"))))
       (dolist (options '((:kind) (:kind nil) (:kind window) (:kind minibuffer :mode-line)
-                         (:mode-line none) (:mode-line 0) (:size 3) (minibuffer)))
+                         (:mode-line none) (:mode-line 0) (:size 3) (minibuffer)
+                         (:keep-open) (:keep-open 1) (:keep-open yes)
+                         ;; Only a buffer panel can stay open.
+                         (:kind minibuffer :keep-open t) (:keep-open t :kind minibuffer)))
         (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error))
       (should-error (portal-launcher-present (lambda (_x) nil) :kind 'minibuffer) :type 'user-error))))
 
 (ert-deftest portal-launcher-options-default-to-a-buffer-with-mode-lines ()
-  (should (equal (portal-launcher--options nil) '(buffer t)))
-  (should (equal (portal-launcher--options '(:kind minibuffer)) '(minibuffer t)))
-  (should (equal (portal-launcher--options '(:mode-line nil :kind buffer)) '(buffer nil)))
-  (should (equal (portal-launcher--options '(:kind minibuffer :mode-line nil)) '(minibuffer nil))))
+  (should (equal (portal-launcher--options nil) '(buffer t nil)))
+  (should (equal (portal-launcher--options '(:kind minibuffer)) '(minibuffer t nil)))
+  (should (equal (portal-launcher--options '(:mode-line nil :kind buffer)) '(buffer nil nil)))
+  (should (equal (portal-launcher--options '(:kind minibuffer :mode-line nil)) '(minibuffer nil nil)))
+  (should (equal (portal-launcher--options '(:keep-open t)) '(buffer t t)))
+  (should (equal (portal-launcher--options '(:kind minibuffer :keep-open nil)) '(minibuffer t nil))))
 
 (defmacro portal-launcher-test--session (&rest body)
   "Exercise real session unwinding with only the native frame stubbed."
@@ -432,6 +437,243 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should-error (portal-launcher-present (lambda () (interactive) (ert-fail "Ran without panel")))))
     (should-not portal-launcher--session)
     (should (equal hidden '(t)))))
+
+(defvar portal-launcher-test--action #'ignore
+  "Function that <f14> calls during `portal-launcher-test--type'.")
+
+(defun portal-launcher-test--type (keys function &rest options)
+  "Present FUNCTION with OPTIONS from a command loop, then read KEYS there.
+KEYS, a `kbd' string, drive the panel's commands and prompts; <f14> calls
+`portal-launcher-test--action'.  The end of the keyboard macro also leaves
+a persistent panel's recursive edit, so a test cannot wait for input."
+  (let ((map (make-sparse-keymap)) (global (current-global-map)))
+    (set-keymap-parent map global)
+    (keymap-set map "<f13>" (lambda ()
+                              (interactive)
+                              (throw 'portal-launcher-test--presented
+                                     (apply #'portal-launcher-present function options))))
+    (keymap-set map "<f14>" (lambda () (interactive) (funcall portal-launcher-test--action)))
+    (use-global-map map)
+    (unwind-protect
+        (catch 'portal-launcher-test--presented
+          (execute-kbd-macro (vconcat [f13] (kbd keys)))
+          (ert-fail "The presentation did not return"))
+      (use-global-map global))))
+
+(defun portal-launcher-test--hello (&rest bindings)
+  "Set up the hello-world UI, with local BINDINGS of (KEY . COMMAND).
+Return its buffer, as setup functions may."
+  (switch-to-buffer (get-buffer-create "*Portal launcher hello*"))
+  (let ((inhibit-read-only t)) (erase-buffer) (insert "Hello world!"))
+  (special-mode)
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map (current-local-map))
+    (keymap-set map "n" #'portal-launcher-test--greet)
+    (pcase-dolist (`(,key . ,command) bindings) (keymap-set map key command))
+    (use-local-map map))
+  (current-buffer))
+
+(defun portal-launcher-test--greet ()
+  "Greet a name read from the minibuffer."
+  (interactive)
+  (let ((name (read-string "Name: ")) (inhibit-read-only t))
+    (goto-char (point-max))
+    (insert "\nHello " name "!")))
+
+(defun portal-launcher-test--unwound (depth)
+  "Check that a presentation left no session state, given the earlier DEPTH."
+  (should-not portal-launcher--session)
+  (should-not (active-minibuffer-window))
+  (should (= depth (recursion-depth)))
+  (should-not (memq #'portal-launcher--dismiss-if-blurred (default-value 'post-command-hook)))
+  (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions)))
+
+(ert-deftest portal-launcher-keep-open-runs-commands-until-dismissed ()
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth))
+          (rules display-buffer-alist)
+          (maps emulation-mode-map-alists)
+          inside)
+      (unwind-protect
+          (progn
+            ;; The setup's buffer stays; a local command reads a name from
+            ;; the panel's minibuffer, and a later one sees the session.
+            (should-not
+             (portal-launcher-test--type
+              "n o k RET C-c p <escape>"
+              (lambda ()
+                (portal-launcher-test--hello
+                 (cons "C-c p"
+                       (lambda ()
+                         (interactive)
+                         (setq inside (list (and portal-launcher--session t) hidden
+                                            (- (recursion-depth) depth) (buffer-string)
+                                            (and (memq #'portal-launcher--hide-mode-lines
+                                                       window-buffer-change-functions)
+                                                 t)))))))
+              :mode-line nil :keep-open t))
+            (should (equal inside '(t nil 1 "Hello world!\nHello ok!" t)))
+            ;; Escape cancelled, so focus may return to the previous app.
+            (should (equal hidden '(t)))
+            (portal-launcher-test--unwound depth)
+            (should (eq rules display-buffer-alist))
+            (should (eq maps emulation-mode-map-alists))
+            ;; Hiding kills no buffer and keeps its contents.
+            (should (equal "Hello world!\nHello ok!"
+                           (with-current-buffer "*Portal launcher hello*" (buffer-string))))
+            ;; Without :keep-open, the panel hides when the setup returns,
+            ;; whose value is returned.
+            (dolist (options '(nil (:keep-open nil)))
+              (should (eq (get-buffer "*Portal launcher hello*")
+                          (apply #'portal-launcher-present #'portal-launcher-test--hello options))))
+            (should (equal hidden '(nil nil t)))
+            (portal-launcher-test--unwound depth))
+        (kill-buffer "*Portal launcher hello*")))))
+
+(ert-deftest portal-launcher-keep-open-dismissal-unwinds-the-interaction ()
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth)) (count 0))
+      (unwind-protect
+          (dolist (prompt '(nil t))
+            (dolist (dismissal
+                     `(("<escape>") ("C-g")
+                       ("<f14>" . ,(lambda () (portal-launcher-present #'ignore)))
+                       ("<f14>" . portal-launcher-toggle) ("<f14>" . portal-launcher-hide)
+                       ("<f14>" . portal-launcher-cancel)
+                       ("<f14>" . ,(lambda ()
+                                     (portal-launcher--delete-frame
+                                      (lambda (&rest _) (ert-fail "Deleted during the session")))))
+                       ;; In a prompt, these act on the prompt, as elsewhere.
+                       ,@(unless prompt
+                           '(("<f14>" . exit-recursive-edit) ("<f14>" . abort-recursive-edit)))))
+              (let ((portal-launcher-test--action
+                     (lambda () (funcall (cdr dismissal)) (ert-fail "The command survived dismissal"))))
+                (should-not (portal-launcher-test--type
+                             ;; A later command's prompt, with text typed in it.
+                             (concat (if prompt "n a " "") (car dismissal))
+                             #'portal-launcher-test--hello :keep-open t))
+                (cl-incf count)
+                (should (= count (length hidden)))
+                (should (eq t (car hidden)))
+                (portal-launcher-test--unwound depth)
+                (should (equal "Hello world!"
+                               (with-current-buffer "*Portal launcher hello*" (buffer-string)))))))
+        (kill-buffer "*Portal launcher hello*"))
+      (should (= deleted 2)))))
+
+(ert-deftest portal-launcher-keep-open-survives-command-errors ()
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth)) errors after)
+      (unwind-protect
+          (let ((command-error-function
+                 (lambda (data &rest _)
+                   ;; Batch Emacs's report would exit. Emacs's report also
+                   ;; discards queued input; the person then types on.
+                   (push data errors)
+                   (discard-input)
+                   (setq unread-command-events (listify-key-sequence (kbd "C-c p <escape>"))))))
+            (should-not
+             (portal-launcher-test--type
+              "C-c e"
+              (lambda ()
+                (portal-launcher-test--hello
+                 (cons "C-c e" (lambda () (interactive) (error "Later command failed")))
+                 (cons "C-c p" (lambda () (interactive)
+                                 (setq after (list (and portal-launcher--session t) hidden))))))
+              :keep-open t))
+            (should (equal errors '((error "Later command failed"))))
+            (should (equal after '(t nil)))
+            (should (equal hidden '(t)))
+            (portal-launcher-test--unwound depth))
+        (kill-buffer "*Portal launcher hello*")))))
+
+(ert-deftest portal-launcher-keep-open-focus-loss-outlasts-error-reports ()
+  ;; Focus loss queued while a command runs, then discarded by the command
+  ;; loop's error report, still hides the panel, without restoring focus.
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth))
+          (minibuffer-message-timeout 0)
+          (portal-launcher-test--action
+           (lambda ()
+             (portal-launcher--queue-blur "10")
+             (should (equal unread-command-events '((portal-launcher-blur 10))))
+             (error "Failed after focus loss")))
+          reports)
+      (unwind-protect
+          (let ((command-error-function (lambda (data &rest _) (push data reports) (discard-input))))
+            ;; In the buffer, then in a prompt, whose own error report
+            ;; discards input as well.
+            (dolist (keys '("<f14> <escape>" "n <f14> RET <escape>"))
+              (should-not (portal-launcher-test--type keys #'portal-launcher-test--hello :keep-open t))
+              (should-not (car hidden))
+              (portal-launcher-test--unwound depth))
+            (should (equal hidden '(nil nil)))
+            (should (equal reports '((error "Failed after focus loss")))))
+        (kill-buffer "*Portal launcher hello*")))))
+
+(ert-deftest portal-launcher-keep-open-focus-loss-and-stale-events ()
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth)) probed)
+      (unwind-protect
+          (cl-flet ((present (keys &optional setup)
+                      (setq probed nil)
+                      (portal-launcher-test--type
+                       keys (lambda ()
+                              (portal-launcher-test--hello
+                               (cons "C-c p" (lambda () (interactive) (setq probed t))))
+                              (when setup (funcall setup)))
+                       :keep-open t)))
+            ;; Focus lost while a command or the setup ran hides the panel
+            ;; before it reads more input, without restoring focus. The
+            ;; queued event, which the command loop would not read as a
+            ;; special event once Lisp has finished, goes with the session.
+            (let ((portal-launcher-test--action (lambda () (portal-launcher--queue-blur "10"))))
+              (should-not (present "<f14> C-c p <escape>"))
+              (should-not probed)
+              (should-not unread-command-events))
+            (should-not (present "C-c p <escape>" (lambda () (portal-launcher--queue-blur "10"))))
+            (should-not probed)
+            (should-not unread-command-events)
+            ;; Without :keep-open, the function's value is still returned.
+            (should (eq 'value (portal-launcher-present
+                                (lambda () (portal-launcher--queue-blur "10") 'value))))
+            (should-not unread-command-events)
+            (should (equal hidden '(nil nil nil)))
+            ;; A later presentation ignores focus loss reported for the
+            ;; earlier one, as does the command loop once both are gone.
+            (cl-incf session-id)
+            (let ((portal-launcher-test--action (lambda () (portal-launcher--queue-blur "10"))))
+              (should-not (present "<f14> C-c p <escape>"))
+              (should probed)
+              (should (equal hidden '(t nil nil nil))))
+            (portal-launcher-test--unwound depth)
+            (portal-launcher--queue-blur "11")
+            (should-not unread-command-events))
+        (kill-buffer "*Portal launcher hello*")))))
+
+(ert-deftest portal-launcher-keep-open-setup-failure-is-recoverable ()
+  (portal-launcher-test--session
+    (let ((depth (recursion-depth)))
+      (unwind-protect
+          (progn
+            (should (equal '(error "Setup failed")
+                           (should-error
+                            (portal-launcher-test--type
+                             "<escape>"
+                             (lambda () (portal-launcher-test--hello) (error "Setup failed"))
+                             :mode-line nil :keep-open t))))
+            (should (equal hidden '(t)))
+            (portal-launcher-test--unwound depth)
+            (should (equal "Hello world!"
+                           (with-current-buffer "*Portal launcher hello*" (buffer-string))))
+            ;; A new presentation works.
+            (should-not (portal-launcher-test--type "n x RET <escape>" #'portal-launcher-test--hello
+                                                    :keep-open t))
+            (should (equal "Hello world!\nHello x!"
+                           (with-current-buffer "*Portal launcher hello*" (buffer-string))))
+            (should (equal hidden '(t t)))
+            (portal-launcher-test--unwound depth))
+        (kill-buffer "*Portal launcher hello*")))))
 
 (ert-deftest portal-launcher-shutdown-preserves-exit-and-later-hooks ()
   ;; A real kill-emacs in another process catches nonlocal exits that a

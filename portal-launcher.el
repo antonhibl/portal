@@ -67,7 +67,7 @@ ordinary `launcher' invocations are unchanged."
     (launcher refresh)))
 
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
-  tag native-id teardown)
+  tag native-id teardown blurred)
 (defvar portal-launcher--session nil "The active command session, or nil.")
 
 (defconst portal-launcher--session-map
@@ -267,9 +267,7 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
     (delete-frame portal-launcher--frame t))
   (portal-global-shortcut-remove 'portal-launcher)
   (portal-launcher--hooks nil)
-  (setq unread-command-events
-        (cl-remove-if (lambda (event) (eq (car-safe event) 'portal-launcher-blur))
-                      unread-command-events))
+  (portal-launcher--forget-blur)
   (setq portal-launcher-mode nil))
 
 ;;;###autoload
@@ -304,11 +302,13 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
       (error (setq portal-launcher-mode t) (signal (car error) (cdr error))))))
 
 (defun portal-launcher--queue-blur (session &rest fields)
-  "Queue a native focus-loss record for SESSION; reject malformed FIELDS."
+  "Queue a native focus-loss record for SESSION; reject malformed FIELDS.
+The session records it as well, for `portal-launcher--dismiss-if-blurred'."
   (when (and portal-launcher--session (null fields) (stringp session)
              (string-match-p "\\`[0-9]+\\'" session)
              (eql (string-to-number session)
                   (portal-launcher--session-native-id portal-launcher--session)))
+    (setf (portal-launcher--session-blurred portal-launcher--session) (string-to-number session))
     (setq unread-command-events
           (nconc unread-command-events
                  (list (list 'portal-launcher-blur (string-to-number session)))))))
@@ -319,6 +319,22 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
   (when (and portal-launcher--session
              (eql (cadr event) (portal-launcher--session-native-id portal-launcher--session)))
     (throw (portal-launcher--session-tag portal-launcher--session) 'blur)))
+
+(defun portal-launcher--dismiss-if-blurred ()
+  "Dismiss the session if it has lost focus.
+Each command loop runs this as it starts and after each command, including
+one that failed. A focus-loss event queued while Lisp was running is not
+read as a special event, and Emacs's error report, in a buffer or a
+minibuffer, discards it."
+  (when-let* ((session portal-launcher--session)
+              (id (portal-launcher--session-blurred session)))
+    (portal-launcher--blur (list 'portal-launcher-blur id))))
+
+(defun portal-launcher--forget-blur ()
+  "Remove queued focus-loss events, which only their own session handles."
+  (setq unread-command-events
+        (cl-remove-if (lambda (event) (eq (car-safe event) 'portal-launcher-blur))
+                      unread-command-events)))
 
 ;; Focus loss must also unwind a prompt reading a single event or using a
 ;; completion package's overriding map. The filter itself never unwinds Lisp.
@@ -341,17 +357,25 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
     (user-error "Launcher needs a command or a function of no arguments, not %S" function)))
 
 (defun portal-launcher--options (options)
-  "Return presentation OPTIONS as (KIND MODE-LINE), or signal a `user-error'."
+  "Return presentation OPTIONS as (KIND MODE-LINE KEEP-OPEN).
+Signal a `user-error' if they are invalid."
   (unless (and (cl-evenp (length options))
-               (cl-loop for key in options by #'cddr always (memq key '(:kind :mode-line))))
-    (user-error "Launcher options are :kind and :mode-line, each with a value, not %S" options))
+               (cl-loop for key in options by #'cddr
+                        always (memq key '(:kind :mode-line :keep-open))))
+    (user-error "Launcher options are :kind, :mode-line and :keep-open, each with a value, not %S"
+                options))
   (let ((kind (if (plist-member options :kind) (plist-get options :kind) 'buffer))
-        (mode-line (if (plist-member options :mode-line) (plist-get options :mode-line) t)))
+        (mode-line (if (plist-member options :mode-line) (plist-get options :mode-line) t))
+        (keep-open (plist-get options :keep-open)))
     (unless (memq kind '(buffer minibuffer))
       (user-error "Launcher :kind must be `buffer' or `minibuffer', not %S" kind))
     (unless (booleanp mode-line)
       (user-error "Launcher :mode-line must be t or nil, not %S" mode-line))
-    (list kind mode-line)))
+    (unless (booleanp keep-open)
+      (user-error "Launcher :keep-open must be t or nil, not %S" keep-open))
+    (when (and keep-open (eq kind 'minibuffer))
+      (user-error "Launcher :keep-open needs :kind `buffer'; a minibuffer panel closes with its prompt"))
+    (list kind mode-line keep-open)))
 
 (defvar portal-launcher--mode-line-parameters nil
   "Launcher windows whose mode lines the presentation hid, as (WINDOW . VALUE).
@@ -381,7 +405,7 @@ if it never started.  One window always stays."
 
 ;;;###autoload
 (defun portal-launcher-present (&optional function &rest options)
-  "Present FUNCTION in the launcher, then hide it and return FUNCTION's value.
+  "Present FUNCTION in the launcher, hide it and return FUNCTION's value.
 FUNCTION is an interactive command, called with `call-interactively' so it
 sees any prefix argument, or a function of no arguments, called with
 `funcall'. It defaults to `portal-launcher-command' and runs with the buffer
@@ -399,6 +423,13 @@ OPTIONS are keywords, each followed by its value:
 :mode-line nil hides the mode lines of the panel's windows, including ones
   that FUNCTION creates, without changing how their buffers look elsewhere.
   t, the default, shows each buffer's own. A minibuffer panel has none.
+:keep-open t keeps a buffer panel open after FUNCTION returns, for a UI
+  that FUNCTION set up there. Commands then run in the panel, with this
+  call's display rules, keys and focus handling, until it is dismissed; the
+  call returns nil then. An error in a later command is reported and the
+  panel stays open. Its buffers belong to the caller and are not killed.
+  nil, the default, hides the panel when FUNCTION returns. A minibuffer
+  panel cannot stay open.
 Both kinds have `portal-launcher-size'; a completion UI taller than the
 panel is clipped at the bottom. An invalid FUNCTION or option signals an
 error before anything is shown or an active session is cancelled.
@@ -413,7 +444,7 @@ not invoke from an existing minibuffer."
   (interactive)
   (setq function (or function portal-launcher-command))
   (portal-launcher--check-function function)
-  (pcase-let ((`(,kind ,mode-line) (portal-launcher--options options)))
+  (pcase-let ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options)))
     (when portal-launcher--session (portal-launcher-cancel))
     (when (active-minibuffer-window)
       (user-error "Finish the current minibuffer before presenting a launcher command"))
@@ -448,6 +479,7 @@ not invoke from an existing minibuffer."
                               (plist-get (portal--launcher-inspect) :session))
                         (when (and (eq kind 'buffer) (not mode-line))
                           (add-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines))
+                        (add-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
                         (let ((default-minibuffer-frame portal-launcher--frame)
                               (display-buffer-alist nil)
                               (display-buffer-overriding-action
@@ -457,11 +489,19 @@ not invoke from an existing minibuffer."
                                    (reusable-frames . ,portal-launcher--frame)
                                    (inhibit-switch-frame . t))))
                               (pop-up-frames nil))
-                          (cons 'success
-                                (with-current-buffer buffer
-                                  (if (commandp function)
-                                      (call-interactively function)
-                                    (funcall function))))))
+                          (let ((value (with-current-buffer buffer
+                                         (if (commandp function)
+                                             (call-interactively function)
+                                           (funcall function)))))
+                            (if (not keep-open)
+                                (cons 'success value)
+                              ;; The panel's commands run here, inside the
+                              ;; session, until a dismissal throws. Leaving
+                              ;; the recursive edit otherwise also cancels.
+                              ;; Its command loop runs `post-command-hook'
+                              ;; first, so focus lost during setup counts.
+                              (recursive-edit)
+                              'cancel))))
                     (quit 'cancel))))
         ;; This runs outside all minibuffers, even when cancellation came from
         ;; the innermost prompt. Clear ownership before deleting/disabling.
@@ -472,6 +512,8 @@ not invoke from an existing minibuffer."
                 (make-frame-invisible portal-launcher--frame t)
                 (portal-launcher--restore-windows windows))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
+            (remove-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
+            (portal-launcher--forget-blur)
             (pcase-dolist (`(,window . ,value) portal-launcher--mode-line-parameters)
               (when (window-live-p window)
                 (set-window-parameter window 'mode-line-format value)))

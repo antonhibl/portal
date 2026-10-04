@@ -268,6 +268,41 @@ buffer's own. It sets the `mode-line-format` window parameter, so the same
 buffers keep their mode lines in other frames, and restores each window's
 earlier parameter when the panel hides. A minibuffer panel has none.
 
+A buffer UI, such as a dashboard, can stay open after the function that sets
+it up returns:
+
+```elisp
+(define-derived-mode my/hello-mode special-mode "Hello")
+(keymap-set my/hello-mode-map "n" #'my/hello-greet)
+
+(defun my/hello-greet (name)
+  (interactive "sName: ")
+  (let ((inhibit-read-only t))
+    (goto-char (point-max))
+    (insert "\nHello " name "!")))
+
+(defun my/hello ()
+  (interactive)
+  (portal-launcher-present
+   (lambda ()
+     (switch-to-buffer (get-buffer-create "*Hello*"))
+     (let ((inhibit-read-only t))
+       (erase-buffer)
+       (insert "Hello world!"))
+     (my/hello-mode))
+   :kind 'buffer :mode-line nil :keep-open t))
+```
+
+With `:keep-open t`, commands then run in the panel, here `n`, and their
+prompts use its minibuffer, until it is dismissed as below; the call returns
+nil then. The session's display rules, Escape and C-g, and focus handling
+last until then. An error in a later command is reported and the panel
+stays open. Dismissal kills no buffer, so `*Hello*` keeps its contents.
+`:keep-open` defaults to nil, which hides the panel when the function
+returns, and needs `:kind 'buffer`. While the panel is open, Emacs is in a
+recursive edit, so the default mode line shows brackets around the mode
+name.
+
 The function is an interactive command, called with `call-interactively` so it
 sees a prefix argument, or any function of no arguments, called with `funcall`.
 It runs with the buffer `*Portal Launcher*` current, in the panel's own
@@ -275,8 +310,9 @@ minibuffer and with the user's completion setup, including Vertico, Orderless
 and Marginalia. Nested prompts stay in the panel. An invalid function or option
 signals an error before anything is shown.
 
-Success hides the panel; Escape, C-g, another invocation, `portal-launcher-hide`,
-or losing keyboard focus cancels the entire session. Errors propagate after
+Success, when the function returns, hides the panel unless it is kept open;
+Escape, C-g, another invocation, `portal-launcher-hide`, or losing keyboard
+focus cancels the entire session. Errors propagate after
 cleanup. Frame deletion and disabling unwind prompts before releasing the frame.
 Cancellation returns focus to the previous app while the panel still owns the
 keyboard; a successful external action or click-away preserves the destination
@@ -2192,10 +2228,17 @@ while the ordinary window on the same buffer keeps its own. Alternating kinds
 and mode-line settings keeps one launcher frame and restores every session
 setting; afterward, ordinary prompts with stock completion and Vertico use the
 ordinary frame as before. The dismissal, error, focus-loss and cancellation
-focus tests run in both kinds. With `PORTAL_LAUNCHER_SCREENSHOTS` set to a
-directory, these tests save pictures of the panel there. The injector's
-`portal-test-capture-target` reads them from the surface Emacs drew into, so it
-needs no Screen Recording permission; they show no panel shadow or corners.
+focus tests run in both kinds. A persistent hello-world panel takes native keys
+in a local command and the prompt it opens. Each way of dismissing it, from
+its buffer and from that prompt, leaves no session, recursive edit or hook,
+keeps the buffer and lets a new presentation start. A later command's error
+leaves it working, and focus lost while a command runs still hides it when
+the command then fails. Escape returns focus to the previous app, and a panel
+command that activates another app leaves that app in front. With
+`PORTAL_LAUNCHER_SCREENSHOTS` set to a directory, these tests save pictures of
+the panel there. The injector's `portal-test-capture-target` reads them from
+the surface Emacs drew into, so it needs no Screen Recording permission; they
+show no panel shadow or corners.
 
 The graphical `portal-global-shortcut-gui-` tests send hot key events to the
 installed Carbon handler with `portal-test-hotkey`, with no Portal view or
