@@ -180,18 +180,6 @@ bool portal_channel_send(portal_string type, portal_string target, const portal_
 }
 
 /* A feature event has no view target; keep portal_notify's view validation. */
-bool portal_launcher_invoked(uint64_t registration, uint64_t session)
-{
-    if (!registration)
-        return false;
-    char registration_word[32], session_word[32];
-    int r = snprintf(registration_word, sizeof registration_word, "%" PRIu64, registration);
-    int s = snprintf(session_word, sizeof session_word, "%" PRIu64, session);
-    portal_string field = {session_word, (size_t) s};
-    return portal_channel_send((portal_string) {"launcher", 8},
-                               (portal_string) {registration_word, (size_t) r}, &field, 1);
-}
-
 bool portal_launcher_blurred(uint64_t session)
 {
     char word[32];

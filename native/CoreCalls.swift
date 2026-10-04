@@ -4,9 +4,9 @@ import PortalCore
 
 // Calls between Swift and the C core outside the Lisp operations: the core's
 // notification pipe, input, what web pages do, what the user does with a
-// toolbar, terminal changes, the shared browser scripts, and the timer
-// primitive, all in native/Core/include/portal.h. The standalone checks
-// compile this file too.
+// toolbar, terminal changes, hot key presses, the shared browser scripts, and
+// the timer primitive, all in native/Core/include/portal.h. The standalone
+// checks compile this file too.
 
 extension String {
     /// A copy of borrowed UTF-8 from the core.
@@ -41,8 +41,12 @@ enum Core {
         }
     }
 
-    static func launcherInvoked(registration: UInt64, session: UInt64) {
-        portal_launcher_invoked(registration, session)
+    static func hotkeyPressed(_ hotkey: UInt64) {
+        portal_hotkey_pressed(hotkey)
+    }
+
+    static func hotkeyReleased(_ hotkey: UInt64) {
+        portal_hotkey_released(hotkey)
     }
 
     static func launcherBlurred(session: UInt64) {

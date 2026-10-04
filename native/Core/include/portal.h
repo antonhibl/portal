@@ -6,8 +6,8 @@
    results, and signals errors.  views.c owns every Portal view's identity
    and lifecycle, input.c decides who gets each key press, terminals.c keeps
    the rules of terminal views, web.c those of web views and the bridge,
-   toolbar.c each view's toolbar, and channel.c owns the pipe that carries
-   records to Emacs.
+   toolbar.c each view's toolbar, shortcuts.c the system-wide shortcuts, and
+   channel.c owns the pipe that carries records to Emacs.
    The platform implements the operations below: the production module links
    the macOS backend, native/Backend.swift, and the core's tests link
    test/portal-fake-backend.c.  Nothing here knows about Emacs values or a UI
@@ -110,10 +110,6 @@ bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
 bool portal_launcher_hide(bool restore_focus, portal_text *error);
 bool portal_launcher_detach(portal_text *error);
 bool portal_launcher_describe(portal_text *state, portal_text *error);
-/* Register one physical-key chord, or release it for an empty string. Return
-   a never-reused registration ID (0 when disabled). Failed changes preserve
-   the previous registration. Repeating the same chord keeps its ID. */
-bool portal_launcher_shortcut(portal_string chord, uint64_t *registration, portal_text *error);
 
 /* A view kind (CONTEXT.md). */
 typedef enum portal_kind { PORTAL_WEB, PORTAL_TERMINAL } portal_kind;
@@ -396,6 +392,24 @@ bool portal_toolbar_focus(portal_view *view, portal_text *error);
    fires.  The core chooses TOKEN, which is never 0 and never reused. */
 void portal_timer_start(uint64_t token, uint64_t milliseconds);
 
+/* System-wide hot keys, for the core's shortcuts (shortcuts.h).  KEY is a
+   physical key, by its position on a US keyboard whatever the input source:
+   an uppercase letter 'A' to 'Z', a digit '0' to '9', ' ' for Space, or
+   PORTAL_FUNCTION_KEY + N for function key FN, N from 1 to 20.  MODIFIERS
+   are the portal_modifier bits held with it, exactly, and include Control,
+   Meta or Super.  Register fails, saying why, when the system or another
+   application has the chord; the core never registers one chord under two
+   hot keys.  HOTKEY is the core's name for the registration, never 0 and
+   never given to another one, which the platform reports presses and
+   releases with.  Registering HOTKEY again with its own chord restarts it:
+   the platform keeps the chord, and reports nothing that happened before,
+   such as a press still waiting in the system's queue.  Once unregister
+   returns, the platform reports nothing more for HOTKEY. */
+enum { PORTAL_FUNCTION_KEY = 0x100 };
+bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
+                            portal_text *error);
+bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
+
 /* Calls into the core, implemented by the core for the platform. */
 
 /* Send Emacs the record "TYPE TARGET FIELD...", one line of COUNT + 2 words
@@ -410,14 +424,15 @@ void portal_timer_start(uint64_t token, uint64_t milliseconds);
    announces them here. */
 bool portal_notify(portal_string type, portal_string target, const portal_string *fields,
                    size_t count);
-/* Launcher feature event, independent of the view registry. The backend sends
-   only copied IDs; Lisp validates registration/session before interactive work.
-   Record: "launcher REGISTRATION SESSION". */
-bool portal_launcher_invoked(uint64_t registration, uint64_t session);
 /* The panel lost key status. Record: "launcher-blur SESSION". */
 bool portal_launcher_blurred(uint64_t session);
 /* A timer from portal_timer_start has fired. */
 void portal_timer_fired(uint64_t token);
+/* The user pressed HOTKEY's chord, or released it, in any application.
+   Report only what happened after HOTKEY was registered.  A press may repeat
+   while the chord is held. */
+void portal_hotkey_pressed(uint64_t hotkey);
+void portal_hotkey_released(uint64_t hotkey);
 
 /* What TARGET's terminal describes changed: its title, its working
    directory or whether it exited.  The core tells Emacs with a "terminal TARGET" record,

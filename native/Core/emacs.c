@@ -4,9 +4,9 @@
    copies its arguments, calls the core, and converts and frees what it
    returns.  The lifecycle functions call views.h, portal--channel
    channel.h, the input functions input.h, the terminal functions
-   terminals.h, the web functions web.h, and the toolbar functions
-   toolbar.h.  No Emacs environment or value outlives the module call that
-   received it. */
+   terminals.h, the web functions web.h, the toolbar functions toolbar.h,
+   and the shortcut functions shortcuts.h.  No Emacs environment or value
+   outlives the module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
 #include <stddef.h>
@@ -17,6 +17,7 @@
 #include "channel.h"
 #include "input.h"
 #include "portal.h"
+#include "shortcuts.h"
 #include "terminals.h"
 #include "toolbar.h"
 #include "views.h"
@@ -311,6 +312,8 @@ STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
 STRINGS(launcher_detach, portal_launcher_detach(error))
 STRINGS(launcher_prepare, portal_launcher_prepare(error))
 STRINGS(launcher_describe, portal_launcher_describe(result, error))
+STRINGS(shortcut_chord, portal_shortcuts_chord(a[0], result, error))
+STRINGS(shortcuts_describe, portal_shortcuts_describe(result, error))
 
 LISP_FUNCTION(Flauncher_hide)
 {
@@ -346,19 +349,41 @@ LISP_FUNCTION(Flauncher_attach)
     return result;
 }
 
-LISP_FUNCTION(Flauncher_shortcut)
+/* Copy the shortcut ID VALUE, a natural number or nil for none, into *ID. */
+static bool read_id(emacs_env *env, emacs_value value, uint64_t *id)
+{
+    intmax_t number = env->is_not_nil(env, value) ? env->extract_integer(env, value) : 0;
+    if (!returning(env))
+        return false;
+    if (number < 0) {
+        signal_error(env, "A shortcut ID is a natural number, not %S", value);
+        return false;
+    }
+    *id = (uint64_t) number;
+    return true;
+}
+
+LISP_FUNCTION(Fshortcut_set)
 {
     portal_text chord = {0}, error = {0};
-    uint64_t registration = 0;
+    uint64_t replacing, id;
     emacs_value result = NULL;
-    if (read_text(env, args[0], &chord)) {
-        if (portal_launcher_shortcut(borrow(chord), &registration, &error))
-            result = env->make_integer(env, (intmax_t) registration);
+    if (read_id(env, args[0], &replacing) && read_text(env, args[1], &chord)) {
+        if (portal_shortcuts_set(replacing, borrow(chord), &id, &error))
+            result = env->make_integer(env, (intmax_t) id);
         else
             fail(env, &error);
     }
     free(chord.data);
     return result;
+}
+
+LISP_FUNCTION(Fshortcut_remove)
+{
+    uint64_t id;
+    portal_text error = {0};
+    return read_id(env, args[0], &id) ? done(env, portal_shortcuts_remove(id, &error), &error)
+                                      : NULL;
 }
 
 LISP_FUNCTION(Flauncher_show)
@@ -717,10 +742,16 @@ static const struct export {
      "Hide the launcher. Optional RESTORE-FOCUS restores cancellation focus if still owned."},
     {"portal--launcher-detach", 0, 0, STRINGS_FUNCTION(launcher_detach, RESULT_T),
      "Restore the launcher frame's original window BEFORE deleting the Emacs frame."},
-    {"portal--launcher-shortcut", 1, 1, Flauncher_shortcut, NULL,
-     "Register physical CHORD (empty string disables); return registration ID or 0."},
     {"portal--launcher-inspect", 0, 0, STRINGS_FUNCTION(launcher_describe, RESULT_JSON),
      "Return launcher attachment, visibility and native geometry as a plist."},
+    {"portal--shortcut-chord", 1, 1, STRINGS_FUNCTION(shortcut_chord, RESULT_STRING),
+     "Return shortcut CHORD, such as \"command-control-option-p\", as the module writes it."},
+    {"portal--shortcut-set", 2, 2, Fshortcut_set, NULL,
+     "Register system-wide CHORD in place of shortcut REPLACING, or nil; return its new ID."},
+    {"portal--shortcut-remove", 1, 1, Fshortcut_remove, NULL,
+     "Release the system-wide shortcut ID; an unknown ID is already released."},
+    {"portal--shortcuts", 0, 0, STRINGS_FUNCTION(shortcuts_describe, RESULT_JSON),
+     "Return the system-wide shortcuts as plists of :id, :chord, :hotkey and :held."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
     {"portal--toolbar-theme", 1, 1, Ftoolbar_theme, NULL,
      "Apply toolbar face colors from JSON RGB arrays."},

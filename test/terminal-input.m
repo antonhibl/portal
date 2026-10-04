@@ -163,8 +163,9 @@ static emacs_value webEval(emacs_env *env, ptrdiff_t nargs, emacs_value *args, v
 }
 
 /* Deliver a Carbon notification to the installed production handler. This
-   tests callback -> pipe -> command loop, not physical/global key detection. */
-static emacs_value launcherHotkey(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+   tests callback -> pipe -> command loop, not physical/global key detection.
+   HOTKEY is the core's, as portal--shortcuts reports it. */
+static emacs_value hotkey(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
 {
     (void)nargs; (void)data;
     EventHotKeyID key = {0x5072744c, (UInt32)env->extract_integer(env, args[0])};
@@ -245,9 +246,9 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[1] = env->make_function(env, 1, 1, targetFrame,
         "Target a frame with TITLE for local test injection; nil restores active-window targeting.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
-    args[0] = env->intern(env, "portal-test-launcher-hotkey");
-    args[1] = env->make_function(env, 2, 2, launcherHotkey,
-        "Dispatch a launcher hotkey notification: REGISTRATION PRESSED.", NULL);
+    args[0] = env->intern(env, "portal-test-hotkey");
+    args[1] = env->make_function(env, 2, 2, hotkey,
+        "Dispatch a Carbon hot key notification: HOTKEY PRESSED.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-frontmost");
     args[1] = env->make_function(env, 0, 1, frontmost,

@@ -89,13 +89,15 @@ public func portalLauncherDescribe(_ state: UnsafeMutablePointer<portal_text>,
     perform(error, into: state) { try json(NativeLauncher.describe()) }
 }
 
-@_cdecl("portal_launcher_shortcut")
-public func portalLauncherShortcut(_ chord: portal_string, _ registration: UnsafeMutablePointer<UInt64>,
-                                   _ error: UnsafeMutablePointer<portal_text>) -> Bool {
-    let text = String(copying: chord)
-    guard let token = perform(error, { try LauncherShortcut.set(text) }) else { return false }
-    registration.pointee = UInt64(token)
-    return true
+@_cdecl("portal_hotkey_register")
+public func portalHotkeyRegister(_ hotkey: UInt64, _ key: UInt32, _ modifiers: UInt32,
+                                 _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { try Hotkeys.register(hotkey, key: key, modifiers: modifiers) } != nil
+}
+
+@_cdecl("portal_hotkey_unregister")
+public func portalHotkeyUnregister(_ hotkey: UInt64, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { try Hotkeys.unregister(hotkey) } != nil
 }
 
 /// The `NativeView` the core holds as VIEW.

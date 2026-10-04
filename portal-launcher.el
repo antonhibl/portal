@@ -3,6 +3,7 @@
 
 ;; Opt-in and build-restricted: this moves Emacs's internal NS view. A native
 ;; defect can crash Emacs. Loading this file creates no frame or shortcut.
+(require 'portal-global-shortcut)
 (require 'portal-view)
 (require 'subr-x)
 
@@ -16,12 +17,10 @@
 (declare-function portal--launcher-hide "portal-launcher" (&optional restore-focus))
 (declare-function portal--launcher-detach "portal-launcher" ())
 (declare-function portal--launcher-inspect "portal-launcher" ())
-(declare-function portal--launcher-shortcut "portal-launcher" (chord))
 
 (defgroup portal-launcher nil "An Emacs buffer in a native macOS panel." :group 'frames)
 
 (defvar portal-launcher-mode nil)
-(defvar portal-launcher--registration nil "Active native shortcut ID, or nil when disabled.")
 
 (defcustom portal-launcher-command #'portal-launcher-applications
   "Interactive command run by the launcher shortcut and toggle.
@@ -78,24 +77,31 @@ ordinary `launcher' invocations are unchanged."
     map)
   "Keys active only while a launcher command is running.")
 
+;; Until user configuration composes launchers, the mode registers this one
+;; global shortcut, like any other client of `portal-global-shortcut-set'.
+(defun portal-launcher--register (chord)
+  "Make CHORD toggle the launcher, as the global shortcut `portal-launcher'."
+  (portal-global-shortcut-set 'portal-launcher chord #'portal-launcher-toggle))
+
+(defun portal-launcher--registered ()
+  "Whether the launcher's global shortcut is set."
+  (and (assq 'portal-launcher portal-global-shortcut--registrations) t))
+
 (defun portal-launcher--set-shortcut (symbol value)
   "Set SYMBOL to VALUE, rebinding an enabled launcher atomically."
   (unless (and (stringp value) (> (length value) 0))
     (user-error "Launcher shortcut must be a nonempty chord string"))
   (when portal-launcher-mode
-    (setq portal-launcher--registration (portal--launcher-shortcut value)))
+    (portal-launcher--register value))
   (set-default symbol value))
 
 (defcustom portal-launcher-shortcut "Control-Option-Command-P"
   "Global physical-key chord registered while `portal-launcher-mode' is on.
-Use hyphen-separated Control, Option, Command and/or Shift followed by A-Z,
-0-9, Space or F1-F20, for example Control-Option-Command-P. Names are case
-insensitive; each modifier may occur once. At least one of Control, Option
-or Command is required. Letters and digits name US keyboard positions,
-independent of the active input layout or Emacs modifier remapping. Fn,
-Caps Lock, punctuation, key sequences and left/right modifiers are unsupported.
-Use Customize or `setopt' to rebind immediately; a conflict retains the old
-value and registration. After `setq', enable the mode again to apply it."
+The mode sets it as the global shortcut `portal-launcher', which toggles
+the launcher; see `portal-global-shortcut-set' for the notation, such as
+Control-Option-Command-P. Use Customize or `setopt' to rebind immediately;
+a conflict retains the old value and registration. After `setq', enable the
+mode again to apply it."
   :type 'string :set #'portal-launcher--set-shortcut)
 
 (defcustom portal-launcher-size '(720 420)
@@ -203,11 +209,6 @@ also be changed directly on the live launcher frame."
       (advice-add 'delete-frame :around #'portal-launcher--delete-frame)
     (advice-remove 'delete-frame #'portal-launcher--delete-frame))
   (if install
-      (setf (alist-get "launcher" portal-view-feature-record-handlers nil nil #'equal)
-            #'portal-launcher--queue)
-    (setq portal-view-feature-record-handlers
-          (assoc-delete-all "launcher" portal-view-feature-record-handlers)))
-  (if install
       (setf (alist-get "launcher-blur" portal-view-feature-record-handlers nil nil #'equal)
             #'portal-launcher--queue-blur)
     (setq portal-view-feature-record-handlers
@@ -248,21 +249,19 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
     ;; Let delete-frame validate deletion (e.g. an active minibuffer) before
     ;; its hook detaches. If it refuses, keep ownership and guards intact.
     (delete-frame portal-launcher--frame t))
-  (when portal-launcher--registration
-    (portal--launcher-shortcut "")
-    (setq portal-launcher--registration nil))
+  (portal-global-shortcut-remove 'portal-launcher)
   (portal-launcher--hooks nil)
   (setq unread-command-events
-        (cl-remove-if (lambda (event) (memq (car-safe event)
-                                          '(portal-launcher-invoke portal-launcher-blur)))
+        (cl-remove-if (lambda (event) (eq (car-safe event) 'portal-launcher-blur))
                       unread-command-events))
   (setq portal-launcher-mode nil))
 
 ;;;###autoload
 (define-minor-mode portal-launcher-mode
   "Opt in to Portal's build-restricted native launcher.
-Enabling registers `portal-launcher-shortcut' through the existing Portal
-module, without creating a frame. Repeated enable applies any changed chord.
+Enabling sets `portal-launcher-shortcut' as the global shortcut
+`portal-launcher', without creating a frame. Repeated enable applies any
+changed chord; disabling removes only that shortcut.
 Disabling restores the native window before deleting the dedicated frame.
 A native defect can crash the hosting Emacs; start in a disposable Emacs."
   :global t :group 'portal-launcher
@@ -273,44 +272,20 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
             (portal-view--load)
             (unless (and (fboundp 'portal--launcher-attach)
                          (fboundp 'portal--launcher-prepare)
-                         (fboundp 'portal--launcher-shortcut))
+                         (fboundp 'portal--shortcut-set))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
             (portal-launcher--check-guard)
             (unless (and (stringp portal-launcher-shortcut) (> (length portal-launcher-shortcut) 0))
               (user-error "Launcher shortcut must be a nonempty chord string"))
-            (setq portal-launcher--registration (portal--launcher-shortcut portal-launcher-shortcut)))
+            (portal-launcher--register portal-launcher-shortcut))
         (error
-         (unless portal-launcher--registration (portal-launcher--hooks nil))
-         (setq portal-launcher-mode (and portal-launcher--registration t))
+         (unless (portal-launcher--registered) (portal-launcher--hooks nil))
+         (setq portal-launcher-mode (portal-launcher--registered))
          (signal (car error) (cdr error))))
     (condition-case error
         (portal-launcher--disable)
       (error (setq portal-launcher-mode t) (signal (car error) (cdr error))))))
-
-(defun portal-launcher--queue (registration &rest fields)
-  "Parse a launcher record and queue its REGISTRATION and session FIELDS.
-This runs in the process filter: never select a frame or call native code."
-  (when (and portal-launcher-mode portal-launcher--registration
-             (stringp registration) (string-match-p "\\`[0-9]+\\'" registration)
-             (= (length fields) 1) (string-match-p "\\`[0-9]+\\'" (car fields))
-             (= (string-to-number registration) portal-launcher--registration))
-    (setq unread-command-events
-          (nconc unread-command-events
-                 (list (list 'portal-launcher-invoke
-                             (list portal-launcher--registration (string-to-number (car fields)))))))))
-
-(defun portal-launcher--invoke (event)
-  "Toggle the launcher for EVENT if its registration and session still exist."
-  (interactive "e")
-  (pcase-let ((`(,registration ,session) (cadr event)))
-    (when (and portal-launcher-mode portal-launcher--registration
-               (eql registration portal-launcher--registration)
-               (eql session (plist-get (portal--launcher-inspect) :session)))
-      (portal-launcher-toggle))))
-
-;; Like Portal input handoffs, pipe records become ordinary command events.
-(define-key global-map [portal-launcher-invoke] #'portal-launcher--invoke)
 
 (defun portal-launcher--queue-blur (session &rest fields)
   "Queue a native focus-loss record for SESSION; reject malformed FIELDS."

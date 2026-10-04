@@ -65,6 +65,67 @@ To open a local HTML file programmatically:
 In a web buffer, `g` loads the page again and `q` (`quit-window`) hides the
 view while the page keeps running. Killing the buffer closes the page.
 
+## Global shortcuts
+
+A global shortcut calls a Lisp function when its chord is pressed in any
+application. It does not activate Emacs, select a frame or show a panel, so the
+function decides what appears. Loading Portal registers nothing. Name each
+shortcut with a symbol:
+
+```elisp
+(defun my/play-pause ()
+  (interactive)
+  (call-process "osascript" nil 0 nil "-e" "tell application \"Music\" to playpause"))
+
+(portal-global-shortcut-set 'play-pause "Control-Option-Command-M" #'my/play-pause)
+(portal-global-shortcut-set 'time "Control-Option-Command-T"
+                            (let ((pattern "%H:%M"))
+                              (lambda () (message "%s" (format-time-string pattern)))))
+(portal-global-shortcut-remove 'time)    ; t, or nil when TIME was not set
+```
+
+Setting a name again replaces its chord and function and releases the old
+chord, so evaluating a configuration again leaves one registration per name.
+An interactive command runs with `call-interactively`; any other function of no
+arguments runs with `funcall`, so a lambda can capture what it needs.
+`portal-global-shortcut-set` returns the name. It signals an error and changes
+nothing for a name that is not a non-nil symbol, a function that needs
+arguments, invalid notation, a chord another name has (the message names it), or
+a chord that macOS refuses because the system or another application has it.
+`portal-global-shortcut-remove` returns t when the name was set and nil
+otherwise; it signals only if macOS cannot release the chord, and then keeps it.
+
+The notation is case-insensitive, hyphen-separated modifier names (`Control`,
+`Option`, `Command`, `Shift`) followed by `A`–`Z`, `0`–`9`, `Space`, or `F1`–`F20`.
+At least one of Control, Option or Command is required, with no duplicate
+modifiers. Letters and digits refer to **US physical key positions**, independent
+of the input layout and Emacs's `ns-*-modifier` settings. Shift must be explicit;
+capital letters in the notation do not imply it. Fn, Caps Lock, punctuation,
+left/right modifier distinctions and multi-key sequences are unsupported.
+Function keys require the keyboard to send the function key rather than its
+media action. Two spellings of one chord, such as `command-control-option-p`,
+are the same chord. System-reserved shortcuts and other hotkey utilities can
+still intercept keys; choose another chord if one registers but is not
+delivered.
+
+The native module registers each chord with Carbon. A press sends a record
+through Portal's notification pipe, even with no Portal view open; it needs
+neither a subprocess nor an Accessibility event tap. The pipe's filter only
+queues an input event, and the command loop calls the function, as for a key
+bound to it, during a minibuffer prompt too. Emacs must be running, and busy
+Lisp delays the call; there is no responsiveness guarantee. Holding a chord
+calls the function once. A press while an earlier press of the same shortcut
+still waits is dropped, and so is a press from before its name was last set or
+removed. A press that arrives in the middle of a key sequence, or while a
+prompt reads a single key, is read there instead and calls nothing.
+
+An error in the function is shown as a message naming the shortcut. Every
+shortcut stays set, and unlike other commands' errors it discards no waiting
+input, such as another shortcut's press; with `debug-on-error`, the debugger
+shows it. Unloading `portal-global-shortcut` or exiting Emacs releases every
+chord; if one cannot be released, unloading fails and the feature stays loaded. Removing one shortcut, or disabling or deleting the launcher panel,
+leaves the others.
+
 ## Native launcher panel (opt-in)
 
 The launcher passed the user's daily-use checklist on 2026-10-04. See the
@@ -188,38 +249,23 @@ arbitrary throws need explicit wrappers. Set `portal-launcher-command` back to
 nil for the plain reusable buffer, reusing any content supplied to
 `portal-launcher-show`.
 
-Change the chord with Customize or `setopt`; changes take effect immediately
-while enabled. For example:
+The mode's chord is the [global shortcut](#global-shortcuts) named
+`portal-launcher`, which calls `portal-launcher-toggle`; its notation and
+delivery are those of every global shortcut. Change the chord with Customize or
+`setopt`; changes take effect immediately while enabled. For example:
 
 ```elisp
 (setopt portal-launcher-shortcut "Control-Option-Command-L")
 ```
 
-The notation is case-insensitive, hyphen-separated modifier names (`Control`,
-`Option`, `Command`, `Shift`) followed by `A`–`Z`, `0`–`9`, `Space`, or `F1`–`F20`.
-At least one of Control, Option or Command is required, with no duplicate
-modifiers. Letters and digits refer to **US physical key positions**, independent
-of the input layout and Emacs's `ns-*-modifier` settings. Shift must be explicit;
-capital letters in the notation do not imply it. Fn, Caps Lock, punctuation,
-left/right modifier distinctions and multi-key sequences are unsupported.
-Function keys require the keyboard to send the function key rather than its
-media action. The default does not claim Command-Space.
-
-A chord that macOS reports as unavailable raises an error and retains the
-previous registration; failed `setopt` also retains the previous option value.
-Repeated enable is idempotent, successful rebind releases the old chord, and
-`portal-launcher-mode -1`, unloading, or exiting releases the registration.
-After changing the option with `setq`, enable the mode again to apply it.
-System-reserved shortcuts and other hotkey utilities can still intercept keys;
-choose another chord if one registers but is not delivered.
-
-The Swift Carbon handler uses Portal's existing notification pipe, even with no
-web or terminal views open. It does not launch a subprocess or require an
-Accessibility event tap. The process filter only queues an event; the Emacs
-command loop performs the toggle. Emacs must be running, and busy Lisp delays
-invocation. Held keys do not repeat. Events from old registrations or older
-presentations are discarded, including rapid presses still queued when the
-first press changes the presentation. There is no responsiveness guarantee.
+The default does not claim Command-Space. A chord that macOS reports as
+unavailable raises an error and retains the previous registration; failed
+`setopt` also retains the previous option value. Repeated enable keeps one
+registration, successful rebind releases the old chord, and
+`portal-launcher-mode -1`, unloading, or exiting releases it, leaving other
+global shortcuts set. After changing the option with `setq`, enable the mode
+again to apply it. A press that waits while the panel is shown some other way,
+such as with `portal-launcher-show`, still toggles it.
 
 Start in a disposable graphical Emacs. This feature depends on internal Emacs
 NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
@@ -1511,7 +1557,8 @@ the app sends, in order. Other web views have no bridge.
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
-| `portal-launcher.el` | Opt-in launcher frame lifecycle, shortcut invocation, command sessions and dismissal |
+| `portal-launcher.el` | Opt-in launcher frame lifecycle, its global shortcut, command sessions and dismissal |
+| `portal-global-shortcut.el` | Named global shortcuts: validation, conflicts by name, queuing presses and calling their functions from the command loop |
 | `portal-input.el` | Chords that fall through to Emacs, read with the view's buffer's keymaps; focus policy and input notifications |
 | `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
 | `portal-terminal-bindings.el` | Runtime native keymaps, validation, and registration |
@@ -1533,12 +1580,13 @@ the app sends, in order. Other web views have no bridge.
 | `native/Core/web.c` | Web views' rules: which URLs load and how, where a page may navigate, whether it can go back or forward, and the bridge's queue, senders and records |
 | `native/Core/toolbar.c` | Toolbars: each view's buttons and which work, zoom and text size with their limits, the table of contents, the find field and its searches, visibility and colors, and what a click does |
 | `native/Core/scripts/` | Browser scripts every platform's web views share, embedded in the core: local links, and the toolbar's contents and find count |
+| `native/Core/shortcuts.c` | Global shortcuts: chord notation, registrations and their IDs, replacing a chord without losing it, held keys, and press records |
 | `native/Core/channel.c` | The notification pipe: record validation, the queue of waiting records, retries, and the pipe's descriptor |
 | `native/Core/include/portal.h` | The platform interface: the primitives a platform implements ([ADR 0003](docs/adr/0003-platform-interface-primitives.md)), their ownership and thread rules, and the calls a platform makes into the core |
 | `native/Backend.swift` | The macOS backend: implements `portal.h` on the main thread with the Swift features |
 | `native/CoreCalls.swift` | Swift's calls into the core, such as sending a record or reporting what a page did, the shared scripts' glue, and the timer primitive |
 | `native/Launcher.swift` | Dedicated NSPanel attachment, Emacs NS compatibility, placement, and presentation identity |
-| `native/LauncherShortcut.swift` | One Carbon global hotkey registration, conflict-safe rebinding, and native event delivery |
+| `native/Hotkeys.swift` | The hot key primitives: Carbon registrations, key codes, and reporting presses and releases to the core |
 | `native/NativeHost.swift` | Shared frame attachment, geometry, focus return, and keyboard routing |
 | `native/WebView.swift` | The web view kind: WebKit pages, storage, loading, what pages report to the core, and the bridge's WebKit glue |
 | `native/NativeInput.swift` | macOS input primitives: key chords, held and replayed events, literal delivery, Command-Escape, and focus reports |
@@ -1740,7 +1788,24 @@ passes without warnings.
 
 `ctest --test-dir build -R startup` loads `portal.el` by absolute path in a
 fresh `emacs --batch -Q`, without `-L` or a fake backend, and verifies that
-Portal's features and commands are available from an unrelated directory.
+Portal's features and commands are available from an unrelated directory, and
+that loading registers no global shortcut and loads no native code.
+
+`ctest --test-dir build -R global-shortcut` runs the Lisp module on the real C
+core, built with the fake backend, whose hot keys refuse F19 as if another
+application had it. It feeds `shortcut` records to the pipe's filter as the
+core sends them for presses, and runs what the filter queued through the
+command loop's key lookup. It checks two names calling a lambda and a command;
+that setting a name again, on its chord or another, leaves one registration and
+frees the old chord; that unloading fails, keeping the feature and a chord it
+cannot release; that invalid names, functions and notation, another name's
+chord in any spelling, and a refused chord change nothing; that a function's
+error is a message, keeps every shortcut, and lets the press queued behind it
+run; that records split across reads arrive, malformed and stale ones do not,
+and a press while one waits is dropped; that removal is independent and
+repeatable; and that unloading and a real `kill-emacs` release every chord.
+`ctest -R launcher` checks that the launcher's mode is a client of the same
+module: it sets and removes only its own shortcut, atomically.
 
 Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
@@ -1977,6 +2042,7 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -l "$PWD/test/portal-agents-gui-tests.el" \
   -l "$PWD/test/portal-launcher-gui-tests.el" \
   -l "$PWD/test/portal-launcher-daily-use-tests.el" \
+  -l "$PWD/test/portal-global-shortcut-gui-tests.el" \
   --eval '(ert-run-tests-interactively "^portal-")'
 ```
 
@@ -1986,18 +2052,18 @@ also verifies guest Escape retains focus, while Command-Escape and
 focused-view removal return focus to the editor:
 
 ```sh
-for core in channel views input terminals web toolbar; do
+for core in channel views input terminals web toolbar shortcuts; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   -I native/Core/include -import-objc-header test/native-core.h \
   native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
-  native/Launcher.swift native/LauncherShortcut.swift \
+  native/Launcher.swift native/Hotkeys.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
-  build/web.o build/toolbar.o \
+  build/web.o build/toolbar.o build/shortcuts.o \
   -framework AppKit -framework WebKit -framework Carbon -o build/check-focus
 build/check-focus
 ```
@@ -2039,9 +2105,20 @@ For the launcher's native checks, replace `test/native-focus.swift` and
 `build/check-focus` in that command with `test/native-launcher.swift` and
 `build/check-launcher`. They exercise negative monitor origins, offset/clamping
 rules, display-change notifications, attachment rejection and rollback, donor
-restoration and panel release. They also exercise real Carbon registration,
-conflicts, atomic rebinding, old-chord release, stale event IDs/timestamps, held-key
-suppression, and pipe delivery without views over 20 enable/disable cycles.
+restoration, focus-loss records and panel release.
+
+For global shortcuts, use `test/native-shortcuts.swift` and
+`build/check-shortcuts`. They register real Carbon hot keys through the core's
+shortcuts, as the Emacs bindings do, on F13 to F16, which other apps are
+unlikely to have. A competing registration in the process stands in for another
+application: its chord is refused, and the previous one keeps working. They check
+that a chord is taken while registered and free once released or replaced, that
+setting the same chord again keeps its Carbon registration under a new ID and
+restarts it, so that a press from before the set that Carbon delivers only
+afterwards sends nothing, that a hot key event from before its registration, an
+unknown one and a held key's repeats send nothing, that records reach the pipe with no view open, and that
+the Carbon handler is removed with the last hot key, over 20 set/remove cycles.
+Events are sent to the installed handler, not typed.
 The graphical `portal-launcher-gui-` tests use
 the real Emacs NS view, including repeated show/hide and delete/recreate,
 appearance/font changes, child-frame deletion, native keyboard input and exact
@@ -2059,6 +2136,21 @@ The NS injector holds synthetic C-g even in an ordinary `read-string`, so that
 key is tested as an Emacs command-loop event. Physical C-g and mouse click-away
 are covered by the user's recorded daily-use acceptance. Session ID
 and stale-record policy are covered by batch ERT and the C notification tests.
+The launcher's shortcut is a global shortcut there: the injected press shows
+and hides the panel through the real command loop, and one from before the
+mode was enabled again is ignored.
+
+The graphical `portal-global-shortcut-gui-` tests send hot key events to the
+installed Carbon handler with `portal-test-hotkey`, with no Portal view or
+launcher frame. Two shortcuts, a lambda and a command, run through the real
+command loop while another application stays frontmost, and no frame or window
+changes. A function's error leaves the next queued press to run, a press from
+before a function changed on the same chord is ignored, and a removed shortcut's
+hot key is no longer handled. Held and doubled presses run once, and a shortcut
+runs inside a minibuffer prompt's command loop. These do not establish physical
+key delivery: `test/global-shortcut-smoke.sh` starts a disposable Emacs for a
+person to press two chords in another app, and prints what ran and which app
+was in front.
 
 Verify the failure reporter without opening windows:
 
@@ -2147,8 +2239,18 @@ from a page that has gone is ignored; and that a closed view hears nothing. It c
 `:appearance` before a view opens, and that an appearance reaches every open web view,
 oldest first, stopping at one that fails.
 
+`ctest -R shortcuts-core` runs `test/portal-shortcuts-tests.c`, which plays the
+platform for the core's global shortcuts, with records going to a real pipe. It
+checks the notation's spellings and its invalid forms, including NUL bytes;
+that another registration's chord, an invalid one, one the platform refuses and
+a removed ID change nothing; that the same chord restarts its platform
+registration under a new ID while another chord is registered before the old
+one is released, and that a release the platform refuses keeps both; that IDs
+are never reused; and that a press sends one record until released, carries the
+current ID, and sends nothing once its shortcut has moved or gone.
+
 The full build runs the same module tests as `ctest --test-dir build -R module`. They check
-the 24 functions and their arities, the input functions' conversion of chords and
+the 30 functions and their arities, the input functions' conversion of chords and
 binding JSON, the toolbar theme's conversion of face colors, and the conversion of
 options, edges, and strings,
 including NUL bytes and non-ASCII text. They also check that malformed strings (non-strings,

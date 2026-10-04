@@ -4,6 +4,7 @@
    Emacs does. */
 #include "../native/Core/channel.h"
 #include "../native/Core/input.h"
+#include "../native/Core/shortcuts.h"
 #include "../native/Core/toolbar.h"
 #include "../native/Core/views.h"
 #include "../native/Core/web.h"
