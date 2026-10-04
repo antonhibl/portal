@@ -54,6 +54,8 @@ void portal_fake_report(portal_view *terminal, const char *title, const char *di
    each one's hot key, its key and its portal_modifier bits.  Valid until the
    next call. */
 const char *portal_fake_hotkeys(void);
+/* How many times a hot key was registered again with its own chord. */
+size_t portal_fake_hotkey_restarts(void);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);

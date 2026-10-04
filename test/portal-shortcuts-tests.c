@@ -139,10 +139,12 @@ static void test_registration(void)
                   "[{\"id\":1,\"chord\":\"Control-Option-Command-P\",\"hotkey\":1,\"held\":false},"
                   "{\"id\":2,\"chord\":\"Control-Option-Command-L\",\"hotkey\":2,\"held\":false}]"));
 
-    /* The same chord keeps the platform's registration under a new ID. */
+    /* The same chord restarts the platform's registration, so that a press
+       still in the system's queue is stale there too, under a new ID. */
     uint64_t same = set(first, "Command-Control-Option-P", &error);
     CHECK(same > second);
     CHECK(is_text(portal_fake_hotkeys(), "1:P+14 2:L+14"));
+    CHECK(portal_fake_hotkey_restarts() == 1);
     /* Another chord is registered before the old one is released. */
     uint64_t moved = set(second, "Control-Shift-F12", &error);
     CHECK(moved > same);
@@ -165,8 +167,12 @@ static void test_registration(void)
     portal_fake_refuse(true);
     CHECK(!set(same, "Control-F11", &error));
     free(error.data), error = (portal_text) {0};
+    CHECK(!set(same, "Control-Option-Command-P", &error));
+    free(error.data), error = (portal_text) {0};
     CHECK(!removed(same));
     portal_fake_refuse(false);
+    CHECK(portal_fake_hotkey_restarts() == 1);
+    CHECK(strstr(described(), "\"id\":4,\"chord\":\"Control-Option-Command-P\""));
     CHECK(is_text(portal_fake_hotkeys(), "1:P+14 5:F12+3 6:F18+2"));
 
     /* Removing is harmless when repeated, and IDs are never reused. */

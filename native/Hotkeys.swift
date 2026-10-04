@@ -10,7 +10,9 @@ import PortalCore
 enum Hotkeys {
     private struct Registration {
         let reference: EventHotKeyRef
-        let started = GetCurrentEventTime()
+        let code: UInt32, flags: UInt32
+        /// Events from before this are stale: registering again restarts it.
+        var started = GetCurrentEventTime()
     }
     nonisolated static let signature: OSType = 0x5072744c // PrtL
     private static var registrations: [UInt32: Registration] = [:]
@@ -49,6 +51,13 @@ enum Hotkeys {
             where modifiers & modifier.rawValue != 0 {
             flags |= UInt32(flag)
         }
+        if let registration = registrations[id] {
+            guard registration.code == code, registration.flags == flags else {
+                throw NativeError.message("Hot key \(hotkey) has another chord")
+            }
+            registrations[id]?.started = GetCurrentEventTime()
+            return
+        }
         if handler == nil {
             let events = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
                           EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
@@ -64,7 +73,7 @@ enum Hotkeys {
             releaseHandler()
             throw NativeError.message("the system or another application has it (macOS \(status))")
         }
-        registrations[id] = Registration(reference: reference)
+        registrations[id] = Registration(reference: reference, code: code, flags: flags)
     }
 
     static func unregister(_ hotkey: UInt64) throws {

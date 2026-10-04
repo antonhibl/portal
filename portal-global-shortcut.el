@@ -145,8 +145,13 @@ waiting to be read, such as another shortcut's press."
 (define-key global-map [portal-global-shortcut] #'portal-global-shortcut--run)
 
 (defun portal-global-shortcut-unload-function ()
-  "Release every global shortcut before unloading this feature."
+  "Release every global shortcut before unloading this feature.
+If a chord cannot be released, signal an error so that the feature stays
+loaded: unloading would leave the chord registered with nothing to run."
   (portal-global-shortcut--remove-all)
+  (when portal-global-shortcut--registrations
+    (error "Cannot release global shortcuts %S, so `portal-global-shortcut' stays loaded"
+           (mapcar #'car portal-global-shortcut--registrations)))
   (define-key global-map [portal-global-shortcut] nil t)
   nil)
 

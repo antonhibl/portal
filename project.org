@@ -144,8 +144,10 @@ position, as a probe showed.
 
 [[file:native/Core/shortcuts.c][native/Core/shortcuts.c]] owns the rules: notation and its normal form,
 registrations, IDs, held keys and =shortcut ID= records. Re-setting the same
-chord keeps its platform registration under a new ID, and a new chord is
-registered before the old one is released. [[file:native/Hotkeys.swift][native/Hotkeys.swift]] replaces
+chord restarts its platform registration under a new ID, so a press still in
+macOS's queue goes stale; a new chord is registered before the old one is
+released. Unloading fails, keeping the feature, if a chord cannot be
+released. Both followed Codex's review of PR #76. [[file:native/Hotkeys.swift][native/Hotkeys.swift]] replaces
 =LauncherShortcut.swift=: =portal.h= now asks only to register and release a
 hot key and hears presses and releases. =portal_launcher_shortcut=, the
 =launcher= record and the panel-session check on presses are gone.
@@ -162,13 +164,14 @@ states this limit.
 *** Verification
 - =./build.sh= and all 34 CTest suites pass, including the new
   =shortcuts-core= (the C core with the fake platform and a real pipe) and
-  =global-shortcut= (11 ERT tests of the Lisp module on the real C core
+  =global-shortcut= (12 ERT tests of the Lisp module on the real C core
   through the fake-backend module), and the updated =module=, =launcher=,
   =startup= and =channel= suites. The standalone =native/Core= project's 8
   suites and the native failure-reporter tests pass.
 - Standalone native checks with real Carbon: =check-shortcuts= passes. It
   covers registration, a competing in-process registration standing in for
-  another app, re-setting a chord without losing it, release on rebind and
+  another app, re-setting a chord without losing it, a press timestamped
+  before a re-set but delivered after it, release on rebind and
   removal, stale, unknown and held events, records with no view open, handler
   removal and 20 set/remove cycles, using F13-F16. Its events go to the
   installed Carbon handler, not the keyboard. =check-launcher=, =check-focus=

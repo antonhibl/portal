@@ -183,8 +183,11 @@ bool portal_shortcuts_set(uint64_t replacing, portal_string chord, uint64_t *id,
         }
     }
     if (old && old->key == key && old->modifiers == bits) {
-        /* The platform keeps the chord.  Only the ID changes, so that a press
-           from before this set is stale, as after any other. */
+        /* Restarting the platform's registration keeps the chord, and makes a
+           press from before this set stale there, even one still in the
+           system's queue, as the new ID makes one stale here. */
+        if (!portal_hotkey_register(old->hotkey, key, bits, error))
+            return refused(error, key, bits);
         *id = old->id = ++shortcuts.last;
         return true;
     }

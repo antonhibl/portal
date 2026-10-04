@@ -122,10 +122,16 @@ struct ShortcutChecks {
             press(pKey)
             check(records() == "shortcut \(second)\nshortcut \(first)\n")
 
-            // The same chord keeps its Carbon registration under a new ID, so
-            // a press from before is stale.
+            // The same chord keeps its Carbon registration under a new ID, and
+            // restarts it: a press from before the set that Carbon delivers
+            // only now, as when Emacs was busy, is stale.
+            let early = GetCurrentEventTime()
+            usleep(2000)
             guard case .success(let same) = set(first, "Command-Control-Option-F13") else { fail("Cannot set again") }
             check(same != first && hotkey(same) == pKey && !available(p))
+            event(pKey, at: early)
+            event(pKey, false)
+            check(records().isEmpty, "A press from before the set reached Emacs")
             press(pKey)
             check(records() == "shortcut \(same)\n")
             // Another chord releases the old one once the new one is taken.

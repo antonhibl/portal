@@ -263,6 +263,28 @@ before a macro's own events, so each event runs from a macro alone."
           (should-not (lookup-key global-map [portal-global-shortcut])))
       (require 'portal-global-shortcut))))
 
+(ert-deftest portal-global-shortcut-unloading-keeps-a-chord-it-cannot-release ()
+  (portal-global-shortcut-tests--with
+    (let ((calls 0)
+          (remove (symbol-function 'portal--shortcut-remove)))
+      (portal-global-shortcut-set 'a "Control-Option-Command-A" #'ignore)
+      (portal-global-shortcut-set 'b "Control-Option-Command-B" (lambda () (cl-incf calls)))
+      (let ((stuck (portal-global-shortcut-tests--id 'b)))
+        (cl-letf (((symbol-function 'portal--shortcut-remove)
+                   (lambda (id)
+                     (if (eql id stuck) (error "The system cannot release it") (funcall remove id))))
+                  (inhibit-message t))
+          (should-error (unload-feature 'portal-global-shortcut t))))
+      ;; The feature stays loaded with the shortcut it could not release.
+      (should (featurep 'portal-global-shortcut))
+      (should (equal (mapcar #'car portal-global-shortcut--registrations) '(b)))
+      (should (equal (mapcar (lambda (shortcut) (plist-get shortcut :chord)) (portal--shortcuts))
+                     '("Control-Option-Command-B")))
+      (should (eq (lookup-key global-map [portal-global-shortcut]) #'portal-global-shortcut--run))
+      (portal-global-shortcut-tests--press 'b)
+      (portal-global-shortcut-tests--run)
+      (should (= calls 1)))))
+
 (ert-deftest portal-global-shortcut-exit-releases-every-shortcut ()
   ;; A real kill-emacs in another process runs the actual exit hooks.
   (with-temp-buffer

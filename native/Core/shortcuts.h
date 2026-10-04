@@ -23,9 +23,9 @@ bool portal_shortcuts_chord(portal_string chord, portal_text *normalized, portal
 
 /* Register CHORD and set *ID to the registration's new ID.  REPLACING is
    the ID of the registration this replaces, or 0 for none; once this
-   succeeds, its old chord is released.  On failure nothing changes: CHORD is
-   invalid or another registration's, REPLACING names no registration, or
-   the platform refuses the chord. */
+   succeeds, its old chord is released, or for the same chord, restarted.
+   On failure nothing changes: CHORD is invalid or another registration's,
+   REPLACING names no registration, or the platform refuses the chord. */
 bool portal_shortcuts_set(uint64_t replacing, portal_string chord, uint64_t *id,
                           portal_text *error);
 

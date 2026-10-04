@@ -398,9 +398,12 @@ void portal_timer_start(uint64_t token, uint64_t milliseconds);
    PORTAL_FUNCTION_KEY + N for function key FN, N from 1 to 20.  MODIFIERS
    are the portal_modifier bits held with it, exactly, and include Control,
    Meta or Super.  Register fails, saying why, when the system or another
-   application has the chord; the core never registers one chord twice.
-   HOTKEY is the core's name for the registration, never 0 and never reused,
-   which the platform reports presses and releases with.  Once unregister
+   application has the chord; the core never registers one chord under two
+   hot keys.  HOTKEY is the core's name for the registration, never 0 and
+   never given to another one, which the platform reports presses and
+   releases with.  Registering HOTKEY again with its own chord restarts it:
+   the platform keeps the chord, and reports nothing that happened before,
+   such as a press still waiting in the system's queue.  Once unregister
    returns, the platform reports nothing more for HOTKEY. */
 enum { PORTAL_FUNCTION_KEY = 0x100 };
 bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,

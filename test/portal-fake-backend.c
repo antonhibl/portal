@@ -1039,15 +1039,16 @@ bool portal_launcher_describe(portal_text *state, portal_text *error)
 
 /* System-wide hot keys.  The fake registers any chord but F19, which it
    says another application has, and, like macOS, refuses a chord it already
-   has; the core must never ask for one twice.  It cannot release F18, to
-   test what the core does when a release fails.  Real registration uses
-   Carbon in the standalone checks. */
+   has under another hot key; the core must never ask for that.  Registering
+   a hot key again with its own chord restarts it, which it counts.  It
+   cannot release F18, to test what the core does when a release fails.  Real
+   registration uses Carbon in the standalone checks. */
 enum { MAX_HOTKEYS = 64 };
 static struct hotkey {
     uint64_t hotkey;
     uint32_t key, modifiers;
 } hotkeys[MAX_HOTKEYS];
-static size_t hotkey_count;
+static size_t hotkey_count, hotkey_restarts;
 
 bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
                             portal_text *error)
@@ -1056,9 +1057,15 @@ bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
         return false;
     if (key == PORTAL_FUNCTION_KEY + 19)
         return fail(error, "Another application has this chord");
-    for (size_t i = 0; i < hotkey_count; i++)
-        if (hotkeys[i].hotkey == hotkey || (hotkeys[i].key == key && hotkeys[i].modifiers == modifiers))
-            return fail(error, "The fake already has this hot key");
+    for (size_t i = 0; i < hotkey_count; i++) {
+        bool chord = hotkeys[i].key == key && hotkeys[i].modifiers == modifiers;
+        if (hotkeys[i].hotkey == hotkey && chord) {
+            hotkey_restarts++;
+            return true;
+        }
+        if (hotkeys[i].hotkey == hotkey || chord)
+            return fail(error, "The fake already has this hot key or chord");
+    }
     if (!hotkey || hotkey_count == MAX_HOTKEYS)
         return fail(error, "The fake cannot register hot key %llu", (unsigned long long) hotkey);
     hotkeys[hotkey_count++] = (struct hotkey) {hotkey, key, modifiers};
@@ -1078,6 +1085,11 @@ bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error)
         }
     }
     return true;
+}
+
+size_t portal_fake_hotkey_restarts(void)
+{
+    return hotkey_restarts;
 }
 
 const char *portal_fake_hotkeys(void)

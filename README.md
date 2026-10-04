@@ -123,7 +123,7 @@ An error in the function is shown as a message naming the shortcut. Every
 shortcut stays set, and unlike other commands' errors it discards no waiting
 input, such as another shortcut's press; with `debug-on-error`, the debugger
 shows it. Unloading `portal-global-shortcut` or exiting Emacs releases every
-chord. Removing one shortcut, or disabling or deleting the launcher panel,
+chord; if one cannot be released, unloading fails and the feature stays loaded. Removing one shortcut, or disabling or deleting the launcher panel,
 leaves the others.
 
 ## Native launcher panel (opt-in)
@@ -1797,7 +1797,8 @@ application had it. It feeds `shortcut` records to the pipe's filter as the
 core sends them for presses, and runs what the filter queued through the
 command loop's key lookup. It checks two names calling a lambda and a command;
 that setting a name again, on its chord or another, leaves one registration and
-frees the old chord; that invalid names, functions and notation, another name's
+frees the old chord; that unloading fails, keeping the feature and a chord it
+cannot release; that invalid names, functions and notation, another name's
 chord in any spelling, and a refused chord change nothing; that a function's
 error is a message, keeps every shortcut, and lets the press queued behind it
 run; that records split across reads arrive, malformed and stale ones do not,
@@ -2112,9 +2113,10 @@ shortcuts, as the Emacs bindings do, on F13 to F16, which other apps are
 unlikely to have. A competing registration in the process stands in for another
 application: its chord is refused, and the previous one keeps working. They check
 that a chord is taken while registered and free once released or replaced, that
-setting the same chord again keeps its Carbon registration under a new ID, that
-a hot key event from before its registration, an unknown one and a held key's
-repeats send nothing, that records reach the pipe with no view open, and that
+setting the same chord again keeps its Carbon registration under a new ID and
+restarts it, so that a press from before the set that Carbon delivers only
+afterwards sends nothing, that a hot key event from before its registration, an
+unknown one and a held key's repeats send nothing, that records reach the pipe with no view open, and that
 the Carbon handler is removed with the last hot key, over 20 set/remove cycles.
 Events are sent to the installed handler, not typed.
 The graphical `portal-launcher-gui-` tests use
@@ -2241,7 +2243,7 @@ oldest first, stopping at one that fails.
 platform for the core's global shortcuts, with records going to a real pipe. It
 checks the notation's spellings and its invalid forms, including NUL bytes;
 that another registration's chord, an invalid one, one the platform refuses and
-a removed ID change nothing; that the same chord keeps its platform
+a removed ID change nothing; that the same chord restarts its platform
 registration under a new ID while another chord is registered before the old
 one is released, and that a release the platform refuses keeps both; that IDs
 are never reused; and that a press sends one record until released, carries the
