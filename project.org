@@ -43,9 +43,10 @@ or removed. A user command composes the two:
 ;; (portal-global-shortcut-remove 'app-launcher)
 #+end_src
 
-=portal-global-shortcut-set= and =portal-global-shortcut-remove= are available;
-the presentation options above are the target of the TODO tasks below. URL scheme handling, =org-protocol=, modifier
-double-taps and a launcher/provider registration framework remain out of scope.
+=portal-global-shortcut-set=, =portal-global-shortcut-remove= and the presentation
+options above are available; the TODO tasks below finish the separation. URL
+scheme handling, =org-protocol=, modifier double-taps and a launcher/provider
+registration framework remain out of scope.
 
 ** DONE Invoke arbitrary Elisp through independent named global shortcuts :task:
 :PROPERTIES:
@@ -200,7 +201,7 @@ states this limit.
   test file keeps its existing warnings about module functions. Org lint, task
   IDs, dependencies and internal links pass.
 
-** TODO Choose minibuffer or buffer presentation for each launcher invocation :task:
+** DONE Choose minibuffer or buffer presentation for each launcher invocation :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-presentation-options
 :ID: 2b718e9b-1d6b-4fdc-bab3-efd229d65447
@@ -288,19 +289,93 @@ Recorded before implementation.
   Update public docstrings and examples alongside the implementation.
 
 *** Acceptance
-- [ ] A real Vertico picker occupies a minibuffer-only panel with no empty
+- [X] A real Vertico picker occupies a minibuffer-only panel with no empty
   normal buffer or intervening mode line; typing, navigation and Return work.
-- [ ] A buffer UI can show or suppress its mode line, including after switching
+- [X] A buffer UI can show or suppress its mode line, including after switching
   buffers or splitting a window, without changing another frame's appearance.
-- [ ] Interactive commands, prefix arguments and ordinary lambdas work;
+- [X] Interactive commands, prefix arguments and ordinary lambdas work;
   invalid options/callbacks fail before modifying native presentation state.
-- [ ] Alternating presentation kinds and mode-line settings does not leak
+- [X] Alternating presentation kinds and mode-line settings does not leak
   frames, windows or options. Ordinary prompts and supported completion
   configurations retain their behavior after the panel closes.
-- [ ] Nested prompts, Escape, C-g, repeated invocation, click-away, errors,
+- [X] Nested prompts, Escape, C-g, repeated invocation, click-away, errors,
   frame deletion and disable preserve existing cleanup and focus guarantees.
-- [ ] Batch contract tests and real graphical layout/input checks pass, with
+- [X] Batch contract tests and real graphical layout/input checks pass, with
   visual evidence for both kinds and relevant native geometry/focus checks.
+
+*** Outcome
+=portal-launcher-present= follows the policy above. FUNCTION is a command,
+called with =call-interactively= so a prefix argument passes through, or a
+function of no arguments, called with =funcall=; its value is returned.
+A minibuffer presentation's frame has =(minibuffer . only)=. The native-role
+guard checks each frame against its own kind's role, and a request for the
+other kind deletes the dedicated frame before =portal--launcher-prepare=
+captures the previous app, then creates one of that kind. No native code
+changed. =portal-launcher-show=, the mode's toggle and callers without =:kind=
+keep the buffer panel.
+
+Found while implementing: presenting while an explicitly shown launcher was
+selected restored selection to the launcher's own window, leaving a hidden
+frame selected, or, once a kind change had deleted it, restored nothing. The
+session now returns to the window the launcher was shown from.
+
+The README, docstrings and [[file:docs/launcher-native-panel.md][panel documentation]] describe the options,
+the height and =*Completions*= policy and when a command needs =buffer=. The
+panel documentation shows the pictures in [[file:docs/evidence][docs/evidence]]. =screencapture=
+is refused from the agent shell, which lacks Screen Recording permission, so
+the test injector's new =portal-test-capture-target= saves a frame's drawing
+from its Emacs view's IOSurface; the injector's builds now link IOSurface.
+
+*** Verification
+- =./build.sh= and all 34 CTest suites pass. The =launcher= suite has 22
+  tests. New or extended ones check that invalid functions and options signal
+  before any native work, even with an active session, which is not
+  cancelled; that the guard enforces the minibuffer role; and that commands
+  get the caller's prefix argument, while plain lambdas and the configured
+  command run with =*Portal Launcher*= current. A minibuffer presentation
+  displays no buffer and binds =resize-mini-frames= nil. A buffer one with
+  =:mode-line nil= hides new windows' mode lines through its hook. Success,
+  errors, quit and cancellation each leave one window, no parameter and no
+  hook.
+- Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 17
+  =portal-launcher-gui-= tests (4 new) and the 2 daily-use tests passed 19 of
+  19 in three runs. One earlier run failed =portal-launcher-gui-session-command-error=
+  once: the session ended before Return arrived, as a stray focus change does.
+  It passed alone and in every later run, and the kind-switching tests passed
+  three repeated runs.
+- A real Vertico picker, typed into with native key events, ran in minibuffer
+  panels of 720×420 and 640×320 points. From inside the prompt: the minibuffer
+  was the panel's only window and its root, began at the top of the text area
+  and filled it, and had no mode line. It showed 10 of 15 candidates with
+  90-234 pixels to spare, and native requested and actual rectangles matched
+  the size. Down selected the second candidate and Return returned it.
+  Stock completion there completed =a= to =alp= with Tab, showed
+  =*Completions*= in no window and left the ordinary frame's windows alone.
+- A buffer panel's initial window, a split, and both after switching buffers
+  had 14-pixel mode lines by default and none with =:mode-line nil=. The
+  ordinary window showing the same buffer kept 14 pixels and the buffer kept
+  its =mode-line-format=. Afterward the panel had one window, without the
+  parameter or hook.
+- Eight presentations alternating kinds and mode-line settings, each reading
+  typed input, kept one attached launcher frame and restored nine session
+  settings. Across runs, a show that created a frame took 18-37 ms and one
+  that reused it 4-9 ms. Then, in the ordinary frame, stock completion showed
+  =*Completions*= there and Vertico read there. Presenting while an explicitly
+  shown launcher was selected returned to the ordinary window in both kinds;
+  with that fix reverted, this check failed.
+- Both kinds passed the nested-prompt dismissal test (native Escape, queued
+  C-g, a second invocation, the shortcut, hide, deletion and disable, each
+  followed by re-entry), the error test and native focus loss to the ordinary
+  frame. Cancellation left the previously frontmost app in front for both
+  kinds, and the existing Finder activation check passed. Physical C-g and a
+  real mouse click-away were not repeated; the injector holds synthetic C-g.
+- The full combined graphical suite ran 90 tests: 89 passed and
+  =portal-terminal-start-uses-shell-startup= skipped, as it needs
+  =PORTAL_TEST_SHELL_DIRECTORY=. An earlier full run, while the user's own
+  Emacs was in front, failed three injection tests, one reading a Down key
+  that no test sent; all three passed when rerun.
+- =check-launcher= passes. Changed Lisp, including tests, byte-compiles
+  without warnings. Org lint, task IDs, dependencies and internal links pass.
 
 ** TODO Keep custom buffer UIs interactive after their setup function returns :task:
 :PROPERTIES:

@@ -170,8 +170,8 @@ deletes the dedicated frame through the usual path, detaching it in
 before the previous application is captured, since detaching forgets it. No
 minibuffer is active then: a session refuses to start inside one and defers its
 own deletions until it has unwound. In the graphical tests on 2026-10-04, a
-session's show took 20–37 ms when it created a frame, as every change of kind
-does, and about 5 ms when it reused one. The native panel does not know the kind: attachment, placement and
+session's show took 18–37 ms when it created a frame, as every change of kind
+does, and 4–9 ms when it reused one. The native panel does not know the kind: attachment, placement and
 focus handling are the same.
 
 Both kinds have `portal-launcher-size`. In a minibuffer frame, the minibuffer
