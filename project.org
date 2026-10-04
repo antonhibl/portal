@@ -304,9 +304,10 @@ Recorded before implementation.
   visual evidence for both kinds and relevant native geometry/focus checks.
 
 *** Outcome
-=portal-launcher-present= follows the policy above. FUNCTION is a command,
-called with =call-interactively= so a prefix argument passes through, or a
-function of no arguments, called with =funcall=; its value is returned.
+Implemented in PR #77. =portal-launcher-present= follows the policy above.
+FUNCTION is a command, called with =call-interactively= so a prefix argument
+passes through, or a function of no arguments, called with =funcall=; its
+value is returned.
 A minibuffer presentation's frame has =(minibuffer . only)=. The native-role
 guard checks each frame against its own kind's role, and a request for the
 other kind deletes the dedicated frame before =portal--launcher-prepare=
