@@ -78,6 +78,31 @@ The existing native shortcut and notification path provide the starting point.
   Emacs. Emacs must be running; busy Lisp can delay callback execution.
   Preserve and document the existing physical-key notation and supported keys.
 
+*** Interface contract
+Recorded before implementation.
+- =portal-global-shortcut-set= returns NAME. It signals a =user-error= and
+  changes nothing when NAME is not a non-nil symbol, CHORD is not a string,
+  FUNCTION is neither a command nor callable with no arguments, or the
+  normalized chord belongs to another NAME, which the message names. The
+  native module signals =error=, also changing nothing, for invalid notation
+  or when macOS refuses the chord because the system or another app has it.
+- =portal-global-shortcut-remove= returns t when NAME was set and nil
+  otherwise. It signals only if the system cannot release the chord, and then
+  keeps NAME.
+- An error in FUNCTION is the command loop's to report, as for any command;
+  every registration stays.
+- The C core owns registrations: chord parsing and normalization, IDs, held
+  keys and records. The platform registers and releases one hot key and
+  reports its presses and releases; =portal_launcher_shortcut= and the
+  =launcher= record go. Every successful set gives a new ID, even on the same
+  chord, and records carry it, so presses from before a set or remove are
+  ignored. A press while one of the same shortcut still waits in
+  =unread-command-events= is dropped.
+- Until [[#launcher-user-configuration][user-configured launchers]], =portal-launcher-mode= registers
+  the name =portal-launcher= with =portal-launcher-toggle=. Its presses no
+  longer carry the panel session, so one queued before an explicit show now
+  toggles that presentation.
+
 *** Plan
 - Generalize [[file:native/LauncherShortcut.swift][the single native shortcut]] into independent
   registrations, with matching bindings in [[file:native/Core/emacs.c][the C module]] and a small public
