@@ -679,33 +679,42 @@ Return its buffer, as setup functions may."
         (kill-buffer "*Portal launcher hello*")))))
 
 ;; The README's user configuration composes launchers without launcher.el.
-(defmacro portal-launcher-test--readme (&rest body)
-  "Run BODY after evaluating the README's launcher examples, in a test keymap.
-MESSAGES returns what was logged since then."
-  (declare (indent 0))
-  `(portal-launcher-test--shortcuts
-     (portal-launcher-test--session
-       (let ((global (current-global-map))
-             (map (make-sparse-keymap))
-             (suggest-key-bindings nil)
-             (extended-command-suggest-shorter nil)
-             (start (with-current-buffer "*Messages*" (point-max))))
-         (set-keymap-parent map global)
-         (keymap-set map "<f14>" (lambda () (interactive) (funcall portal-launcher-test--action)))
-         (use-global-map map)
-         (cl-flet ((messages ()
-                     (with-current-buffer "*Messages*"
-                       (buffer-substring-no-properties start (point-max)))))
-           (unwind-protect
-               (progn
-                 (dolist (example '("launcher-picker" "launcher-hello" "launcher-shortcuts"))
-                   (eval (portal-launcher-examples-form example) t))
-                 ,@body)
-             (use-global-map global)
-             (when (get-buffer "*Hello*") (kill-buffer "*Hello*"))))))))
+(defmacro portal-launcher-test--readme (examples &rest body)
+  "Run BODY after loading the README's EXAMPLES, once with each binding.
+A configuration file may or may not enable `lexical-binding', so the
+examples load from a file with dynamic binding, then with lexical binding,
+which LEXICAL names.  BODY runs in a test keymap, and MESSAGES returns what
+was logged since loading."
+  (declare (indent 1))
+  `(dolist (lexical '(nil t))
+     (portal-launcher-test--shortcuts
+       (portal-launcher-test--session
+         (let ((global (current-global-map))
+               (map (make-sparse-keymap))
+               (suggest-key-bindings nil)
+               (extended-command-suggest-shorter nil)
+               (start (with-current-buffer "*Messages*" (point-max))))
+           (set-keymap-parent map global)
+           (keymap-set map "<f14>" (lambda () (interactive) (funcall portal-launcher-test--action)))
+           (use-global-map map)
+           (cl-flet ((messages ()
+                       (with-current-buffer "*Messages*"
+                         (buffer-substring-no-properties start (point-max)))))
+             (unwind-protect
+                 (progn
+                   (should (eq lexical (portal-launcher-examples-load ,examples lexical)))
+                   ;; Emacs folds a message repeated from the run before.
+                   (message "README examples loaded with lexical-binding %s" lexical)
+                   ,@body)
+               (use-global-map global)
+               (when (get-buffer "*Hello*") (kill-buffer "*Hello*")))))))))
+
+(defconst portal-launcher-test--launchers
+  '("launcher-picker" "launcher-hello" "launcher-shortcuts")
+  "The README's launcher examples that need no other package.")
 
 (ert-deftest portal-launcher-readme-launchers-from-m-x-a-key-and-shortcuts ()
-  (portal-launcher-test--readme
+  (portal-launcher-test--readme portal-launcher-test--launchers
     (let ((depth (recursion-depth)))
       ;; Evaluating the configuration set exactly its three shortcuts.
       (should (equal (mapcar #'car portal-global-shortcut--registrations)
@@ -742,7 +751,7 @@ MESSAGES returns what was logged since then."
       (should (= 3 (length native))))))
 
 (ert-deftest portal-launcher-readme-shortcuts-outlast-panels-and-reloads ()
-  (portal-launcher-test--readme
+  (portal-launcher-test--readme portal-launcher-test--launchers
     (let ((stale (portal-launcher-test--press 'pick-fruit))
           (chords (mapcar #'caddr portal-global-shortcut--registrations))
           (ids (mapcar #'cadr portal-global-shortcut--registrations)))
@@ -755,7 +764,7 @@ MESSAGES returns what was logged since then."
       (should (equal ids (mapcar #'cadr portal-global-shortcut--registrations)))
       ;; Evaluating the configuration again keeps one registration per name,
       ;; and a press from before it calls nothing.
-      (eval (portal-launcher-examples-form "launcher-shortcuts") t)
+      (portal-launcher-examples-load '("launcher-shortcuts") lexical)
       (should (equal chords (mapcar #'caddr portal-global-shortcut--registrations)))
       (should (= 3 (length native)))
       (should-not (cl-intersection ids (mapcar #'cadr portal-global-shortcut--registrations)))
@@ -772,6 +781,37 @@ MESSAGES returns what was logged since then."
           (should (= presented (length shown)))))
       (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'pick-fruit)) (kbd "Apple RET")))
       (should (string-match-p "Picked Apple" (messages))))))
+
+(defvar launcher-bangs)
+
+(ert-deftest portal-launcher-readme-app-recipe-with-either-binding ()
+  ;; launcher.el is absent here: a stand-in `launcher' reads one completion
+  ;; result, as the tested revision does, and records it.  The recipe must
+  ;; not depend on a closure, which dynamic binding would not make.
+  (portal-launcher-test--readme '("launcher-app")
+    (let ((launcher-bangs '(("!g" "Google" "g?q=%s") ("!gh" "GitHub" "gh?q=%s")))
+          (reader completing-read-function)
+          launched)
+      (cl-letf (((symbol-function 'launcher)
+                 (lambda (&optional refresh)
+                   (interactive "P")
+                   (push (list refresh (completing-read "Launch: " '("!g" "!gh" "Calculator")))
+                         launched))))
+        (execute-kbd-macro (kbd "M-x my/app-launcher RET Calculator RET"))
+        ;; Stock completion's Space would complete "!gh"; here it inserts one.
+        (execute-kbd-macro (kbd "M-x my/app-launcher RET !gh SPC portal RET"))
+        ;; An empty or blank result and a bang with no query cancel.
+        (dolist (keys '("RET" "SPC SPC RET" "!g RET" "!gh SPC RET"))
+          (execute-kbd-macro (kbd (concat "M-x my/app-launcher RET " keys))))
+        (execute-kbd-macro (kbd "C-u M-x my/app-launcher RET Calculator RET"))
+        (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'app-launcher))
+                                    (kbd "Calculator RET"))))
+      (should (equal (reverse launched)
+                     '((nil "Calculator") (nil "!gh portal") ((4) "Calculator") (nil "Calculator"))))
+      ;; Cancellation may return focus to the previous app; success does not.
+      (should (equal (reverse hidden) '(nil nil t t t t nil nil)))
+      (should (equal shown (make-list 8 '(minibuffer t))))
+      (should (eq reader completing-read-function)))))
 
 (ert-deftest portal-launcher-shutdown-preserves-exit-and-later-hooks ()
   ;; A real kill-emacs in another process catches nonlocal exits that a

@@ -87,7 +87,10 @@ shortcut with a symbol:
 Setting a name again replaces its chord and function and releases the old
 chord, so evaluating a configuration again leaves one registration per name.
 An interactive command runs with `call-interactively`; any other function of no
-arguments runs with `funcall`, so a lambda can capture what it needs.
+arguments runs with `funcall`, so a lambda can capture what it needs. Capturing,
+as `pattern` above, needs lexical binding: start the configuration file with
+`;;; -*- lexical-binding: t -*-`. Emacs 31 still loads a file without that line
+with dynamic binding, where such a lambda signals `void-variable` when pressed.
 `portal-global-shortcut-set` returns the name. It signals an error and changes
 nothing for a name that is not a non-nil symbol, a function that needs
 arguments, invalid notation, a chord another name has (the message names it), or
@@ -135,7 +138,8 @@ enabling `portal-launcher-mode` register no global shortcut. Your configuration
 composes launchers. A command calls `portal-launcher-present` with its
 presentation options; run it with M-x, bind it to an Emacs key, or set it as a
 [global shortcut](#global-shortcuts) to invoke it from any application. The
-examples below need no other package.
+examples below need no other package, and they work whether or not your
+configuration file enables `lexical-binding`.
 
 The panel passed the user's daily-use checklist on 2026-10-04, with the
 application picker that Portal then included. See the
@@ -251,29 +255,32 @@ did:
 
 <!-- example: launcher-app -->
 ```elisp
-(defun my/launcher-reader (reader)
-  "Return a completion reader that calls READER for launcher.el.
+(defvar my/launcher-reader nil
+  "The completion reader that `my/launcher-read' calls.")
+
+(defun my/launcher-read (&rest arguments)
+  "Read a choice for launcher.el, calling `my/launcher-reader' with ARGUMENTS.
 In stock completion, Space inserts a space, so that \"!gh query\" can be
 typed.  An empty result or a bang with no query cancels instead of searching."
-  (lambda (&rest arguments)
-    (let* ((choice (minibuffer-with-setup-hook
-                       (lambda ()
-                         (when (eq (key-binding " ") #'minibuffer-complete-word)
-                           (use-local-map (define-keymap :parent (current-local-map)
-                                            "SPC" #'self-insert-command))))
-                     (let ((completing-read-function reader))
-                       (apply reader arguments))))
-           (words (split-string choice)))
-      (when (or (null words)
-                (and (null (cdr words)) (assoc (car words) launcher-bangs)))
-        (signal 'quit nil))
-      choice)))
+  (let* ((choice (minibuffer-with-setup-hook
+                     (lambda ()
+                       (when (eq (key-binding " ") #'minibuffer-complete-word)
+                         (use-local-map (define-keymap :parent (current-local-map)
+                                          "SPC" #'self-insert-command))))
+                   (let ((completing-read-function my/launcher-reader))
+                     (apply my/launcher-reader arguments))))
+         (words (split-string choice)))
+    (when (or (null words)
+              (and (null (cdr words)) (assoc (car words) launcher-bangs)))
+      (signal 'quit nil))
+    choice))
 
 (defun my/app-launcher ()
   "Launch an app or search the web with launcher.el in Portal's panel.
 With a prefix argument, launcher.el rebuilds its app index first."
   (interactive)
-  (let ((completing-read-function (my/launcher-reader completing-read-function)))
+  (let ((my/launcher-reader completing-read-function)
+        (completing-read-function #'my/launcher-read))
     (portal-launcher-present #'launcher :kind 'minibuffer)))
 
 (portal-global-shortcut-set 'app-launcher "Control-Option-Command-P" #'my/app-launcher)
@@ -286,7 +293,9 @@ text. Stock completion shows no candidates in a minibuffer panel; type a name,
 complete it with Tab, or use `:kind 'buffer` to see `*Completions*`. In stock
 completion, Space inserts a space and Tab completes; a customized Space binding
 is kept. The wrapper keeps your completion reader and changes no global
-setting, so ordinary `M-x launcher` is unchanged.
+setting, so ordinary `M-x launcher` is unchanged. It holds your reader in a
+variable rather than a closure, so it works with or without
+`lexical-binding` in the file that defines it.
 
 `C-u M-x my/app-launcher` rebuilds launcher.el's index before prompting, and
 `M-x launcher-refresh` rebuilds it separately; refresh after installing,
@@ -295,7 +304,8 @@ Escape, C-g, the chord again, an empty result or a bang without a query close
 the panel without an action and return focus to the previous app; clicking
 another app hides it, leaving that app in front. Discovery and launch errors
 close the panel and can be retried. Once launcher.el handles the three input
-rules itself, present `#'launcher` directly and drop `my/launcher-reader`. See
+rules itself, present `#'launcher` directly and drop `my/launcher-read` and
+its variable. See
 the [application notes](docs/launcher-applications.md) for the upstream
 follow-ups, the optional integration smoke test and the historical evidence.
 
@@ -1974,12 +1984,15 @@ repeatable; and that unloading and a real `kill-emacs` release every chord.
 `ctest -R launcher` runs without launcher.el. It checks that loading, enabling
 and presenting the panel set no global shortcut, and that disabling and
 deleting it leave every shortcut set. It evaluates the launcher examples from
-this README, with native calls stubbed: the picker runs from M-x, its key and
+this README, with native calls stubbed, loading them from a file with dynamic
+binding and again with lexical binding: the picker runs from M-x, its key and
 its shortcut's record through the command loop; the persistent hello buffer
 reads a name from its shortcut and from M-x, and its chord pressed again
 dismisses it; a shortcut presents nothing. Evaluating the shortcuts again
 replaces each registration, so a press from before calls nothing, and removing
-one leaves the others.
+one leaves the others. With a stand-in `launcher`, the launcher.el recipe
+reads a spaced bang query in stock completion, cancels empty and blank results
+and bangs without a query, passes a prefix argument and runs from its shortcut.
 
 Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
@@ -2310,8 +2323,8 @@ The NS injector holds synthetic C-g even in an ordinary `read-string`, so that
 key is tested as an Emacs command-loop event. Physical C-g and mouse click-away
 are covered by the user's recorded daily-use acceptance. Session ID
 and stale-record policy are covered by batch ERT and the C notification tests.
-The README's launchers run as a user configures them, on test chords from F17
-to F20: the picker from M-x and its key, queued for the command loop, and from
+The README's launchers run as a user configures them, loaded with dynamic
+binding, on test chords from F17 to F20: the picker from M-x and its key, queued for the command loop, and from
 its shortcut, each typed into with native keys; the persistent hello buffer
 from its shortcut, dismissed by the same chord; and a shortcut that leaves the
 hidden panel alone. The shortcuts outlast deleting and disabling the panel,

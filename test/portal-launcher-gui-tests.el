@@ -203,8 +203,10 @@ watch focus. `sit-for' would return at once while input is pending."
   "The README's chords and the ones these tests set in their place.")
 
 (defun portal-launcher-gui--example (name)
-  "Evaluate the README's example NAME, on the tests' chords."
-  (eval (portal-launcher-examples-form name portal-launcher-gui--chords) t))
+  "Load the README's example NAME, on the tests' chords, with dynamic binding.
+A configuration file need not enable `lexical-binding'; the batch tests load
+the examples with both bindings."
+  (should-not (portal-launcher-examples-load (list name) nil portal-launcher-gui--chords)))
 
 (defun portal-launcher-gui--dismiss-shortcut ()
   "Set the global shortcut `portal-launcher-gui', which presents a launcher.

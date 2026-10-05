@@ -30,7 +30,7 @@ Its prompt uses stock completion's map, where Space runs
 Google for `!ghportal`: completion consumed the space.
 
 So launcher.el needs these upstream changes before the README's wrapper,
-`my/launcher-reader`, can go:
+`my/launcher-read` and its variable `my/launcher-reader`, can go:
 
 1. An empty or blank completion result takes no action.
 2. A configured bang with no query, such as `!g` or `!gh `, takes no action.
@@ -45,9 +45,15 @@ Vertico does with no typed text. The earlier failure to accept it was in
 Portal's adapter, which checked the typed text; see the selection correction
 below.
 
-The wrapper applies rules 1 to 3 in user configuration. It wraps the user's
-`completing-read-function` for one call and returns the reader's result,
-text properties included, so launcher.el finds the chosen candidate. An empty
+The wrapper applies rules 1 to 3 in user configuration. For one call,
+`my/app-launcher` binds `completing-read-function` to `my/launcher-read` and
+keeps the user's reader in the special variable `my/launcher-reader`, which
+`my/launcher-read` calls; it returns the reader's result, text properties
+included, so launcher.el finds the chosen candidate. It uses no closure, so it
+works in a configuration file without `lexical-binding`, which Emacs 31 still
+loads with dynamic binding. The first version returned a closure over the
+reader, which failed with `void-variable` there; review caught it, and a batch
+test now loads the recipe from a file with each binding. An empty
 result or a bang without a query signals `quit`, which the panel treats as
 cancellation: it closes, and focus returns to the previous app. It changes no
 keymap, no global setting and no launcher.el function, so ordinary
@@ -66,8 +72,9 @@ with launcher.el:
 PORTAL_LAUNCHER_EL=/absolute/path/to/launcher.el-directory sh test/launcher-recipe.sh
 ```
 
-It evaluates the README's recipe, with its chord moved to
-Control-Option-Command-F20, and types native key events into the real panel.
+It loads the README's recipe from a file with dynamic binding, with its chord
+moved to Control-Option-Command-F20, and types native key events into the real
+panel.
 The input test, with Spotlight, `open` and the browser mocked, checks with
 stock completion and with Vertico, Orderless and Marginalia: a typed app, a
 spaced `!gh` query, a bang without a query, an empty result and Escape; with

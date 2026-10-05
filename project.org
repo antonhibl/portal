@@ -655,31 +655,45 @@ Marginalia remain as completion fixtures.
 an empty result, two spaces, =!g= or =!gh = (an empty query), and in stock
 completion its Space completes a word: typing =!gh portal= searched Google for
 =!ghportal=. Return on a highlighted candidate works without a wrapper, since it
-acts on the completion result. The README's =my/launcher-reader= wraps the
+acts on the completion result. The README's =my/launcher-read= wraps the
 completion reader in user configuration for the three input rules, and the
 [[file:docs/launcher-applications.md][application notes]] list the upstream changes that would retire it; they now
 separate that current recipe from the historical adapter record.
+
+Found in review: the first recipe returned a closure over the user's reader,
+which failed with =void-variable= in a configuration file without
+=lexical-binding=, which Emacs 31 still loads with dynamic binding; the tests
+had evaluated the examples lexically. The recipe now keeps the reader in a
+special variable, =my/launcher-reader=, and the tests load the README's
+examples from a file with each binding. The README also notes that the
+Global shortcuts section's capturing lambda needs lexical binding.
 =launcher.el= and other external repositories are unchanged.
 
 *** Verification
 - =./build.sh= and all 33 CTest suites pass; =launcher-applications= is gone and
-  =build/elpa= has no =launcher.el=. The =launcher= suite's 29 tests run in
+  =build/elpa= has no =launcher.el=. The =launcher= suite's 30 tests run in
   =-Q= without it on =load-path=. New ones check that loading, enabling and
   presenting through the real show path set no shortcut, and that disabling
   and deleting leave a user's shortcut set; that a failed enable keeps a live
-  panel's guards; and the README's examples, with native calls stubbed: the
+  panel's guards; and the README's examples, with native calls stubbed,
+  loaded from a file with dynamic binding and again with lexical binding: the
   picker from M-x, =C-c f= and its shortcut's record through the command loop,
   the hello buffer from its shortcut, dismissed by the same chord, and from
   M-x, the clock shortcut presenting nothing, a configuration reload replacing
   each registration so an earlier press calls nothing, and a removal leaving
-  the others. Copies where enabling sets a shortcut, disabling removes all,
-  a failed enable drops a live panel's guards, or the README's picker loses
-  =:kind 'minibuffer=, each fail them.
+  the others. With a stand-in =launcher=, the launcher.el recipe read a typed
+  name and a spaced =!gh= query in stock completion, cancelled empty, blank
+  and bare-bang results, passed =C-u= through and ran from its shortcut, then
+  restored the completion reader. Copies where enabling sets a shortcut,
+  disabling removes all, a failed enable drops a live panel's guards, the
+  README's picker loses =:kind 'minibuffer=, or the recipe returns a closure
+  (it failed with =void-variable reader= under dynamic binding), each fail
+  them.
 - Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 19
   =portal-launcher-gui-=, 2 daily-use and 4 =portal-global-shortcut-gui-=
-  tests passed 25 of 25 in four runs, the last on the final tree. The
-  README's launchers ran on chords
-  F17 to F20: the picker from M-x and =C-c f=, queued for the real command
+  tests passed 25 of 25 in six runs, the last two after review, which load
+  the README's examples with dynamic binding. The README's launchers ran on
+  chords F17 to F20: the picker from M-x and =C-c f=, queued for the real command
   loop, and from an injected press of its shortcut, each typed into with
   native keys in a minibuffer panel; the hello buffer from its shortcut, read
   a name and was dismissed by its chord pressed again; the clock shortcut left
@@ -697,7 +711,8 @@ separate that current recipe from the historical adapter record.
   =PORTAL_LAUNCHER_EL=<dir> sh test/launcher-recipe.sh= passed 2 of 2 with
   =launcher.el= 731146d (SHA-256 =7211f80c…=), Emacs 31.1 revision
   =a360712c…=, macOS 27.0.1 (26A434), and Vertico 2.15, Orderless 1.8 and
-  Marginalia 2.13. Mocking Spotlight, =open= and the browser, the README's
+  Marginalia 2.13, before and after review; it now loads the recipe with
+  dynamic binding. Mocking Spotlight, =open= and the browser, the README's
   recipe, typed into with native keys, launched a typed app, searched a spaced
   =!gh= query in stock completion, cancelled =!g=, =!gh =, an empty result and
   Escape, accepted Vertico's highlighted app on Return, after Down and after

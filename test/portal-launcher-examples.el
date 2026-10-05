@@ -31,5 +31,30 @@ example's, so that another running Emacs's shortcuts cannot conflict."
                                ")")))
                  :test #'equal))))
 
+(defvar portal-launcher-examples--binding nil
+  "The value of `lexical-binding' while the last configuration file loaded.")
+
+(defun portal-launcher-examples-load (names lexical &optional chords)
+  "Load the README's examples NAMES from a file, as a configuration is loaded.
+The file's cookie sets `lexical-binding' to LEXICAL.  Emacs 31 still loads a
+file without the cookie with dynamic binding, so user configuration may run
+either way.  CHORDS is as for `portal-launcher-examples-form'.  Return the
+binding the file was loaded with."
+  (let ((file (make-temp-file "portal-launcher-config" nil ".el")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert (format ";;; config.el --- Test configuration -*- lexical-binding: %s -*-\n"
+                            (if lexical "t" "nil")))
+            (dolist (name names)
+              (dolist (form (cdr (portal-launcher-examples-form name chords)))
+                (prin1 form (current-buffer))
+                (insert "\n")))
+            (insert "(setq portal-launcher-examples--binding lexical-binding)\n"))
+          (setq portal-launcher-examples--binding 'unloaded)
+          (load file nil t t)
+          portal-launcher-examples--binding)
+      (delete-file file))))
+
 (provide 'portal-launcher-examples)
 ;;; portal-launcher-examples.el ends here
