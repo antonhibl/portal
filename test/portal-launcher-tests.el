@@ -678,9 +678,9 @@ Return its buffer, as setup functions may."
             (portal-launcher-test--unwound depth))
         (kill-buffer "*Portal launcher hello*")))))
 
-;; The README's user configuration composes launchers without launcher.el.
+;; The launcher guide's user configuration composes launchers without launcher.el.
 (defmacro portal-launcher-test--readme (examples &rest body)
-  "Run BODY after loading the README's EXAMPLES, once with each binding.
+  "Run BODY after loading the launcher guide's EXAMPLES, once with each binding.
 A configuration file may or may not enable `lexical-binding', so the
 examples load from a file with dynamic binding, then with lexical binding,
 which LEXICAL names.  BODY runs in a test keymap, and MESSAGES returns what
@@ -704,14 +704,14 @@ was logged since loading."
                  (progn
                    (should (eq lexical (portal-launcher-examples-load ,examples lexical)))
                    ;; Emacs folds a message repeated from the run before.
-                   (message "README examples loaded with lexical-binding %s" lexical)
+                   (message "Launcher guide examples loaded with lexical-binding %s" lexical)
                    ,@body)
                (use-global-map global)
                (when (get-buffer "*Hello*") (kill-buffer "*Hello*")))))))))
 
 (defconst portal-launcher-test--launchers
   '("launcher-picker" "launcher-hello" "launcher-shortcuts")
-  "The README's launcher examples that need no other package.")
+  "The launcher guide's examples that need no other package.")
 
 (ert-deftest portal-launcher-readme-launchers-from-m-x-a-key-and-shortcuts ()
   (portal-launcher-test--readme portal-launcher-test--launchers

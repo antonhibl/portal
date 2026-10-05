@@ -3,7 +3,7 @@
 
 ;; Redisplay runs the window change functions that redraw a task view shown
 ;; again; batch Emacs runs none.  org-ql comes from `build/elpa' (see
-;; README.md).  No native view is involved.
+;; docs/testing.md).  No native view is involved.
 (require 'ert)
 (require 'cl-lib)
 (require 'org)

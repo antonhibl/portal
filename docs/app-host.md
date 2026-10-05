@@ -1,0 +1,42 @@
+# Run and troubleshoot the app host
+
+[Documentation index](README.md) · [Build and run](../README.md#build-and-run)
+
+## Bun UI host
+
+Loading the Lisp package or native module starts no server. The first
+`portal-hello`, `portal-preview-markdown`, `portal-tasks-browser`, or drawing buffer
+asynchronously starts one shared child process. Hello, Markdown previews and the
+task browser are hosted apps: their web views open immediately at `about:blank`
+and load when the host sends its readiness message. External URLs need no server.
+
+- Each Emacs process owns one host, shared by its web views, bound to
+  `127.0.0.1` on an OS-assigned port.
+- Each host generates a fresh access token and sends it through the readiness
+  pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello` or
+  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`, and task
+  pages `http://127.0.0.1:PORT/TOKEN/tasks?root=ENCODED_ABSOLUTE_PATH`. The host
+  validates the token and Host header; responses suppress outgoing referrers.
+- Closing or hiding a view leaves the server running. `M-x portal-start-server`
+  prewarms it; `M-x portal-stop-server` stops it;
+  `M-x portal-restart-server` replaces it. Loaded hosted apps keep their pages
+  through host stops or restarts. Press `g` in an app's buffer to reload,
+  starting the host if needed.
+- Startup is bounded by `portal-server-start-timeout` (five seconds by default).
+  Failures leave diagnostics in `*portal-server*` and waiting apps at
+  `about:blank`; press `g` in the buffer, or run `portal-hello`, to retry.
+  There is no automatic restart loop.
+- Emacs supervises the child through a pipe: stdout carries a versioned JSON
+  readiness line and hosted action requests; stdin carries contexts and action
+  results; stderr carries diagnostics. Closing stdin requests shutdown, even
+  on unexpected Emacs exit. Normal shutdown handles OS termination signals
+  with a forced-termination fallback.
+- `portal-server-program` selects the standalone executable, launched directly
+  without a shell or Bun lookup on PATH. The compiled binary disables runtime
+  loading of `.env` and `bunfig.toml`.
+
+Control protocol version 3 announces readiness, port, and access token and
+supports [hosted app actions](hosted-actions.md). The app host sends `ready`
+and `request` records; Emacs sends `context`, `forget`, and `result` records.
+Rebuilding publishes the executable atomically; running hosts keep their old
+code until `portal-restart-server`.

@@ -48,7 +48,7 @@ add_custom_command(
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
 if(BUILD_TESTING)
-    # Runs the README's launcher examples; launcher.el is not needed.
+    # Runs docs/launcher.md's examples; launcher.el is not needed.
     add_test(NAME launcher
         COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" -L "${CMAKE_SOURCE_DIR}/test"
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
@@ -120,7 +120,7 @@ if(BUILD_TESTING)
     set_tests_properties(agent-discovery PROPERTIES TIMEOUT 30)
     # The optional Consult and Embark adapters, the task view, agent dashboard
     # under Evil and the launcher's graphical completion fixtures use the GNU
-    # and NonGNU ELPA releases the README names, downloaded once and checked
+    # and NonGNU ELPA releases the user guides name, downloaded once and checked
     # by hash.
     set(elpa_packages
         "elpa.gnu.org/packages/consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"

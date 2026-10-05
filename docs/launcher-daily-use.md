@@ -1,17 +1,16 @@
 # Launcher setup and daily-use validation
 
-The opt-in launcher passed the user's full daily-use checklist on 2026-10-04,
-including normal configuration, fullscreen/Spaces, monitor changes, IME and
-VoiceOver. The `launcher-daily-use` task is complete. The record below separates
-automated evidence from the user's manual acceptance; support remains scoped
-to the recorded environment.
+The opt-in launcher passed the user's full daily-use checklist on 2026-10-04:
+normal configuration, fullscreen/Spaces, monitor changes, IME and VoiceOver.
+The `launcher-daily-use` task is complete. Automated evidence and manual
+acceptance are distinguished below; support remains limited to the recorded
+environment.
 
-That checklist ran with the application picker Portal then included and the
-chord `portal-launcher-mode` registered. Since 2026-10-05, user configuration
-composes launchers instead; the setup, migration and rollback steps below use
-the README's [launcher.el recipe](../README.md#application-launcher-with-launcherel-optional).
-The panel's native behavior is unchanged; the manual results are historical
-for the removed picker.
+The checklist used Portal's then-built-in picker and `portal-launcher-mode`'s
+chord. Since 2026-10-05, user configuration composes launchers; setup, migration
+and rollback below use the
+[launcher.el recipe](launcher.md#application-launcher-with-launcherel-optional).
+Native panel behavior is unchanged, but manual results describe the removed picker.
 
 ## Tested environment
 
@@ -25,67 +24,65 @@ for the removed picker.
 | Theme and font in that isolated run | Modus Themes 20260829.1926, `modus-vivendi-tinted`, JetBrainsMono Nerd Font 17 |
 | Displays in prior geometry checks | Gigabyte M32U and LG ULTRAFINE, both Retina, unequal origins; logical-point geometry passed |
 
-The active settings were inspected read-only from the normal Emacs session.
-Only the relevant completion/theme configuration was copied into a disposable
-process for the automated runs. The later user-confirmed normal-session results
-are recorded below. Other Emacs revisions, ports and macOS versions are
-unverified; the runtime restricts the Emacs build.
+Active settings were inspected read-only in normal Emacs; only relevant
+completion/theme configuration was copied into disposable automated runs.
+Later user-confirmed normal-session results appear below. Other Emacs revisions,
+ports and macOS versions are unverified; runtime restricts the Emacs build.
 Outbound native drag-and-drop is cancelled. Commands must be synchronous and
-use the panel's minibuffer; commands that choose other frames need wrappers.
+use the panel's minibuffer; choosing other frames requires wrappers.
 
 ## Set up a fresh session
 
-1. Follow [Build and run](../README.md#build-and-run), using the Emacs installation
-   that will load the module. Rebuild Portal and restart Emacs after a native
-   update. Never mix new Lisp with an old module already loaded in the process.
-2. Install `launcher.el` at the tested revision and copy the README's recipe,
-   or another launcher of your own, into the configuration to try. Portal does
-   not install or download it.
-3. Load Portal and evaluate that launcher setup in a disposable graphical Emacs
-   with your completion/theme configuration. Choose an unused chord for its
-   global shortcut. Loading `portal-launcher` and presenting register nothing;
-   only your `portal-global-shortcut-set` call does. Keep
-   `native-comp-enable-subr-trampolines` enabled; address native compiler errors
-   before presenting, without bypassing the guard.
-4. Try the workflow below, then repeat in a **fresh normal session**, explicitly
-   evaluating the README setup. Record the actual packages, theme, input source,
-   keyboard and monitor arrangement. A copied settings fragment does not count
-   as the complete normal configuration.
-5. Keep an ordinary Emacs frame open with a text buffer and live Portal web and
-   terminal views. Confirm they remain usable before, during and after launcher
-   enable/disable. Do not rebuild the loaded binary during the session.
+1. Follow [Build and run](../README.md#build-and-run) with the Emacs installation
+   that will load the module. After native updates, rebuild Portal and restart
+   Emacs. Never mix new Lisp with an already-loaded old module.
+2. Install `launcher.el` at the tested revision and copy the guide's recipe—or
+   your own launcher—into the trial configuration. Portal neither installs nor
+   downloads it.
+3. Load Portal and evaluate the setup in disposable graphical Emacs with your
+   completion/theme configuration and an unused shortcut chord. Loading
+   `portal-launcher` and presenting register nothing; only
+   `portal-global-shortcut-set` does. Keep `native-comp-enable-subr-trampolines`
+   enabled; fix native compiler errors before presenting, without bypassing guards.
+4. Try the workflow below, then explicitly evaluate the documented setup in a
+   **fresh normal session** and repeat. Record actual packages, theme, input source,
+   keyboard and monitor arrangement. Copied settings fragments do not count as
+   complete normal configuration.
+5. Keep an ordinary Emacs frame with a text buffer and live Portal web/terminal
+   views. Verify usability before, during and after launcher enable/disable.
+   Do not rebuild the loaded binary during the session.
 
-For the launcher itself, only the shared native module and Emacs are needed.
-There is no app host, separate launcher application or `emacsclient` invocation
-on its shortcut path. Busy Lisp delays shortcut processing.
+The launcher needs only Emacs and the shared native module, with no app host,
+separate launcher application or `emacsclient` on its shortcut path. Busy Lisp
+delays shortcuts.
 
 ## Migrate the M-x.app launcher shortcut
 
-Start Portal on a different chord so either launcher can be restored. In M-x's
-Settings, record the launcher row's trigger and Eval expression, for example
-`(my/popup-command #'launcher)`. Remove **only that row** using its trash button;
-then assign the freed chord to your launcher with `portal-global-shortcut-set`.
+Start Portal on a different chord to allow restoring either launcher. In M-x
+Settings, record the launcher row's trigger and Eval expression, such as
+`(my/popup-command #'launcher)`. Trash **only that row**, then assign its freed
+chord with `portal-global-shortcut-set`.
 
-Keep the M-x application, its remaining shortcut rows, its `emacsclient` path
-and its URL handlers. `emacs://`, `org-protocol://`, modifier double-taps and
-multiple shortcut bindings remain M-x features outside this Portal milestone.
-Confirm an existing URL/org-protocol action still works after the migration.
-Portal does not read, edit or migrate M-x preferences automatically.
+Keep M-x, its other shortcut rows, `emacsclient` path and URL handlers.
+`emacs://`, `org-protocol://`, modifier double-taps and multiple shortcut bindings
+remain M-x features outside this milestone. Verify an existing URL/org-protocol
+action after migration. Portal never automatically reads, edits or migrates M-x
+preferences.
 
 ## Roll back
 
-Remove the launcher setup from the init file so a configuration reload cannot
-set it again, then evaluate `(portal-global-shortcut-remove 'app-launcher)`, for
-each launcher's shortcut name, and `(portal-launcher-mode -1)`. Confirm the
-panel disappears and the chord no longer invokes Portal. Disabling during a
-launcher prompt cancels the session before deleting the panel. Repeated
-disable and removal are safe; disabling alone leaves every shortcut set.
+Remove launcher setup from the init file to prevent re-registration on reload.
+Evaluate `(portal-global-shortcut-remove 'app-launcher)` for each shortcut name,
+then `(portal-launcher-mode -1)`. Verify the panel disappears and its chord no
+longer invokes Portal. Disabling during a prompt cancels the session before
+deleting the panel. Repeated disable/removal is safe; disabling alone retains
+all shortcuts.
 
-The shortcut registrations, dedicated frame, launcher hooks and frame guards
-are released. Ordinary frames, web views and terminal sessions continue to work.
-The shared native module remains loaded for those features; restart Emacs if
-you need to replace it. Restore the saved M-x row and its chord if desired.
-Do not uninstall M-x or remove its URL handlers as part of this rollback.
+This releases shortcut registrations, dedicated frame, launcher hooks and frame
+guards. Ordinary frames, web views and terminal sessions keep working; their
+shared native module remains loaded. Restart Emacs to replace it. Optionally
+restore the saved M-x row and chord; do not uninstall M-x or remove its URL
+handlers.
 
 ## Repeatable checks
 
@@ -96,14 +93,13 @@ ctest --test-dir build --output-on-failure
 sh test/launcher-daily-use.sh > build/launcher-daily-use.log 2>&1
 ```
 
-The script compiles the test-only AppKit injector, opens a disposable `emacs -Q`,
-runs two tests, prints ERT output and exits nonzero on a failure or skipped test.
-It creates native windows and temporarily takes focus; let it finish before
-interacting with other apps. `EMACS` can select a different executable, which
-must match the build's header and supported revision. Run the README's combined
-graphical suite to exercise the existing launcher lifecycle, focus, geometry
-and completion matrix as well. Use its selector `"^portal-launcher-"` instead
-of `"^portal-"` to run just the 21 launcher tests.
+The script compiles the test-only AppKit injector, opens disposable `emacs -Q`,
+runs two tests, prints ERT output and exits nonzero for failures or skips.
+Native windows temporarily take focus; wait for completion before using other apps.
+`EMACS` selects another executable, which must match the build's header and
+supported revision. The [combined graphical suite](testing.md#combined-graphical-suite)
+also exercises launcher lifecycle, focus, geometry and completion. Select
+`"^portal-launcher-"` instead of `"^portal-"` for only the 21 launcher tests.
 
 To check an isolated completion/theme fragment without changing your init:
 
@@ -112,15 +108,15 @@ PORTAL_LAUNCHER_CONFIG=/absolute/path/to/completion-and-theme.el \
   sh test/launcher-daily-use.sh > build/launcher-configured.log 2>&1
 ```
 
-The fragment should add the desired installed packages to `load-path`, enable
-their modes and load the theme. It runs before the tests and its settings are
-preserved by the completion test. Do not pass a full init file: it may start
-unrelated services or open other UI. Use the fresh normal-session procedure for
-that acceptance check. The default run uses the packages downloaded by CMake.
+The fragment adds installed packages to `load-path`, enables their modes and
+loads the theme before testing. The completion test preserves its settings.
+Do not pass a full init: it may start unrelated services or UI. Use the fresh
+normal-session procedure for that acceptance check. Default runs use
+CMake-downloaded packages.
 
-On the validation machine, batch tests that compile native trampolines require
-the existing Homebrew GCC library-path workaround. A missing `emutls_w` library
-is a compiler setup failure. The successful run used:
+On the validation machine, batch native-trampoline compilation requires the
+existing Homebrew GCC library-path workaround. Missing `emutls_w` means compiler
+setup failure. The successful run used:
 
 ```sh
 export LIBRARY_PATH="/opt/homebrew/lib/gcc/current:/opt/homebrew/lib/gcc/current/gcc/aarch64-apple-darwin25/15${LIBRARY_PATH:+:$LIBRARY_PATH}"
@@ -129,53 +125,51 @@ export LIBRARY_PATH="/opt/homebrew/lib/gcc/current:/opt/homebrew/lib/gcc/current
 This path is machine-specific; verify the installed GCC directory elsewhere.
 The checks keep native trampolines enabled and do not change compiler settings.
 
-The combined launcher suite exposed a test-isolation problem: mutating or
-deleting an ordinary native window can asynchronously activate the previous
-application. A subsequent prompt correctly cancelled on that activation before
-the harness finished typing. A four-test reproduction failed before the change
-and passed after the shared GUI fixture allowed native events to settle during
-cleanup. The full launcher suite passes together. The production
-focus-loss observer remains unchanged.
+The combined suite exposed test isolation failure: ordinary native-window
+mutation/deletion can asynchronously activate the previous app, correctly
+cancelling the next prompt before typing finishes. A four-test reproduction
+failed before, and passed after, the shared GUI fixture let native events settle
+during cleanup. The full launcher suite passes together; the production
+focus-loss observer is unchanged.
 
 ## Hands-on validation
 
-The procedures name the commands of the time. With the current setup, use
-your launcher command, such as `my/app-launcher`, for `portal-launcher-present`,
-its global shortcut for the launcher chord, and the README's rollback.
+Procedures retain historical command names. Now substitute your launcher
+command, such as `my/app-launcher`, for `portal-launcher-present`, use its global
+shortcut, and follow the [documented rollback](launcher.md#migrate-from-the-built-in-launcher).
 
-For future regression runs, record date, Portal commit, Emacs revision, macOS build, complete init used,
-completion/theme versions, keyboard/input-source names, display layout and the
-result of every row. Use **pass**, **fail** or **not tested**, with exact symptoms.
-For a failure, record a reproducible case and either fix it or obtain an explicit
-scope decision; missing equipment and missing results are not passes.
+For regression runs, record date, Portal commit, Emacs revision, macOS build,
+complete init, completion/theme versions, keyboard/input-source names, display
+layout and every row's result: **pass**, **fail** or **not tested**, with exact
+symptoms. Failures need a reproduction and a fix or explicit scope decision;
+missing equipment/results are not passes.
 
 | Check | Procedure and expected result | Current production evidence |
 | --- | --- | --- |
-| Normal configuration | Fresh normal Emacs; enable the documented setup. Physically invoke from another app, launch a stopped app, then activate the same running app. Destination gets focus without an ordinary Emacs frame rising. | Pass: user-confirmed full checklist on 2026-10-04 |
-| Selection without typing | Open the launcher and press Return on the highlighted app. Reopen, use Down/Up to choose another app and press Return. Both launch the selected app without requiring typed text. | Pass: user-confirmed manual retest on 2026-10-04 after the selection fix; automated minibuffer and native key checks also pass |
+| Normal configuration | In fresh normal Emacs, enable the documented setup. Physically invoke from another app, launch a stopped app, then reactivate it. Destination gets focus without raising an ordinary Emacs frame. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Selection without typing | Open and press Return on the highlighted app. Reopen, choose another with Down/Up and press Return. Both launch the selection without typed text. | Pass: user-confirmed manual retest on 2026-10-04 after the selection fix; automated minibuffer and native key checks also pass |
 | Refresh and search | `C-u M-x portal-launcher-present` refreshes, `M-x launcher-refresh` works separately. Enter `!gh portal launcher` and unmatched text; check the encoded query and destination focus. A freshly installed/removed test app appears/disappears after refresh. | Pass: user-confirmed full checklist on 2026-10-04 |
-| Cancellation | From another app, try Escape, C-g, the global chord again and a bang without a query. Panel closes with no external action and focus returns. Click another app while prompting; it keeps focus. An empty completion result also cancels; Return on a highlighted app accepts it. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Cancellation | From another app, try Escape, C-g, the chord again and a queryless bang: panel closes without external action and focus returns. Click another app during a prompt; it keeps focus. Empty completion results also cancel; Return accepts a highlighted app. | Pass: user-confirmed full checklist on 2026-10-04 |
 | Failure and recovery | Run `(portal-launcher-present (lambda () (interactive) (error "Launcher recovery check")))` from Emacs; it reports the error and hides. Invoke normally again. Repeat a stale bundle/open failure while another app is active. | Pass: user-confirmed full checklist on 2026-10-04 |
 | Fullscreen and Spaces | Put another app fullscreen. Invoke, type, select and cancel without switching Spaces; repeat in another Space and verify focus return and successful activation. | Pass: user-confirmed full checklist on 2026-10-04 |
-| Monitor changes | Invoke on each monitor, unplug one while visible and while hidden, reconnect and invoke again. No stranded panel, wrong display or unreachable prompt. Record origins, scale and which monitor was removed. | Pass: user-confirmed full checklist on 2026-10-04 |
-| Chinese/Japanese IME | Name the macOS input source. Type a composition such as Pinyin `nihao`, open its candidate list, navigate and commit `你好`. Confirm marked text/candidate positioning, committed text and cancellation, then restore the prior input source. ASCII, pasted Unicode and dead keys do not satisfy this check. | Pass: user-confirmed full checklist on 2026-10-04 |
-| VoiceOver | With VoiceOver enabled, summon the panel; record the spoken prompt, editable input, candidate names, current selection and ability to navigate, accept and cancel. Check focus after dismissal and restore the prior VoiceOver state. An accessibility tree or screenshot alone does not establish spoken output. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Monitor changes | Invoke on each monitor. Test unplugging one with the panel visible and with it hidden; reconnect and invoke again. No stranded panel, wrong display or unreachable prompt. Record origins, scale and removed monitor. | Pass: user-confirmed full checklist on 2026-10-04 |
+| Chinese/Japanese IME | Name the macOS input source. Compose, e.g. Pinyin `nihao`; open/navigate candidates and commit `你好`. Verify marked text/candidate positioning, committed text and cancellation; restore the prior source. ASCII, pasted Unicode and dead keys do not qualify. | Pass: user-confirmed full checklist on 2026-10-04 |
+| VoiceOver | Enable VoiceOver and summon the panel. Record spoken prompt, editable input, candidate names, current selection and navigation/accept/cancel ability. Check focus after dismissal; restore prior VoiceOver state. Accessibility trees or screenshots alone cannot establish speech. | Pass: user-confirmed full checklist on 2026-10-04 |
 | Reload and rollback | Re-evaluate launcher setup, disable twice, re-enable and use again. Ordinary text input, web navigation and the same terminal shell work throughout. Disable and confirm the chord is free; restore the M-x launcher row if applicable and test an existing URL binding. | Pass: user-confirmed full checklist on 2026-10-04 |
 
 ## Evidence recorded on 2026-10-03
 
-The two new graphical tests pass both with stock completion and with the isolated
-copy of active completion/theme settings listed above. Native AppKit events type
-an app name and a spaced bang query, cancel empty input and Escape, trigger an
-open error, and successfully read another prompt afterward. External launch and
-browser calls are fixtures in these tests; they do not prove a human app launch.
+Both new graphical tests pass with stock completion and the isolated active
+completion/theme settings above. Native AppKit events type an app name and spaced
+bang query, cancel empty input and Escape, trigger an open error, then read a
+recovery prompt. External launch/browser calls are fixtures, not proof of human
+app launch.
 
-The coexistence test opens a second ordinary frame, a live shell and a WebKit
-page. Three reload/disable/re-enable cycles preserve the shell PID and both view
-identities, execute shell commands and load new pages after each rollback, and
-verify removal of the panel, shortcut registration and frame guards. An initial
-test-harness error passed a buffer where a window was required; correcting that
-assertion made the test pass without changing production code.
+The coexistence test opens a second ordinary frame, live shell and WebKit page.
+Three reload/disable/re-enable cycles preserve shell PID and both view identities,
+run shell commands and load new pages after each rollback, and verify panel,
+shortcut registration and frame-guard removal. An initial assertion passed a
+buffer instead of a window; fixing it passed without production changes.
 
 The build, all 32 CTest suites, host formatting/type checks, native
 failure-reporter tests, changed-test byte compilation and Org structure/identity
@@ -188,46 +182,42 @@ The task in [project.org](../project.org) records final manual acceptance.
 
 ## Selection correction on 2026-10-04
 
-The user's manual check found that Return on a highlighted app did nothing
-until text was typed. The adapter now accepts the completion reader's result;
-the earlier empty-input cancellation policy is superseded. The configured
-completion test now checks selection without typing, empty results from stock
-completion, Escape and a bang without a query. The hands-on matrix above includes
-both initial and arrow-key selection.
+The user's manual test found Return on a highlighted app required typed text. The adapter
+now accepts the completion reader's result, superseding empty-input cancellation.
+The configured test checks selection without typing, stock completion's empty
+results, Escape and queryless bangs. The hands-on matrix includes initial and
+arrow-key selection.
 
-All 15 combined launcher GUI tests pass with the updated regressions. Launcher
-CTest checks, changed-test byte compilation, shell syntax and Org validation
-pass. The copied-settings rerun was inconclusive: extra keystrokes changed the
-fixture's `Calculator` input, so it is not recorded as a pass. The earlier
-configured run above is historical evidence. The later user-confirmed normal
-session supplies the hands-on acceptance; this interrupted automated run remains
-inconclusive. The GUI checks used an alternate shortcut because the normal chord
-was already registered in the user's running Emacs.
+All 15 combined launcher GUI tests pass with updated regressions, as do launcher
+CTest, changed-test byte compilation, shell syntax and Org validation. The
+copied-settings rerun remains inconclusive, not a pass: extra keystrokes changed
+fixture `Calculator` input. The earlier configured run is historical evidence;
+later user-confirmed normal-session results supply hands-on acceptance. GUI
+checks used an alternate shortcut because the user's running Emacs held the
+normal chord.
 
 ## Manual acceptance on 2026-10-04
 
-After the selection fix was merged in PR #74, the user reported that the manual
-tests looked good and asked to proceed. Asked explicitly whether that covered
-the full checklist, including fullscreen/Spaces, monitor changes, IME and
-VoiceOver, the user confirmed: “all works”. All rows above are therefore
-recorded as user-verified passes, completing the daily-use task.
+After PR #74 merged the selection fix, the user said manual tests looked good
+and asked to proceed. Explicitly asked whether this covered the full checklist,
+including fullscreen/Spaces, monitor changes, IME and VoiceOver, they confirmed
+“all works”. Every row is therefore recorded as a user-verified pass, completing
+the daily-use task.
 
-This confirmation is the source of the manual results. The environment table
-retains the versions and settings captured during earlier automated runs; the
-user did not supply additional input-source names, environment versions or
-VoiceOver transcripts. The interrupted copied-settings run remains inconclusive
-and is not presented as an automated pass.
+Manual results rest on that confirmation. The environment table retains earlier
+automated runs' versions/settings; the user supplied no additional input-source
+names, environment versions or VoiceOver transcripts. The interrupted
+copied-settings run remains inconclusive, not an automated pass.
 
 ## User-configured launchers on 2026-10-05
 
 Portal's application picker, default command, shortcut option and toggle were
-removed. The two automated daily-use tests now run without launcher.el. The
-completion test presents a picker that records what it would launch, with
-the caller's completion and theme settings: a typed name, Escape, Return with
-no typed text, a failing launch and a recovery prompt. The coexistence test
-evaluates the README's picker, hello and shortcut examples, the shortcuts twice
-per cycle, on test chords. In each of three cycles, disabling the panel left
-all three shortcuts set, and removing them freed their chords, while the shell
-and web page kept working. Both passed in the full launcher graphical run;
-the [application notes](launcher-applications.md) record the separate
-launcher.el smoke test.
+removed. Both automated daily-use tests now run without launcher.el. With caller
+completion/theme settings, the completion test's picker records intended launches:
+a typed name, Escape, Return without typing, failed launch and recovery prompt.
+The coexistence test evaluates the [launcher guide's](launcher.md) picker, hello
+and shortcut examples on test chords, shortcuts twice per cycle. Across three
+cycles, disabling preserved all three shortcuts; removing them freed their
+chords. Shell and web page kept working. Both passed the full launcher graphical
+run; [application notes](launcher-applications.md) record the separate launcher.el
+smoke test.

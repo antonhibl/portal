@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Standalone AppKit check; run using the command in README.md.
+// Standalone AppKit check; run using the command in docs/testing.md.
 import AppKit
 import WebKit
 

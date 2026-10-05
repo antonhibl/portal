@@ -111,4 +111,4 @@ intended targets. When using the Markdown task browser, reload it and check
 commands still read Org and are not verification for this Markdown workflow.
 
 For detailed discovery and link behavior, read the repository's
-[task format](../../../README.md#writing-tasks).
+[task format](../../../docs/tasks.md#writing-tasks).

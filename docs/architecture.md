@@ -1,0 +1,191 @@
+# Implementation and native boundaries
+
+[Documentation index](README.md) · [Build and run](../README.md#build-and-run)
+
+Portal's single native module has C Emacs bindings and a C core over a Swift
+macOS backend. Navigate by boundaries, not separate feature libraries:
+
+- [`portal-view.el`](../portal-view.el) owns Lisp-side view lifetime, placement and
+  notifications; [ADR 0001](adr/0001-one-portal-view-per-buffer.md) and
+  [ADR 0002](adr/0002-portal-view-native-seam.md) define one view per buffer and
+  the shared lifecycle.
+- [`native/Core/include/portal.h`](../native/Core/include/portal.h) is the canonical
+  platform interface for ownership, thread rules, primitives and callbacks;
+  consult it rather than a copied API inventory.
+  [ADR 0003](adr/0003-platform-interface-primitives.md) explains why the core owns
+  policy and the platform supplies primitives.
+- [`native/Backend.swift`](../native/Backend.swift) implements those primitives;
+  [`native/Package.swift`](../native/Package.swift) defines the native library and
+  pinned Ghostty dependency.
+- The [input bridge](terminal-input-bridge.md), [hosted-app bridge](editor-bridge.md),
+  [hosted actions](hosted-actions.md) and [launcher panel](launcher-native-panel.md)
+  explain their protocols and platform-specific hazards.
+
+## Shared native host
+
+Each feature exposes its view and keyboard handler through `NativeSurface`.
+`NativeHost` knows neither WebKit nor Ghostty: it attaches views to their frames,
+remembers the original Emacs responder, and routes keys through one event monitor
+to the focused surface or a pending Portal command. Key releases after a focus
+change never reach the newly focused feature.
+
+Features own their state and cleanup: closing a web view leaves terminals intact,
+and vice versa.
+
+## C bindings and platform interface
+
+The C bindings register every Lisp function, convert arguments and results, and
+route lifecycle functions to the core's view registry, input to its handoff,
+and terminal, web and toolbar functions to their respective core rules. The core owns Portal's rules; `portal.h` contains only platform
+primitives and callbacks into the core
+([ADR 0003](adr/0003-platform-interface-primitives.md)). `native/Backend.swift`
+implements the macOS primitives. They use plain C types: borrowed UTF-8 arguments
+with explicit lengths, `malloc` results freed by the core, and explicit errors
+converted to Lisp `error`. Structured results, such as `portal--inspect`'s state,
+cross as JSON parsed by the bindings with `json-parse-string`. The bindings
+validate argument strings as UTF-8 because Emacs copies unibyte strings' raw
+bytes unchanged.
+
+## Notification pipe
+
+The notification pipe was Portal's first core rule, in `native/Core/channel.c`.
+`portal--channel` supplies its descriptor; platform code sends records through
+the core's `portal_notify`
+([details](terminal-input-bridge.md#the-notification-pipe)). The platform supplies
+one primitive: a timer calling back into the core. Calls into the core run on the module thread,
+never reaching Emacs.
+
+## View identity and failure rules
+
+Terminal and web views run on the shared Portal view lifecycle
+([ADR 0002](adr/0002-portal-view-native-seam.md)). `portal-view.el` makes
+every native lifecycle call: `portal--open KIND OPTIONS` returns a target such as
+`terminal:3` or `web:4`, and `portal--place`, `portal--hide`, `portal--close` and
+`portal--inspect` take that target.
+
+The C core owns view identity in `native/Core/views.c`. Target IDs are global
+across kinds and never reused, even after failed opens: stale targets cannot
+reach newer views. The core holds platform views from creation to destruction,
+checks their kind for kind-specific operations, and tracks attachment and edges.
+The platform supplies five primitives: create a view of a kind, destroy it,
+attach it at a rectangle in a frame with a given title, detach it, and describe
+platform-only facts, such as page title or terminal grid. `portal--inspect`
+combines that description with the core's `:id`, `:kind`, `:visible` and `:edges`.
+Closing removes the target before platform destruction, ensuring exactly one
+destruction and preventing intervening platform activity from reaching the view.
+The core drops platform records for targets without open views. Failed primitives
+change nothing: failed opens register nothing; failed placements, including into
+deleted frames, leave the same views open at their previous location for Lisp to
+retry placement or close.
+
+## Terminal rules and metadata
+
+The core owns terminal rules in `native/Core/terminals.c`. The platform supplies
+six terminal or engine primitives: list themes, apply a named or default theme,
+paste text, press Enter, read all text, and set font size. Before creation, the
+core validates options: `:directory` must be a string; `:command`, `:argv` and
+`:theme` a string or nil; `:command` and `:argv` mutually exclusive; and `:theme`
+a platform-listed name. The adapter decodes `:argv` into literal arguments and
+executes them through the user's interactive login shell. The core likewise
+validates theme names before applying them to all open terminals, oldest first;
+unknown names change none. If a terminal rejects a theme, it supplies the error:
+earlier terminals keep the new theme; it and later terminals keep the old one.
+`portal--terminal-themes` returns platform names sorted by code point.
+`portal--terminal-paste` pastes and, with ENTER, presses Enter separately only
+on success. Enter has its own primitive because input replays real native events
+without synthetic keys. Reading text on macOS selects all, leaving the selection
+active. The macOS platform owns Ghostty types, binding strings such as
+`select_all` and `set_font_size`, and the system-appearance default theme. The
+core tracks terminal text sizes, initially `PORTAL_TERMINAL_POINTS`.
+
+Every platform reports a terminal's `:ready`, `:title`, `:pwd`, `:columns`,
+`:rows` and `:exited`. `:title` and `:pwd` hold values last set and reported by the
+running program, initially `""`; Ghostty forwards only percent-decoded working directories
+reported from this host. Test diagnostics include `:layer`, the macOS renderer's
+layer class, and input-owned `:focused`. Process exit leaves the view, last output
+and buffer open until Lisp closes them; nothing restarts the shell. Closing
+(destroying) the view ends the process. As with every kind, the core never passes
+closed terminals to the platform: stale targets fail with "No Portal view TARGET",
+and themes reach only open terminals.
+
+The platform reports title, working-directory and exit changes through
+`portal_terminal_changed`. The core sends one `terminal TARGET` record until
+`portal--inspect` describes that view, preventing frequent retitling from flooding
+the pipe. Texts of any length stay with the platform; `portal-terminal.el`
+inspects and caches them in the buffer. Changes during opening have no target,
+so the core drops their records; Lisp inspects each new terminal once. On macOS,
+Ghostty immediately reports exit as a surface-close request because Portal disables
+`wait-after-command` and counts no exit as a failed launch. Portal retains the
+view; the first post-exit key returns the keyboard to Emacs.
+
+## Web navigation and bridge
+
+The core owns web rules in `native/Core/web.c`
+([details](editor-bridge.md#transport)). It validates each Lisp-loaded URL, asking
+the platform to load it or reload the document already displayed. For every
+hosted-page navigation, the core decides: stay on the app host's origin, open
+other sites in the default browser, or hand local files to Emacs. The core owns the bridge queue and its
+single outstanding `bridge` record, accepting messages based on platform-observed
+sender facts, never page claims.
+
+Platform primitives parse URLs into platform spelling and, per view, load a URL,
+navigate history (back, forward or reload, as an enum), post messages, set zoom or
+appearance, find text, and call shared-script functions with JSON arguments.
+Finds and calls answer asynchronously with core-supplied tokens. The core stores
+URLs in platform/WebKit spelling: percent-encoded spaces and punycode Unicode
+hosts. Byte-for-byte comparisons leave equivalence to one parser. Platform
+callbacks report posted messages, navigation requests, page commits, load
+completion, history changes, failures, find/call completion and heading counts.
+They identify views by target, so post-close completions reach nothing.
+
+Shared JavaScript for local links and toolbar contents lives in
+`native/Core/scripts`, compiled into the core with `#embed`; platforms need
+neither script files nor the app host at runtime. Each script is a function
+started in an isolated world with platform-specific transport; only platform
+glue names WebKit. Hosted apps see only `window.portalBridge`, with `postMessage`
+and `receive`.
+
+## Toolbar state
+
+The core's `native/Core/toolbar.c` owns each view's layout, fixed at opening from
+`:toolbar` or, for terminals, `:quick`; zoom or text size, including zoom steps
+and 1 to 255 point limits; TOC visibility and heading count; and find text and
+matches. It reads keyboard ownership from the input core and back/forward
+availability from the web core, never copying them. After potential display
+changes, it builds a `portal_toolbar` snapshot including visibility and colors.
+Only changed snapshots reach the platform for drawing; comparison needs no JSON
+serialization. Clicks, find text, Lisp commands and shortcuts share code and
+state; `portal--toolbar-action` returns that state as JSON.
+
+Searches run serially: a contents-script count, then a find. Changed text replaces
+waiting searches; load completion discards pre-load results and searches again;
+unrequested results reach nothing. Opening find focuses the field through
+`portal_toolbar_focus`; closing focuses the page through `portal_view_focus`
+only if the view still owns the keyboard, never reclaiming it from Emacs or
+another view. The platform draws AppKit buttons and the search field, handles
+layout, SF Symbols, tooltips, accessibility, tracking areas and appearance changes,
+and converts face colors to `NSColor`s.
+
+## Geometry, attachment and lifetime
+
+Rectangles use Emacs frame pixels from the content area's top left, as reported
+by `window-inside-pixel-edges`. On macOS these are AppKit points; the platform
+only flips y. On window changes, `portal-view.el` picks one window per view,
+across frames: the selected window if it shows the buffer, then the view's current
+window, then any other showing the buffer. Without one, it hides the view. Cached
+geometry avoids seam calls when nothing moves. Each placement briefly renames
+the frame so Swift can find its native window; frame information is never cached.
+Cross-frame placement moves the view in one call.
+
+Swift's `NativeView` attaches both kinds, each implementing `PortalView`.
+Detached and new views occupy a never-shown offscreen window, keeping every view
+in a window and its session or page running. Frame deletion hides its views;
+the next sync places them wherever their buffers remain visible. Killing a buffer
+or changing its major mode closes its view. Kind-specific operations have separate
+exports, such as `portal--web-load TARGET URL`. Batch tests substitute
+`test/portal-fake-native.el` for the native module.
+
+The frame-title trick and geometry cache eliminate polling timers. Native code
+retains no Emacs values or environment pointers after module calls: C bindings
+copy arguments, and the backend sees only copies. Native navigation callbacks
+report to the core, never Lisp.

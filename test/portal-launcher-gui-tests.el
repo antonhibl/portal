@@ -194,16 +194,16 @@ watch focus. `sit-for' would return at once while input is pending."
     (should (portal-test-hotkey hotkey nil)))
   (portal-view--read-records))
 
-;; A running Emacs may already have the README's chords.
+;; A running Emacs may already have the launcher guide's chords.
 (defconst portal-launcher-gui--chords
   '(("Control-Option-Command-F" . "Control-Option-Command-F17")
     ("Control-Option-Command-H" . "Control-Option-Command-F18")
     ("Control-Option-Command-K" . "Control-Option-Command-F19")
     ("Control-Option-Command-P" . "Control-Option-Command-F20"))
-  "The README's chords and the ones these tests set in their place.")
+  "The launcher guide's chords and the ones these tests set in their place.")
 
 (defun portal-launcher-gui--example (name)
-  "Load the README's example NAME, on the tests' chords, with dynamic binding.
+  "Load the launcher guide's example NAME on test chords with dynamic binding.
 A configuration file need not enable `lexical-binding'; the batch tests load
 the examples with both bindings."
   (should-not (portal-launcher-examples-load (list name) nil portal-launcher-gui--chords)))
@@ -324,7 +324,7 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
         (should (eq reader completing-read-function))
         (should (eq ordinary (selected-window)))))))
 
-;; The README's launchers, as a user configures them: the same picker from
+;; The launcher guide's examples, as a user configures them: the same picker from
 ;; M-x, its key and its global shortcut through the real command loop, a
 ;; persistent buffer and a shortcut that presents nothing.
 (ert-deftest portal-launcher-gui-user-launchers-through-command-loop ()
