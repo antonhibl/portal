@@ -399,8 +399,9 @@ a sandbox. Herdr does not look inside a pane's tmux.
   `HERDR_ENV`, `HERDR_PANE_ID`, `HERDR_SOCKET_PATH` and `HERDR_BIN_PATH`. Herdr
   reads no screen for a pane while its plugin reports.
   - Its Pi extension in `~/.pi/agent/extensions` reports only in TUI sessions
-    (RPC also claims a UI). It publishes `isIdle()` at `session_start` because
-    reload replaces the extension mid-run without another `agent_start`.
+    (RPC also claims a UI). It publishes a baseline from `isIdle()` at
+    `session_start` because reload replaces the extension mid-run without
+    another `agent_start`.
     `agent_start` means working; `agent_settled` with `isIdle()` means idle.
     Other extensions must emit Herdr's `herdr:blocked` event for blocked status;
     Pi's `ui_prompt_*` events are unused.
@@ -458,9 +459,10 @@ Four refinements to adopt in the implementation tasks:
    `node .../cli.js` until renamed; recognition took 0.1–0.2 s after Node started.
 2. **Strip one leading activity marker from titles** for the Title column and
    unchanged-facts comparison: spinner frames, `✳`, or Codex's blinking
-   `[ . ]` and `[ ! ]`. Otherwise Claude (one frame/second) or Codex (ten/second)
-   forces dashboard reprints every refresh: 2.7–7.0 ms/tick plus redisplay at
-   10–100 terminals with changing titles (PR #59). `prototype.el` does this.
+   `[ . ]` and `[ ! ]`. Otherwise, while working, Claude (one frame/second) or
+   Codex (ten/second) forces dashboard reprints every refresh: 2.7–7.0 ms/tick
+   plus redisplay at 10–100 terminals with changing titles (PR #59).
+   `prototype.el` does this.
 3. **Claude's trigger glyph classes cover both spinner sets:** braille and
    `◐`–`◓`, as well as `✳`. Claude changed its spinner at 2.1.228; a later change
    still leaves the progress trigger and the 30 s poll. `prototype.el` does this.
