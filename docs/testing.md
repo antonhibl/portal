@@ -114,7 +114,7 @@ directory-local task roots, auxiliary buffers, explicit/prompted/remote roots,
 one buffer per root, `g` and restart recovery of the displayed page, and
 attachment handoff. Status edits preserve BOM, CRLF, file modes and every other
 byte. They refuse unsaved buffers, read-only files, files changed since planning,
-failed saves (without temporary files) and files outside the root. Edit in Emacs
+failed saves (leaving no temporary files) and files outside the root. Edit in Emacs
 reuses modified buffers beside the page; saving refreshes only loaded views of
 that root. One test uses the real app host; `ctest --test-dir build -R actions`
 sends status changes, a repeated change, a refusal and Edit in Emacs from the
