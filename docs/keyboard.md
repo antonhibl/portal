@@ -45,9 +45,9 @@ restores them. Colors follow Emacs faces, including theme changes.
 same state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
 `portal-terminal-text-size-reset`; terminal Command-Plus, Command-Minus and
-Command-0 do the same, with or without a toolbar. In web views with toolbars, Command-F
-runs `portal-find` and Command-R reloads, like the Reload button, unless the
-page claims those chords. In Portal web buffers, `s-f` and `s-r`
+Command-0 do the same, with or without a toolbar. Command-F runs `portal-find`
+in web views with toolbars; Command-R reloads the page, like the Reload button,
+unless the page claims those chords. In Portal web buffers, `s-f` and `s-r`
 (`portal-web-reload`) also work with Emacs focus. Find opens a toolbar field:
 Return/Shift-Return navigate matches; Escape closes it. State survives hiding
 and redisplay; reload preserves zoom and the TOC. Killing the buffer releases it.
