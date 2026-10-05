@@ -47,7 +47,7 @@ _Avoid_: treating inferred activity as reported fact, inferring activity from pr
 ## System-wide
 
 **Global shortcut**:
-A chord, named by a symbol, that calls a Lisp function when pressed in any application, from Emacs's command loop and without activating Emacs. Setting the name again replaces its chord and function; a press from before that, or from before its removal, is ignored. The launcher's chord is one of them.
+A chord, named by a symbol, that calls a Lisp function when pressed in any application, from Emacs's command loop and without activating Emacs. Setting the name again replaces its chord and function; a press from before that, or from before its removal, is ignored. Portal sets none itself; a user's configuration sets one for each launcher command that should open from any application.
 _Avoid_: hotkey (the platform's primitive that registers a chord), launcher shortcut
 
 ## Web content

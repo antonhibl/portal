@@ -43,8 +43,9 @@ or removed. A user command composes the two:
 ;; (portal-global-shortcut-remove 'app-launcher)
 #+end_src
 
-=portal-global-shortcut-set=, =portal-global-shortcut-remove= and the presentation
-options above are available; the TODO tasks below finish the separation. URL
+Since [[#launcher-user-configuration][user-configured launchers]], Portal includes no application picker and
+claims no chord. The README's =launcher.el= recipe wraps =launcher='s
+completion reader until that package handles its own input rules. URL
 scheme handling, =org-protocol=, modifier double-taps and a launcher/provider
 registration framework remain out of scope.
 
@@ -555,7 +556,7 @@ brackets; the panel documentation shows a picture from [[file:docs/evidence][doc
 - Changed Lisp, including tests, byte-compiles without warnings. Org lint, task
   IDs, dependencies and internal links pass.
 
-** TODO Compose application launchers entirely in user configuration :task:
+** DONE Compose application launchers entirely in user configuration :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-user-configuration
 :ID: 51adf5cf-063f-4ae1-8c07-9b646becc88b
@@ -598,20 +599,128 @@ functions, while user configuration chooses and connects application commands.
   panel. Scope this work to launcher infrastructure; leave unrelated Portal
   features and external repositories unchanged.
 
+*** Entry points
+Inventoried before removal. Nothing is deprecated: a removed name has no alias,
+so an old setting cannot claim a chord or run a picker by itself.
+
+| Entry point                                                                           | Decision | Replacement                                                          |
+|---------------------------------------------------------------------------------------+----------+----------------------------------------------------------------------|
+| =portal-launcher-applications=, the default                                           | Removed  | The README's =launcher.el= recipe, =my/app-launcher=                 |
+| =portal-launcher-command=                                                             | Removed  | =portal-launcher-present='s FUNCTION, now required                   |
+| =portal-launcher-shortcut= and shortcut =portal-launcher=                             | Removed  | =portal-global-shortcut-set= with a user's command                   |
+| =portal-launcher-toggle=                                                              | Removed  | A second invocation dismisses; =portal-launcher-show=/=-hide=        |
+| =M-x portal-launcher-present=                                                         | Removed  | =M-x my/app-launcher=; FUNCTION is required                          |
+| =portal-launcher-mode=                                                                | Changed  | Registers no chord; presenting enables it; disable deletes the panel |
+| =portal-launcher-present=, =-show=, =-hide=, =-cancel=, =-resize=, appearance options | Retained | Unchanged, but FUNCTION is required                                  |
+
 *** Acceptance
-- [ ] With =launcher.el= absent, Portal loads and all infrastructure examples
+- [X] With =launcher.el= absent, Portal loads and all infrastructure examples
   and automated checks run; loading/presenting claims no global key by default.
-- [ ] The same user command works via M-x, an ordinary Emacs binding and a
+- [X] The same user command works via M-x, an ordinary Emacs binding and a
   named global shortcut, with presentation options supplied in user config.
-- [ ] The documented application recipe shows only its minibuffer, accepts
+- [X] The documented application recipe shows only its minibuffer, accepts
   Return and arrow selection without typed text, and preserves documented
   refresh, cancellation, search and focus behavior. Any required external
   version or wrapper is stated explicitly.
-- [ ] Named shortcuts remain independent across panel dismissal, deletion and
+- [X] Named shortcuts remain independent across panel dismissal, deletion and
   configuration reload; the persistent hello-world recipe stays usable.
-- [ ] No application discovery/search policy or mandatory =launcher.el= build
+- [X] No application discovery/search policy or mandatory =launcher.el= build
   dependency remains in Portal; relevant project, native and graphical checks
   pass using generic fixtures. Record the separate optional integration smoke
   test and its exact environment rather than claiming it as a core dependency.
-- [ ] Migration examples identify replacements for the old defaults, mode and
+- [X] Migration examples identify replacements for the old defaults, mode and
   shortcut settings, and provide explicit cleanup/rollback instructions.
+
+*** Outcome
+[[file:portal-launcher.el][portal-launcher.el]] no longer has =portal-launcher-applications=,
+=portal-launcher-command=, =portal-launcher-shortcut= or =portal-launcher-toggle=,
+and no longer loads =portal-global-shortcut.el=. =portal-launcher-present= takes
+a required FUNCTION and is no longer a command. =portal-launcher-mode= stays as
+the panel's own state: presenting or showing enables it, which installs the
+frame guards and hooks, and disabling deletes the panel; neither touches a
+shortcut. If enabling fails while a panel frame is live, its guards stay,
+since the frame must still detach before deletion. No native code changed.
+
+The [[file:README.md][README]]'s launcher section starts from user configuration: a minimal
+picker, the persistent hello buffer, their global shortcuts with one that
+presents nothing, the optional =launcher.el= recipe, a migration table with the
+old init file's replacement, and cleanup and rollback. The batch and graphical
+tests evaluate those examples from the README itself, through
+[[file:test/portal-launcher-examples.el][test/portal-launcher-examples.el]], so the documented launchers are the tested
+ones. [[file:CMakeLists.txt][CMakeLists.txt]] no longer downloads =launcher.el=, and the
+=launcher-applications= suite and its tests are gone; Vertico, Orderless and
+Marginalia remain as completion fixtures.
+
+=launcher.el= at 731146d, still its =main= on 2026-10-05, searches the web for
+an empty result, two spaces, =!g= or =!gh = (an empty query), and in stock
+completion its Space completes a word: typing =!gh portal= searched Google for
+=!ghportal=. Return on a highlighted candidate works without a wrapper, since it
+acts on the completion result. The README's =my/launcher-read= wraps the
+completion reader in user configuration for the three input rules, and the
+[[file:docs/launcher-applications.md][application notes]] list the upstream changes that would retire it; they now
+separate that current recipe from the historical adapter record.
+
+Found in review: the first recipe returned a closure over the user's reader,
+which failed with =void-variable= in a configuration file without
+=lexical-binding=, which Emacs 31 still loads with dynamic binding; the tests
+had evaluated the examples lexically. The recipe now keeps the reader in a
+special variable, =my/launcher-reader=, and the tests load the README's
+examples from a file with each binding. The README also notes that the
+Global shortcuts section's capturing lambda needs lexical binding.
+=launcher.el= and other external repositories are unchanged.
+
+*** Verification
+- =./build.sh= and all 33 CTest suites pass; =launcher-applications= is gone and
+  =build/elpa= has no =launcher.el=. The =launcher= suite's 30 tests run in
+  =-Q= without it on =load-path=. New ones check that loading, enabling and
+  presenting through the real show path set no shortcut, and that disabling
+  and deleting leave a user's shortcut set; that a failed enable keeps a live
+  panel's guards; and the README's examples, with native calls stubbed,
+  loaded from a file with dynamic binding and again with lexical binding: the
+  picker from M-x, =C-c f= and its shortcut's record through the command loop,
+  the hello buffer from its shortcut, dismissed by the same chord, and from
+  M-x, the clock shortcut presenting nothing, a configuration reload replacing
+  each registration so an earlier press calls nothing, and a removal leaving
+  the others. With a stand-in =launcher=, the launcher.el recipe read a typed
+  name and a spaced =!gh= query in stock completion, cancelled empty, blank
+  and bare-bang results, passed =C-u= through and ran from its shortcut, then
+  restored the completion reader. Copies where enabling sets a shortcut,
+  disabling removes all, a failed enable drops a live panel's guards, the
+  README's picker loses =:kind 'minibuffer=, or the recipe returns a closure
+  (it failed with =void-variable reader= under dynamic binding), each fail
+  them.
+- Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 19
+  =portal-launcher-gui-=, 2 daily-use and 4 =portal-global-shortcut-gui-=
+  tests passed 25 of 25 in six runs, the last two after review, which load
+  the README's examples with dynamic binding. The README's launchers ran on
+  chords F17 to F20: the picker from M-x and =C-c f=, queued for the real command
+  loop, and from an injected press of its shortcut, each typed into with
+  native keys in a minibuffer panel; the hello buffer from its shortcut, read
+  a name and was dismissed by its chord pressed again; the clock shortcut left
+  the hidden panel and frames alone. The shortcuts outlasted deleting and
+  disabling the panel, a reload kept three registrations with new IDs, and a
+  removed shortcut's hot key was refused. A generic picker returned a typed
+  name, Vertico's highlighted candidate on Return with no text, after Down and
+  after Down then Up, stock completion's empty result, and nil on Escape.
+  The dismissal tests press a test shortcut on F16 instead of the mode's chord.
+- =sh test/launcher-daily-use.sh= passed both tests: the completion test now
+  presents a recording picker, and the coexistence test re-evaluates the
+  README's shortcuts in each cycle, disables the panel with them still set,
+  then removes them, while the shell and web page keep working.
+- Optional integration smoke test, outside CTest:
+  =PORTAL_LAUNCHER_EL=<dir> sh test/launcher-recipe.sh= passed 2 of 2 with
+  =launcher.el= 731146d (SHA-256 =7211f80c…=), Emacs 31.1 revision
+  =a360712c…=, macOS 27.0.1 (26A434), and Vertico 2.15, Orderless 1.8 and
+  Marginalia 2.13, before and after review; it now loads the recipe with
+  dynamic binding. Mocking Spotlight, =open= and the browser, the README's
+  recipe, typed into with native keys, launched a typed app, searched a spaced
+  =!gh= query in stock completion, cancelled =!g=, =!gh =, an empty result and
+  Escape, accepted Vertico's highlighted app on Return, after Down and after
+  Down then Up, refreshed with a prefix argument and ran from its shortcut;
+  each prompt was the panel's only window. With real Spotlight (506 apps) and
+  =open=, Escape left Safari in front and =Finder= Return activated Finder. Its
+  first run failed in the test's fixture, which expected one Spotlight query
+  per refresh where =launcher.el= makes one per directory.
+- =check-launcher= and =check-shortcuts= pass. Changed Lisp, including tests,
+  byte-compiles without warnings. Org lint, task IDs, dependencies and
+  internal links pass.

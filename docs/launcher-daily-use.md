@@ -6,13 +6,20 @@ VoiceOver. The `launcher-daily-use` task is complete. The record below separates
 automated evidence from the user's manual acceptance; support remains scoped
 to the recorded environment.
 
+That checklist ran with the application picker Portal then included and the
+chord `portal-launcher-mode` registered. Since 2026-10-05, user configuration
+composes launchers instead; the setup, migration and rollback steps below use
+the README's [launcher.el recipe](../README.md#application-launcher-with-launcherel-optional).
+The panel's native behavior is unchanged; the manual results are historical
+for the removed picker.
+
 ## Tested environment
 
 | Component | Tested configuration |
 | --- | --- |
 | Emacs | GNU Emacs NS 31.1, revision `a360712c9d272d950d8d8255ef74570f7e90b7d9`, dynamic modules and native trampolines enabled |
 | macOS | 27.0.1 (26A434), Apple Silicon |
-| Application picker | `launcher.el` revision `731146d95d7d1ff16f48e7a200da873c8d8b375c` |
+| Application picker | `launcher.el` revision `731146d95d7d1ff16f48e7a200da873c8d8b375c`, through Portal's former built-in adapter |
 | Repeatable completion matrix | Stock completion; Vertico 2.15, Orderless 1.8, Marginalia 2.13 |
 | Isolated copy of active settings | Vertico 20260830.123 with multiform and directory bindings, Orderless 20260830.1156, Marginalia 20260821.1231; styles `(orderless partial-completion basic)`, 10 candidates, no cycling or posframe |
 | Theme and font in that isolated run | Modus Themes 20260829.1926, `modus-vivendi-tinted`, JetBrainsMono Nerd Font 17 |
@@ -31,14 +38,15 @@ use the panel's minibuffer; commands that choose other frames need wrappers.
 1. Follow [Build and run](../README.md#build-and-run), using the Emacs installation
    that will load the module. Rebuild Portal and restart Emacs after a native
    update. Never mix new Lisp with an old module already loaded in the process.
-2. Install the pinned `launcher.el` dependency using the
-   [README setup](../README.md#native-launcher-panel-opt-in). The test copy in
-   `build/elpa` is not an installation in your normal Emacs.
-3. Load Portal and explicitly enable `portal-launcher-mode` in a disposable
-   graphical Emacs with your completion/theme configuration. Choose an unused
-   chord. Loading `portal-launcher` alone registers nothing. Keep
+2. Install `launcher.el` at the tested revision and copy the README's recipe,
+   or another launcher of your own, into the configuration to try. Portal does
+   not install or download it.
+3. Load Portal and evaluate that launcher setup in a disposable graphical Emacs
+   with your completion/theme configuration. Choose an unused chord for its
+   global shortcut. Loading `portal-launcher` and presenting register nothing;
+   only your `portal-global-shortcut-set` call does. Keep
    `native-comp-enable-subr-trampolines` enabled; address native compiler errors
-   before enabling, without bypassing the guard.
+   before presenting, without bypassing the guard.
 4. Try the workflow below, then repeat in a **fresh normal session**, explicitly
    evaluating the README setup. Record the actual packages, theme, input source,
    keyboard and monitor arrangement. A copied settings fragment does not count
@@ -56,7 +64,7 @@ on its shortcut path. Busy Lisp delays shortcut processing.
 Start Portal on a different chord so either launcher can be restored. In M-x's
 Settings, record the launcher row's trigger and Eval expression, for example
 `(my/popup-command #'launcher)`. Remove **only that row** using its trash button;
-then assign the freed chord with `setopt portal-launcher-shortcut`.
+then assign the freed chord to your launcher with `portal-global-shortcut-set`.
 
 Keep the M-x application, its remaining shortcut rows, its `emacsclient` path
 and its URL handlers. `emacs://`, `org-protocol://`, modifier double-taps and
@@ -66,12 +74,14 @@ Portal does not read, edit or migrate M-x preferences automatically.
 
 ## Roll back
 
-Evaluate `(portal-launcher-mode -1)` and remove the mode-enable call from the
-init file so configuration reload cannot register it again. Confirm the panel
-disappears and its chord no longer invokes Portal. Disabling during a launcher
-prompt cancels the session before deleting the panel. Repeated disable is safe.
+Remove the launcher setup from the init file so a configuration reload cannot
+set it again, then evaluate `(portal-global-shortcut-remove 'app-launcher)`, for
+each launcher's shortcut name, and `(portal-launcher-mode -1)`. Confirm the
+panel disappears and the chord no longer invokes Portal. Disabling during a
+launcher prompt cancels the session before deleting the panel. Repeated
+disable and removal are safe; disabling alone leaves every shortcut set.
 
-The dedicated frame, shortcut registration, launcher hooks and frame guards
+The shortcut registrations, dedicated frame, launcher hooks and frame guards
 are released. Ordinary frames, web views and terminal sessions continue to work.
 The shared native module remains loaded for those features; restart Emacs if
 you need to replace it. Restore the saved M-x row and its chord if desired.
@@ -93,7 +103,7 @@ interacting with other apps. `EMACS` can select a different executable, which
 must match the build's header and supported revision. Run the README's combined
 graphical suite to exercise the existing launcher lifecycle, focus, geometry
 and completion matrix as well. Use its selector `"^portal-launcher-"` instead
-of `"^portal-"` to run just the 15 launcher tests.
+of `"^portal-"` to run just the 21 launcher tests.
 
 To check an isolated completion/theme fragment without changing your init:
 
@@ -104,7 +114,7 @@ PORTAL_LAUNCHER_CONFIG=/absolute/path/to/completion-and-theme.el \
 
 The fragment should add the desired installed packages to `load-path`, enable
 their modes and load the theme. It runs before the tests and its settings are
-preserved by the application test. Do not pass a full init file: it may start
+preserved by the completion test. Do not pass a full init file: it may start
 unrelated services or open other UI. Use the fresh normal-session procedure for
 that acceptance check. The default run uses the packages downloaded by CMake.
 
@@ -128,6 +138,10 @@ cleanup. The full launcher suite passes together. The production
 focus-loss observer remains unchanged.
 
 ## Hands-on validation
+
+The procedures name the commands of the time. With the current setup, use
+your launcher command, such as `my/app-launcher`, for `portal-launcher-present`,
+its global shortcut for the launcher chord, and the README's rollback.
 
 For future regression runs, record date, Portal commit, Emacs revision, macOS build, complete init used,
 completion/theme versions, keyboard/input-source names, display layout and the
@@ -203,3 +217,17 @@ retains the versions and settings captured during earlier automated runs; the
 user did not supply additional input-source names, environment versions or
 VoiceOver transcripts. The interrupted copied-settings run remains inconclusive
 and is not presented as an automated pass.
+
+## User-configured launchers on 2026-10-05
+
+Portal's application picker, default command, shortcut option and toggle were
+removed. The two automated daily-use tests now run without launcher.el. The
+completion test presents a picker that records what it would launch, with
+the caller's completion and theme settings: a typed name, Escape, Return with
+no typed text, a failing launch and a recovery prompt. The coexistence test
+evaluates the README's picker, hello and shortcut examples, the shortcuts twice
+per cycle, on test chords. In each of three cycles, disabling the panel left
+all three shortcuts set, and removing them freed their chords, while the shell
+and web page kept working. Both passed in the full launcher graphical run;
+the [application notes](launcher-applications.md) record the separate
+launcher.el smoke test.

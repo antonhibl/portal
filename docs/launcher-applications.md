@@ -1,19 +1,117 @@
 # Application launcher integration
 
-`portal-launcher-command` defaults to `portal-launcher-applications`, which
-loads the optional `launcher.el` package and runs its command inside the existing
-command session. Portal adds no application catalog, discovery process, native
-provider or search implementation. `launcher.el` owns the cache and exact bundle
-paths; its annotations are never parsed back into an application identity.
+Portal includes no application picker. The current setup is the README's
+[launcher.el recipe](../README.md#application-launcher-with-launcherel-optional),
+in user configuration, with an optional integration smoke test outside the
+build. Until 2026-10-05, Portal included an adapter around launcher.el,
+`portal-launcher-applications`, ran it by default and downloaded launcher.el
+for its tests. The [historical record](#historical-the-built-in-adapter) below
+keeps that adapter's design and evidence; it does not describe the current
+setup.
 
-Tested with [launcher.el at 731146d](https://github.com/xiaoxinghu/launcher.el/blob/731146d95d7d1ff16f48e7a200da873c8d8b375c/launcher.el),
-GNU Emacs NS 31.1 revision `a360712c9d272d950d8d8255ef74570f7e90b7d9`,
-and macOS 27.0.1 (26A434). CMake downloads a hash-checked copy of that dependency
-into `build/elpa` for tests. This does not install it into the user's Emacs.
-See the [README](../README.md#native-launcher-panel-opt-in) for installation and
-the existing native support restriction.
+## The recipe and launcher.el follow-ups
 
-## Input policy and package follow-ups
+Inspected on 2026-10-05 at
+[launcher.el 731146d](https://github.com/xiaoxinghu/launcher.el/blob/731146d95d7d1ff16f48e7a200da873c8d8b375c/launcher.el),
+then the head of its `main`. Its `launcher` command reads one completion result
+and acts on it. With completion returning each result, and `open` and the
+browser mocked:
+
+| Completion result | What `launcher` does |
+| --- | --- |
+| `""` | Opens `https://www.google.com/search?q=`, an empty search |
+| `"  "` | Searches Google for two spaces |
+| `"!g"` | Searches Google for `!g` |
+| `"!gh "` | Opens `https://github.com/search?q=`, an empty search |
+| `"Calculator"` | Runs `open -a /System/Applications/Calculator.app` |
+
+Its prompt uses stock completion's map, where Space runs
+`minibuffer-complete-word`. Typing `!gh portal` there, with Space, searched
+Google for `!ghportal`: completion consumed the space.
+
+So launcher.el needs these upstream changes before the README's wrapper,
+`my/launcher-read` and its variable `my/launcher-reader`, can go:
+
+1. An empty or blank completion result takes no action.
+2. A configured bang with no query, such as `!g` or `!gh `, takes no action.
+3. Space inserts a space in its prompt where stock completion would complete a
+   word, keeping an explicitly customized binding.
+4. Optionally, `if-let` and `when-let`, obsolete in Emacs 31.1, become
+   `if-let*` and `when-let*`; loading reports a warning for each.
+
+Selection needs no change: launcher.el acts on the completion result, so Return
+on a highlighted candidate works whenever the completion UI returns it, as
+Vertico does with no typed text. The earlier failure to accept it was in
+Portal's adapter, which checked the typed text; see the selection correction
+below.
+
+The wrapper applies rules 1 to 3 in user configuration. For one call,
+`my/app-launcher` binds `completing-read-function` to `my/launcher-read` and
+keeps the user's reader in the special variable `my/launcher-reader`, which
+`my/launcher-read` calls; it returns the reader's result, text properties
+included, so launcher.el finds the chosen candidate. It uses no closure, so it
+works in a configuration file without `lexical-binding`, which Emacs 31 still
+loads with dynamic binding. The first version returned a closure over the
+reader, which failed with `void-variable` there; review caught it, and a batch
+test now loads the recipe from a file with each binding. An empty
+result or a bang without a query signals `quit`, which the panel treats as
+cancellation: it closes, and focus returns to the previous app. It changes no
+keymap, no global setting and no launcher.el function, so ordinary
+`M-x launcher` is unchanged. It reads `launcher-bangs`; the bang test splits
+the result into words, so `" !g "` cancels too.
+
+## Optional integration smoke test
+
+[test/launcher-recipe.sh](../test/launcher-recipe.sh) runs
+[the recipe tests](../test/portal-launcher-recipe-tests.el) in a disposable
+graphical Emacs. It is not part of the build or CTest. Point it at a directory
+with launcher.el:
+
+```sh
+./build.sh
+PORTAL_LAUNCHER_EL=/absolute/path/to/launcher.el-directory sh test/launcher-recipe.sh
+```
+
+It loads the README's recipe from a file with dynamic binding, with its chord
+moved to Control-Option-Command-F20, and types native key events into the real
+panel.
+The input test, with Spotlight, `open` and the browser mocked, checks with
+stock completion and with Vertico, Orderless and Marginalia: a typed app, a
+spaced `!gh` query, a bang without a query, an empty result and Escape; with
+Vertico, Return on the first app and after Down, and Down then Up, with no
+typed text; a prefix argument rebuilding the index; the shortcut running the
+same command; each prompt being the panel's only window; and the user's
+completion reader restored. The launch test activates Safari, or another
+running app, then uses real Spotlight and `open`: Escape leaves that app in
+front, and typing `Finder` and Return activates the running Finder.
+
+Run on 2026-10-05: both tests passed, with launcher.el 731146d (SHA-256
+`7211f80c73a498215fdf1f1bc592c7b9148a965bf91e9da1d18b9df1e87819cb`), GNU Emacs
+NS 31.1 revision `a360712c9d272d950d8d8255ef74570f7e90b7d9`, macOS 27.0.1
+(26A434), and Vertico 2.15, Orderless 1.8 and Marginalia 2.13 from
+`build/elpa`. Spotlight indexed 506 applications; Safari was in front before
+the launch. The first run's input test failed in its own fixture, which
+counted one Spotlight query per refresh while launcher.el queries each of its
+four default directories; it now sets one directory.
+
+## Historical: the built-in adapter
+
+This section records the adapter as it was from 2026-10-03 to 2026-10-05. The
+names and commands in it, `portal-launcher-command`, `portal-launcher-applications`,
+`portal-launcher-mode`'s shortcut and the `launcher-applications` CTest suite,
+are gone.
+
+`portal-launcher-command` defaulted to `portal-launcher-applications`, which
+loaded the optional `launcher.el` package and ran its command inside the existing
+command session. Portal added no application catalog, discovery process, native
+provider or search implementation. `launcher.el` owned the cache and exact bundle
+paths; its annotations were never parsed back into an application identity.
+
+Tested with launcher.el at 731146d, GNU Emacs NS 31.1 revision
+`a360712c9d272d950d8d8255ef74570f7e90b7d9`, and macOS 27.0.1 (26A434). CMake
+downloaded a hash-checked copy of that dependency into `build/elpa` for tests.
+
+### Input policy and package follow-ups
 
 The adapter delegates to the user's `completing-read-function`. It returns the
 chosen string unchanged, including its text properties, so upstream lookup uses
@@ -50,7 +148,7 @@ different app or web search. Refresh after moving an application. A browser
 function that signals an error also follows normal session cleanup; asynchronous
 failures after a browser accepts a URL remain the browser's responsibility.
 
-## Verification on 2026-10-03
+### Verification on 2026-10-03
 
 Seven adapter ERT tests use the real pinned package, temporary bundle directories
 and mocked Spotlight/open/browser actions. They cover duplicate non-ASCII names,
@@ -96,7 +194,7 @@ of physical shortcut delivery, fullscreen/Spaces, monitor unplugging or click-aw
 Those checks, the user's complete configuration, IME and VoiceOver remain in
 the `launcher-daily-use` task. The physical GUI acceptance item remains unchecked.
 
-## Selection correction on 2026-10-04
+### Selection correction on 2026-10-04
 
 The initial adapter treated empty typed text as cancellation even when completion
 returned a valid highlighted app. It now checks the final completion result.
@@ -114,7 +212,7 @@ format/type checks, native failure-reporter tests, changed-file byte compilation
 and Org task validation. The GUI run used a test-only alternate shortcut because
 the normal chord was already registered by the user's running Emacs.
 
-## Discovery timing
+### Discovery timing
 
 One fresh batch Emacs process, the default four discovery directories, 506
 applications, and the tested package revision:
@@ -130,14 +228,8 @@ startup. The cold and refresh samples each include one garbage collection. The
 cached measurement is an aggregate near timer resolution, not an end-to-end
 invocation latency claim. A busy Emacs command loop can still delay invocation.
 
-Run the repeatable adapter checks with:
-
-```sh
-./build.sh
-ctest --test-dir build -R '^launcher' --output-on-failure
-```
-
-Use the README's graphical command, including the pinned launcher package on
-`load-path`, for `portal-launcher-gui-` tests. On this machine, Emacs native
-trampolines also require the existing Homebrew GCC library-directory workaround
-in `LIBRARY_PATH`; project compiler settings were not changed.
+The adapter's checks then ran as the `launcher` and `launcher-applications`
+CTest suites and, with the pinned package on `load-path`, the
+`portal-launcher-gui-` tests. On this machine, Emacs native trampolines also
+required the existing Homebrew GCC library-directory workaround in
+`LIBRARY_PATH`; project compiler settings were not changed.

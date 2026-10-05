@@ -107,12 +107,37 @@ child frame, disable/re-enable and ordinary-frame mutations. Native checks
 independently exercise rollback and verify that closed panels leave AppKit's
 window list after autoreleased objects drain.
 
-The [README](../README.md#native-launcher-panel-opt-in) documents commands,
+The [README](../README.md#native-launcher-panel-opt-in) documents setup,
 customization and test invocation. Plain buffer presentation refuses to hide an
 active launcher minibuffer; command sessions unwind it as described below.
 Outbound system drag-and-drop is cancelled. Full
 IME candidate windows, VoiceOver and extended use with the user's configuration
 remain in the daily-use validation task.
+
+## User-configured launchers
+
+The panel and global shortcuts are separate infrastructure. Portal chooses no
+command and registers no chord: `portal-launcher-present` takes its function
+as a required argument, and the launcher module neither loads
+`portal-global-shortcut.el` nor sets a shortcut. A user's command calls
+`portal-launcher-present` with its options and runs from M-x, an Emacs key or
+`portal-global-shortcut-set`; the README's examples are the test fixtures, and
+the batch and graphical tests evaluate them from the README itself.
+
+`portal-launcher-mode` remains the panel's own state. Presenting or showing
+enables it, which validates the build and installs the frame guards and
+lifecycle hooks; disabling cancels a session, deletes the frame and removes
+them. Neither touches a shortcut, so dismissal, hiding, deletion and disable
+leave every registration, and evaluating the configuration again replaces each
+name's registration rather than adding one. A press of any launcher's chord
+during a session runs its command inside that session, whose second
+invocation cancels the session and unwinds that command too: the chord
+toggles the panel. If enabling fails while a panel frame is live, the guards
+stay, since that frame must still detach before deletion.
+
+Application discovery, search and input rules belong to the separate
+launcher.el package, configured as in the README's recipe; the
+[application notes](launcher-applications.md) record its upstream follow-ups.
 
 ## Command sessions
 

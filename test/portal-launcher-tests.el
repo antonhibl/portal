@@ -2,21 +2,30 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'ert)
 (require 'portal-launcher)
+(require 'portal-launcher-examples)
 
 (ert-deftest portal-launcher-load-is-inert ()
+  ;; This suite runs in -Q without launcher.el, which Portal does not need.
+  (should-not (locate-library "launcher"))
   (should-not (featurep 'launcher))
+  ;; Shortcuts are a separate module, which this one does not load.
+  (should-not (member '(require . portal-global-shortcut)
+                      (alist-get (symbol-file 'portal-launcher-present) load-history
+                                 nil nil #'equal)))
+  (should (member '(require . portal-view)
+                  (alist-get (symbol-file 'portal-launcher-present) load-history
+                             nil nil #'equal)))
   (should-not portal-launcher-mode)
   (should-not portal-launcher--frame)
-  (should-not portal-global-shortcut--registrations)
   (should-not (memq #'portal-launcher--before-delete delete-frame-functions))
-  (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
+  (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters))
+  ;; Portal chooses no command and no chord.
+  (dolist (function '(portal-launcher-applications portal-launcher-toggle))
+    (should-not (fboundp function)))
+  (dolist (option '(portal-launcher-command portal-launcher-shortcut))
+    (should-not (boundp option))))
 
-(ert-deftest portal-launcher-missing-application-package-explains-setup ()
-  ;; This suite runs in -Q without the optional package on load-path.
-  (should-not (locate-library "launcher"))
-  (should (string-match-p
-           "Install launcher.el.*load-path"
-           (error-message-string (should-error (portal-launcher-applications) :type 'user-error)))))
+(require 'portal-global-shortcut)
 
 (ert-deftest portal-launcher-rejects-unsupported-before-loading ()
   (let ((emacs-repository-version "unvalidated")
@@ -52,8 +61,7 @@
     (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
               ((symbol-function 'portal-view--load) #'ignore)
               ((symbol-function 'portal--launcher-attach) #'ignore)
-              ((symbol-function 'portal--launcher-prepare) #'ignore)
-              ((symbol-function 'portal--shortcut-set) #'ignore))
+              ((symbol-function 'portal--launcher-prepare) #'ignore))
       (should-error (portal-launcher-mode 1) :type 'user-error)
       (should-not portal-launcher-mode)
       (should-not portal-launcher--frame)
@@ -108,124 +116,118 @@
           (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters)))
       (portal-launcher--hooks nil))))
 
-(defmacro portal-launcher-test--registration (&rest body)
-  "Exercise Lisp enable/rebind with a native registration stand-in.
-NATIVE-CHORD is the chord native code has, \"\" once released; macOS
-refuses the chord \"conflict\".  OTHER is another global shortcut."
+;; Global shortcuts with stand-ins for their native registrations.
+(defmacro portal-launcher-test--shortcuts (&rest body)
+  "Run BODY with global shortcuts whose native registrations are stand-ins.
+NATIVE is an alist of the IDs and chords native code has registered."
+  (declare (indent 0))
+  `(let ((portal-global-shortcut--registrations nil)
+         (portal-view-feature-record-handlers nil)
+         (portal-view--pending "")
+         (kill-emacs-hook nil)
+         (unread-command-events nil)
+         (native nil) (token 0))
+     (cl-letf (((symbol-function 'portal-view--load) #'ignore)
+               ((symbol-function 'portal--shortcut-chord) #'identity)
+               ((symbol-function 'portal--shortcut-set)
+                (lambda (replacing chord)
+                  (setq native (cons (cons (cl-incf token) chord)
+                                     (assq-delete-all replacing native)))
+                  token))
+               ((symbol-function 'portal--shortcut-remove)
+                (lambda (id) (setq native (assq-delete-all id native)) t)))
+       ,@body)))
+
+(defun portal-launcher-test--press (name)
+  "Send the record of a press of NAME's chord; return the event it queued."
+  (portal-view--receive
+   nil (format "shortcut %s\n" (cadr (assq name portal-global-shortcut--registrations))))
+  (pop unread-command-events))
+
+(defmacro portal-launcher-test--panel (&rest body)
+  "Run BODY with the real enable and show paths, only native calls stubbed.
+The selected frame stands in for the panel, and deleting it is a no-op."
   (declare (indent 0))
   `(let ((portal-launcher-mode nil)
-         (portal-global-shortcut--registrations nil)
-         (portal-view-feature-record-handlers nil)
-         (kill-emacs-hook nil)
-         (portal-launcher-shortcut "Control-Option-Command-P")
-         (native-comp-enable-subr-trampolines nil)
-         (unread-command-events nil)
-         native-chord (token 0))
+         (portal-launcher--frame nil)
+         (portal-launcher--session nil)
+         (portal-launcher--return-window nil)
+         (native-comp-enable-subr-trampolines nil))
      (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
                ((symbol-function 'portal-launcher--check-guard) #'ignore)
                ((symbol-function 'portal-view--load) #'ignore)
+               ((symbol-function 'portal-launcher--create)
+                (lambda (_kind) (setq portal-launcher--frame (selected-frame))))
                ((symbol-function 'portal--launcher-attach) #'ignore)
                ((symbol-function 'portal--launcher-prepare) #'ignore)
-               ((symbol-function 'portal--shortcut-chord) #'identity)
-               ((symbol-function 'portal--shortcut-set)
-                (lambda (_replacing chord)
-                  (when (equal chord "conflict") (error "Shortcut conflict"))
-                  (unless (equal chord "other") (setq native-chord chord))
-                  (cl-incf token)))
-               ((symbol-function 'portal--shortcut-remove)
-                (lambda (id)
-                  (when (eql id (portal-launcher-test--id)) (setq native-chord ""))
-                  t)))
-       (portal-global-shortcut-set 'other "other" #'ignore)
+               ((symbol-function 'portal--launcher-show) #'ignore)
+               ((symbol-function 'portal--launcher-hide) #'ignore)
+               ((symbol-function 'portal--launcher-detach) #'ignore)
+               ((symbol-function 'portal--launcher-inspect) (lambda () '(:session 1)))
+               ((symbol-function 'make-frame-invisible) #'ignore)
+               ((symbol-function 'make-frame-visible) #'ignore)
+               ((symbol-function 'delete-frame) #'ignore))
        (unwind-protect (progn ,@body)
-         (portal-launcher-mode -1)
-         ;; Disabling releases the launcher's chord and no other shortcut.
-         (should (member native-chord '(nil "")))
-         (should (assq 'other portal-global-shortcut--registrations))))))
+         (portal-launcher--hooks nil)))))
 
-(defun portal-launcher-test--id ()
-  "The native ID of the launcher's global shortcut, or nil."
-  (cadr (assq 'portal-launcher portal-global-shortcut--registrations)))
+(ert-deftest portal-launcher-enabling-and-presenting-claim-no-shortcut ()
+  (portal-launcher-test--shortcuts
+    (portal-global-shortcut-set 'other "other" #'ignore)
+    (let ((registrations (copy-tree portal-global-shortcut--registrations))
+          (before native))
+      (cl-letf (((symbol-function 'portal-global-shortcut-set)
+                 (lambda (&rest _) (ert-fail "Set a global shortcut"))))
+        (portal-launcher-test--panel
+          (portal-launcher-mode 1)
+          (portal-launcher-mode 1)
+          (should portal-launcher-mode)
+          (portal-launcher-mode -1)
+          ;; Presenting and showing enable the mode, which sets nothing.
+          (should (eq 'value (portal-launcher-present (lambda () 'value) :kind 'minibuffer)))
+          (should portal-launcher-mode)
+          (should (eq 'command (portal-launcher-present #'portal-launcher-test--command)))
+          (should (eq (portal-launcher-show (current-buffer)) (selected-frame)))
+          (portal-launcher-hide)
+          (should (equal registrations portal-global-shortcut--registrations))
+          (should (equal before native))
+          ;; Disabling and deleting the panel leave every shortcut set.
+          (delete-frame portal-launcher--frame)
+          (portal-launcher-mode -1)
+          (portal-launcher-mode -1)
+          (should-not portal-launcher-mode)
+          (should (equal registrations portal-global-shortcut--registrations))
+          (should (equal before native)))))))
 
-(ert-deftest portal-launcher-registration-and-customization-are-atomic ()
-  (portal-launcher-test--registration
-    (portal-launcher-mode 1)
-    (portal-launcher-mode 1)
-    (should (equal (mapcar #'car portal-global-shortcut--registrations) '(other portal-launcher)))
-    (should (equal (nth 3 (assq 'portal-launcher portal-global-shortcut--registrations))
-                   #'portal-launcher-toggle))
-    (let ((first (portal-launcher-test--id)))
-      (should-error (portal-launcher--set-shortcut 'portal-launcher-shortcut "conflict"))
-      (should (equal portal-launcher-shortcut "Control-Option-Command-P"))
-      (should (= first (portal-launcher-test--id)))
-      (let ((portal-launcher-shortcut "conflict"))
-        (should-error (portal-launcher-mode 1))
-        (should portal-launcher-mode)
-        (should (= first (portal-launcher-test--id))))
-      (portal-launcher--set-shortcut 'portal-launcher-shortcut "Control-Option-Command-L")
-      (should-not (= first (portal-launcher-test--id)))
-      (should (equal native-chord "Control-Option-Command-L")))
+(ert-deftest portal-launcher-failed-enable-keeps-a-live-panel-guarded ()
+  (portal-launcher-test--panel
+    (portal-launcher-show (current-buffer))
+    (portal-launcher-hide)
+    ;; Its frame must still detach on deletion, so its guards stay.
+    (cl-letf (((symbol-function 'portal-launcher--check-guard)
+               (lambda () (user-error "No trampoline"))))
+      (should-error (portal-launcher-mode 1) :type 'user-error))
+    (should portal-launcher-mode)
+    (should (memq #'portal-launcher--before-delete delete-frame-functions))
     (portal-launcher-mode -1)
-    (should-not (portal-launcher-test--id))
-    (should (equal native-chord ""))
-    (portal-launcher-mode -1)
-    (portal-launcher-mode 1)
-    (should (portal-launcher-test--id))))
+    (should-not (memq #'portal-launcher--before-delete delete-frame-functions))))
 
-(ert-deftest portal-launcher-failed-first-registration-leaves-disabled ()
-  (portal-launcher-test--registration
-    (let ((portal-launcher-shortcut "conflict"))
-      (should-error (portal-launcher-mode 1))
-      (should-not portal-launcher-mode)
-      (should-not (portal-launcher-test--id))
-      (should-not (assoc "launcher-blur" portal-view-feature-record-handlers))
-      (should-not (memq #'portal-launcher--before-delete delete-frame-functions)))))
-
-(ert-deftest portal-launcher-shortcut-is-a-global-shortcut ()
-  (portal-launcher-test--registration
+(ert-deftest portal-launcher-failed-deletion-keeps-the-mode ()
+  (portal-launcher-test--panel
     (portal-launcher-mode 1)
-    (let ((invocations 0) (portal-view--pending ""))
-      (cl-letf (((symbol-function 'portal-launcher-toggle)
-                 (lambda () (interactive) (cl-incf invocations))))
-        (cl-flet ((press ()
-                    (portal-view--receive nil (format "shortcut %s\n" (portal-launcher-test--id)))
-                    (pop unread-command-events)))
-          ;; No Portal view exists; the record still reaches the command loop.
-          (let ((event (press)))
-            (should (= invocations 0))
-            (portal-global-shortcut--run event)
-            (should (= invocations 1)))
-          ;; A press from before a rebind, or a disable, is ignored.
-          (let ((event (press)))
-            (portal-launcher--set-shortcut 'portal-launcher-shortcut "Control-Option-Command-L")
-            (portal-global-shortcut--run event)
-            (should (= invocations 1)))
-          (let ((event (press)))
-            (portal-launcher-mode -1)
-            (portal-global-shortcut--run event)
-            (portal-launcher-mode 1)
-            (portal-global-shortcut--run event)
-            (should (= invocations 1)))
-          (portal-global-shortcut--run (press))
-          (should (= invocations 2)))))))
-
-(ert-deftest portal-launcher-failed-deletion-retains-registration ()
-  (portal-launcher-test--registration
-    (portal-launcher-mode 1)
-    (let ((portal-launcher--frame (selected-frame))
-          (before (portal-launcher-test--id)))
+    (let ((portal-launcher--frame (selected-frame)))
       (cl-letf (((symbol-function 'delete-frame) (lambda (&rest _) (error "Active minibuffer"))))
         (should-error (portal-launcher-mode -1)))
       (should portal-launcher-mode)
-      (should (= before (portal-launcher-test--id)))
-      (should-not (equal native-chord "")))))
+      (should (memq #'portal-launcher--before-delete delete-frame-functions)))))
 
 (ert-deftest portal-launcher-command-validation-precedes-native-work ()
   (cl-letf (((symbol-function 'portal-launcher--show) (lambda (&rest _) (ert-fail "Presented invalid command")))
             ((symbol-function 'portal-launcher-cancel) (lambda () (ert-fail "Cancelled the session"))))
+    ;; Portal has no default command: FUNCTION is required.
+    (should-error (portal-launcher-present) :type 'wrong-number-of-arguments)
+    (should-not (commandp #'portal-launcher-present))
     (dolist (command (list nil 'identity 42 "string" (lambda (_x) nil)))
-      (let ((portal-launcher-command command))
-        (should-error (portal-launcher-present) :type 'user-error)))
+      (should-error (portal-launcher-present command) :type 'user-error))
     ;; Invalid options, even with a valid function, change nothing; an active
     ;; session would be cancelled before anything is shown.
     (let ((portal-launcher--session (portal-launcher--make-session :tag (make-symbol "active"))))
@@ -286,8 +288,8 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
       (should (equal '((4) nil) (portal-launcher-present
                                (lambda (&optional arg) (list current-prefix-arg arg))
                                :kind 'minibuffer))))
-    (let ((portal-launcher-command #'portal-launcher-test--command))
-      (should (eq 'command (portal-launcher-present nil :kind 'buffer :mode-line nil))))
+    (should (eq 'command (portal-launcher-present #'portal-launcher-test--command
+                                                  :kind 'buffer :mode-line nil)))
     (should (equal shown '((buffer nil) (minibuffer t) (buffer t) (minibuffer t) (buffer t))))
     (should (equal hidden '(nil nil nil nil nil)))
     (should-not portal-launcher--session)))
@@ -395,10 +397,11 @@ refuses the chord \"conflict\".  OTHER is another global shortcut."
 
 (ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
   (portal-launcher-test--session
-    (dolist (dismiss '(portal-launcher-present portal-launcher-toggle portal-launcher-hide portal-launcher-cancel))
+    (dolist (dismiss (list (lambda () (portal-launcher-present #'ignore))
+                           #'portal-launcher-hide #'portal-launcher-cancel))
       (portal-launcher-present
        (lambda () (interactive) (funcall dismiss) (ert-fail "Command survived dismissal"))))
-    (should (equal hidden '(t t t t)))))
+    (should (equal hidden '(t t t)))))
 
 (ert-deftest portal-launcher-blur-is-queued-and-session-scoped ()
   (portal-launcher-test--session
@@ -538,7 +541,7 @@ Return its buffer, as setup functions may."
             (dolist (dismissal
                      `(("<escape>") ("C-g")
                        ("<f14>" . ,(lambda () (portal-launcher-present #'ignore)))
-                       ("<f14>" . portal-launcher-toggle) ("<f14>" . portal-launcher-hide)
+                       ("<f14>" . portal-launcher-hide)
                        ("<f14>" . portal-launcher-cancel)
                        ("<f14>" . ,(lambda ()
                                      (portal-launcher--delete-frame
@@ -675,6 +678,141 @@ Return its buffer, as setup functions may."
             (portal-launcher-test--unwound depth))
         (kill-buffer "*Portal launcher hello*")))))
 
+;; The README's user configuration composes launchers without launcher.el.
+(defmacro portal-launcher-test--readme (examples &rest body)
+  "Run BODY after loading the README's EXAMPLES, once with each binding.
+A configuration file may or may not enable `lexical-binding', so the
+examples load from a file with dynamic binding, then with lexical binding,
+which LEXICAL names.  BODY runs in a test keymap, and MESSAGES returns what
+was logged since loading."
+  (declare (indent 1))
+  `(dolist (lexical '(nil t))
+     (portal-launcher-test--shortcuts
+       (portal-launcher-test--session
+         (let ((global (current-global-map))
+               (map (make-sparse-keymap))
+               (suggest-key-bindings nil)
+               (extended-command-suggest-shorter nil)
+               (start (with-current-buffer "*Messages*" (point-max))))
+           (set-keymap-parent map global)
+           (keymap-set map "<f14>" (lambda () (interactive) (funcall portal-launcher-test--action)))
+           (use-global-map map)
+           (cl-flet ((messages ()
+                       (with-current-buffer "*Messages*"
+                         (buffer-substring-no-properties start (point-max)))))
+             (unwind-protect
+                 (progn
+                   (should (eq lexical (portal-launcher-examples-load ,examples lexical)))
+                   ;; Emacs folds a message repeated from the run before.
+                   (message "README examples loaded with lexical-binding %s" lexical)
+                   ,@body)
+               (use-global-map global)
+               (when (get-buffer "*Hello*") (kill-buffer "*Hello*")))))))))
+
+(defconst portal-launcher-test--launchers
+  '("launcher-picker" "launcher-hello" "launcher-shortcuts")
+  "The README's launcher examples that need no other package.")
+
+(ert-deftest portal-launcher-readme-launchers-from-m-x-a-key-and-shortcuts ()
+  (portal-launcher-test--readme portal-launcher-test--launchers
+    (let ((depth (recursion-depth)))
+      ;; Evaluating the configuration set exactly its three shortcuts.
+      (should (equal (mapcar #'car portal-global-shortcut--registrations)
+                     '(pick-fruit hello clock)))
+      (should (= 3 (length native)))
+      ;; One command, with its presentation options, from M-x, its key and
+      ;; its global shortcut.
+      (execute-kbd-macro (kbd "M-x my/pick-fruit RET Banana RET"))
+      (execute-kbd-macro (kbd "C-c f Cherry RET"))
+      (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'pick-fruit))
+                                  (kbd "Apple RET")))
+      (should (string-match-p "Picked Banana\nPicked Cherry\nPicked Apple" (messages)))
+      (should (equal shown '((minibuffer t) (minibuffer t) (minibuffer t))))
+      (should (equal hidden '(nil nil nil)))
+      ;; The persistent buffer from its shortcut: its local command reads a
+      ;; name, and the same chord again dismisses the panel.
+      (let ((press (portal-launcher-test--press 'hello)))
+        (execute-kbd-macro (vconcat (vector press) (kbd "n ok RET") (vector press))))
+      (should (equal "Hello world!\nHello ok!" (with-current-buffer "*Hello*" (buffer-string))))
+      (should (equal (car shown) '(buffer nil)))
+      (should (eq t (car hidden)))
+      ;; And from M-x, until Escape.
+      (execute-kbd-macro (kbd "M-x my/hello RET n x RET <escape>"))
+      (should (equal "Hello world!\nHello x!" (with-current-buffer "*Hello*" (buffer-string))))
+      (portal-launcher-test--unwound depth)
+      ;; A shortcut that presents nothing.
+      (let ((presented (length shown)))
+        (execute-kbd-macro (vector (portal-launcher-test--press 'clock)))
+        (should (= presented (length shown)))
+        (should (string-match-p "^[0-9][0-9]:[0-9][0-9]$" (car (last (split-string (messages) "\n" t))))))
+      ;; Presenting set no shortcut of its own.
+      (should (equal (mapcar #'car portal-global-shortcut--registrations)
+                     '(pick-fruit hello clock)))
+      (should (= 3 (length native))))))
+
+(ert-deftest portal-launcher-readme-shortcuts-outlast-panels-and-reloads ()
+  (portal-launcher-test--readme portal-launcher-test--launchers
+    (let ((stale (portal-launcher-test--press 'pick-fruit))
+          (chords (mapcar #'caddr portal-global-shortcut--registrations))
+          (ids (mapcar #'cadr portal-global-shortcut--registrations)))
+      ;; Dismissal and a deletion request leave the shortcuts set.
+      (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'hello)) (kbd "<escape>")))
+      (let ((portal-launcher-test--action
+             (lambda () (portal-launcher--delete-frame (lambda (&rest _) (ert-fail "Deleted"))))))
+        (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'hello)) (kbd "<f14>"))))
+      (should (= deleted 1))
+      (should (equal ids (mapcar #'cadr portal-global-shortcut--registrations)))
+      ;; Evaluating the configuration again keeps one registration per name,
+      ;; and a press from before it calls nothing.
+      (portal-launcher-examples-load '("launcher-shortcuts") lexical)
+      (should (equal chords (mapcar #'caddr portal-global-shortcut--registrations)))
+      (should (= 3 (length native)))
+      (should-not (cl-intersection ids (mapcar #'cadr portal-global-shortcut--registrations)))
+      (let ((presented (length shown)))
+        (execute-kbd-macro (vector stale))
+        (should (= presented (length shown))))
+      ;; Removing one leaves the others.
+      (let ((hello (portal-launcher-test--press 'hello)))
+        (should (portal-global-shortcut-remove 'hello))
+        (should (equal (mapcar #'car portal-global-shortcut--registrations) '(pick-fruit clock)))
+        (should (= 2 (length native)))
+        (let ((presented (length shown)))
+          (execute-kbd-macro (vector hello))
+          (should (= presented (length shown)))))
+      (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'pick-fruit)) (kbd "Apple RET")))
+      (should (string-match-p "Picked Apple" (messages))))))
+
+(defvar launcher-bangs)
+
+(ert-deftest portal-launcher-readme-app-recipe-with-either-binding ()
+  ;; launcher.el is absent here: a stand-in `launcher' reads one completion
+  ;; result, as the tested revision does, and records it.  The recipe must
+  ;; not depend on a closure, which dynamic binding would not make.
+  (portal-launcher-test--readme '("launcher-app")
+    (let ((launcher-bangs '(("!g" "Google" "g?q=%s") ("!gh" "GitHub" "gh?q=%s")))
+          (reader completing-read-function)
+          launched)
+      (cl-letf (((symbol-function 'launcher)
+                 (lambda (&optional refresh)
+                   (interactive "P")
+                   (push (list refresh (completing-read "Launch: " '("!g" "!gh" "Calculator")))
+                         launched))))
+        (execute-kbd-macro (kbd "M-x my/app-launcher RET Calculator RET"))
+        ;; Stock completion's Space would complete "!gh"; here it inserts one.
+        (execute-kbd-macro (kbd "M-x my/app-launcher RET !gh SPC portal RET"))
+        ;; An empty or blank result and a bang with no query cancel.
+        (dolist (keys '("RET" "SPC SPC RET" "!g RET" "!gh SPC RET"))
+          (execute-kbd-macro (kbd (concat "M-x my/app-launcher RET " keys))))
+        (execute-kbd-macro (kbd "C-u M-x my/app-launcher RET Calculator RET"))
+        (execute-kbd-macro (vconcat (vector (portal-launcher-test--press 'app-launcher))
+                                    (kbd "Calculator RET"))))
+      (should (equal (reverse launched)
+                     '((nil "Calculator") (nil "!gh portal") ((4) "Calculator") (nil "Calculator"))))
+      ;; Cancellation may return focus to the previous app; success does not.
+      (should (equal (reverse hidden) '(nil nil t t t t nil nil)))
+      (should (equal shown (make-list 8 '(minibuffer t))))
+      (should (eq reader completing-read-function)))))
+
 (ert-deftest portal-launcher-shutdown-preserves-exit-and-later-hooks ()
   ;; A real kill-emacs in another process catches nonlocal exits that a
   ;; mocked kill-emacs or an isolated run-hooks would miss.
@@ -687,11 +825,12 @@ Return its buffer, as setup functions may."
             (prin1-to-string
              '(progn
                 (require 'portal-launcher)
+                (require 'portal-global-shortcut)
                 (let ((native-comp-enable-subr-trampolines nil)
                       (portal-launcher-mode t)
+                      ;; A user's shortcut is not the launcher's to release.
                       (portal-global-shortcut--registrations
-                       (list (list 'portal-launcher 1 "Control-Option-Command-P"
-                                   #'portal-launcher-toggle)))
+                       (list (list 'app-launcher 1 "Control-Option-Command-P" #'ignore)))
                       (portal-launcher--frame (selected-frame))
                       (frame (selected-frame))
                       (detached 0) (released 0) (deleted 0))
@@ -709,7 +848,7 @@ Return its buffer, as setup functions may."
                                 (princ (format "later-hook: %S\n"
                                                (list detached released deleted
                                                      portal-launcher-mode
-                                                     portal-global-shortcut--registrations
+                                                     (length portal-global-shortcut--registrations)
                                                      (and (frame-live-p frame) t)))))
                               90)
                     (portal-launcher-present (lambda () (interactive) (kill-emacs 23)))
@@ -717,6 +856,6 @@ Return its buffer, as setup functions may."
                     (setq kill-emacs-hook nil)
                     (kill-emacs 99))))))))
       (should (= status 23))
-      (should (string-match-p "later-hook: (1 1 0 nil nil t)" (buffer-string))))))
+      (should (string-match-p "later-hook: (1 0 0 nil 1 t)" (buffer-string))))))
 
 (provide 'portal-launcher-tests)
