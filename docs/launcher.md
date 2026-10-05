@@ -10,10 +10,9 @@
 
 ## Global shortcuts
 
-A global shortcut calls a Lisp function when its chord is pressed in any
-application. It does not activate Emacs, select a frame or show a panel, so the
-function decides what appears. Loading Portal registers nothing. Name each
-shortcut with a symbol:
+Pressing a global shortcut's chord calls a Lisp function from any application
+without activating Emacs, selecting a frame or showing a panel. The function decides what appears.
+Loading Portal registers nothing. Name each shortcut with a symbol:
 
 ```elisp
 (defun my/play-pause ()
@@ -27,71 +26,67 @@ shortcut with a symbol:
 (portal-global-shortcut-remove 'time)    ; t, or nil when TIME was not set
 ```
 
-Setting a name again replaces its chord and function and releases the old
-chord, so evaluating a configuration again leaves one registration per name.
-An interactive command runs with `call-interactively`; any other function of no
-arguments runs with `funcall`, so a lambda can capture what it needs. Capturing,
-as `pattern` above, needs lexical binding: start the configuration file with
-`;;; -*- lexical-binding: t -*-`. Emacs 31 still loads a file without that line
-with dynamic binding, where such a lambda signals `void-variable` when pressed.
-`portal-global-shortcut-set` returns the name. It signals an error and changes
-nothing for a name that is not a non-nil symbol, a function that needs
-arguments, invalid notation, a chord another name has (the message names it), or
-a chord that macOS refuses because the system or another application has it.
-`portal-global-shortcut-remove` returns t when the name was set and nil
-otherwise; it signals only if macOS cannot release the chord, and then keeps it.
+Re-setting a name replaces its chord/function and releases the old chord,
+keeping one registration per name across configuration reloads. Interactive
+commands use `call-interactively`; other zero-argument functions use `funcall`.
+Lambdas capturing values, like `pattern` above, need lexical binding: start the
+file with `;;; -*- lexical-binding: t -*-`. Without it, Emacs 31 uses dynamic
+binding and pressing that shortcut signals `void-variable`.
+`portal-global-shortcut-set` returns the name. It errors without changes for:
 
-The notation is case-insensitive, hyphen-separated modifier names (`Control`,
-`Option`, `Command`, `Shift`) followed by `A`–`Z`, `0`–`9`, `Space`, or `F1`–`F20`.
-At least one of Control, Option or Command is required, with no duplicate
-modifiers. Letters and digits refer to **US physical key positions**, independent
-of the input layout and Emacs's `ns-*-modifier` settings. Shift must be explicit;
-capital letters in the notation do not imply it. Fn, Caps Lock, punctuation,
-left/right modifier distinctions and multi-key sequences are unsupported.
-Function keys require the keyboard to send the function key rather than its
-media action. Two spellings of one chord, such as `command-control-option-p`,
-are the same chord. System-reserved shortcuts and other hotkey utilities can
-still intercept keys; choose another chord if one registers but is not
-delivered.
+- Names other than non-nil symbols.
+- Functions requiring arguments.
+- Invalid notation or a chord held by another name (identified in the message).
+- Chords macOS refuses because the system or another application holds them.
 
-The native module registers each chord with Carbon. A press sends a record
-through Portal's notification pipe, even with no Portal view open; it needs
-neither a subprocess nor an Accessibility event tap. The pipe's filter only
-queues an input event, and the command loop calls the function, as for a key
-bound to it, during a minibuffer prompt too. Emacs must be running, and busy
-Lisp delays the call; there is no responsiveness guarantee. Holding a chord
-calls the function once. A press while an earlier press of the same shortcut
-still waits is dropped, and so is a press from before its name was last set or
-removed. A press that arrives in the middle of a key sequence, or while a
-prompt reads a single key, is read there instead and calls nothing.
+`portal-global-shortcut-remove` returns t if the name was set, nil otherwise.
+It signals only if macOS cannot release the chord, retaining it on failure.
 
-An error in the function is shown as a message naming the shortcut. Every
-shortcut stays set, and unlike other commands' errors it discards no waiting
-input, such as another shortcut's press; with `debug-on-error`, the debugger
-shows it. Unloading `portal-global-shortcut` or exiting Emacs releases every
-chord; if one cannot be released, unloading fails and the feature stays loaded. Removing one shortcut, or disabling or deleting the launcher panel,
-leaves the others.
+Notation uses case-insensitive, hyphen-separated modifiers (`Control`, `Option`,
+`Command`, `Shift`) followed by `A`–`Z`, `0`–`9`, `Space` or `F1`–`F20`.
+Require at least one of Control, Option or Command; never repeat a modifier.
+Letters/digits denote **US physical key positions**, independent of input layout
+and Emacs's `ns-*-modifier` settings. Shift must be explicit; capitals do not
+imply it. Fn, Caps Lock, punctuation, left/right modifier distinctions and
+multi-key sequences are unsupported. Function keys must send the key, not its media action.
+Alternate spellings, such as `command-control-option-p`, denote the same chord.
+System-reserved shortcuts or hotkey utilities may intercept registered chords;
+choose another if delivery fails.
+
+The native module registers chords with Carbon. Presses send records through
+Portal's notification pipe even without open Portal views, subprocesses or an
+Accessibility event tap. The filter only queues input; the command loop calls
+the function like a bound key, including during minibuffer prompts. Emacs must
+be running; busy Lisp delays calls, with no responsiveness guarantee.
+Holding a chord calls once. Presses are dropped if the same shortcut already
+has a waiting press, or if they predate its latest set/removal. During key
+sequences or single-key prompts, presses are read there instead and call nothing.
+
+Function errors produce a message naming the shortcut, or open the debugger
+with `debug-on-error`. All shortcuts remain set; unlike other command errors,
+no waiting input (including other shortcut presses) is discarded. Unloading
+`portal-global-shortcut` or exiting Emacs releases all chords. Failed release
+prevents unloading and keeps the feature loaded. Removing one shortcut or
+disabling/deleting the launcher panel preserves the others.
 
 ## Native launcher panel (opt-in)
 
 `portal-launcher.el` presents Emacs functions in one reusable, borderless,
-nonactivating macOS panel. It uses Portal's existing module. Portal chooses no
-command and claims no chord: loading the feature, presenting a panel and
-enabling `portal-launcher-mode` register no global shortcut. Your configuration
-composes launchers. A command calls `portal-launcher-present` with its
-presentation options; run it with M-x, bind it to an Emacs key, or set it as a
-[global shortcut](#global-shortcuts) to invoke it from any application. The
-examples below need no other package, and they work whether or not your
-configuration file enables `lexical-binding`.
+nonactivating macOS panel using Portal's existing module. Portal chooses no
+command or chord: loading, presenting and enabling `portal-launcher-mode`
+register no global shortcut. Your configuration composes launchers: a command
+calls `portal-launcher-present` with options, then runs via M-x, an Emacs key or
+a [global shortcut](#global-shortcuts) from any application. Examples below need
+no other package and work with or without `lexical-binding`.
 
-The panel passed the user's daily-use checklist on 2026-10-04, with the
-application picker that Portal then included. See the
-[setup and validation guide](launcher-daily-use.md) for the tested versions,
-fresh-session procedure and manual input/accessibility results.
+The panel passed the user's daily-use checklist on 2026-10-04 with Portal's
+then-built-in picker. The [setup and validation guide](launcher-daily-use.md)
+records tested versions, fresh-session procedure and manual input/accessibility
+results.
 
-Before trying these examples, follow [Set up safely](#set-up-safely): the panel
-uses internal Emacs NS interfaces, accepts only the pinned Emacs build, and
-requires native subroutine trampolines. Use a fresh disposable graphical Emacs.
+First [Set up safely](#set-up-safely): internal Emacs NS interfaces require the
+pinned build and native subroutine trampolines. Use fresh disposable graphical
+Emacs.
 
 ### A minimal picker
 
@@ -112,15 +107,13 @@ After building and loading Portal:
 (keymap-global-set "C-c f" #'my/pick-fruit)
 ```
 
-`M-x my/pick-fruit` and `C-c f` run the same command, which shows only the
-prompt and an inline completion UI, such as Vertico, in the panel.
-`portal-launcher-present` returns the function's value, here the fruit, or nil
-when the panel is dismissed.
+`M-x my/pick-fruit` and `C-c f` run the same command, showing only the prompt
+and inline completion UI, such as Vertico. `portal-launcher-present` returns the function's value (the
+fruit here), or nil on dismissal.
 
 ### A persistent buffer
 
-A buffer UI, such as a dashboard, can stay open after the function that sets
-it up returns:
+A buffer UI, such as a dashboard, can outlive its setup function:
 
 <!-- example: launcher-hello -->
 ```elisp
@@ -145,15 +138,12 @@ it up returns:
    :kind 'buffer :mode-line nil :keep-open t))
 ```
 
-With `:keep-open t`, commands then run in the panel, here `n`, and their
-prompts use its minibuffer, until it is dismissed as described below; the call
-returns nil then. The session's display rules, Escape and C-g, and focus
-handling last until then. An error in a later command is reported and the
-panel stays open. Dismissal kills no buffer, so `*Hello*` keeps its contents.
-`:keep-open` defaults to nil, which hides the panel when the function
-returns, and needs `:kind 'buffer`. While the panel is open, Emacs is in a
-recursive edit, so the default mode line shows brackets around the mode
-name.
+With `:keep-open t`, panel commands (here `n`) use its minibuffer until dismissal,
+when the call returns nil. Display rules, Escape/C-g and focus handling persist.
+Later command errors are reported without closing the panel. Dismissal kills no
+buffers; `*Hello*` retains its contents. `:keep-open` requires `:kind 'buffer`
+and defaults to nil, hiding on function return. The open panel runs a recursive
+edit, bracketing the mode name in the default mode line.
 
 ### Global shortcuts for launchers
 
@@ -168,24 +158,23 @@ application. A shortcut need not present a panel:
                             (lambda () (message "%s" (format-time-string "%H:%M"))))
 ```
 
-Remove one with `(portal-global-shortcut-remove 'hello)`; the others stay set.
-Shortcuts and the panel have separate lifetimes: dismissing, hiding or deleting
-the panel, or disabling `portal-launcher-mode`, leaves every shortcut set, and
-evaluating the configuration again keeps one registration per name. Pressing a
-launcher's chord while a panel is open dismisses it: a second invocation
-cancels the active session and presents nothing, so press again to open
-another launcher. [Global shortcuts](#global-shortcuts) describes the notation,
-conflicts and delivery.
+`(portal-global-shortcut-remove 'hello)` removes only that shortcut. Panel and
+shortcut lifetimes are separate: dismissal, hiding, deletion or disabling
+`portal-launcher-mode` preserves every shortcut. Re-evaluating configuration
+keeps one registration per name. Pressing a launcher's chord with a panel open
+cancels its session without presenting another; press again to open another
+launcher. See [Global shortcuts](#global-shortcuts) for notation, conflicts and
+delivery.
 
 ### Application launcher with launcher.el (optional)
 
 Portal includes no application picker. The separate
-[launcher.el](https://github.com/xiaoxinghu/launcher.el) package discovers
-applications with Spotlight, launches or activates them with `open -a` and
-searches the web for other text; `!g`, `!yt` and `!gh` followed by a space and
-a query choose a search engine. It owns its index, duplicate-name labels, path
-annotations and `launcher-app-directories`, `launcher-fallback-search-url` and
-`launcher-bangs` options. This recipe was tested with this revision:
+[launcher.el](https://github.com/xiaoxinghu/launcher.el) discovers apps with
+Spotlight, launches/activates them with `open -a` and searches other text online.
+`!g`, `!yt` and `!gh` plus a space and query select an engine. It owns its index,
+duplicate-name labels, path annotations and `launcher-app-directories`,
+`launcher-fallback-search-url` and `launcher-bangs` options. This recipe was
+tested at:
 
 ```elisp
 (use-package launcher
@@ -194,10 +183,9 @@ annotations and `launcher-app-directories`, `launcher-fallback-search-url` and
   :commands (launcher launcher-refresh))
 ```
 
-At that revision, `launcher` searches the web when completion returns an empty
-string or a bang without a query, and stock completion's Space completes a word,
-consuming the space in `!gh query`. Until launcher.el handles these, wrap its
-completion reader in your configuration, as Portal's former built-in adapter
+At that revision, `launcher` searches empty strings and queryless bangs. Stock
+Space completes a word, consuming the space in `!gh query`. Until launcher.el
+handles these, wrap its reader in your configuration, as Portal's former adapter
 did:
 
 <!-- example: launcher-app -->
@@ -233,66 +221,58 @@ With a prefix argument, launcher.el rebuilds its app index first."
 (portal-global-shortcut-set 'app-launcher "Control-Option-Command-P" #'my/app-launcher)
 ```
 
-The panel shows only the prompt and candidates. With Vertico, or another
-completion UI that highlights a candidate, Return accepts the highlighted
-app, including the first one or one chosen with Up and Down, without typed
-text. Stock completion shows no candidates in a minibuffer panel; type a name,
-complete it with Tab, or use `:kind 'buffer` to see `*Completions*`. In stock
-completion, Space inserts a space and Tab completes; a customized Space binding
-is kept. The wrapper keeps your completion reader and changes no global
-setting, so ordinary `M-x launcher` is unchanged. It holds your reader in a
-variable rather than a closure, so it works with or without
-`lexical-binding` in the file that defines it.
+The panel shows only prompt and candidates. With Vertico or another highlighting
+UI, Return accepts the highlighted app without typing, including the first or
+an Up/Down selection. Stock completion shows no candidates in a minibuffer
+panel: type a name, complete with Tab, or use `:kind 'buffer` for `*Completions*`.
+Stock Space inserts a space and Tab completes; customized Space bindings remain.
+The wrapper preserves your reader and global settings, leaving `M-x launcher`
+unchanged. A variable rather than a closure holds the reader, supporting files
+with or without `lexical-binding`.
 
-`C-u M-x my/app-launcher` rebuilds launcher.el's index before prompting, and
-`M-x launcher-refresh` rebuilds it separately; refresh after installing,
-removing or moving an app. Launching an app gives it focus as the panel hides.
-Escape, C-g, the chord again, an empty result or a bang without a query close
-the panel without an action and return focus to the previous app; clicking
-another app hides it, leaving that app in front. Discovery and launch errors
-close the panel and can be retried. Once launcher.el handles the three input
-rules itself, present `#'launcher` directly and drop `my/launcher-read` and
-its variable. See
-the [application notes](launcher-applications.md) for the upstream
-follow-ups, the optional integration smoke test and the historical evidence.
+`C-u M-x my/app-launcher` rebuilds the index before prompting;
+`M-x launcher-refresh` rebuilds separately. Refresh after installing, removing
+or moving apps. Launching focuses the app as the panel hides. Escape, C-g,
+the chord again, empty results and queryless bangs close without action,
+returning focus to the previous app. Clicking another app hides the panel and
+keeps that app frontmost. Discovery/launch errors close the panel; retry is
+possible. Once launcher.el handles all three input rules, present `#'launcher`
+directly and remove `my/launcher-read` and its variable. The
+[application notes](launcher-applications.md) record upstream follow-ups,
+optional integration smoke test and historical evidence.
 
 ### Set up safely
 
-Start in a disposable graphical Emacs. This feature depends on internal Emacs
-NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
-only GNU Emacs NS **31.1**, revision
-`a360712c9d272d950d8d8255ef74570f7e90b7d9`. Rebuild Portal and restart Emacs before
-using the new bindings. Native-compiled Emacs also needs a working
-`modify-frame-parameters` and `delete-frame` trampolines so native callers cannot
-bypass the frame guard or delete a frame with live session prompts.
-Leave `native-comp-enable-subr-trampolines` enabled; if the trampoline is missing
-and Emacs cannot compile it, presenting fails before creating a frame.
+Start in disposable graphical Emacs: internal NS dependencies mean native defects
+can crash it. Initially only GNU Emacs NS **31.1**, revision
+`a360712c9d272d950d8d8255ef74570f7e90b7d9`, is accepted. Rebuild Portal and restart
+Emacs before using new bindings. Native-compiled Emacs needs working
+`modify-frame-parameters` and `delete-frame` trampolines to prevent guard bypass
+or deletion with live session prompts. Keep `native-comp-enable-subr-trampolines`
+enabled; a missing, unbuildable trampoline prevents presentation before frame
+creation.
 
-Try a new setup in a fresh disposable Emacs with your completion/theme setup
-first. After that passes, explicitly evaluate it in a fresh normal session.
-The launcher runs inside Emacs; it needs neither the app host, a separate
-launcher application nor a per-invocation `emacsclient`. Emacs must already be
-running, and long Lisp work delays invocation.
+First test new setups in fresh disposable Emacs with your completion/theme
+settings. After they pass, explicitly evaluate them in a fresh normal session. The launcher
+runs inside Emacs without the app host, a separate application or per-invocation
+`emacsclient`. Emacs must already run; long Lisp work delays invocation.
 
-`(portal-launcher-mode -1)` deletes the dedicated panel and removes its frame
-guards. Existing ordinary frames, Portal views and global shortcuts remain
-usable, and the next presentation creates the panel again. The shared native
-module stays loaded for other Portal features; restart Emacs to change its
-binary. Rebuilding or unloading Lisp does not replace a loaded native module.
+`(portal-launcher-mode -1)` deletes the panel and frame guards. Ordinary frames,
+Portal views and global shortcuts remain usable; the next presentation recreates
+the panel. The shared native module stays loaded for other features. Restart
+Emacs to replace it; rebuilding or unloading Lisp cannot replace a loaded module.
 
-To migrate from M-x.app, start with a different Portal chord. Record the old
-M-x launcher row's trigger and expression, then remove only that shortcut row
-in M-x Settings before assigning its chord to your Portal shortcut. Keep M-x
-running for its other shortcuts, `emacs://` and `org-protocol://` bindings.
-Modifier double-taps remain M-x features. See the guide for the migration and
-rollback checks. Restore the saved M-x launcher row if you roll back.
+For M-x.app migration, start with a different Portal chord. Record the old row's
+trigger/expression, remove only that row in M-x Settings, then assign its chord
+to Portal. Keep M-x running for other shortcuts, `emacs://` and `org-protocol://`
+bindings; modifier double-taps remain M-x features. Follow the guide's migration
+and rollback checks; restore the saved row on rollback.
 
 ### Migrate from the built-in launcher
 
-Until 2026-10-05, Portal included an application picker, ran it by default and
-registered its chord when `portal-launcher-mode` was enabled. Each removed name
-is gone without an alias, so an old setting cannot claim a chord or run a
-picker by itself:
+Until 2026-10-05, Portal ran its built-in picker by default and registered its
+chord on `portal-launcher-mode` enablement. Removed names have no aliases; old
+settings alone cannot claim chords or run pickers:
 
 | Before | Now |
 | --- | --- |
@@ -323,14 +303,13 @@ with any appearance settings kept:
         portal-launcher-offset '(0 0))
 ```
 
-In a running Emacs, run `(portal-launcher-mode -1)` before loading the new
-version, or `(portal-global-shortcut-remove 'portal-launcher)` after, to free
-the old chord for your own shortcut; restarting Emacs also frees it. Settings
-of removed options do nothing and vanish on restart. To roll back to the
-built-in launcher, check out `bc99e90`, the last commit with it, rebuild,
-restart Emacs and restore the old init file. To remove a launcher you configured, delete its setup from the init
-file and run `(portal-global-shortcut-remove 'app-launcher)` and
-`(portal-launcher-mode -1)`; other Portal features and shortcuts keep working.
+Free the old chord with `(portal-launcher-mode -1)` before loading the new
+version, `(portal-global-shortcut-remove 'portal-launcher)` afterward, or an
+Emacs restart. Removed options do nothing and vanish on restart. For built-in
+launcher rollback, check out its last commit, `bc99e90`, rebuild, restart Emacs
+and restore the old init. To remove your configured launcher, delete its init
+setup and run `(portal-global-shortcut-remove 'app-launcher)` and
+`(portal-launcher-mode -1)`. Other Portal features and shortcuts keep working.
 
 ### Presentation options and lifecycle
 
@@ -344,8 +323,8 @@ The explicit buffer API remains available:
 (portal-launcher-mode -1)       ; delete the frame
 ```
 
-Each call to `portal-launcher-present` chooses how the panel looks, without
-registering a shortcut or changing the completion setup:
+`portal-launcher-present` chooses appearance per call without registering
+shortcuts or changing completion:
 
 ```elisp
 ;; Only the prompt and an inline completion UI, such as Vertico:
@@ -357,63 +336,55 @@ registering a shortcut or changing the completion setup:
 (portal-launcher-present #'my/buffer-command :kind 'buffer :mode-line nil)
 ```
 
-`:kind 'buffer`, the default, shows a buffer window above the panel's own
-minibuffer. Buffers the function displays appear in the panel, and windows it
-creates there are deleted when the panel hides. `:kind 'minibuffer` makes the
-whole panel a minibuffer: the prompt is its first line, an inline completion UI
-follows directly below, and unused lines stay empty at the bottom. Buffers the
-function displays appear nowhere, so stock completion's `*Completions*` list is
-not shown, though Tab still completes and Return accepts; Vertico, Icomplete's
-vertical mode or Fido show candidates in the panel. Commands that display or
-preview buffers, split windows or otherwise need a buffer window require
-`buffer`.
+`:kind 'buffer` (default) shows a buffer window above the panel's own minibuffer.
+Displayed buffers appear in the panel; call-created windows are deleted on hide.
+`:kind 'minibuffer` fills the panel: prompt first, inline completion directly
+below, unused lines empty at the bottom. Displayed buffers appear nowhere:
+stock `*Completions*` is hidden, though Tab completes and Return accepts. Vertico,
+Icomplete's vertical mode and Fido show candidates. Commands displaying/previewing
+buffers, splitting windows or otherwise needing a buffer window require `buffer`.
 
-Both kinds have `portal-launcher-size`, and Emacs does not fit the panel to its
-content. A completion UI that asks for more lines than the panel holds is
-clipped at the bottom; the default 420 points hold Vertico's default 10
-candidates. Lower the count or raise the height. Changing kind replaces the
-dedicated frame; presenting the same kind again reuses it.
+Both kinds use `portal-launcher-size`, not content fitting. Excess completion
+lines clip at the bottom; default 420 points hold Vertico's default 10 candidates.
+Lower the count or increase height. Changing kind replaces the dedicated frame;
+repeating the same kind reuses it.
 
-`:mode-line nil` hides the mode lines of the panel's windows, including windows
-created and buffers switched during the call; the default, t, shows each
-buffer's own. It sets the `mode-line-format` window parameter, so the same
-buffers keep their mode lines in other frames, and restores each window's
-earlier parameter when the panel hides. A minibuffer panel has none.
+`:mode-line nil` hides panel mode lines, including new windows and switched
+buffers; default t shows each buffer's own. It sets the `mode-line-format`
+window parameter, preserving other frames' mode lines, then restores previous
+parameters on hide. Minibuffer panels have no mode lines.
 
-The function is an interactive command, called with `call-interactively` so it
-sees a prefix argument, or any function of no arguments, called with `funcall`.
-It runs with the buffer `*Portal Launcher*` current, in the panel's own
-minibuffer and with the user's completion setup, including Vertico, Orderless
-and Marginalia. Nested prompts stay in the panel. An invalid function or option
-signals an error before anything is shown.
+Interactive commands use `call-interactively`, receiving prefix arguments;
+zero-argument functions use `funcall`. They run with `*Portal Launcher*` current,
+the panel's minibuffer and the user's completion setup, including Vertico,
+Orderless and Marginalia. Nested prompts stay there. Invalid functions/options
+error before anything appears.
 
-Success, when the function returns, hides the panel unless it is kept open;
-Escape, C-g, another invocation, `portal-launcher-hide`, or losing keyboard
-focus cancels the entire session. Errors propagate after
-cleanup. Frame deletion and disabling unwind prompts before releasing the frame.
-Cancellation returns focus to the previous app while the panel still owns the
-keyboard; a successful external action or click-away preserves the destination
-app's focus. Emacs's original window selection is restored without activating
-its application. Display rules, presentation options and cancellation keys last
-only for the session.
+Function return hides the panel unless kept open. Escape, C-g, another
+invocation, `portal-launcher-hide` or keyboard focus loss cancels the whole
+session. Errors propagate after cleanup. Frame deletion/disabling unwind prompts
+before releasing the frame. Cancellation returns focus to the previous app while
+the panel owns the keyboard; successful external actions and click-away preserve
+destination focus. Original Emacs window selection returns without activating
+Emacs. Display rules, presentation options and cancellation keys are session-only.
 
 Functions must be synchronous. Invoke after any existing minibuffer has
 finished. Functions that deliberately use other frames or catch arbitrary
 throws need explicit wrappers.
 
 Customize `portal-launcher-size` (default `(720 420)`), `portal-launcher-offset`
-(`(0 0)`, positive right/down), `portal-launcher-screen` (nil uses the pointer's
-monitor), `portal-launcher-font`, `portal-launcher-shadow`, and
-`portal-launcher-corner-radius`. Show again to apply them. Size and offsets use
-AppKit logical points, independent of Retina scale. The panel centers within the
-monitor's usable area, clamps onscreen, and repositions when displays change.
-`portal-launcher-frame-parameters` supplies initial colors, fringes and borders.
+(`(0 0)`, positive right/down), `portal-launcher-screen` (nil: pointer's monitor),
+`portal-launcher-font`, `portal-launcher-shadow` and `portal-launcher-corner-radius`.
+Show again to apply. Size/offsets use AppKit logical points, independent of Retina
+scale. The panel centers in the monitor's usable area, clamps onscreen and
+repositions on display changes. `portal-launcher-frame-parameters` sets initial
+colors, fringes and borders.
 
-Fonts, buffers and appearance remain ordinary Emacs customization. The frame's
-native role is fixed: changing decorations, fullscreen, parentage, toolbars or
-focus policy is rejected. Deleting the launcher frame is supported; the next
-show creates a new one. Hide preserves the launcher's content and returns Emacs
-selection to the previous ordinary window without changing that window's buffer.
+Fonts, buffers and appearance use ordinary Emacs customization. Native roles are
+fixed: decoration, fullscreen, parentage, toolbar and focus-policy changes are
+rejected. Deleting the frame is supported; the next show recreates it. Hide
+preserves launcher content and selects the previous ordinary window without
+changing its buffer.
 
 For plain buffer presentation outside a command session, finish or cancel an
 active launcher minibuffer before hiding it. Outbound native drag-and-drop is

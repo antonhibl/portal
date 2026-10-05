@@ -1,9 +1,10 @@
 # Dedicated launcher panel
 
 `portal-launcher.el` owns one dedicated frame at a time; `native/Launcher.swift`
-owns its NSPanel attachment. The C module converts arguments through the existing
-`portal.h` platform interface. A launcher is not a Portal view kind and does not
-start the app host, use a controller frame, or load a second native module.
+owns its NSPanel attachment. The C module converts arguments through the
+`portal.h` platform interface.
+A launcher is not a Portal view kind: it neither starts the app host, uses a
+controller frame nor loads a second native module.
 
 ```text
 portal-launcher-show(buffer), or a session of portal-launcher-present
@@ -23,12 +24,12 @@ delete-frame / disable / unload / exit
   let Emacs delete its own frame
 ```
 
-The original EmacsWindow retains its delegate throughout attachment. Its
-`setAppearance` method reads that delegate's internal frame, so clearing it
-caused the prototype's appearance crash. The Swift panel implements the bounded
-NS compatibility methods for border width, appearance, accessibility value,
-restacking and drag cancellation. There is no generic message forwarding,
-runtime class swap, copied frame layout or Objective-C shim.
+The original EmacsWindow retains its delegate throughout attachment:
+`setAppearance` reads that delegate's internal frame, so clearing it crashed the
+prototype. The Swift panel implements bounded NS compatibility methods for
+border width, appearance, accessibility value, restacking and drag cancellation,
+without generic message forwarding, runtime class swaps, copied frame layouts
+or an Objective-C shim.
 
 This code is restricted to GNU Emacs NS 31.1, revision
 `a360712c9d272d950d8d8255ef74570f7e90b7d9`. The matching
@@ -39,40 +40,39 @@ A native defect can crash Emacs; opt-in does not isolate the process.
 
 ## Native-role guard
 
-Lisp guards `modify-frame-parameters` before any parameters in the request are
-applied. It rejects role changes and drops unchanged role entries: even setting
+Lisp guards `modify-frame-parameters` before applying any requested parameters,
+rejecting role changes and dropping unchanged role entries: even setting
 `parent-frame` to its existing nil invokes an EmacsWindow-only method.
 Other frames pass through unchanged. The dedicated frame's decorations,
-fullscreen, parent, bars, minibuffer and focus policy cannot be repurposed.
+fullscreen, parent, bars, minibuffer and focus policy are fixed.
 
 Native-compiled Emacs functions can call primitive setters directly. With
-`native-comp-enable-subr-trampolines` disabled, the native-compiled
+`native-comp-enable-subr-trampolines` disabled, native-compiled
 `set-frame-parameter` bypassed the initial Lisp advice in the graphical test.
-Enabling now verifies the validated build's installed trampoline registry after
-adding advice, including the `delete-frame` trampoline used by sessions.
-If a required trampoline is absent, it removes the hooks and refuses
-to create a frame. It does not change the user's native compilation settings.
-Emacs normally installs or compiles the trampoline when adding the advice.
+Enabling now adds advice, then checks the validated build's installed trampoline
+registry, including the session's `delete-frame` trampoline. If a required
+trampoline is missing, it removes hooks and refuses frame creation without
+changing native compilation settings. Emacs normally installs or compiles trampolines when adding advice.
 
 The C attachment binding independently checks Emacs's version and revision.
-The platform checks the donor classes, hidden state, decorations, parent/child
-state and toolbar before moving anything. A failed first-responder handoff
-restores the donor, including its content layer settings, before returning an
-error. Disabling and detaching are idempotent. Deletion validation runs before
-the pre-deletion hook so a refused deletion keeps the attachment and guard.
+Before moving anything, the platform checks donor classes, hidden state,
+decorations, parent/child state and toolbar. A failed first-responder handoff
+restores the donor and its content layer settings before returning an error.
+Disabling and detaching are idempotent. Deletion validation precedes the
+pre-deletion hook, preserving the attachment and guard if deletion is refused.
 
 ## Coordinates and measurements
 
-All geometry uses AppKit logical points with a global bottom-left origin.
-Offsets are right/down from the chosen screen's `visibleFrame` center. The
-origin is floored to whole points to agree with Emacs's integer coordinates,
-then size and position are clamped into the usable area. No backing-scale
-conversion or character-cell rounding is applied.
+Geometry uses AppKit logical points with a global bottom-left origin.
+Offsets are right/down from the chosen screen's `visibleFrame` center.
+The origin is floored to whole points, matching Emacs's integer coordinates;
+size and position are then clamped to the usable area. There is no
+backing-scale conversion or character-cell rounding.
 
-The default screen is under the pointer. An explicit screen index is resolved
-on every show; a missing index falls back to the pointer. While visible, the
-panel reapplies placement on AppKit's display-arrangement notification, without
-requesting focus again. Detaching removes that observer.
+The default screen is under the pointer. Each show resolves an explicit screen
+index, falling back to the pointer if missing. While visible, the panel
+reapplies placement on AppKit's display-arrangement notification without
+requesting focus. Detaching removes that observer.
 
 Measured in a disposable Emacs on 2026-10-03, with both displays at scale 2:
 
@@ -81,8 +81,8 @@ Measured in a disposable Emacs on 2026-10-03, with both displays at scale 2:
 | Gigabyte M32U | `(0, 0, 2560, 1440)` | `(0, 0, 2560, 1410)` |
 | LG ULTRAFINE | `(2560, -483, 1440, 2560)` | `(2560, -483, 1440, 2530)` |
 
-The following requested and actual rectangles were identical. Emacs's frame
-pixel dimensions also matched each requested point size.
+Requested and actual rectangles were identical; Emacs's frame pixel dimensions
+also matched each requested point size.
 
 | Size | Offset right/down | M32U actual x/y | LG actual x/y |
 | --- | --- | --- | --- |
@@ -95,11 +95,10 @@ pixel dimensions also matched each requested point size.
 | 713×407 | 0 / 0 | 923 / 501 | 2923 / 578 |
 | 713×407 | −137 / 81 | 786 / 420 | 2786 / 497 |
 
-The tests also request 100000×100000 points with an offscreen offset and check
-that the actual rectangle equals the usable screen. Standalone native checks
-cover a synthetic screen with a negative X origin and deterministic display
-change notification delivery. Physical monitor disconnect/reconnect was not
-performed.
+Tests also request 100000×100000 points with an offscreen offset and verify the
+rectangle equals the usable screen. Standalone native checks cover a synthetic
+negative-X-origin screen and deterministic display-change notifications.
+Physical monitor disconnect/reconnect was not performed.
 
 The graphical suite tests fonts Menlo 13/18/15 with dark/light/system appearance,
 100 show/hide cycles, 20 frame deletion/recreation cycles, deletion with a live
@@ -117,24 +116,21 @@ contains the user's manual acceptance.
 
 ## User-configured launchers
 
-The panel and global shortcuts are separate infrastructure. Portal chooses no
-command and registers no chord: `portal-launcher-present` takes its function
-as a required argument, and the launcher module neither loads
-`portal-global-shortcut.el` nor sets a shortcut. A user's command calls
-`portal-launcher-present` with its options and runs from M-x, an Emacs key or
-`portal-global-shortcut-set`; the launcher guide's examples are the test fixtures,
-and the batch and graphical tests evaluate them from `docs/launcher.md` itself.
+Panel and global shortcuts are separate. Portal chooses no command or chord:
+`portal-launcher-present` requires a function, and the launcher module neither
+loads `portal-global-shortcut.el` nor sets a shortcut. A user's command calls
+`portal-launcher-present` with options and runs from M-x, an Emacs key or
+`portal-global-shortcut-set`. Batch and graphical tests evaluate the launcher
+guide's examples directly from `docs/launcher.md`.
 
-`portal-launcher-mode` remains the panel's own state. Presenting or showing
-enables it, which validates the build and installs the frame guards and
-lifecycle hooks; disabling cancels a session, deletes the frame and removes
-them. Neither touches a shortcut, so dismissal, hiding, deletion and disable
-leave every registration, and evaluating the configuration again replaces each
-name's registration rather than adding one. A press of any launcher's chord
-during a session runs its command inside that session, whose second
-invocation cancels the session and unwinds that command too: the chord
-toggles the panel. If enabling fails while a panel frame is live, the guards
-stay, since that frame must still detach before deletion.
+`portal-launcher-mode` tracks panel state. Presenting or showing enables it,
+validating the build and installing frame guards and lifecycle hooks. Disabling
+cancels the session, deletes the frame and removes them. Neither touches
+shortcuts: dismissal, hiding, deletion and disable preserve every registration;
+re-evaluating configuration replaces each name's registration. Pressing any
+launcher's chord during a session runs its command there; the second invocation
+cancels the session and unwinds that command too, toggling the panel. If enabling
+fails with a live panel frame, guards remain: it must still detach before deletion.
 
 Application discovery, search and input rules belong to the separate
 launcher.el package, configured as in the launcher guide's recipe; the
@@ -142,99 +138,91 @@ launcher.el package, configured as in the launcher guide's recipe; the
 
 ## Command sessions
 
-`portal-launcher-present` calls one interactive command, or function of no
-arguments, synchronously inside a unique catch tag. Escape, C-g, hide, another
-invocation and native focus loss throw to that tag, unwinding every nested
-prompt before cleanup. Ordinary errors propagate through the same cleanup. The
-original Emacs window (or its frame if that window was deleted) is selected
-without an application activation request; when the launcher itself was
-selected, that is the window it was shown from. Minibuffer ownership, display
-rules and the emulation keymap are dynamically bound; no completion package
-settings are rewritten.
+`portal-launcher-present` synchronously calls one interactive command or
+zero-argument function inside a unique catch tag. Escape, C-g, hide, another
+invocation and native focus loss throw to that tag, unwinding all nested prompts
+before cleanup. Ordinary errors propagate through the same cleanup. Selection
+returns to the original Emacs window (its frame if deleted) without requesting
+application activation; if the launcher was selected, this means its originating
+window. Minibuffer ownership, display rules and the emulation keymap are
+dynamically bound; completion package settings are untouched.
 
 Deletion advice catches requests before Emacs's active-minibuffer validation.
-Delete and disable requests are performed once, after the command has unwound
-and ownership is cleared. Normal deletion still restores the donor window in
-`delete-frame-functions`. Commands that deliberately select other frames or
-intercept arbitrary throws are outside this bounded interface.
+Delete and disable run once, after command unwind and ownership clearance.
+Normal deletion still restores the donor window in `delete-frame-functions`.
+Commands deliberately selecting other frames or intercepting arbitrary throws
+are outside this bounded interface.
 
-The native `prepare` operation captures the previous `NSRunningApplication`
-before `make-frame` or selection can activate Emacs. Re-presenting an already
-visible panel retains it. Only cancellation/errors request restoration, and
-only if the panel still owns the keyboard and the frontmost application is
-the captured app or Emacs. Success and focus-loss cleanup never request app
-activation. AppKit activation is asynchronous and system-controlled; see
+Native `prepare` captures the previous `NSRunningApplication` before
+`make-frame` or selection can activate Emacs; re-presenting a visible panel
+retains it. Cancellation/errors request restoration only while the panel owns
+the keyboard and the captured app or Emacs is frontmost. Success and focus-loss
+cleanup never request activation. AppKit activation is asynchronous and
+system-controlled; see
 [Apple's activation API](https://developer.apple.com/documentation/appkit/nsrunningapplication/activate(options:)).
 
-Panel `didResignKeyNotification`, workspace app activation, and a mouse-only
+Panel `didResignKeyNotification`, workspace app activation and a mouse-only
 global event monitor emit `launcher-blur SESSION` through the existing pipe.
-The latter two are needed because a nonactivating panel can retain AppKit key
-status when another app receives input, including the already-frontmost app.
-The app and mouse observers exist only while the panel is presented; they
-require no Accessibility event tap. Native focus loss is coalesced once per
-presentation and suppresses cancellation activation even if AppKit still
-reports the panel as key. The process filter validates
-and queues the ID; a special command-loop event unwinds the matching session,
-including prompts with an overriding completion keymap. Stale IDs are rejected
-both when queuing and dispatching. Hide/detach suppress their own notifications
-and remove the app and mouse observers; detach also removes the panel observer.
-There is no polling timer or extra process.
+The latter two cover nonactivating panels retaining AppKit key status while
+another app receives input, including the already-frontmost app. App and mouse
+observers exist only during presentation, without an Accessibility event tap.
+Native focus loss is coalesced once per presentation and suppresses cancellation
+activation even if AppKit still reports the panel as key. The process filter
+validates and queues the ID; a special command-loop event unwinds the matching
+session, even with an overriding completion keymap. Queuing and dispatching
+both reject stale IDs. Hide/detach suppress their own notifications and remove
+app and mouse observers; detach also removes the panel observer. No polling
+timer or extra process is used.
 
-The event alone can be lost. Emacs reads an event as special only when it
-arrives while Emacs waits for input. One queued while Lisp runs, such as a
-command waiting for a process, is read later as an ordinary key, which fails,
-and Emacs's error report, in a buffer or a minibuffer, discards all queued
-input. So the session also records the ID, and a `post-command-hook`, which
-each command loop runs as it starts and after every command, including one
-that failed, dismisses a session that lost focus. Cleanup removes the
-session's queued events.
+The event alone can be lost: Emacs treats it as special only if it arrives
+while waiting for input. Events queued while Lisp runs, such as during a
+process wait, are later read as ordinary keys and fail. Error reporting in
+buffers or minibuffers discards all queued input. The session therefore also
+records the ID. A `post-command-hook`, run at each command loop's start and after
+every command, including failures, dismisses sessions that lost focus. Cleanup
+removes the session's queued events.
 
 ## Presentation kinds
 
 `portal-launcher-present` takes `:kind` and `:mode-line`. A `buffer`
-presentation uses the frame described above, which has its own minibuffer. A
-`minibuffer` presentation uses a minibuffer-only frame, `(minibuffer . only)`,
-whose root window is the minibuffer, as M-x's
-[present.el](https://github.com/xiaoxinghu/m-x/blob/main/elisp/present.el)
-does; hiding a mode line would still leave the empty buffer window. The
-native-role guard compares requests with the role of the frame's kind.
+presentation uses the frame above with its own minibuffer. A `minibuffer`
+presentation uses `(minibuffer . only)`: the root window is the minibuffer, as
+in M-x's [present.el](https://github.com/xiaoxinghu/m-x/blob/main/elisp/present.el).
+Merely hiding a mode line would leave an empty buffer window. The native-role
+guard compares requests against the frame kind's role.
 
-A frame's `minibuffer` parameter cannot change, so a request for the other kind
-deletes the dedicated frame through the usual path, detaching it in
-`delete-frame-functions`, and then creates one of that kind. The deletion comes
-before the previous application is captured, since detaching forgets it. No
-minibuffer is active then: a session refuses to start inside one and defers its
-own deletions until it has unwound. In the graphical tests on 2026-10-04, a
-session's show took 18–37 ms when it created a frame, as every change of kind
-does, and 4–9 ms when it reused one. The native panel does not know the kind: attachment, placement and
-focus handling are the same.
+A frame's `minibuffer` parameter is immutable. Changing kind therefore deletes
+the dedicated frame normally, detaching in `delete-frame-functions`, then
+creates its replacement. Deletion precedes capturing the previous application,
+since detaching forgets it. No minibuffer is active: sessions refuse to start
+inside one and defer their own deletions until unwound. In graphical tests on
+2026-10-04, showing took 18–37 ms with frame creation (every kind change) and
+4–9 ms with reuse. The native panel does not know the kind; attachment,
+placement and focus handling are identical.
 
-Both kinds have `portal-launcher-size`. In a minibuffer frame, the minibuffer
-starts at the top of the text area and fills it; Vertico does not resize a root
-minibuffer window, and unused lines stay blank below the candidates. The
-session binds `resize-mini-frames` to nil, so a user setting cannot make Emacs
-resize the frame under its native placement.
+Both kinds use `portal-launcher-size`. A minibuffer fills its frame's text area
+from the top; Vertico does not resize a root minibuffer window, leaving unused
+lines blank below candidates. The session binds `resize-mini-frames` to nil,
+preventing user settings from resizing the natively placed frame.
 
-In a minibuffer session, `display-buffer-overriding-action` is
-`display-buffer-no-window` with `allow-no-window`. Without it, Emacs puts a
-buffer that a minibuffer-only frame displays, such as `*Completions*`, in the
-last ordinary frame. The function runs with `*Portal Launcher*` current:
-selecting a minibuffer-only frame would otherwise make the inactive
-minibuffer's buffer current.
+Minibuffer sessions bind `display-buffer-overriding-action` to
+`display-buffer-no-window` with `allow-no-window`; otherwise Emacs displays
+buffers such as `*Completions*` in the last ordinary frame. The function runs
+with `*Portal Launcher*` current, rather than the inactive minibuffer buffer
+that selecting a minibuffer-only frame would make current.
 
-`:mode-line nil` sets the `mode-line-format` window parameter of each launcher
-window to `none` before the panel shows, so buffers keep their own
-`mode-line-format` elsewhere. A `window-buffer-change-functions` hook, added
-for the session only, sets it on windows that redisplay finds new or showing
-another buffer. Each window's earlier parameter is recorded first. Cleanup,
-after hiding, deletes the windows the call created, keeping those from before
-it, such as a split made in an explicitly shown panel, and restores the
-recorded parameters. With mode lines, and in `portal-launcher-show`, window
-parameters are left alone.
+Before showing, `:mode-line nil` sets each launcher window's `mode-line-format`
+parameter to `none`, preserving buffers' `mode-line-format` elsewhere. A
+session-only `window-buffer-change-functions` hook does the same for windows
+redisplay finds new or showing another buffer. Each window's previous parameter
+is recorded before changing it. After hiding, cleanup deletes call-created windows, preserves
+pre-existing ones (such as an explicitly shown panel's split) and restores
+recorded parameters. With mode lines, or in `portal-launcher-show`, window
+parameters remain untouched.
 
-The graphical tests captured these from the surface Emacs drew into, so they
-lack the panel's corners and shadow; the text is test output. Vertico in a
-720×420 minibuffer panel, after typing `al` and Down:
+Graphical tests captured Emacs's drawing surface, excluding panel corners and
+shadow; the text is test output. Vertico in a 720×420 minibuffer panel after
+`al` and Down:
 
 ![Vertico in a minibuffer panel](evidence/launcher-minibuffer-vertico.png)
 
@@ -247,32 +235,28 @@ A buffer panel split during the call, with each window's mode line, then with
 
 ## Persistent buffer panels
 
-With `:keep-open t`, the session continues after its function returns:
-`portal-launcher-present` enters a recursive edit inside the same catch tag,
-so the panel's commands run with the session's emulation keymap, display
-rules, minibuffer ownership and focus-loss handling still bound. Their prompts
-open in the panel's minibuffer, and the panel's cancellation unwinds them
-with the recursive edit. Every dismissal is one of the session's own:
-Escape, C-g, `portal-launcher-hide` or `portal-launcher-cancel`, another
-invocation, deletion and disable throw to the tag and cancel, and focus loss
-throws `blur`. Leaving the recursive edit with `exit-recursive-edit` or
-`abort-recursive-edit` cancels as well. The call then returns nil; the
-function's value is discarded. `top-level` also hides the panel as a
-cancellation, while unwinding the caller too. A minibuffer panel would have
-nothing left to use, so `:keep-open t` with `:kind 'minibuffer` is rejected
-before anything is shown.
+With `:keep-open t`, `portal-launcher-present` enters a recursive edit inside
+the same catch tag after its function returns. Panel commands retain the
+session's emulation keymap, display rules, minibuffer ownership and focus-loss
+handling. Their prompts use the panel's minibuffer; cancellation unwinds both
+prompts and recursive edit. Every dismissal belongs to the session:
+Escape, C-g, `portal-launcher-hide`, `portal-launcher-cancel`, another invocation,
+deletion and disable throw to the tag and cancel; focus loss throws `blur`.
+`exit-recursive-edit` and `abort-recursive-edit` also cancel. The call returns nil,
+discarding the function's value. `top-level` cancels and hides the panel while
+also unwinding the caller. Since a minibuffer panel would have nothing left to
+use, `:keep-open t` with `:kind 'minibuffer` is rejected before showing.
 
-The command loop of the recursive edit reports a later command's error and
-keeps reading, so the panel stays usable. In batch Emacs, that report exits
-Emacs, so the batch tests replace `command-error-function`. Cleanup is
-unchanged: it hides the panel, deletes the windows the call created and kills
-no buffer. Windows from before the call keep their last buffers until the
-next presentation shows `*Portal Launcher*` in the selected one.
+The recursive command loop reports later command errors and keeps reading,
+leaving the panel usable. Reporting exits batch Emacs, so batch tests replace
+`command-error-function`. Cleanup still hides the panel, deletes call-created
+windows and kills no buffers. Pre-existing windows retain their last buffers
+until the next presentation shows `*Portal Launcher*` in the selected window.
 
-Emacs counts the recursive edit in mode lines: `%[` in the default
-`mode-line-modes` shows brackets around the mode name while a persistent panel
-is open, in every frame. A keyboard macro's end also ends a recursive edit;
-the batch tests rely on it so that a test cannot wait for input.
+While a persistent panel is open, `%[` in the default `mode-line-modes` brackets
+the mode name in every frame, reflecting the recursive edit. Ending a keyboard
+macro also ends a recursive edit; batch tests rely on this to avoid waiting for
+input.
 
 A persistent hello-world panel with `:mode-line nil`, after its local `n`
 command read a name from the panel's minibuffer:
