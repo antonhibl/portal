@@ -1175,8 +1175,10 @@ here with the Bun version listed above.
 MELPA, and is tested with org-ql 0.8.10 and MELPA's 20250421.133. The rest of
 Portal works without it.
 
-Tasks are the headings with their own `:task:` tag, as the
-[author-tasks skill](.agents/skills/author-tasks/SKILL.md) describes. A task is
+This Org view is separate from the [Markdown task browser](#task-browser),
+which reads this repository's authoritative `tasks/` directory.
+
+In the Org view, tasks are headings with their own `:task:` tag. A task is
 actionable when its keyword is `TODO`, every task its `DEPENDS_ON` property
 names by `CUSTOM_ID` is `DONE`, and it is not scheduled after today. They are
 listed by priority, where none counts as Org's default, then nearest deadline,
@@ -1306,9 +1308,11 @@ if needed. Click a task to read it in the same view; the **Tasks** link returns
 to the list. Emacs stays the editor: the page shows saved files, and every
 change to a task is saved by Emacs. Nothing moves or deletes task files.
 
-This repository now writes its tasks in `project.org`, for the
-[task view](#task-view); the Markdown originals stay in `tasks/`, the default
-root, for comparison. Agents use the
+This repository authors and maintains tasks in `tasks/`, the default root:
+either `<name>.md` or `<name>/content.md` with supporting assets beside it.
+`project.org` and `project.org_archive` are historical references, not a
+parallel task store to maintain. See [Writing tasks](#writing-tasks) for the
+format. Agents use the
 [author-tasks skill](.agents/skills/author-tasks/SKILL.md).
 
 ### Completing and editing tasks
