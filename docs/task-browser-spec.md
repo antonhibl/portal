@@ -420,7 +420,8 @@ Backlog.md was inspected at commit
 It stores fields in [YAML front matter](https://github.com/MrLesk/Backlog.md/blob/c310b7087c3d8d618520bfe4b9918e1c8bc468c4/src/markdown/parser.ts#L146-L215)
 and [reads task files when listing](https://github.com/MrLesk/Backlog.md/blob/c310b7087c3d8d618520bfe4b9918e1c8bc468c4/src/file-system/operations.ts#L858-L998),
 with bounded concurrency and parsed-result reuse for unchanged text. This supports
-a file-based approach, not Portal performance claims. Separate metadata files avoid
+considering a file-based approach, but does not establish Portal's performance.
+Separate metadata files avoid
 cold-list body bytes but still needs discovery and one metadata read per task. Measure a
 bottleneck before changing formats for speed. [Bun's YAML API](https://bun.com/docs/runtime/yaml)
 supplies the parser; hybrid discovery and identity rules are Portal's conventions.

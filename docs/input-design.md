@@ -111,8 +111,8 @@ Examples under this design:
 
 Existing terminal `P c`, `P n`, `P p`, number selection, and similar tmux bindings
 can remain terminal-profile compatibility shortcuts. Put new feature actions
-under `P m`; feature maps must not silently replace shared `P d` or `P o`
-operations. Keep quick-terminal lifecycle commands in its own extension. Shared
+under `P m`; feature maps must not silently replace shared operations such as
+`P d` or `P o`. Keep quick-terminal lifecycle commands in its own extension. Shared
 pane navigation need not enable its intentionally absent terminal creation.
 
 Consistency does not mean identical operations. Saving a drawing differs from
