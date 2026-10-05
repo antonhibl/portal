@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const script = new URL("./vm-gui.sh", import.meta.url).pathname;
+const script = new URL("./vm.sh", import.meta.url).pathname;
 
 function shell(cwd: string, command: string, ...args: string[]) {
 	return Bun.spawnSync(

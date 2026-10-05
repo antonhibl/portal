@@ -37,14 +37,15 @@ For the mixed Pi check, use a disposable agent directory with `portal-pi.ts`,
 terminal progress disabled, and a `/portal-test-prompt` command calling
 `ctx.ui.input("Portal smoke test", "Type PORTAL_OK")`. Do not alter user settings.
 
-## Graphical checks in a macOS VM
+## Tests in a macOS VM
 
-Use a logged-in macOS desktop VM to keep GUI tests from taking the host's focus.
+Run GUI or non-GUI checks in a logged-in macOS desktop VM. GUI tests stay on the
+guest desktop, keeping them from taking the host's focus.
 With passwordless SSH configured as `portal-vm`, run from the checkout to test:
 
 ```sh
-bash test/vm-gui.sh
-bash test/vm-gui.sh sh test/launcher-daily-use.sh
+bash test/vm.sh
+bash test/vm.sh ctest --test-dir build --output-on-failure
 ```
 
 The runner copies tracked and untracked, non-ignored files (including uncommitted
@@ -58,7 +59,7 @@ integer limit in seconds for each build/test stage (default: 1,200), after the
 runner acquires the desktop lock. The runner uses Bash and macOS's built-in
 `lockf`, SSH and rsync; it needs no Python or additional npm packages.
 
-Each invocation has its own files. Builds and GUI commands queue on one
+Each invocation has its own files. Builds and test commands queue on one
 guest-wide file lock because they share the desktop and the VM's resources.
 Always use the runner for GUI work on that guest; a manually launched test
 bypasses its lock. Commands must remain in the foreground. The runner terminates
@@ -66,7 +67,7 @@ their process group on completion or timeout. A lost SSH connection can leave
 the guest run active until its timeout; reconnect to inspect the saved logs.
 
 Build and test output goes to `build.log` and `test.log` beside the remote repo,
-then is copied to `.cache/vm-gui/<run>/` locally, along with `exit-status`.
+then is copied to `.cache/vm/<run>/` locally, along with `exit-status`.
 The command's failure status propagates to the caller. Successful runs remove
 their source/build tree and retain logs; failed runs retain everything for
 diagnosis. Remove old failed run directories when no longer needed. The guest
@@ -97,7 +98,8 @@ Guest preparation:
   alone does not establish that AppKit, WebKit and Ghostty work in the guest.
 
 The default command is the launcher daily-use acceptance check. Pass other
-graphical or standalone commands as needed; this does not select a full GUI suite.
+graphical, non-GUI or standalone commands as needed; this does not select a full
+GUI suite. Non-GUI commands also acquire the shared VM lock.
 
 ## Terminal graphical checks
 

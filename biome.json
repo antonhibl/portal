@@ -12,7 +12,7 @@
 			"biome.json",
 			"extensions/**",
 			"test/portal-pi.test.ts",
-			"test/vm-gui.test.ts"
+			"test/vm.test.ts"
 		]
 	},
 	"formatter": {

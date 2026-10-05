@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copy this checkout to a macOS VM, build it, and run a GUI command.
+# Copy this checkout to a macOS VM, build it, and run a test command.
 set -euo pipefail
 
 quote() { printf '%q ' "$@"; }
@@ -90,7 +90,7 @@ main() {
     run=$("${ssh_vm[@]}" 'umask 077; mkdir -p "$HOME/portal-test-runs" &&
         mktemp -d "$HOME/portal-test-runs/run.XXXXXXXX"')
     [[ $run == /*/portal-test-runs/run.* && $run != *$'\n'* ]]
-    logs="$PWD/.cache/vm-gui/${run##*/}"
+    logs="$PWD/.cache/vm/${run##*/}"
     mkdir -p -- "${logs%/*}"
     mkdir -- "$logs"
     printf '%s:%s\n' "$vm" "$run" >"$logs/remote.txt"
@@ -107,7 +107,7 @@ main() {
     trap collect_logs EXIT
     status=0
     "${ssh_vm[@]}" "$(quote env "PORTAL_TEST_TIMEOUT=$timeout" /bin/bash \
-        "$run/repo/test/vm-gui.sh" --guest "$run" "$@")" || status=$?
+        "$run/repo/test/vm.sh" --guest "$run" "$@")" || status=$?
     exit "$status"
 }
 
