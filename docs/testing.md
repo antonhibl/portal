@@ -37,6 +37,66 @@ For the mixed Pi check, use a disposable agent directory with `portal-pi.ts`,
 terminal progress disabled, and a `/portal-test-prompt` command calling
 `ctx.ui.input("Portal smoke test", "Type PORTAL_OK")`. Do not alter user settings.
 
+## Graphical checks in a macOS VM
+
+Use a logged-in macOS desktop VM to keep GUI tests from taking the host's focus.
+With passwordless SSH configured as `portal-vm`, run from the checkout to test:
+
+```sh
+python3 test/vm-gui.py
+python3 test/vm-gui.py -- sh test/launcher-daily-use.sh
+```
+
+The runner copies tracked and untracked, non-ignored files (including uncommitted
+changes), builds inside a new `~/portal-test-runs/run.XXXXXXXX/repo` directory,
+and executes the command there. Deleted files, Git metadata and ignored build
+outputs are not copied. For compound commands, pass `sh -c 'command…'` explicitly.
+The test command inherits the installed Emacs app's native compiler library
+path, which direct SSH launches otherwise miss; trampolines remain enabled.
+Use `--host` or `PORTAL_TEST_VM` for another SSH alias. `--timeout` limits each
+build/test stage to 1,200 seconds by default, after it acquires the desktop lock.
+
+Each invocation has its own files. Builds and GUI commands queue on one
+guest-wide file lock because they share the desktop and the VM's resources.
+Always use the runner for GUI work on that guest; a manually launched test
+bypasses its lock. Commands must remain in the foreground. The runner terminates
+their process group on completion or timeout. A lost SSH connection can leave
+the guest run active until its timeout; reconnect to inspect the saved logs.
+
+Build and test output goes to `build.log` and `test.log` beside the remote repo,
+then is copied to `.cache/vm-gui/<run>/` locally, along with `exit-status`.
+The command's failure status propagates to the caller. Successful runs remove
+their source/build tree and retain logs; failed runs retain everything for
+diagnosis. Remove old failed run directories when no longer needed. The guest
+needs at least 5 GiB free per fresh build; the host also needs physical space for
+its VM disk image to grow.
+
+Guest preparation:
+
+- Use UTM Shared Network and keep a virtual display attached. Keep UTM running
+  in the background; closing its console may suspend or stop the VM.
+- Enable Remote Login for the test account, install the host's SSH public key,
+  verify the guest host key, and configure an SSH alias. Private keys stay on
+  the host. The desktop and SSH account must be the same user.
+- Install Xcode with Swift 6.2 or newer, select its developer directory, and
+  complete its first-launch setup. Install Homebrew, then CMake, Ninja, Python 3
+  and Bun. Homebrew tools must be available under `/opt/homebrew/bin`.
+- Install the same Homebrew Emacs cask as the host. For this environment it is
+  `d12frosted/emacs-plus/emacs-plus-app`, build `31.1-349`. Verify the installed
+  Emacs revision against [the launcher prerequisites](launcher.md), including
+  working native compilation; do not substitute a terminal-only formula.
+  The prepared guest uses tap commit `2d6afb2ec4869b8dc3098541696d0d9d362cc8f0`
+  with `HOMEBREW_NO_AUTO_UPDATE=1` to install that build. A later Homebrew
+  update/upgrade can change it; recheck the host/guest match before upgrading.
+- Leave that guest user logged into an unlocked desktop. Disable guest sleep,
+  display sleep, screen saver and automatic logout. Use a stable display size
+  and scale. The runner also holds a `caffeinate` assertion while working.
+- Verify a GUI run while UTM is in the background. A successful SSH connection
+  alone does not establish that AppKit, WebKit and Ghostty work in the guest.
+
+The default command is the launcher daily-use acceptance check. Pass other
+graphical or standalone commands as needed; this does not select a full GUI suite.
+
 ## Terminal graphical checks
 
 The setup in [launcher-daily-use.sh](../test/launcher-daily-use.sh) is the reference
