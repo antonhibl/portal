@@ -1,6 +1,6 @@
 ---
 id: launcher-content-sizing
-status: todo
+status: done
 ---
 
 # Fit minibuffer launcher panels to their displayed content
@@ -19,10 +19,11 @@ not merely choose a smaller height when it opens. Keep the width stable and
 the prompt stationary: after initial placement, anchor the top edge and move
 only the bottom edge. Explicit numeric dimensions retain fixed-size behavior.
 
-This document is the implementation handoff, not an implementation record.
-Source-backed findings and remaining technical questions are recorded in
-`docs/launcher-content-sizing-research.md`. No production code, tests, build
-artifacts, or user configuration were changed while authoring this task.
+Implemented on 2026-10-05; the decisions and completion record are below.
+Source-backed findings are recorded in
+`docs/launcher-content-sizing-research.md`, and the implemented design and
+measurements in `docs/launcher-native-panel.md` (content-fitted minibuffer
+panels). No user configuration was changed.
 
 ## Agreed interface and behavior
 
@@ -149,33 +150,43 @@ See `docs/launcher-content-sizing-research.md` for sources and caveats.
   Validate the measurement and native resize route in a disposable supported
   graphical Emacs before relying on them.
 
-## Decisions to settle before implementation
+## Decisions
 
-These details were not explicitly settled in the user discussion. Record the
-chosen answers here before changing production behavior.
+These details were not explicitly settled in the user discussion. The answers
+below were chosen during implementation, before production behavior changed.
 
-- **Explicit `auto` with buffer kind:** recommend rejecting `(WIDTH auto)` for
-  `:kind 'buffer` and `portal-launcher-show` with a clear `user-error` before
-  native work. This avoids pretending arbitrary-buffer fitting is supported.
-  Default nil still resolves to the fixed buffer fallback.
-- **Initial measurement and anchor:** determine whether the hidden attached
-  frame can be measured reliably before presentation, or whether one initial
-  fitting pass is needed. Document the first-placement rule and test for a
-  visible size/position jump; do not silently make every update re-center.
-- **Measurement and update seam:** first investigate Emacs's function-valued
-  `resize-mini-frames` callback and rendered-text measurement. Verify overlay
-  before/after-strings, wrapping, growth beyond the current height, font changes,
-  and asynchronous completion updates in the supported build. Use a minimal
-  session-scoped alternative if that seam is insufficient; do not assume
-  `post-command-hook` alone catches all display changes.
-- **Transient echo messages:** establish whether temporary minibuffer messages
-  should participate in fitting or retain the last input layout. Prevent
-  flicker and restore correct input dimensions afterward.
-- **Explicit manual resize command:** preserve fixed-size uses of
-  `portal-launcher-resize`; give its interactive numeric prompts sensible
-  defaults when the configured option is nil or contains `auto`. Specify its
-  behavior during an active automatic session rather than accidentally
-  switching frame kind or invalidating that session.
+- **Explicit `auto` with buffer kind:** rejected, as recommended.
+  `(WIDTH auto)` with `:kind 'buffer` or `portal-launcher-show` signals a
+  `user-error` before native work, and `portal-launcher-present` checks the
+  setting before cancelling an active session. Default nil still resolves to
+  the fixed 720 × 420 buffer panel.
+- **Initial measurement and anchor:** the hidden frame can be measured, but
+  the function's prompt does not exist yet when the panel is shown. The first
+  placement therefore uses the height of what the minibuffer shows at that
+  moment, normally the 100-point minimum, centered by the screen and offset
+  settings. Its top edge is the anchor: when the prompt and candidates arrive
+  the panel grows downward, never re-centers and never opens taller than its
+  content. GUI tests compare the rectangle before the prompt's first display
+  with every later one.
+- **Measurement and update seam:** a function-valued `resize-mini-frames`,
+  bound only for automatic minibuffer presentations, measures with
+  `window-text-pixel-size` during redisplay. It sees before- and after-string
+  overlays, wrapping, line spacing, taller faces, growth beyond the current
+  height and timer-driven updates. It can miss a nested prompt starting or
+  ending, because the minibuffer window's change counter carries over from the
+  previous buffer, so the session also refits from `post-command-hook`. No
+  timers, polling or completion-package advice.
+- **Transient echo messages:** an echo-area message, which temporarily puts its
+  own buffer in the minibuffer window, keeps the last input layout: no flicker,
+  and the next redisplay of the input measures it again. Messages Emacs shows
+  inline in an active minibuffer, such as `minibuffer-message`, are content and
+  fit.
+- **Explicit manual resize command:** `portal-launcher-resize` keeps setting
+  numeric dimensions for both kinds and re-showing the buffer launcher. Its
+  prompts default to the setting's numbers, or 720 and 420 for nil or `auto`.
+  During a minibuffer presentation it signals a `user-error` before prompting
+  and changes nothing, since that panel cannot become a buffer panel; during a
+  buffer presentation it behaves as before.
 
 ## Implementation plan
 
@@ -213,42 +224,42 @@ chosen answers here before changing production behavior.
 
 ## Acceptance
 
-- [ ] With the default nil setting, minibuffer panels fit dynamically at width
+- [x] With the default nil setting, minibuffer panels fit dynamically at width
   720; buffer panels retain 720 × 420. Loading Portal remains inert.
-- [ ] `(WIDTH auto)` keeps that width and fits minibuffer height; numeric pairs
+- [x] `(WIDTH auto)` keeps that width and fits minibuffer height; numeric pairs
   retain fixed behavior for both kinds. Buffer-auto policy and invalid values
   are documented and tested, including failure before native mutation.
-- [ ] Five → two → zero matches → five visible rows shrink and regrow without
+- [x] Five → two → zero matches → five visible rows shrink and regrow without
   the former fixed-height blank region, except unavoidable minimum/padding.
   Verify actual native panel and Emacs frame sizes, not just computed targets.
-- [ ] Initial content is fitted without an obvious tall-panel flash; subsequent
+- [x] Initial content is fitted without an obvious tall-panel flash; subsequent
   updates keep the prompt/top edge and horizontal placement stable. Moving
   the pointer to another display does not move the active panel.
-- [ ] Wrapped input, overlay completion rows, group headings/annotations,
+- [x] Wrapped input, overlay completion rows, group headings/annotations,
   font/line-height differences, internal borders, and nested prompt entry/exit
   produce correct measurements without clipping or double-counted padding.
-- [ ] Content can grow beyond the panel's current height, stops at the
+- [x] Content can grow beyond the panel's current height, stops at the
   available anchored screen space, remains navigable, and shrinks afterward.
   Asynchronous display changes are handled without requiring another keypress.
-- [ ] Plain prompts work without Vertico or launcher.el. Optional Vertico
+- [x] Plain prompts work without Vertico or launcher.el. Optional Vertico
   tests pass with normal grow-only and shrink/grow settings, and ordinary
   minibuffer preferences remain unchanged after success and cancellation.
   Stock `*Completions*` remains suppressed as today for minibuffer-only panels;
   this task does not promise fitting a separate completions buffer.
-- [ ] Resize preserves the native session ID and first responder, does not
+- [x] Resize preserves the native session ID and first responder, does not
   clear pending blur, and neither steals focus nor dismisses the panel.
   Cancellation, success, click-away, repeated invocation, errors, explicit
   hide, deletion, and disable still satisfy their existing contracts.
-- [ ] Repeated presentations and configuration reloads leak no hooks/timers;
+- [x] Repeated presentations and configuration reloads leak no hooks/timers;
   late resize work cannot touch a hidden/replaced frame. No-op redraws issue
   no native resize, and fitting does not create a redisplay loop.
-- [ ] Screen-space clamping, nonzero offsets, negative monitor origins,
+- [x] Screen-space clamping, nonzero offsets, negative monitor origins,
   Retina logical-point sizing, and display-layout changes have native test
   coverage. Physical display/IME checks are reported separately as tested or
   not tested; preserved composition is checked in a live disposable session.
-- [ ] Explicit fixed-size buffer panels, persistent buffer sessions, numeric
+- [x] Explicit fixed-size buffer panels, persistent buffer sessions, numeric
   `portal-launcher-resize`, shortcuts, and ordinary Emacs frames keep working.
-- [ ] Documentation and migration examples match the implemented interface;
+- [x] Documentation and migration examples match the implemented interface;
   no mandatory completion/application dependency or user-config changes.
 
 ## Verification and completion record
@@ -271,8 +282,48 @@ completion settings, font/padding, and display geometry. Batch tests alone
 cannot establish native sizing, rendering, focus, or IME behavior. Never
 replace the native module already loaded in the user's running Emacs.
 
-Planning only: all implementation acceptance items remain unchecked. No
-implementation tests or graphical experiments were run as part of authoring.
-The new task's YAML metadata, discovery, and detail rendering were checked
-through the existing `host/tasks.ts` parser and task browser functions; the
-all-tasks listing reported no Problems.
+### Completion record, 2026-10-05
+
+Implemented from base `879cbfb` on branch
+`task/implement-tasks-launcher-content-siz-70050e29`. Environment: GNU Emacs
+NS 31.1 at `a360712c9d272d950d8d8255ef74570f7e90b7d9`, macOS 27.0.1 (26A434)
+on Apple Silicon, Swift 6.4, Bun 1.3.14, CMake 4.0.3. Displays: Gigabyte
+M32U, usable `(0, 0, 2560, 1410)`, and LG ULTRAFINE, usable
+`(2560, −483, 1440, 2530)`, both at scale 2. Completion: stock completion,
+generic after-string row fixtures and CMake's Vertico 2.15, with Orderless
+1.8 and Marginalia 2.13 in the existing tests. Fitting tests use Menlo 24
+(28-point lines) and the default 16-point internal borders.
+
+All passed:
+
+- `./build.sh`
+- `ctest --test-dir build --output-on-failure`: 33 of 33, including
+  `launcher` (34 tests) and `module`
+- `bun run --cwd host check` and `bun run --cwd host typecheck`
+- `python3 -B -m unittest discover -s test -p 'test_*.py'`: 8 tests
+- `git diff --check`
+- Standalone native launcher check, built as in `docs/testing.md` with
+  `test/native-launcher.swift`: geometry, fitting, rollback, ownership,
+  focus-loss delivery and 20 attach/detach cycles
+- `sh test/launcher-daily-use.sh`: 2 of 2
+- Combined graphical launcher suite in one disposable `emacs -Q
+  --module-assertions` with `portal.el`, the test injector and
+  `test/portal-launcher-daily-use-tests.el` (which loads
+  `test/portal-launcher-gui-tests.el`), selector `^portal-launcher-`: 28 of 28
+  in 77 s
+
+Measured heights and screenshots are in `docs/launcher-native-panel.md`; in
+short, five rows 200 points, two 116, none 100, with the top edge, left edge,
+width and native session unchanged and the Emacs frame matching. Two mutants
+loaded in place of `portal-launcher.el` fail the new GUI tests: one that never
+fits (the old fixed path), and one without the `post-command-hook` refit (the
+nested-prompt regression).
+
+Notes on the graphical runs: the machine was in use, and earlier partial runs
+had three intermittent dismissals from native focus loss while another app was
+active; each test passed when rerun, and the final combined run had none.
+Marked text was composed and committed through Emacs's NS text-input client
+by a test event monitor while the panel resized; a physical CJK input method
+was not tested. Physical display disconnection and VoiceOver with a fitted
+panel were not tested; display changes are covered by standalone native
+notifications. The hands-on daily-use checklist was not re-run.

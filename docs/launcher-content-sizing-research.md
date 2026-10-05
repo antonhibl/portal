@@ -1,5 +1,13 @@
 # Native minibuffer launcher: content-fitted sizing research
 
+> **Status, 2026-10-05:** implemented as proposed below, with one addition the
+> sources did not show: `resize-mini-frames` can miss a nested prompt starting
+> or ending, so sessions also refit from `post-command-hook`. The
+> [implementation notes](launcher-native-panel.md#content-fitted-minibuffer-panels)
+> record the design and graphical measurements; the open measurement questions
+> below were answered there. This document remains the pre-implementation
+> source record.
+
 ## Scope and source pins
 
 Source research only: no implementation, tests, GUI actions, running-Emacs interaction, commits or pushes. Read `AGENTS.md`, `CONTEXT.md`, and `docs/launcher-native-panel.md`. Handoff: [Fit minibuffer launcher panels to their displayed content](../tasks/launcher-content-sizing.md).

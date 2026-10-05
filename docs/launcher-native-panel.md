@@ -15,6 +15,11 @@ portal-launcher-show(buffer), or a session of portal-launcher-present
   attach its EmacsView to a Swift NSPanel
   select the frame, place the panel, enable Emacs redisplay
 
+automatic minibuffer height, during a session (layout only)
+  redisplay of changed minibuffer content, via resize-mini-frames, and
+  post-command-hook: measure the displayed minibuffer, then ask the panel
+  for that height; it keeps its screen, left edge, width and top edge
+
 portal-launcher-hide
   hide native panel and Emacs frame; retain buffer and windows
   restore the previously selected ordinary window
@@ -72,7 +77,9 @@ backing-scale conversion or character-cell rounding.
 The default screen is under the pointer. Each show resolves an explicit screen
 index, falling back to the pointer if missing. While visible, the panel
 reapplies placement on AppKit's display-arrangement notification without
-requesting focus. Detaching removes that observer.
+requesting focus. Detaching removes that observer. Fitting a minibuffer panel's
+content keeps the screen of its placement; see
+[content-fitted minibuffer panels](#content-fitted-minibuffer-panels).
 
 Measured in a disposable Emacs on 2026-10-03, with both displays at scale 2:
 
@@ -200,10 +207,11 @@ inside one and defer their own deletions until unwound. In graphical tests on
 4–9 ms with reuse. The native panel does not know the kind; attachment,
 placement and focus handling are identical.
 
-Both kinds use `portal-launcher-size`. A minibuffer fills its frame's text area
-from the top; Vertico does not resize a root minibuffer window, leaving unused
-lines blank below candidates. The session binds `resize-mini-frames` to nil,
-preventing user settings from resizing the natively placed frame.
+A minibuffer fills its frame's text area from the top. Vertico does not resize
+a root minibuffer window, so at a fixed size unused lines stay blank below its
+candidates. By default the panel fits that content instead, as described next;
+every session binds `resize-mini-frames`, so a user's setting never resizes the
+natively placed frame.
 
 Minibuffer sessions bind `display-buffer-overriding-action` to
 `display-buffer-no-window` with `allow-no-window`; otherwise Emacs displays
@@ -232,6 +240,102 @@ A buffer panel split during the call, with each window's mode line, then with
 ![A split buffer panel with mode lines](evidence/launcher-buffer-mode-lines.png)
 
 ![The same split with :mode-line nil](evidence/launcher-buffer-no-mode-lines.png)
+
+## Content-fitted minibuffer panels
+
+`portal-launcher-size` resolves per presentation, before anything is shown or
+an active session is cancelled: nil gives a minibuffer panel `(720 auto)` and a
+buffer panel `(720 420)`; `(WIDTH auto)` is rejected for buffer panels, which do
+not fit arbitrary buffers; numeric pairs stay fixed for both kinds. Only an
+automatic minibuffer presentation fits. Its session binds `resize-mini-frames`
+to `portal-launcher--fit` and adds `portal-launcher--refit` to
+`post-command-hook`; fixed presentations bind it to nil. The binding unwinds
+and cleanup removes the hook on every exit path, and the option keeps its value:
+no measured height replaces it. There is no timer or polling.
+
+Emacs calls `resize-mini-frames`' function from `resize_mini_window` while it
+redisplays a selected, active minibuffer window whose buffer changed, after
+the commands, timers and completion UI that changed it (pinned
+[xdisp.c](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/xdisp.c),
+`redisplay_internal`). That covers typing, Vertico's `post-command-hook`
+updates and timer-driven changes without a key press. It can miss a nested
+prompt starting or ending: `set_window_buffer` keeps the window's record of the
+previous buffer's change count, which can exceed the next buffer's. A command
+loop runs `post-command-hook` as each prompt starts, and the command that read
+an inner prompt ends with it in the outer one, so the session refits there too.
+A GUI regression whose outer prompt changed less than its inner one fails
+without that hook.
+
+Measurement uses `window-text-pixel-size` on the panel's minibuffer window at
+its current width, with no positions or line options, capped at the display's
+height. It follows the display iterator: wrapped input, faces of other heights,
+line spacing and end-of-buffer overlay strings count, both Vertico's
+before-string and an after-string, and a final newline in either adds no row.
+The frame's height minus the window's body height adds internal borders and any
+header line once. On NS, Emacs's frame pixels are AppKit points. The native
+floor is 100 points. An echo-area message temporarily puts its own buffer in
+the minibuffer window; fitting skips it, keeping the input's height, so a long
+message neither flickers the panel nor leaves it the wrong size. Messages Emacs
+shows inline in an active minibuffer are minibuffer content and fit.
+
+The fit function asks the native panel only for a height that differs from
+the last one it asked, through `portal_launcher_fit` with the session's native
+presentation ID. The platform ignores a stale ID, a hidden panel or an
+unchanged rectangle. Otherwise it keeps the placement's screen, left edge, width
+and top edge, clamps the bottom edge to that screen's usable area and sets the
+panel frame without drawing. It never resolves the pointer's screen, starts a
+session, resets recorded focus loss, captures the previous application or
+requests key or first-responder status, so IME marked text stays in the same
+view. Emacs NS's `resizeWithOldSuperviewSize:` only queues the frame size change
+and marks the frame for redisplay: no nested redisplay, which Emacs would
+answer by throwing to top level
+([nsterm.m](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/nsterm.m)).
+The next redisplay draws the same content at the new size, measuring the same
+height, so fitting cannot loop. AppKit keeps the layer's contents top-left
+while the frame catches up.
+
+The first placement uses the content's height at presentation, before the
+function's prompt, which is normally the minimum, centered by the offset and
+screen settings; it never opens taller than its content. That rectangle's top
+edge is the anchor; later fits move only the bottom edge. A display-arrangement
+change places the current height again, possibly on the pointer's screen, and
+later fits keep that new top edge. The next presentation resolves screen and
+offset afresh.
+
+Graphical tests in a disposable Emacs on 2026-10-05, with Menlo 24 (28-point
+lines) and 16-point internal borders, on the displays measured above:
+
+| Content | Native and Emacs frame height |
+| --- | --- |
+| Prompt and five after-string rows (also five Vertico rows) | 200 |
+| Two rows | 116 |
+| No rows, or a nested one-line prompt | 100 (minimum) |
+| Five rows, line spacing 6 | 236 |
+| Five rows, one at face height 1.5 | 213 |
+| Vertico with a group title and two candidates | 144 |
+| Input wrapped to five lines, no rows | 172 |
+| 300 rows, top edge 632 on the LG display | 1115, bottom edge at the usable area's −483 |
+
+Each step kept the native session ID, key status, left and top edges, and the
+Emacs frame matched the native height. Vertico gave the same heights with
+`vertico-resize` set to `grow-only`, t and nil, and its settings and the
+minibuffer resize options were unchanged afterwards. Moving the pointer to the
+other display while typing left the panel on its display. A fixed `(720 240)`
+control stayed 240 points. Standalone native checks cover the anchored
+geometry on negative-origin and offset placements, clamping, stale sessions,
+hidden panels, unchanged sessions, responder and focus-loss state, and
+display-change reanchoring. Marked text set through Emacs's NS text-input
+client stayed through a resize from 200 to 116 points and then committed;
+a physical input method and display disconnection were not tested.
+
+Vertico in a fitted panel with five rows, then after typing `alp`, then with no
+matches at the minimum:
+
+![Five Vertico rows with group titles](evidence/launcher-minibuffer-fitted-rows.png)
+
+![Two candidates under one group title](evidence/launcher-minibuffer-fitted-filtered.png)
+
+![No matches at the minimum height](evidence/launcher-minibuffer-fitted-minimum.png)
 
 ## Persistent buffer panels
 

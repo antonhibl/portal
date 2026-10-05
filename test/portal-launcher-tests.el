@@ -36,14 +36,42 @@
       (should (equal frames (frame-list))))))
 
 (ert-deftest portal-launcher-rejects-invalid-input-before-enabling ()
-  (dolist (size '(nil (199 420) (720 99) (720) (720 420 3) (720 . 420) (720 420.5)))
-    (let ((portal-launcher-size size))
-      (should-error (portal-launcher-show) :type 'user-error)))
-  (let ((portal-launcher-offset '(0))) (should-error (portal-launcher-show) :type 'user-error))
-  (let ((portal-launcher-screen -1)) (should-error (portal-launcher-show) :type 'user-error))
-  (let ((portal-launcher-corner-radius -1)) (should-error (portal-launcher-show) :type 'user-error))
-  (should-error (portal-launcher-show "missing launcher test buffer") :type 'user-error)
+  (cl-letf (((symbol-function 'portal-launcher-mode) (lambda (&rest _) (ert-fail "Enabled"))))
+    ;; A buffer panel cannot fit its content.
+    (dolist (size '((199 420) (720 99) (720) (720 420 3) (720 . 420) (720 420.5) (720 auto)))
+      (let ((portal-launcher-size size))
+        (should-error (portal-launcher-show) :type 'user-error)))
+    (let ((portal-launcher-offset '(0))) (should-error (portal-launcher-show) :type 'user-error))
+    (let ((portal-launcher-screen -1)) (should-error (portal-launcher-show) :type 'user-error))
+    (let ((portal-launcher-corner-radius -1)) (should-error (portal-launcher-show) :type 'user-error))
+    (should-error (portal-launcher-show "missing launcher test buffer") :type 'user-error))
   (should-not portal-launcher-mode))
+
+(ert-deftest portal-launcher-size-resolves-per-kind ()
+  ;; The default fits a minibuffer panel and keeps the buffer panel's size.
+  (should-not (default-value 'portal-launcher-size))
+  (let ((portal-launcher-size nil))
+    (should (equal (portal-launcher--size 'minibuffer) '(720 auto)))
+    (should (equal (portal-launcher--size 'buffer) '(720 420))))
+  (let ((portal-launcher-size '(640 auto)))
+    (should (equal (portal-launcher--size 'minibuffer) '(640 auto)))
+    (should-error (portal-launcher--size 'buffer) :type 'user-error))
+  ;; Numbers are fixed sizes for both kinds, not maxima.
+  (let ((portal-launcher-size '(720 240)))
+    (dolist (kind '(minibuffer buffer))
+      (should (equal (portal-launcher--size kind) '(720 240)))))
+  (dolist (size '((199 auto) (720 99) (720 . auto) (720 auto 1) (auto 240) (auto auto)
+                  (720 "auto") (720 fit) (720 240.0) (720 nil) 720 auto t))
+    (let ((portal-launcher-size size))
+      (dolist (kind '(minibuffer buffer))
+        (should-error (portal-launcher--size kind) :type 'user-error))))
+  ;; The option's type describes each valid setting.
+  (require 'wid-edit)
+  (let ((type (widget-convert (get 'portal-launcher-size 'custom-type))))
+    (dolist (value '(nil (720 auto) (720 240)))
+      (should (widget-apply type :match value)))
+    (dolist (value '((720 fit) (auto 240) 720))
+      (should-not (widget-apply type :match value)))))
 
 (ert-deftest portal-launcher-requires-guard-for-native-callers ()
   (skip-unless (featurep 'native-compile))
@@ -161,6 +189,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                ((symbol-function 'portal--launcher-attach) #'ignore)
                ((symbol-function 'portal--launcher-prepare) #'ignore)
                ((symbol-function 'portal--launcher-show) #'ignore)
+               ((symbol-function 'portal--launcher-fit) #'ignore)
                ((symbol-function 'portal--launcher-hide) #'ignore)
                ((symbol-function 'portal--launcher-detach) #'ignore)
                ((symbol-function 'portal--launcher-inspect) (lambda () '(:session 1)))
@@ -237,7 +266,16 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                          ;; Only a buffer panel can stay open.
                          (:kind minibuffer :keep-open t) (:keep-open t :kind minibuffer)))
         (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error))
-      (should-error (portal-launcher-present (lambda (_x) nil) :kind 'minibuffer) :type 'user-error))))
+      (should-error (portal-launcher-present (lambda (_x) nil) :kind 'minibuffer) :type 'user-error)
+      ;; So do invalid settings, including an automatic buffer panel.
+      (let ((portal-launcher-size '(720 auto)))
+        (dolist (options '(() (:kind buffer) (:mode-line nil :keep-open t)))
+          (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error)))
+      (dolist (size '((720 99) (720 fit)))
+        (let ((portal-launcher-size size))
+          (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error)))
+      (let ((portal-launcher-offset '(0)))
+        (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error)))))
 
 (ert-deftest portal-launcher-options-default-to-a-buffer-with-mode-lines ()
   (should (equal (portal-launcher--options nil) '(buffer t nil)))
@@ -257,6 +295,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
      (cl-letf (((symbol-function 'portal-launcher--show)
                 (lambda (kind _buffer mode-line) (push (list kind mode-line) shown)))
                ((symbol-function 'portal--launcher-inspect) (lambda () (list :session session-id)))
+               ((symbol-function 'portal--launcher-fit) #'ignore)
                ((symbol-function 'portal--launcher-hide) (lambda (&optional restore) (push restore hidden)))
                ((symbol-function 'make-frame-invisible) #'ignore)
                ((symbol-function 'delete-frame) (lambda (&rest _) (cl-incf deleted)))
@@ -332,12 +371,25 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (frame (selected-frame))
           (other (get-buffer-create " *launcher test*")))
       ;; A minibuffer presentation displays no buffer, here or elsewhere.
-      (should (equal '(nil nil 1)
-                     (portal-launcher-present
-                      (lambda ()
-                        (list (display-buffer other) resize-mini-frames
-                              (length (window-list frame 'never))))
-                      :kind 'minibuffer)))
+      ;; Emacs fits no panel itself: only an automatic one, through Portal.
+      (pcase-dolist (`(,size ,fit) `((nil ,#'portal-launcher--fit) ((640 auto) ,#'portal-launcher--fit)
+                                     ((720 240) nil)))
+        (let ((portal-launcher-size size))
+          (should (equal (list nil fit 1)
+                         (portal-launcher-present
+                          (lambda ()
+                            (list (display-buffer other) resize-mini-frames
+                                  (length (window-list frame 'never))))
+                          :kind 'minibuffer)))))
+      (should-not (portal-launcher-present (lambda () resize-mini-frames)))
+      (should (eq resize-mini-frames 'user-setting))
+      ;; An automatic panel also fits after commands, during its session.
+      (pcase-dolist (`(,size ,kind ,refit) '((nil minibuffer t) ((720 240) minibuffer nil) (nil buffer nil)))
+        (let ((portal-launcher-size size))
+          (should (eq refit (portal-launcher-present
+                             (lambda () (and (memq #'portal-launcher--refit (default-value 'post-command-hook)) t))
+                             :kind kind)))))
+      (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
       (should-not (get-buffer-window other t))
       ;; A buffer presentation hides new windows' mode lines through the
       ;; session's redisplay hook, then deletes them and clears the parameter.
@@ -394,6 +446,97 @@ The selected frame stands in for the panel, and deleting it is a no-op."
         (should-not (window-parameter kept 'mode-line-format))
         (delete-window kept))
       (kill-buffer other))))
+
+(ert-deftest portal-launcher-fit-asks-the-panel-only-for-new-heights ()
+  ;; Emacs calls `resize-mini-frames' as it redisplays; the GUI suite
+  ;; measures real content. Here the measurement is a stand-in.
+  (portal-launcher-test--session
+    (let ((frame (selected-frame))
+          (other (get-buffer-create " *launcher test*"))
+          (height 0) asked)
+      (cl-letf (((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) height))
+                ((symbol-function 'portal--launcher-fit)
+                 (lambda (session height) (push (list session height) asked))))
+        (cl-flet ((fit (new) (setq height new) (funcall resize-mini-frames frame)))
+          (portal-launcher-present
+           (lambda ()
+             ;; The first height, then only changes, go to this session's panel.
+             (dolist (new '(100 100 164 164 100)) (fit new))
+             ;; Another minibuffer-only frame is not the panel's.
+             (setq height 300)
+             (funcall resize-mini-frames 'another-frame)
+             ;; An echo area message replaces the minibuffer's buffer in its
+             ;; window while displayed; the input's height stays.
+             (let* ((window (minibuffer-window frame)) (minibuffer (window-buffer window)))
+               (set-window-buffer window other)
+               (fit 300)
+               (set-window-buffer window minibuffer))
+             (fit 300))
+           :kind 'minibuffer)
+          (should (equal (reverse asked) '((10 100) (10 164) (10 100) (10 300))))
+          ;; After the presentation, and in a fixed one, nothing fits; nor
+          ;; does a session whose panel is gone.
+          (setq asked nil)
+          (portal-launcher--fit frame)
+          (let ((portal-launcher--session (portal-launcher--make-session :fit t :native-id 10))
+                (portal-launcher--frame nil))
+            (portal-launcher--fit nil)
+            (portal-launcher--refit))
+          (let ((portal-launcher-size '(720 240)))
+            (portal-launcher-present (lambda ()
+                                       (should-not resize-mini-frames)
+                                       (setq height 400)
+                                       (portal-launcher--fit frame))
+                                     :kind 'minibuffer))
+          (should-not asked)))
+      (kill-buffer other))))
+
+(ert-deftest portal-launcher-automatic-panel-opens-at-its-measured-height ()
+  (portal-launcher-test--panel
+    (let (shown)
+      (cl-letf (((symbol-function 'portal--launcher-show) (lambda (&rest args) (push args shown)))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) 137)))
+        (pcase-dolist (`(,size ,kind ,expected) '((nil minibuffer (720 137)) (nil buffer (720 420))
+                                                  ((640 auto) minibuffer (640 137))
+                                                  ((720 240) minibuffer (720 240))
+                                                  ((720 240) buffer (720 240))))
+          (let ((portal-launcher-size size))
+            (portal-launcher-present #'ignore :kind kind)
+            (should (equal (pop shown) (append expected '(0 0 -1 t 14))))))
+        (let ((portal-launcher-offset '(-30 40)) (portal-launcher-screen 1))
+          (portal-launcher-show)
+          (should (equal (pop shown) '(720 420 -30 40 1 t 14))))
+        ;; The option keeps its value; nothing replaced it with a height.
+        (should-not portal-launcher-size)))))
+
+(ert-deftest portal-launcher-resize-fixes-both-kinds-outside-minibuffer-panels ()
+  (portal-launcher-test--panel
+    (let (shown)
+      (cl-letf (((symbol-function 'portal--launcher-show) (lambda (&rest args) (push (take 2 args) shown))))
+        ;; Prompts offer the setting's numbers, or 720 by 420.
+        (pcase-dolist (`(,size . ,defaults) '((nil 720 420) ((640 auto) 640 420) ((640 300) 640 300)))
+          (let ((portal-launcher-size size) offered)
+            (cl-letf (((symbol-function 'read-number)
+                       (lambda (_prompt default) (push default offered) (+ default 10))))
+              (call-interactively #'portal-launcher-resize))
+            (should (equal (reverse offered) defaults))
+            ;; Numbers fix both kinds, so minibuffer panels stop fitting.
+            (should (equal portal-launcher-size (mapcar (lambda (n) (+ n 10)) defaults)))
+            (should (equal (pop shown) portal-launcher-size))))
+        ;; A minibuffer presentation's panel cannot become a buffer panel:
+        ;; nothing changes, and the presentation goes on.
+        (let ((portal-launcher-size '(640 auto)))
+          (should (eq 'continued
+                      (portal-launcher-present
+                       (lambda ()
+                         (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'minibuffer))
+                                   ((symbol-function 'read-number) (lambda (&rest _) (ert-fail "Prompted"))))
+                           (should-error (portal-launcher-resize 700 300) :type 'user-error)
+                           (should-error (call-interactively #'portal-launcher-resize) :type 'user-error))
+                         'continued)
+                       :kind 'minibuffer)))
+          (should (equal shown '((640 100))))
+          (should (equal portal-launcher-size '(640 auto))))))))
 
 (ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
   (portal-launcher-test--session
@@ -489,6 +632,7 @@ Return its buffer, as setup functions may."
   (should-not (active-minibuffer-window))
   (should (= depth (recursion-depth)))
   (should-not (memq #'portal-launcher--dismiss-if-blurred (default-value 'post-command-hook)))
+  (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
   (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions)))
 
 (ert-deftest portal-launcher-keep-open-runs-commands-until-dismissed ()

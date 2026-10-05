@@ -92,9 +92,13 @@ final class NativeLauncher {
     private var lostFocus = false
     private var placement: Placement?
     private var requested = NSRect.zero
+    // The usable area of the screen chosen by the last placement.
+    private var area = NSRect.zero
 
     struct Placement {
-        let width: Int64, height: Int64, dx: Int64, dy: Int64, screen: Int64
+        let width: Int64
+        var height: Int64
+        let dx: Int64, dy: Int64, screen: Int64
         let shadow: Bool
         let radius: Int64
     }
@@ -200,6 +204,13 @@ final class NativeLauncher {
                       y: min(max(y, area.minY), area.maxY - height), width: width, height: height)
     }
 
+    /// RECT with HEIGHT, keeping its left edge, width and top edge. Its bottom
+    /// edge stops at AREA's, so a tall request never moves the top.
+    static func fitted(_ rect: NSRect, height: Int64, in area: NSRect) -> NSRect {
+        let height = max(0, min(CGFloat(height), rect.maxY - area.minY))
+        return NSRect(x: rect.minX, y: rect.maxY - height, width: rect.width, height: height)
+    }
+
     func place(_ placement: Placement, present: Bool = true) throws {
         guard editor.window === panel else { throw NativeError.message("Emacs replaced the native launcher window") }
         guard placement.width >= 200, placement.height >= 100, placement.screen >= -1,
@@ -209,13 +220,12 @@ final class NativeLauncher {
             : screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? screens.first else {
             throw NativeError.message("No display is available for the Portal launcher")
         }
-        requested = Self.rectangle(placement, in: screen.visibleFrame)
+        area = screen.visibleFrame
         self.placement = placement
         panel.hasShadow = placement.shadow
         content.wantsLayer = true
-        content.layer?.cornerRadius = min(CGFloat(placement.radius), min(requested.width, requested.height) / 2)
         content.layer?.masksToBounds = true
-        panel.setFrame(requested, display: true)
+        layout(Self.rectangle(placement, in: area), display: true)
         if present {
             if !presenting {
                 previousApplication = Self.pendingApplication ?? NSWorkspace.shared.frontmostApplication
@@ -228,6 +238,28 @@ final class NativeLauncher {
             panel.makeKeyAndOrderFront(nil)
             panel.makeFirstResponder(editor)
         }
+    }
+
+    private func layout(_ rect: NSRect, display: Bool) {
+        requested = rect
+        content.layer?.cornerRadius = min(CGFloat(placement?.radius ?? 0), min(rect.width, rect.height) / 2)
+        panel.setFrame(rect, display: display)
+    }
+
+    /// Layout only: give presentation SESSION's panel HEIGHT, keeping its
+    /// screen, left edge, width and top edge. Unlike `place`, this never
+    /// resolves a screen, starts a session or touches focus. A stale session
+    /// or a hidden panel is ignored. Emacs calls this while it redisplays:
+    /// the view's resize only queues Emacs's frame size change, and nothing
+    /// is drawn here.
+    func fit(session: UInt64, height: Int64) throws {
+        guard height >= 100 else { throw NativeError.message("Invalid Portal launcher height") }
+        guard session == Self.session, presenting, panel.isVisible, editor.window === panel,
+              placement != nil else { return }
+        // A display change centers this height again.
+        placement?.height = height
+        let rect = Self.fitted(requested, height: height, in: area)
+        if rect != panel.frame { layout(rect, display: false) }
     }
 
     func hide(restoreFocus: Bool = false) {

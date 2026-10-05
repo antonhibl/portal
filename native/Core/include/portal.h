@@ -105,6 +105,14 @@ bool portal_launcher_attach(portal_string title, portal_text *error);
 bool portal_launcher_prepare(portal_text *error);
 bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
                           int64_t screen, bool shadow, int64_t radius, portal_text *error);
+/* Layout only, never presentation: resize the panel of presentation SESSION
+   (the counter Describe reports as "session") to HEIGHT logical points, at
+   least 100. Its screen, left edge, width and top edge stay; the bottom
+   edge is clamped to that screen's usable area. The session, focus and first
+   responder are unchanged. A stale SESSION, a hidden panel or an unchanged
+   rectangle does nothing. A display change centers the fitted height again,
+   and later fits keep that new top edge. */
+bool portal_launcher_fit(uint64_t session, int64_t height, portal_text *error);
 /* RESTORE_FOCUS requests cancellation focus restoration, only while the panel
    still owns the keyboard. Success and click-away hide without activation. */
 bool portal_launcher_hide(bool restore_focus, portal_text *error);

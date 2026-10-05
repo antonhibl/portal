@@ -99,7 +99,7 @@ Native windows temporarily take focus; wait for completion before using other ap
 `EMACS` selects another executable, which must match the build's header and
 supported revision. The [combined graphical suite](testing.md#combined-graphical-suite)
 also exercises launcher lifecycle, focus, geometry and completion. Select
-`"^portal-launcher-"` instead of `"^portal-"` for only the 21 launcher tests.
+`"^portal-launcher-"` instead of `"^portal-"` for only the 28 launcher tests.
 
 To check an isolated completion/theme fragment without changing your init:
 
@@ -221,3 +221,27 @@ cycles, disabling preserved all three shortcuts; removing them freed their
 chords. Shell and web page kept working. Both passed the full launcher graphical
 run; [application notes](launcher-applications.md) record the separate launcher.el
 smoke test.
+
+## Content-fitted minibuffer panels on 2026-10-05
+
+Minibuffer panels now fit their displayed content by default; `'(720 240)`
+and other numeric sizes stay fixed, and buffer panels keep 720 × 420. See
+[Panel size](launcher.md#panel-size). Native focus, dismissal and shortcut
+behavior is unchanged: fitting is layout only.
+
+Automated evidence: all 28 launcher graphical tests, the 26-test launcher
+suite and both daily-use tests, which use fixed sizes, passed together in one
+disposable Emacs on the tested build. The new fitting tests cover five, two,
+no and five rows, Vertico 2.15 with `vertico-resize` grow-only, t and nil,
+group titles, line spacing, wrapped input, timers, echo-area messages, nested
+prompts, the screen's bottom, the pointer on the other display, and marked text
+kept while the panel resizes. Focus-loss, nested-dismissal, error and
+kind-alternation tests also run with an automatic height. The
+[implementation notes](launcher-native-panel.md#content-fitted-minibuffer-panels)
+record measured heights.
+
+Marked text was set and committed through Emacs's NS text-input client from a
+test event monitor, not a physical input method. Not re-run: the hands-on
+checklist above. Physical CJK input methods, display disconnection and
+VoiceOver with a resizing panel are not tested; their earlier passes used fixed
+panels. Repeat those rows before relying on fitted panels with them.
