@@ -5,59 +5,41 @@
 (require 'portal-tests)
 (require 'portal-terminal-tests)
 (require 'portal-launcher-gui-tests)
-(defvar launcher--apps)
-(defvar launcher--current-entries)
-(defvar launcher-bangs)
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--launcher-inspect "portal-launcher" ())
 (declare-function portal--shortcuts "portal-global-shortcut" ())
-(declare-function portal--shortcut-chord "portal-global-shortcut" (chord))
 
 (ert-deftest portal-launcher-daily-use-configured-completion ()
   ;; Unlike the stock/enhanced matrix, keep the caller's completion and theme
-  ;; settings throughout. External actions are fixtures, native input is real.
-  (require 'launcher)
+  ;; settings throughout. A picker records what it would launch; native input
+  ;; is real.
   (portal-launcher-gui--with-panel
-    (let ((launcher--apps '(("Calculator" . "/System/Applications/Calculator.app")))
-          (launcher--current-entries nil)
-          (settings (list completing-read-function completion-styles
-                          completion-category-defaults completion-category-overrides
-                          custom-enabled-themes (bound-and-true-p vertico-mode)
-                          (bound-and-true-p marginalia-mode)))
-          actions)
-      (cl-letf (((symbol-function 'call-process)
-                 (lambda (&rest args) (push args actions) 0))
-                ((symbol-function 'browse-url)
-                 (lambda (url &rest _) (push url actions))))
-        (portal-launcher-gui--present
-         nil (append (portal-launcher-gui--text "Calculator") '((36 0 "\r"))))
-        (should (equal (pop actions)
-                       '("open" nil nil nil "-a" "/System/Applications/Calculator.app")))
-        (portal-launcher-gui--present
-         nil (append (portal-launcher-gui--text "!gh portal launcher") '((36 0 "\r"))))
-        (should (equal (pop actions) "https://github.com/search?q=portal%20launcher"))
-        (portal-launcher-gui--present nil '((53 0 "\e")))
-        (portal-launcher-gui--present
-         nil (append (portal-launcher-gui--text "!gh ") '((36 0 "\r"))))
+    (let* ((settings (list completing-read-function completion-styles
+                           completion-category-defaults completion-category-overrides
+                           custom-enabled-themes (bound-and-true-p vertico-mode)
+                           (bound-and-true-p marginalia-mode)))
+           actions
+           (picker (lambda ()
+                     (push (completing-read "Launch: " '("Calculator")) actions))))
+      (cl-flet ((pick (strokes &optional function)
+                  (portal-launcher-gui--present (or function picker) strokes nil '(:kind minibuffer))))
+        (pick (append (portal-launcher-gui--text "Calculator") '((36 0 "\r"))))
+        (should (equal (pop actions) "Calculator"))
+        (pick '((53 0 "\e")))
         (should-not actions)
-        ;; The configured reader may accept a highlighted app with no text.
-        ;; Stock completion has no selection and returns an empty result.
-        (let ((launcher-bangs nil) (minibuffer-history nil))
-          (portal-launcher-gui--present nil '((36 0 "\r"))))
-        (when (bound-and-true-p vertico-mode)
-          (should (equal (pop actions)
-                         '("open" nil nil nil "-a" "/System/Applications/Calculator.app"))))
-        (should-not actions))
-      (cl-letf (((symbol-function 'call-process)
-                 (lambda (&rest _) (error "Daily-use fixture: open failed"))))
+        ;; The configured reader may accept a highlighted candidate with no
+        ;; text. Stock completion has no selection and returns "".
+        (let ((minibuffer-history nil))
+          (pick '((36 0 "\r"))))
+        (should (equal (pop actions) (if (bound-and-true-p vertico-mode) "Calculator" "")))
         (should-error
-         (portal-launcher-gui--present
-          nil (append (portal-launcher-gui--text "Calculator") '((36 0 "\r"))))))
-      ;; Recovery must read a new prompt, not merely return a Lisp value.
-      (should (equal "recovered"
-                     (portal-launcher-gui--present
-                      (lambda () (interactive) (read-string "Recovery: "))
-                      (append (portal-launcher-gui--text "recovered") '((36 0 "\r"))))))
+         (pick (append (portal-launcher-gui--text "Calculator") '((36 0 "\r")))
+               (lambda () (funcall picker) (error "Daily-use fixture: open failed"))))
+        (should (equal (pop actions) "Calculator"))
+        ;; Recovery must read a new prompt, not merely return a Lisp value.
+        (should (equal "recovered"
+                       (pick (append (portal-launcher-gui--text "recovered") '((36 0 "\r")))
+                             (lambda () (interactive) (read-string "Recovery: "))))))
       (should (equal settings
                      (list completing-read-function completion-styles
                            completion-category-defaults completion-category-overrides
@@ -81,15 +63,16 @@
               (setq web-buffer (current-buffer) web-id (portal-view-target))
               (portal-test--wait-for-page "Launcher coexistence" web-id)
               (select-window window))
+            (dolist (example '("launcher-picker" "launcher-hello"))
+              (portal-launcher-gui--example example))
             (dotimes (cycle 3)
               (portal-terminal-unfocus)
-              (portal-launcher-mode 1)
-              (let ((shortcuts (length (portal--shortcuts))))
-                ;; Re-evaluate the launcher setup as a configuration reload does.
-                (portal-launcher-mode 1)
-                (should (= shortcuts (length (portal--shortcuts))))
-                (should (= 1 (cl-count 'portal-launcher portal-global-shortcut--registrations
-                                       :key #'car))))
+              ;; Evaluate the launcher setup, then again, as a configuration
+              ;; reload does: one registration per name.
+              (dotimes (_ 2) (portal-launcher-gui--example "launcher-shortcuts"))
+              (should (equal (mapcar #'car portal-global-shortcut--registrations)
+                             '(pick-fruit hello clock)))
+              (should (= 3 (length (portal--shortcuts))))
               (portal-launcher-gui--present
                (lambda () (interactive) (read-string "Coexistence: "))
                '((53 0 "\e")))
@@ -98,13 +81,15 @@
                 (portal-launcher-mode -1)
                 (should-not (frame-live-p panel)))
               (should-not (plist-get (portal--launcher-inspect) :attached))
-              (should-not (assq 'portal-launcher portal-global-shortcut--registrations))
-              (should-not (cl-find (portal--shortcut-chord portal-launcher-shortcut)
-                                   (portal--shortcuts)
-                                   :key (lambda (shortcut) (plist-get shortcut :chord))))
               (should-not (advice-member-p #'portal-launcher--guard-parameters
                                           'modify-frame-parameters))
               (should-not (advice-member-p #'portal-launcher--delete-frame 'delete-frame))
+              ;; Disabling the panel left the shortcuts; removing them, as a
+              ;; rollback does, frees their chords.
+              (should (= 3 (length (portal--shortcuts))))
+              (dolist (name '(pick-fruit hello clock))
+                (should (portal-global-shortcut-remove name)))
+              (should-not (portal--shortcuts))
               (should (eq (selected-frame) frame))
               (should (eq (current-buffer) terminal-buffer))
               ;; Both views keep their identity and accept input after rollback.

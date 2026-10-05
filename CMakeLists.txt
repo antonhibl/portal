@@ -48,8 +48,9 @@ add_custom_command(
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
 if(BUILD_TESTING)
+    # Runs the README's launcher examples; launcher.el is not needed.
     add_test(NAME launcher
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" -L "${CMAKE_SOURCE_DIR}/test"
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(launcher PROPERTIES TIMEOUT 30)
@@ -60,14 +61,6 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-global-shortcut-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(global-shortcut PROPERTIES TIMEOUT 30)
-    # Optional runtime dependency; test its real completion/index behavior at
-    # the documented revision without installing it into the user's Emacs.
-    set(launcher_revision "731146d95d7d1ff16f48e7a200da873c8d8b375c")
-    set(launcher_directory "${CMAKE_BINARY_DIR}/elpa/launcher-${launcher_revision}")
-    file(DOWNLOAD
-        "https://raw.githubusercontent.com/xiaoxinghu/launcher.el/${launcher_revision}/launcher.el"
-        "${launcher_directory}/launcher.el"
-        EXPECTED_HASH SHA256=7211f80c73a498215fdf1f1bc592c7b9148a965bf91e9da1d18b9df1e87819cb)
     # Exercise the documented absolute-path entry point in a fresh Emacs.
     # Do not add the package directory with -L: Portal must load its own siblings.
     add_test(NAME startup
@@ -125,9 +118,10 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-agent-discovery-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(agent-discovery PROPERTIES TIMEOUT 30)
-    # The optional Consult and Embark adapters, the task view and agent
-    # dashboard under Evil use the GNU and NonGNU ELPA releases the README names,
-    # downloaded once and checked by hash.
+    # The optional Consult and Embark adapters, the task view, agent dashboard
+    # under Evil and the launcher's graphical completion fixtures use the GNU
+    # and NonGNU ELPA releases the README names, downloaded once and checked
+    # by hash.
     set(elpa_packages
         "elpa.gnu.org/packages/consult-3.10=68aa5daeb701958482dccab3b23a454ff9a9be6b2f4c41fbcc7a353ecfeab096"
         "elpa.gnu.org/packages/embark-1.2=65e4553e709a9619016a635c435f648add310c75601b3b0818ca71c5b46678ea"
@@ -153,12 +147,6 @@ if(BUILD_TESTING)
         endif()
         list(APPEND elpa_load_path -L "${directory}")
     endforeach()
-    add_test(NAME launcher-applications
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
-            -L "${launcher_directory}" ${elpa_load_path}
-            -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-applications-tests.el"
-            -f ert-run-tests-batch-and-exit)
-    set_tests_properties(launcher-applications PROPERTIES TIMEOUT 30)
     # The task view is tested with org-ql 0.8.10 and the other libraries it
     # loads that Emacs lacks, and with evil-collection, from their release
     # tags: MELPA Stable keeps only each package's latest release.  Dash and

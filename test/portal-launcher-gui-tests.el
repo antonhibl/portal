@@ -3,6 +3,8 @@
 ;; Run only in a disposable graphical Emacs with the newly built module.
 (require 'ert)
 (require 'portal-launcher)
+(require 'portal-global-shortcut)
+(require 'portal-launcher-examples)
 (declare-function portal-test-hotkey "test-terminal-input" (hotkey pressed))
 (declare-function portal--launcher-inspect "portal-launcher" ())
 (declare-function portal--shortcuts "portal-global-shortcut" ())
@@ -13,9 +15,6 @@
 (declare-function portal-test-capture-target "test-terminal-input" (file))
 (declare-function vertico-mode "vertico" (&optional arg))
 (declare-function marginalia-mode "marginalia" (&optional arg))
-(defvar launcher--apps)
-(defvar launcher--current-entries)
-(defvar launcher-bangs)
 (defvar vertico-sort-function)
 (defvar vertico-count)
 (defvar vertico--candidates-ov)
@@ -35,6 +34,7 @@
        (unwind-protect
            (progn ,@body)
          (portal-launcher-mode -1)
+         (portal-global-shortcut--remove-all)
          (when (buffer-live-p content) (kill-buffer content))
          (when (window-live-p ordinary) (select-window ordinary))
          (dolist (frame (frame-list))
@@ -181,67 +181,48 @@ watch focus. `sit-for' would return at once while input is pending."
       (set-frame-parameter (window-frame ordinary) 'undecorated nil)
       (should (eq (portal-launcher-show) frame)))))
 
-(defun portal-launcher-gui--command-loop ()
-  "Let the real command loop execute queued shortcut events, then return."
-  (let ((timer (run-at-time 0.2 nil #'exit-recursive-edit)))
-    (unwind-protect (recursive-edit) (cancel-timer timer))))
-
-(defun portal-launcher-gui--hotkey ()
-  "The native hot key of the launcher's global shortcut, for the injector."
-  (let ((id (cadr (assq 'portal-launcher portal-global-shortcut--registrations))))
+(defun portal-launcher-gui--hotkey (name)
+  "The native hot key of the global shortcut NAME, for the injector."
+  (let ((id (cadr (assq name portal-global-shortcut--registrations))))
     (plist-get (cl-find id (portal--shortcuts) :key (lambda (shortcut) (plist-get shortcut :id)))
                :hotkey)))
 
-(ert-deftest portal-launcher-gui-shortcut-through-command-loop ()
-  (skip-unless (fboundp 'portal-test-hotkey))
-  (portal-launcher-gui--with-panel
-    (let ((portal-launcher-command nil))
-      (discard-input)
-      (portal-launcher-mode 1)
-      (should-not (portal-view-buffers))
-      (should-not portal-launcher--frame)
-      (let ((hotkey (portal-launcher-gui--hotkey)))
-	(should (portal-test-hotkey hotkey t))
-	(portal-view--read-records)
-	;; The filter only queued it, without changing a frame.
-	(should-not portal-launcher--frame)
-	(should (cl-find 'portal-global-shortcut unread-command-events :key #'car-safe))
-	(let ((overriding-local-map (make-sparse-keymap)))
-          (portal-launcher-gui--command-loop))
-	(should (frame-live-p portal-launcher--frame))
-	(should (plist-get (portal--launcher-inspect) :visible))
-	(should (eq (selected-frame) portal-launcher--frame))
-	(should (portal-test-hotkey hotkey nil))
-	(should (portal-test-hotkey hotkey t))
-	(portal-view--read-records)
-	(portal-launcher-gui--command-loop)
-	(should-not (plist-get (portal--launcher-inspect) :visible))
-	(should (eq (selected-window) ordinary))
-	(should (portal-test-hotkey hotkey nil))
-	(let ((portal-launcher-shortcut "Control-Option-Command-L"))
-          (portal-launcher-mode 1)
-          (should-not (eql hotkey (portal-launcher-gui--hotkey)))
-          (should-not (portal-test-hotkey hotkey t))
-          ;; Enabling again, as reloading a configuration does, ignores a
-          ;; press from before.
-          (portal-test-hotkey (portal-launcher-gui--hotkey) t)
-          (portal-view--read-records)
-          (portal-launcher-mode 1)
-          (portal-launcher-gui--command-loop)
-          (should-not (plist-get (portal--launcher-inspect) :visible))
-          (portal-test-hotkey (portal-launcher-gui--hotkey) nil))
-	(portal-launcher-mode -1)
-	(should-not (assq 'portal-launcher portal-global-shortcut--registrations))))))
+(defun portal-launcher-gui--press (name)
+  "Press and release NAME's chord, as Carbon reports it, and read the record."
+  (let ((hotkey (portal-launcher-gui--hotkey name)))
+    (should (portal-test-hotkey hotkey t))
+    (should (portal-test-hotkey hotkey nil)))
+  (portal-view--read-records))
+
+;; A running Emacs may already have the README's chords.
+(defconst portal-launcher-gui--chords
+  '(("Control-Option-Command-F" . "Control-Option-Command-F17")
+    ("Control-Option-Command-H" . "Control-Option-Command-F18")
+    ("Control-Option-Command-K" . "Control-Option-Command-F19")
+    ("Control-Option-Command-P" . "Control-Option-Command-F20"))
+  "The README's chords and the ones these tests set in their place.")
+
+(defun portal-launcher-gui--example (name)
+  "Evaluate the README's example NAME, on the tests' chords."
+  (eval (portal-launcher-examples-form name portal-launcher-gui--chords) t))
+
+(defun portal-launcher-gui--dismiss-shortcut ()
+  "Set the global shortcut `portal-launcher-gui', which presents a launcher.
+Pressed while a panel is open, it dismisses the panel."
+  (portal-global-shortcut-set 'portal-launcher-gui "Control-Option-Command-F16"
+                              (lambda () (interactive) (portal-launcher-present #'ignore))))
 
 (defvar portal-launcher-gui--action nil)
 (defun portal-launcher-gui--act ()
   (interactive)
   (funcall portal-launcher-gui--action))
 
-(defun portal-launcher-gui--present (command strokes &optional action options)
-  "Run COMMAND with native STROKES typed into its prompts; C-] calls ACTION.
-OPTIONS are `portal-launcher-present' keywords and values.  With
-:keep-open, STROKES also go to the panel's buffer after COMMAND returns."
+(defun portal-launcher-gui--drive (start strokes &optional action loop)
+  "Call START with native STROKES typed into its prompts; C-] calls ACTION.
+Strokes go to the panel while Emacs reads in a prompt or a persistent
+panel's buffer.  With LOOP, START only queues input, which the real command
+loop then reads, in a recursive edit that ends once STROKES are typed and
+the command loop waits with no session.  Return START's value, or nil."
   (let* ((portal-launcher-gui--action action)
          ;; A runner may call ERT from a timer, where quit is inhibited. Real
          ;; command-loop invocation permits native C-g to unwind a minibuffer.
@@ -250,11 +231,13 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
          (map (make-sparse-keymap))
          (global (current-global-map))
          (depth (recursion-depth))
+         (base (if loop (1+ depth) depth))
          (timer (run-with-timer
                  0.1 0.1
                  (lambda ()
-                   ;; Deeper means a prompt, or a persistent panel's buffer.
-                   (when (and strokes (> (recursion-depth) depth))
+                   (cond
+                    ;; Deeper means a prompt, or a persistent panel's buffer.
+                    ((and strokes (> (recursion-depth) base))
                      (portal-view--with-frame-title portal-launcher--frame #'portal-test-native-target-frame)
                      (let ((stroke (pop strokes)))
                        ;; Synthetic AppKit C-g gets held by this Emacs build
@@ -262,13 +245,19 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
                        ;; event for this one key; other strokes are native.
                        (if (eq stroke 'quit)
                            (setq unread-command-events (append unread-command-events '(7)))
-                         (apply #'portal-test-native-post-key stroke))))))))
+                         (apply #'portal-test-native-post-key stroke))))
+                    ((and loop (null strokes) (= (recursion-depth) base)
+                          (null unread-command-events) (not portal-launcher--session))
+                     (exit-recursive-edit)))))))
     (set-keymap-parent map global)
     (keymap-set map "C-]" #'portal-launcher-gui--act)
     (use-global-map map)
     (unwind-protect
         (prog1 (with-timeout (10 (error "Launcher prompt timed out; pending input: %S" strokes))
-                 (apply #'portal-launcher-present command options))
+                 (if (not loop) (funcall start)
+                   (funcall start)
+                   (recursive-edit)
+                   nil))
           (should-not strokes)
           (should (= depth (recursion-depth)))
           (should-not (active-minibuffer-window))
@@ -280,6 +269,13 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
       (portal-test-native-target-frame nil)
       (use-global-map global))))
 
+(defun portal-launcher-gui--present (command strokes &optional action options)
+  "Present COMMAND with native STROKES typed into its prompts; C-] calls ACTION.
+OPTIONS are `portal-launcher-present' keywords and values.  With
+:keep-open, STROKES also go to the panel's buffer after COMMAND returns."
+  (portal-launcher-gui--drive (lambda () (apply #'portal-launcher-present command options))
+                              strokes action))
+
 (defun portal-launcher-gui--text (text)
   (let ((codes '((?a . 0) (?b . 11) (?c . 8) (?d . 2) (?e . 14) (?f . 3)
                  (?g . 5) (?h . 4) (?i . 34) (?j . 38) (?k . 40) (?l . 37)
@@ -290,69 +286,120 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
               (list (alist-get (downcase char) codes) (if (or (<= ?A char ?Z) (= char ?!)) 131072 0)
                     (string char))) text)))
 
-(ert-deftest portal-launcher-gui-application-picker ()
-  (require 'launcher)
+(ert-deftest portal-launcher-gui-picker-selection-without-typing ()
+  ;; A user's picker in a minibuffer panel, typed into with native keys.
+  ;; Portal returns whatever completion returns; it adds no input policy.
   (require 'vertico)
   (require 'orderless)
   (require 'marginalia)
   (portal-launcher-gui--with-panel
-    (let* ((launcher--apps '(("Calculator" . "/System/Applications/Calculator.app")))
-           (launcher--current-entries nil)
-           (reader completing-read-function)
-           actions)
+    (let ((reader completing-read-function)
+          (picker (lambda ()
+                    (completing-read "Pick: " '("Calculator" "Calendar" "Chess")))))
       (dolist (enhanced '(nil t))
         (let ((completion-styles (if enhanced '(orderless basic) '(basic)))
-              (completion-category-defaults nil))
+              (completion-category-defaults nil)
+              (vertico-sort-function #'identity)
+              (minibuffer-history nil))
           (vertico-mode (if enhanced 1 -1))
           (marginalia-mode (if enhanced 1 -1))
           (unwind-protect
-              (cl-letf (((symbol-function 'call-process)
-                         (lambda (&rest arguments) (push arguments actions) 0))
-                        ((symbol-function 'browse-url) (lambda (url &rest _) (push url actions))))
-                ;; nil exercises the configured default through the session.
-                (portal-launcher-gui--present
-                 nil (append (portal-launcher-gui--text "Calculator") '((36 0 "\r"))))
-                (should (equal (pop actions) '("open" nil nil nil "-a" "/System/Applications/Calculator.app")))
-                (portal-launcher-gui--present
-                 nil (append (portal-launcher-gui--text "!gh portal launcher") '((36 0 "\r"))))
-                (should (equal (pop actions) "https://github.com/search?q=portal%20launcher"))
-                (let ((launcher-bangs nil)) (portal-launcher-gui--present nil '((36 0 "\r"))))
+              (cl-flet ((pick (strokes)
+                          (portal-launcher-gui--present picker strokes nil '(:kind minibuffer))))
+                (should (equal "Chess" (pick (append (portal-launcher-gui--text "Chess") '((36 0 "\r"))))))
+                (should (equal "Notes" (pick (append (portal-launcher-gui--text "Notes")
+                                                     '((36 0 "\r"))))))
+                ;; With Vertico, Return accepts the highlighted candidate
+                ;; with no typed text, the first or one chosen with arrows.
+                ;; Stock completion highlights nothing and returns "".
+                (should (equal (if enhanced "Calculator" "") (pick '((36 0 "\r")))))
                 (when enhanced
-                  (should (equal (pop actions)
-                                 '("open" nil nil nil "-a" "/System/Applications/Calculator.app"))))
-                (portal-launcher-gui--present nil '((53 0 "\e")))
-                (should-not actions))
+                  (should (equal "Calendar" (pick '((125 0 "\uf701") (36 0 "\r")))))
+                  (should (equal "Calculator" (pick '((125 0 "\uf701") (126 0 "\uf700") (36 0 "\r"))))))
+                (should-not (pick '((53 0 "\e")))))
             (vertico-mode -1)
             (marginalia-mode -1)))
         (should (eq reader completing-read-function))
-        (should (eq ordinary (selected-window)))
-        (should-not launcher--current-entries)))))
+        (should (eq ordinary (selected-window)))))))
 
-(ert-deftest portal-launcher-gui-accepts-selection-without-typing ()
-  (require 'launcher)
-  (require 'vertico)
-  (require 'orderless)
+;; The README's launchers, as a user configures them: the same picker from
+;; M-x, its key and its global shortcut through the real command loop, a
+;; persistent buffer and a shortcut that presents nothing.
+(ert-deftest portal-launcher-gui-user-launchers-through-command-loop ()
+  (skip-unless (fboundp 'portal-test-hotkey))
   (portal-launcher-gui--with-panel
-    (let ((launcher--apps '(("Calculator" . "/System/Applications/Calculator.app")
-                            ("Calendar" . "/System/Applications/Calendar.app")))
-          (launcher--current-entries nil)
-          (launcher-bangs nil)
-          (minibuffer-history nil)
-          (vertico-sort-function #'identity)
-          (completion-styles '(orderless basic))
-          actions)
-      (vertico-mode 1)
+    (let ((global (current-global-map))
+          (map (make-sparse-keymap))
+          (suggest-key-bindings nil)
+          (extended-command-suggest-shorter nil)
+          (messages (with-current-buffer "*Messages*" (point-max-marker))))
       (unwind-protect
-          (cl-letf (((symbol-function 'call-process)
-                     (lambda (&rest arguments) (push arguments actions) 0)))
-            (dolist (selection '(("Calculator" (36 0 "\r"))
-                                 ("Calendar" (125 0 "\uf701") (36 0 "\r"))
-                                 ("Calculator" (125 0 "\uf701") (126 0 "\uf700") (36 0 "\r"))))
-              (portal-launcher-gui--present nil (cdr selection))
-              (should (equal (pop actions)
-                             (list "open" nil nil nil "-a"
-                                   (cdr (assoc (car selection) launcher--apps)))))))
-        (vertico-mode -1)))))
+          (progn
+            ;; The picker's key goes in a map of this test's own.
+            (set-keymap-parent map global)
+            (use-global-map map)
+            (discard-input)
+            (dolist (example '("launcher-picker" "launcher-hello" "launcher-shortcuts"))
+              (portal-launcher-gui--example example))
+            ;; Configuring set only the three shortcuts, and no panel yet.
+            (should (equal (mapcar #'car portal-global-shortcut--registrations)
+                           '(pick-fruit hello clock)))
+            (should (= 3 (length (portal--shortcuts))))
+            (should-not portal-launcher--frame)
+            (cl-flet ((pick (start fruit)
+                        (portal-launcher-gui--drive
+                         start (append (portal-launcher-gui--text fruit) '((36 0 "\r"))) nil t)
+                        (should (with-current-buffer "*Messages*"
+                                  (save-excursion
+                                    (goto-char messages)
+                                    (search-forward (concat "Picked " fruit) nil t))))
+                        (should (portal-launcher--live-p 'minibuffer))
+                        (should (eq ordinary (selected-window))))
+                      (queue (keys)
+                        (lambda () (setq unread-command-events (listify-key-sequence (kbd keys))))))
+              (pick (queue "M-x my/pick-fruit RET") "Banana")
+              (pick (queue "C-c f") "Cherry")
+              (pick (lambda () (portal-launcher-gui--press 'pick-fruit)) "Apple"))
+            ;; The persistent buffer from its shortcut; the same chord again
+            ;; dismisses it.
+            (portal-launcher-gui--drive
+             (lambda () (portal-launcher-gui--press 'hello))
+             (append (portal-launcher-gui--text "nok") '((36 0 "\r") (30 262144 "\C-]")))
+             (lambda () (portal-launcher-gui--press 'hello))
+             t)
+            (should (equal "Hello world!\nHello ok!" (with-current-buffer "*Hello*" (buffer-string))))
+            (portal-launcher-gui--check-unwound)
+            ;; A shortcut that presents nothing leaves the hidden panel alone.
+            (let ((frames (frame-list)))
+              (portal-launcher-gui--drive (lambda () (portal-launcher-gui--press 'clock)) nil nil t)
+              (should (equal frames (frame-list)))
+              (should-not (plist-get (portal--launcher-inspect) :visible))
+              (should (eq ordinary (selected-window)))
+              (should (with-current-buffer "*Messages*"
+                        (save-excursion
+                          (goto-char messages)
+                          (re-search-forward "^[0-9][0-9]:[0-9][0-9]$" nil t)))))
+            ;; The shortcuts outlast deleting and disabling the panel, and
+            ;; evaluating the configuration again keeps one of each.
+            (let ((ids (mapcar #'cadr portal-global-shortcut--registrations)))
+              (delete-frame portal-launcher--frame t)
+              (portal-launcher-mode -1)
+              (should (equal ids (mapcar #'cadr portal-global-shortcut--registrations)))
+              (portal-launcher-gui--example "launcher-shortcuts")
+              (should (= 3 (length portal-global-shortcut--registrations)))
+              (should (= 3 (length (portal--shortcuts))))
+              (should-not (cl-intersection ids (mapcar #'cadr portal-global-shortcut--registrations))))
+            (portal-launcher-gui--drive (lambda () (portal-launcher-gui--press 'pick-fruit))
+                                        (append (portal-launcher-gui--text "Apple") '((36 0 "\r")))
+                                        nil t)
+            (should (portal-launcher--live-p 'minibuffer))
+            ;; Removing one leaves the others; its hot key is gone.
+            (let ((hotkey (portal-launcher-gui--hotkey 'hello)))
+              (should (portal-global-shortcut-remove 'hello))
+              (should-not (portal-test-hotkey hotkey t)))
+            (should (equal (mapcar #'car portal-global-shortcut--registrations) '(pick-fruit clock))))
+        (use-global-map global)
+        (when (get-buffer "*Hello*") (kill-buffer "*Hello*"))))))
 
 (ert-deftest portal-launcher-gui-session-stock-and-completion-stack ()
   (portal-launcher-gui--with-panel
@@ -627,6 +674,7 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
 
 (ert-deftest portal-launcher-gui-session-nested-dismissal-and-reentry ()
   (portal-launcher-gui--with-panel
+    (portal-launcher-gui--dismiss-shortcut)
     (dolist (kind '(buffer minibuffer))
       (dolist (reason '(escape quit second shortcut hide delete disable))
         (message "Launcher nested dismissal: %S %S" kind reason)
@@ -646,11 +694,8 @@ OPTIONS are `portal-launcher-present' keywords and values.  With
                         (_ '(30 262144 "\C-]"))))
            (lambda ()
              (pcase reason
-               ('second (portal-launcher-present))
-               ('shortcut
-                (portal-test-hotkey (portal-launcher-gui--hotkey) t)
-                (portal-test-hotkey (portal-launcher-gui--hotkey) nil)
-                (portal-view--read-records))
+               ('second (portal-launcher-present #'ignore))
+               ('shortcut (portal-launcher-gui--press 'portal-launcher-gui))
                ('hide (portal-launcher-hide))
                ('delete (delete-frame portal-launcher--frame t))
                ('disable (portal-launcher-mode -1))))
@@ -772,6 +817,7 @@ The local command n reads a name in the minibuffer and greets it."
 
 (ert-deftest portal-launcher-gui-persistent-dismissal-and-reentry ()
   (portal-launcher-gui--with-panel
+    (portal-launcher-gui--dismiss-shortcut)
     (unwind-protect
         (dolist (prompt '(nil t))
           (dolist (reason '(escape quit second shortcut hide delete disable focus))
@@ -785,11 +831,8 @@ The local command n reads a name in the minibuffer and greets it."
                                      (_ '(30 262144 "\C-]")))))
                 (lambda ()
                   (pcase reason
-                    ('second (portal-launcher-present))
-                    ('shortcut
-                     (portal-test-hotkey (portal-launcher-gui--hotkey) t)
-                     (portal-test-hotkey (portal-launcher-gui--hotkey) nil)
-                     (portal-view--read-records))
+                    ('second (portal-launcher-present #'ignore))
+                    ('shortcut (portal-launcher-gui--press 'portal-launcher-gui))
                     ('hide (portal-launcher-hide))
                     ('delete (delete-frame portal-launcher--frame t))
                     ('disable (portal-launcher-mode -1))

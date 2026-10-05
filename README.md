@@ -128,149 +128,50 @@ leaves the others.
 
 ## Native launcher panel (opt-in)
 
-The launcher passed the user's daily-use checklist on 2026-10-04. See the
+`portal-launcher.el` presents Emacs functions in one reusable, borderless,
+nonactivating macOS panel. It uses Portal's existing module. Portal chooses no
+command and claims no chord: loading the feature, presenting a panel and
+enabling `portal-launcher-mode` register no global shortcut. Your configuration
+composes launchers. A command calls `portal-launcher-present` with its
+presentation options; run it with M-x, bind it to an Emacs key, or set it as a
+[global shortcut](#global-shortcuts) to invoke it from any application. The
+examples below need no other package.
+
+The panel passed the user's daily-use checklist on 2026-10-04, with the
+application picker that Portal then included. See the
 [setup and validation guide](docs/launcher-daily-use.md) for the tested versions,
 fresh-session procedure and manual input/accessibility results.
 
-`portal-launcher.el` presents a real Emacs buffer in one reusable, borderless,
-nonactivating macOS panel. It uses Portal's existing module. Loading the feature
-does not create a frame or register a shortcut. Enable the mode to register
-Control–Option–Command–P; it opens the application picker from any application.
-Install the optional [launcher.el](https://github.com/xiaoxinghu/launcher.el)
-package first; this is the tested revision:
-
-```elisp
-(use-package launcher
-  :vc (:url "https://github.com/xiaoxinghu/launcher.el"
-       :rev "731146d95d7d1ff16f48e7a200da873c8d8b375c")
-  :commands (launcher launcher-refresh))
-```
+### A minimal picker
 
 After building and loading Portal:
 
+<!-- example: launcher-picker -->
 ```elisp
 (require 'portal-launcher)
-(portal-launcher-mode 1)        ; register shortcut, create the frame on first press
-(portal-launcher-present)      ; same app picker, without the global shortcut
-;; C-u M-x portal-launcher-present refreshes before prompting.
-;; M-x launcher-refresh refreshes separately.
-(portal-launcher-mode -1)       ; delete frame and release shortcut
-```
 
-For a persistent setup, install the pinned dependency above, build Portal, then
-add the following to your init file (replace the directory):
-
-```elisp
-(load "/absolute/path/to/portal/portal.el" nil t)
-(require 'portal-launcher)
-(setopt portal-launcher-shortcut "Control-Option-Command-P"
-        portal-launcher-command #'portal-launcher-applications
-        portal-launcher-size '(720 420)
-        portal-launcher-offset '(0 0))
-(portal-launcher-mode 1)
-```
-
-First try this in a fresh disposable Emacs with your completion/theme setup.
-After that passes, explicitly evaluate the setup in a fresh normal session.
-The launcher runs inside Emacs; it needs neither the app host, a separate
-launcher application nor a per-invocation `emacsclient`. Emacs must already be
-running, and long Lisp work delays invocation.
-
-To migrate from M-x.app, start with a different Portal chord. Record the old
-M-x launcher row's trigger and expression, then remove only that shortcut row
-in M-x Settings before assigning its chord to Portal. Keep M-x running for its
-other shortcuts, `emacs://` and `org-protocol://` bindings. Modifier double-taps
-remain M-x features. See the guide for the migration and rollback checks.
-
-To roll back, run `(portal-launcher-mode -1)` and remove the enable call from
-your init file. This deletes the dedicated panel, releases its global shortcut
-and removes its frame guards. Existing ordinary frames and Portal views remain
-usable. Restore the saved M-x launcher row if you migrated it. The shared native
-module stays loaded for other Portal features; restart Emacs to change its
-binary. Rebuilding or unloading Lisp does not replace a loaded native module.
-
-Type an application name, select it with your completion setup, then Return to
-launch or activate it. `launcher.el` owns the Spotlight index, directory list,
-duplicate-name labels, path annotations and `open -a` calls. Warm invocations
-reuse its cache; use explicit refresh after installing or removing an app.
-Its `launcher-app-directories`, `launcher-fallback-search-url` and
-`launcher-bangs` remain customizable. Unmatched text searches the web; `!g`,
-`!yt` and `!gh` followed by a space and query select a search engine.
-
-The default `portal-launcher-command` is `portal-launcher-applications`, a thin
-adapter around `launcher`. Return accepts the highlighted app, including the
-first candidate or one selected with arrow keys, without requiring typed text.
-An empty/whitespace completion result or a bang without a query cancels. In stock
-completion, Space inserts a space in this prompt and Tab completes; explicitly
-customized Space bindings are kept. Ordinary `M-x launcher` is unchanged.
-The package loads only when this command runs; missing installation produces a
-setup error, and other Portal features and custom commands do not require it.
-Discovery, missing-bundle and open errors close the panel and can be retried;
-refresh a stale index before trying a moved app. An empty Spotlight index reports
-an error and is retried on the next invocation. See
-[integration checks and timings](docs/launcher-applications.md).
-
-The explicit buffer API remains available:
-
-```elisp
-(portal-launcher-show (get-buffer-create "*Launcher*"))
-(portal-launcher-resize 713 407)
-(portal-launcher-hide)
-(portal-launcher-show)          ; same frame and content
-(portal-launcher-mode -1)       ; delete frame and release shortcut
-```
-
-`M-x portal-launcher-toggle` uses the same command as the shortcut. To run
-another interactive command, configure `portal-launcher-command`:
-
-```elisp
-(defun my/launcher-example ()
+(defun my/pick-fruit ()
+  "Pick a fruit in Portal's panel and show the choice."
   (interactive)
-  (message "Selected %s" (completing-read "Choose: " '("Apple" "Orange") nil t)))
-(setopt portal-launcher-command #'my/launcher-example)
-(portal-launcher-present)      ; run the configured command directly
-;; Or supply a command for just this invocation:
-(portal-launcher-present #'my/launcher-example)
+  (message "Picked %s"
+           (portal-launcher-present
+            (lambda () (completing-read "Fruit: " '("Apple" "Banana" "Cherry") nil t))
+            :kind 'minibuffer)))
+
+(keymap-global-set "C-c f" #'my/pick-fruit)
 ```
 
-Each call chooses how the panel looks, without registering a shortcut or
-changing the completion setup:
+`M-x my/pick-fruit` and `C-c f` run the same command, which shows only the
+prompt and an inline completion UI, such as Vertico, in the panel.
+`portal-launcher-present` returns the function's value, here the fruit, or nil
+when the panel is dismissed.
 
-```elisp
-;; Only the prompt and an inline completion UI, such as Vertico:
-(portal-launcher-present #'my/launcher-example :kind 'minibuffer)
-;; Any function of no arguments; its value is returned:
-(portal-launcher-present (lambda () (read-string "Name: ")) :kind 'minibuffer)
-;; A buffer window without mode lines:
-(portal-launcher-present #'my/buffer-command :kind 'buffer :mode-line nil)
-```
-
-`:kind 'buffer`, the default, shows a buffer window above the panel's own
-minibuffer, as before. Buffers the function displays appear in the panel, and
-windows it creates there are deleted when the panel hides. `:kind 'minibuffer`
-makes the whole panel a minibuffer: the prompt is its first line, an inline
-completion UI follows directly below, and unused lines stay empty at the
-bottom. Buffers the function displays appear nowhere, so stock completion's
-`*Completions*` list is not shown, though Tab still completes and Return
-accepts; Vertico, Icomplete's vertical mode or Fido show candidates in the
-panel. Commands that display or preview buffers, split windows or otherwise
-need a buffer window require `buffer`.
-
-Both kinds have `portal-launcher-size`, and Emacs does not fit the panel to its
-content. A completion UI that asks for more lines than the panel holds is
-clipped at the bottom; the default 420 points hold Vertico's default 10
-candidates. Lower the count or raise the height. Changing kind replaces the
-dedicated frame; presenting the same kind again reuses it.
-
-`:mode-line nil` hides the mode lines of the panel's windows, including windows
-created and buffers switched during the call; the default, t, shows each
-buffer's own. It sets the `mode-line-format` window parameter, so the same
-buffers keep their mode lines in other frames, and restores each window's
-earlier parameter when the panel hides. A minibuffer panel has none.
+### A persistent buffer
 
 A buffer UI, such as a dashboard, can stay open after the function that sets
 it up returns:
 
+<!-- example: launcher-hello -->
 ```elisp
 (define-derived-mode my/hello-mode special-mode "Hello")
 (keymap-set my/hello-mode-map "n" #'my/hello-greet)
@@ -294,14 +195,233 @@ it up returns:
 ```
 
 With `:keep-open t`, commands then run in the panel, here `n`, and their
-prompts use its minibuffer, until it is dismissed as below; the call returns
-nil then. The session's display rules, Escape and C-g, and focus handling
-last until then. An error in a later command is reported and the panel
-stays open. Dismissal kills no buffer, so `*Hello*` keeps its contents.
+prompts use its minibuffer, until it is dismissed as described below; the call
+returns nil then. The session's display rules, Escape and C-g, and focus
+handling last until then. An error in a later command is reported and the
+panel stays open. Dismissal kills no buffer, so `*Hello*` keeps its contents.
 `:keep-open` defaults to nil, which hides the panel when the function
 returns, and needs `:kind 'buffer`. While the panel is open, Emacs is in a
 recursive edit, so the default mode line shows brackets around the mode
 name.
+
+### Global shortcuts for launchers
+
+Set a global shortcut for each launcher that should open from any
+application. A shortcut need not present a panel:
+
+<!-- example: launcher-shortcuts -->
+```elisp
+(portal-global-shortcut-set 'pick-fruit "Control-Option-Command-F" #'my/pick-fruit)
+(portal-global-shortcut-set 'hello "Control-Option-Command-H" #'my/hello)
+(portal-global-shortcut-set 'clock "Control-Option-Command-K"
+                            (lambda () (message "%s" (format-time-string "%H:%M"))))
+```
+
+Remove one with `(portal-global-shortcut-remove 'hello)`; the others stay set.
+Shortcuts and the panel have separate lifetimes: dismissing, hiding or deleting
+the panel, or disabling `portal-launcher-mode`, leaves every shortcut set, and
+evaluating the configuration again keeps one registration per name. Pressing a
+launcher's chord while a panel is open dismisses it: a second invocation
+cancels the active session and presents nothing, so press again to open
+another launcher. [Global shortcuts](#global-shortcuts) describes the notation,
+conflicts and delivery.
+
+### Application launcher with launcher.el (optional)
+
+Portal includes no application picker. The separate
+[launcher.el](https://github.com/xiaoxinghu/launcher.el) package discovers
+applications with Spotlight, launches or activates them with `open -a` and
+searches the web for other text; `!g`, `!yt` and `!gh` followed by a space and
+a query choose a search engine. It owns its index, duplicate-name labels, path
+annotations and `launcher-app-directories`, `launcher-fallback-search-url` and
+`launcher-bangs` options. This recipe was tested with this revision:
+
+```elisp
+(use-package launcher
+  :vc (:url "https://github.com/xiaoxinghu/launcher.el"
+       :rev "731146d95d7d1ff16f48e7a200da873c8d8b375c")
+  :commands (launcher launcher-refresh))
+```
+
+At that revision, `launcher` searches the web when completion returns an empty
+string or a bang without a query, and stock completion's Space completes a word,
+consuming the space in `!gh query`. Until launcher.el handles these, wrap its
+completion reader in your configuration, as Portal's former built-in adapter
+did:
+
+<!-- example: launcher-app -->
+```elisp
+(defun my/launcher-reader (reader)
+  "Return a completion reader that calls READER for launcher.el.
+In stock completion, Space inserts a space, so that \"!gh query\" can be
+typed.  An empty result or a bang with no query cancels instead of searching."
+  (lambda (&rest arguments)
+    (let* ((choice (minibuffer-with-setup-hook
+                       (lambda ()
+                         (when (eq (key-binding " ") #'minibuffer-complete-word)
+                           (use-local-map (define-keymap :parent (current-local-map)
+                                            "SPC" #'self-insert-command))))
+                     (let ((completing-read-function reader))
+                       (apply reader arguments))))
+           (words (split-string choice)))
+      (when (or (null words)
+                (and (null (cdr words)) (assoc (car words) launcher-bangs)))
+        (signal 'quit nil))
+      choice)))
+
+(defun my/app-launcher ()
+  "Launch an app or search the web with launcher.el in Portal's panel.
+With a prefix argument, launcher.el rebuilds its app index first."
+  (interactive)
+  (let ((completing-read-function (my/launcher-reader completing-read-function)))
+    (portal-launcher-present #'launcher :kind 'minibuffer)))
+
+(portal-global-shortcut-set 'app-launcher "Control-Option-Command-P" #'my/app-launcher)
+```
+
+The panel shows only the prompt and candidates. With Vertico, or another
+completion UI that highlights a candidate, Return accepts the highlighted
+app, including the first one or one chosen with Up and Down, without typed
+text. Stock completion shows no candidates in a minibuffer panel; type a name,
+complete it with Tab, or use `:kind 'buffer` to see `*Completions*`. In stock
+completion, Space inserts a space and Tab completes; a customized Space binding
+is kept. The wrapper keeps your completion reader and changes no global
+setting, so ordinary `M-x launcher` is unchanged.
+
+`C-u M-x my/app-launcher` rebuilds launcher.el's index before prompting, and
+`M-x launcher-refresh` rebuilds it separately; refresh after installing,
+removing or moving an app. Launching an app gives it focus as the panel hides.
+Escape, C-g, the chord again, an empty result or a bang without a query close
+the panel without an action and return focus to the previous app; clicking
+another app hides it, leaving that app in front. Discovery and launch errors
+close the panel and can be retried. Once launcher.el handles the three input
+rules itself, present `#'launcher` directly and drop `my/launcher-reader`. See
+the [application notes](docs/launcher-applications.md) for the upstream
+follow-ups, the optional integration smoke test and the historical evidence.
+
+### Set up safely
+
+Start in a disposable graphical Emacs. This feature depends on internal Emacs
+NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
+only GNU Emacs NS **31.1**, revision
+`a360712c9d272d950d8d8255ef74570f7e90b7d9`. Rebuild Portal and restart Emacs before
+using the new bindings. Native-compiled Emacs also needs a working
+`modify-frame-parameters` and `delete-frame` trampolines so native callers cannot
+bypass the frame guard or delete a frame with live session prompts.
+Leave `native-comp-enable-subr-trampolines` enabled; if the trampoline is missing
+and Emacs cannot compile it, presenting fails before creating a frame.
+
+Try a new setup in a fresh disposable Emacs with your completion/theme setup
+first. After that passes, explicitly evaluate it in a fresh normal session.
+The launcher runs inside Emacs; it needs neither the app host, a separate
+launcher application nor a per-invocation `emacsclient`. Emacs must already be
+running, and long Lisp work delays invocation.
+
+`(portal-launcher-mode -1)` deletes the dedicated panel and removes its frame
+guards. Existing ordinary frames, Portal views and global shortcuts remain
+usable, and the next presentation creates the panel again. The shared native
+module stays loaded for other Portal features; restart Emacs to change its
+binary. Rebuilding or unloading Lisp does not replace a loaded native module.
+
+To migrate from M-x.app, start with a different Portal chord. Record the old
+M-x launcher row's trigger and expression, then remove only that shortcut row
+in M-x Settings before assigning its chord to your Portal shortcut. Keep M-x
+running for its other shortcuts, `emacs://` and `org-protocol://` bindings.
+Modifier double-taps remain M-x features. See the guide for the migration and
+rollback checks. Restore the saved M-x launcher row if you roll back.
+
+### Migrate from the built-in launcher
+
+Until 2026-10-05, Portal included an application picker, ran it by default and
+registered its chord when `portal-launcher-mode` was enabled. Each removed name
+is gone without an alias, so an old setting cannot claim a chord or run a
+picker by itself:
+
+| Before | Now |
+| --- | --- |
+| `portal-launcher-applications`, the default command | Removed; use the launcher.el recipe above |
+| `portal-launcher-command` | Removed; pass the function to `portal-launcher-present`, which now requires it |
+| `portal-launcher-shortcut`, which the mode set as the global shortcut `portal-launcher` | Removed; call `portal-global-shortcut-set` with your command |
+| `portal-launcher-toggle` | Removed; a second invocation of your command dismisses its panel, and `portal-launcher-show` and `portal-launcher-hide` show and hide a plain buffer |
+| `M-x portal-launcher-present`, with `C-u` to refresh | No longer a command; use `M-x my/app-launcher`, with `C-u` to refresh |
+| `portal-launcher-mode` | Retained; it registers no chord, presenting enables it, and disabling it still deletes the panel and removes its guards |
+| `portal-launcher-present`, `portal-launcher-show`, `portal-launcher-hide`, `portal-launcher-cancel`, `portal-launcher-resize` and the appearance options | Retained; `portal-launcher-present`'s function is required |
+
+An init file like this:
+
+```elisp
+(require 'portal-launcher)
+(setopt portal-launcher-shortcut "Control-Option-Command-P"
+        portal-launcher-command #'portal-launcher-applications
+        portal-launcher-size '(720 420)
+        portal-launcher-offset '(0 0))
+(portal-launcher-mode 1)
+```
+
+becomes the `use-package` form and the recipe above, after the `require`,
+with any appearance settings kept:
+
+```elisp
+(setopt portal-launcher-size '(720 420)
+        portal-launcher-offset '(0 0))
+```
+
+In a running Emacs, run `(portal-launcher-mode -1)` before loading the new
+version, or `(portal-global-shortcut-remove 'portal-launcher)` after, to free
+the old chord for your own shortcut; restarting Emacs also frees it. Settings
+of removed options do nothing and vanish on restart. To roll back to the
+built-in launcher, check out `bc99e90`, the last commit with it, rebuild,
+restart Emacs and restore the old init file. To remove a launcher you configured, delete its setup from the init
+file and run `(portal-global-shortcut-remove 'app-launcher)` and
+`(portal-launcher-mode -1)`; other Portal features and shortcuts keep working.
+
+### Presentation options and lifecycle
+
+The explicit buffer API remains available:
+
+```elisp
+(portal-launcher-show (get-buffer-create "*Launcher*"))
+(portal-launcher-resize 713 407)
+(portal-launcher-hide)
+(portal-launcher-show)          ; same frame and content
+(portal-launcher-mode -1)       ; delete the frame
+```
+
+Each call to `portal-launcher-present` chooses how the panel looks, without
+registering a shortcut or changing the completion setup:
+
+```elisp
+;; Only the prompt and an inline completion UI, such as Vertico:
+(portal-launcher-present (lambda () (completing-read "Fruit: " '("Apple" "Banana")))
+                         :kind 'minibuffer)
+;; Any function of no arguments; its value is returned:
+(portal-launcher-present (lambda () (read-string "Name: ")) :kind 'minibuffer)
+;; A buffer window without mode lines:
+(portal-launcher-present #'my/buffer-command :kind 'buffer :mode-line nil)
+```
+
+`:kind 'buffer`, the default, shows a buffer window above the panel's own
+minibuffer. Buffers the function displays appear in the panel, and windows it
+creates there are deleted when the panel hides. `:kind 'minibuffer` makes the
+whole panel a minibuffer: the prompt is its first line, an inline completion UI
+follows directly below, and unused lines stay empty at the bottom. Buffers the
+function displays appear nowhere, so stock completion's `*Completions*` list is
+not shown, though Tab still completes and Return accepts; Vertico, Icomplete's
+vertical mode or Fido show candidates in the panel. Commands that display or
+preview buffers, split windows or otherwise need a buffer window require
+`buffer`.
+
+Both kinds have `portal-launcher-size`, and Emacs does not fit the panel to its
+content. A completion UI that asks for more lines than the panel holds is
+clipped at the bottom; the default 420 points hold Vertico's default 10
+candidates. Lower the count or raise the height. Changing kind replaces the
+dedicated frame; presenting the same kind again reuses it.
+
+`:mode-line nil` hides the mode lines of the panel's windows, including windows
+created and buffers switched during the call; the default, t, shows each
+buffer's own. It sets the `mode-line-format` window parameter, so the same
+buffers keep their mode lines in other frames, and restores each window's
+earlier parameter when the panel hides. A minibuffer panel has none.
 
 The function is an interactive command, called with `call-interactively` so it
 sees a prefix argument, or any function of no arguments, called with `funcall`.
@@ -322,37 +442,7 @@ only for the session.
 
 Functions must be synchronous. Invoke after any existing minibuffer has
 finished. Functions that deliberately use other frames or catch arbitrary
-throws need explicit wrappers. Set `portal-launcher-command` back to nil for
-the plain reusable buffer, reusing any content supplied to
-`portal-launcher-show`.
-
-The mode's chord is the [global shortcut](#global-shortcuts) named
-`portal-launcher`, which calls `portal-launcher-toggle`; its notation and
-delivery are those of every global shortcut. Change the chord with Customize or
-`setopt`; changes take effect immediately while enabled. For example:
-
-```elisp
-(setopt portal-launcher-shortcut "Control-Option-Command-L")
-```
-
-The default does not claim Command-Space. A chord that macOS reports as
-unavailable raises an error and retains the previous registration; failed
-`setopt` also retains the previous option value. Repeated enable keeps one
-registration, successful rebind releases the old chord, and
-`portal-launcher-mode -1`, unloading, or exiting releases it, leaving other
-global shortcuts set. After changing the option with `setq`, enable the mode
-again to apply it. A press that waits while the panel is shown some other way,
-such as with `portal-launcher-show`, still toggles it.
-
-Start in a disposable graphical Emacs. This feature depends on internal Emacs
-NS behavior, and a native defect can crash the hosting Emacs. Initially it accepts
-only GNU Emacs NS **31.1**, revision
-`a360712c9d272d950d8d8255ef74570f7e90b7d9`. Rebuild Portal and restart Emacs before
-using the new bindings. Native-compiled Emacs also needs a working
-`modify-frame-parameters` and `delete-frame` trampolines so native callers cannot
-bypass the frame guard or delete a frame with live session prompts.
-Leave `native-comp-enable-subr-trampolines` enabled; if the trampoline is missing
-and Emacs cannot compile it, enabling the launcher fails before creating a frame.
+throws need explicit wrappers.
 
 Customize `portal-launcher-size` (default `(720 420)`), `portal-launcher-offset`
 (`(0 0)`, positive right/down), `portal-launcher-screen` (nil uses the pointer's
@@ -1634,7 +1724,7 @@ the app sends, in order. Other web views have no bridge.
 | `portal-view.el` | Module loading, the shared Portal view lifecycle (open, placement, hiding and closing), and the notification pipe |
 | `portal-web.el` | Web buffers, URL and HTML previews, Hello and Markdown previews on the app host, and the bridge |
 | `portal-excalidraw.el` | Excalidraw drawing buffers, a hosted-app client of the bridge |
-| `portal-launcher.el` | Opt-in launcher frame lifecycle, its global shortcut, command sessions and dismissal |
+| `portal-launcher.el` | Opt-in launcher frame lifecycle, command sessions and dismissal; it sets no global shortcut |
 | `portal-global-shortcut.el` | Named global shortcuts: validation, conflicts by name, queuing presses and calling their functions from the command loop |
 | `portal-input.el` | Chords that fall through to Emacs, read with the view's buffer's keymaps; focus policy and input notifications |
 | `portal-terminal.el` | Terminal buffers, their names, projects and cached metadata, completion, and terminal commands |
@@ -1881,8 +1971,15 @@ error is a message, keeps every shortcut, and lets the press queued behind it
 run; that records split across reads arrive, malformed and stale ones do not,
 and a press while one waits is dropped; that removal is independent and
 repeatable; and that unloading and a real `kill-emacs` release every chord.
-`ctest -R launcher` checks that the launcher's mode is a client of the same
-module: it sets and removes only its own shortcut, atomically.
+`ctest -R launcher` runs without launcher.el. It checks that loading, enabling
+and presenting the panel set no global shortcut, and that disabling and
+deleting it leave every shortcut set. It evaluates the launcher examples from
+this README, with native calls stubbed: the picker runs from M-x, its key and
+its shortcut's record through the command loop; the persistent hello buffer
+reads a name from its shortcut and from M-x, and its chord pressed again
+dismisses it; a shortcut presents nothing. Evaluating the shortcuts again
+replaces each registration, so a press from before calls nothing, and removing
+one leaves the others.
 
 Batch tests of web buffers run with `ctest --test-dir build -R web`. They cover
 `portal-open-url` opening a new buffer each time, the view following the selected
@@ -2101,7 +2198,6 @@ emacs -Q --module-assertions -L "$PWD" -L "$PWD/test" \
   -L "$PWD/build/elpa/consult-3.10" -L "$PWD/build/elpa/vertico-2.15" \
   -L "$PWD/build/elpa/orderless-1.8" -L "$PWD/build/elpa/org-ql-0.8.10" \
   -L "$PWD/build/elpa/marginalia-2.13" \
-  -L "$PWD/build/elpa/launcher-731146d95d7d1ff16f48e7a200da873c8d8b375c" \
   -L "$PWD/build/elpa/org-super-agenda-1.3" -L "$PWD/build/elpa/ts.el-0.3" \
   -L "$PWD/build/elpa/ov-1.0.6" -L "$PWD/build/elpa/s.el-1.13.1" \
   -L "$PWD/build/elpa/ht.el-2.3" -L "$PWD/build/elpa/dash-2.20.0" -l "$PWD/portal.el" \
@@ -2199,12 +2295,13 @@ Events are sent to the installed handler, not typed.
 The graphical `portal-launcher-gui-` tests use
 the real Emacs NS view, including repeated show/hide and delete/recreate,
 appearance/font changes, child-frame deletion, native keyboard input and exact
-geometry on every connected monitor. A test-only Carbon event injector covers
-the installed native callback, pipe parsing, and command-loop show/dismiss under
-a transient keymap. This injection does not establish physical-key or Spaces
+geometry on every connected monitor. A test-only Carbon event injector presses
+global shortcuts through the installed native callback, pipe parsing and the
+real command loop. This injection does not establish physical-key or Spaces
 behavior. Run them with subroutine trampolines enabled.
-Command-session tests type native Escape and queue C-g into nested prompts, invoke the
-shortcut again, delete/disable during a prompt and immediately re-enter. They
+Command-session tests type native Escape and queue C-g into nested prompts,
+press a launcher's shortcut again, delete/disable during a prompt and
+immediately re-enter. They
 exercise stock completion and Vertico/Orderless/Marginalia, propagate a command
 error after hiding, and use the running Finder app to verify cancellation,
 successful external activation and actual native focus-loss delivery. The
@@ -2213,9 +2310,18 @@ The NS injector holds synthetic C-g even in an ordinary `read-string`, so that
 key is tested as an Emacs command-loop event. Physical C-g and mouse click-away
 are covered by the user's recorded daily-use acceptance. Session ID
 and stale-record policy are covered by batch ERT and the C notification tests.
-The launcher's shortcut is a global shortcut there: the injected press shows
-and hides the panel through the real command loop, and one from before the
-mode was enabled again is ignored.
+The README's launchers run as a user configures them, on test chords from F17
+to F20: the picker from M-x and its key, queued for the command loop, and from
+its shortcut, each typed into with native keys; the persistent hello buffer
+from its shortcut, dismissed by the same chord; and a shortcut that leaves the
+hidden panel alone. The shortcuts outlast deleting and disabling the panel,
+evaluating them again keeps one registration each, and a removed shortcut's
+hot key is no longer handled. A generic picker returns what completion
+returns: a typed name, Return on Vertico's highlighted candidate with no typed
+text, after Down and after Down then Up, stock completion's empty result, and
+nil after Escape. The optional launcher.el recipe is tested separately, outside
+CTest, by `test/launcher-recipe.sh`; see the
+[application notes](docs/launcher-applications.md#optional-integration-smoke-test).
 
 Presentation tests run a real Vertico picker in a minibuffer panel at two
 sizes. From inside the prompt they check that the minibuffer is the panel's

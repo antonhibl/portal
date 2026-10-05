@@ -3,13 +3,11 @@
 
 ;; Opt-in and build-restricted: this moves Emacs's internal NS view. A native
 ;; defect can crash Emacs. Loading this file creates no frame or shortcut.
-(require 'portal-global-shortcut)
+;; Presenting claims no chord and Portal chooses no command: user
+;; configuration composes launchers from `portal-launcher-present' and, when
+;; a chord should invoke one from any application, `portal-global-shortcut-set'.
 (require 'portal-view)
 (require 'subr-x)
-
-(declare-function launcher "launcher" (&optional refresh))
-(declare-function launcher--bang-for-input "launcher" (input))
-(defvar launcher-bangs)
 
 (declare-function portal--launcher-attach "portal-launcher" (title))
 (declare-function portal--launcher-prepare "portal-launcher" ())
@@ -22,50 +20,6 @@
 
 (defvar portal-launcher-mode nil)
 
-(defcustom portal-launcher-command #'portal-launcher-applications
-  "Interactive command run by the launcher shortcut and toggle.
-The default uses the optional launcher.el package for apps and web searches.
-Nil keeps the reusable buffer presentation.  A command runs synchronously
-inside `portal-launcher-present', with the user's completion configuration.
-Commands that deliberately select other frames require their own wrapper."
-  :type '(choice (const :tag "Show a buffer" nil) function))
-
-;;;###autoload
-(defun portal-launcher-applications (&optional refresh)
-  "Pick an application or web search with the optional launcher.el package.
-This is the default command inside `portal-launcher-present'. With prefix
-argument REFRESH, rebuild the package's Spotlight cache before prompting.
-Use `launcher-refresh' to refresh separately. Accept a selected application
-even when no text was typed. Empty results and bangs without a query cancel.
-The user's completion reader, app identities and search settings are kept;
-ordinary `launcher' invocations are unchanged."
-  (interactive "P")
-  (unless (require 'launcher nil t)
-    (user-error "Install launcher.el from https://github.com/xiaoxinghu/launcher.el and add it to load-path (see Portal README)"))
-  (let* ((reader completing-read-function)
-         (completing-read-function
-          (lambda (&rest arguments)
-            ;; The reader's result includes a candidate accepted with Return
-            ;; or arrow navigation, even when the search text stayed empty.
-            (let* ((choice
-                    (minibuffer-with-setup-hook
-                        (lambda ()
-                          ;; Stock completion binds Space to word completion,
-                          ;; which eats the separator in "!g query". Keep Tab
-                          ;; completion and any explicitly customized binding.
-                          (when (eq (key-binding " ") #'minibuffer-complete-word)
-                            (use-local-map (copy-keymap (current-local-map)))
-                            (local-set-key " " #'self-insert-command)))
-                      (let ((completing-read-function reader))
-                        (apply reader arguments))))
-                   (bang (launcher--bang-for-input choice)))
-              (when (or (string-blank-p choice)
-                        (assoc-string (string-trim choice) launcher-bangs)
-                        (and bang (string-blank-p (substring choice (1+ (length (car bang)))))))
-                (signal 'quit nil))
-              choice))))
-    (launcher refresh)))
-
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
   tag native-id teardown blurred)
 (defvar portal-launcher--session nil "The active command session, or nil.")
@@ -76,33 +30,6 @@ ordinary `launcher' invocations are unchanged."
     (define-key map (kbd "C-g") #'portal-launcher-cancel)
     map)
   "Keys active only while a launcher command is running.")
-
-;; Until user configuration composes launchers, the mode registers this one
-;; global shortcut, like any other client of `portal-global-shortcut-set'.
-(defun portal-launcher--register (chord)
-  "Make CHORD toggle the launcher, as the global shortcut `portal-launcher'."
-  (portal-global-shortcut-set 'portal-launcher chord #'portal-launcher-toggle))
-
-(defun portal-launcher--registered ()
-  "Whether the launcher's global shortcut is set."
-  (and (assq 'portal-launcher portal-global-shortcut--registrations) t))
-
-(defun portal-launcher--set-shortcut (symbol value)
-  "Set SYMBOL to VALUE, rebinding an enabled launcher atomically."
-  (unless (and (stringp value) (> (length value) 0))
-    (user-error "Launcher shortcut must be a nonempty chord string"))
-  (when portal-launcher-mode
-    (portal-launcher--register value))
-  (set-default symbol value))
-
-(defcustom portal-launcher-shortcut "Control-Option-Command-P"
-  "Global physical-key chord registered while `portal-launcher-mode' is on.
-The mode sets it as the global shortcut `portal-launcher', which toggles
-the launcher; see `portal-global-shortcut-set' for the notation, such as
-Control-Option-Command-P. Use Customize or `setopt' to rebind immediately;
-a conflict retains the old value and registration. After `setq', enable the
-mode again to apply it."
-  :type 'string :set #'portal-launcher--set-shortcut)
 
 (defcustom portal-launcher-size '(720 420)
   "Launcher width and height in AppKit logical points, at least 200 by 100.
@@ -265,19 +192,20 @@ trampoline, native-compiled built-in setters bypass Lisp advice."
     ;; Let delete-frame validate deletion (e.g. an active minibuffer) before
     ;; its hook detaches. If it refuses, keep ownership and guards intact.
     (delete-frame portal-launcher--frame t))
-  (portal-global-shortcut-remove 'portal-launcher)
   (portal-launcher--hooks nil)
   (portal-launcher--forget-blur)
   (setq portal-launcher-mode nil))
 
 ;;;###autoload
 (define-minor-mode portal-launcher-mode
-  "Opt in to Portal's build-restricted native launcher.
-Enabling sets `portal-launcher-shortcut' as the global shortcut
-`portal-launcher', without creating a frame. Repeated enable applies any
-changed chord; disabling removes only that shortcut.
-Disabling restores the native window before deleting the dedicated frame.
-A native defect can crash the hosting Emacs; start in a disposable Emacs."
+  "Portal's build-restricted native launcher panel.
+Presenting or showing the panel enables this mode, which validates the
+Emacs build and installs the panel's frame guards and lifecycle hooks.
+Enabling creates no frame and registers no global shortcut; an init file
+need not enable it. Disabling cancels an active presentation, restores the
+native window, deletes the dedicated frame and removes the guards, and
+leaves every global shortcut set. A native defect can crash the hosting
+Emacs; start in a disposable Emacs."
   :global t :group 'portal-launcher
   (if portal-launcher-mode
       (condition-case error
@@ -285,17 +213,15 @@ A native defect can crash the hosting Emacs; start in a disposable Emacs."
             (portal-launcher--check-support)
             (portal-view--load)
             (unless (and (fboundp 'portal--launcher-attach)
-                         (fboundp 'portal--launcher-prepare)
-                         (fboundp 'portal--shortcut-set))
+                         (fboundp 'portal--launcher-prepare))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
-            (portal-launcher--check-guard)
-            (unless (and (stringp portal-launcher-shortcut) (> (length portal-launcher-shortcut) 0))
-              (user-error "Launcher shortcut must be a nonempty chord string"))
-            (portal-launcher--register portal-launcher-shortcut))
+            (portal-launcher--check-guard))
         (error
-         (unless (portal-launcher--registered) (portal-launcher--hooks nil))
-         (setq portal-launcher-mode (portal-launcher--registered))
+         ;; A live panel keeps its guards: its frame must detach on deletion.
+         (unless (frame-live-p portal-launcher--frame)
+           (portal-launcher--hooks nil)
+           (setq portal-launcher-mode nil))
          (signal (car error) (cdr error))))
     (condition-case error
         (portal-launcher--disable)
@@ -404,12 +330,16 @@ if it never started.  One window always stays."
           (delete-window window))))))
 
 ;;;###autoload
-(defun portal-launcher-present (&optional function &rest options)
+(defun portal-launcher-present (function &rest options)
   "Present FUNCTION in the launcher, hide it and return FUNCTION's value.
 FUNCTION is an interactive command, called with `call-interactively' so it
 sees any prefix argument, or a function of no arguments, called with
-`funcall'. It defaults to `portal-launcher-command' and runs with the buffer
-*Portal Launcher* current.
+`funcall'. It runs with the buffer *Portal Launcher* current.
+
+Presenting registers no global shortcut. To invoke a launcher, define a
+command that calls this function with its options, then run it with M-x,
+bind it to a key or set it as a global shortcut with
+`portal-global-shortcut-set'.
 
 OPTIONS are keywords, each followed by its value:
 :kind `buffer', the default, shows a buffer window above the panel's own
@@ -434,15 +364,15 @@ Both kinds have `portal-launcher-size'; a completion UI taller than the
 panel is clipped at the bottom. An invalid FUNCTION or option signals an
 error before anything is shown or an active session is cancelled.
 
-A second invocation cancels the active session. Escape, C-g, errors and
-focus loss unwind nested prompts before hiding; completion, display and
-presentation settings are scoped to this call. Cancellation restores the
-previous application's focus only if the panel still owns it. Success and
-click-away never activate the previous app. Functions that catch arbitrary
-throws or deliberately select other frames are outside this interface. Do
-not invoke from an existing minibuffer."
-  (interactive)
-  (setq function (or function portal-launcher-command))
+A second invocation, such as the same global shortcut pressed again,
+cancels the active session and presents nothing, so a command bound to a
+chord toggles its panel. Escape, C-g, errors and focus loss unwind nested
+prompts before hiding; completion, display and presentation settings are
+scoped to this call. Cancellation restores the previous application's
+focus only if the panel still owns it. Success and click-away never
+activate the previous app. Functions that catch arbitrary throws or
+deliberately select other frames are outside this interface. Do not invoke
+from an existing minibuffer."
   (portal-launcher--check-function function)
   (pcase-let ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options)))
     (when portal-launcher--session (portal-launcher-cancel))
@@ -526,18 +456,6 @@ not invoke from an existing minibuffer."
               ('disable (portal-launcher--disable))))))
       (when (consp outcome) (cdr outcome)))))
 
-;;;###autoload
-(defun portal-launcher-toggle ()
-  "Toggle the launcher, running `portal-launcher-command' when configured."
-  (interactive)
-  (when portal-launcher--session (portal-launcher-cancel))
-  (if (and portal-launcher-mode (plist-get (portal--launcher-inspect) :visible))
-      (portal-launcher-hide)
-    (if portal-launcher-command (portal-launcher-present)
-      (portal-launcher-show
-       (unless (portal-launcher--live-p 'buffer)
-         (get-buffer-create "*Portal Launcher*"))))))
-
 (defun portal-launcher--create (kind)
   "Create and attach one new dedicated frame for KIND, rolling back on failure."
   (dolist (parameter portal-launcher-frame-parameters)
@@ -578,8 +496,9 @@ not invoke from an existing minibuffer."
   "Show BUFFER in the dedicated launcher and return its frame.
 With no BUFFER, reuse its content; the first show uses the current buffer,
 as does the first after a minibuffer presentation replaced the frame.
-Interactively prompt for a buffer. This explicitly opts in to
-`portal-launcher-mode'. Size and presentation customizations apply each time."
+Interactively prompt for a buffer. This enables `portal-launcher-mode',
+which registers no shortcut. Size and presentation customizations apply
+each time."
   (interactive (list (read-buffer "Launcher buffer: " (current-buffer) t)))
   (portal-launcher--show 'buffer buffer t))
 
