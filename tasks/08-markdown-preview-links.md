@@ -73,6 +73,13 @@ Other-pane placement is the default, with `display-buffer-alist` remaining autho
 
 ## Acceptance criteria
 
+Historical checklist: both this document and the matching DONE record in
+`project.org_archive` (`CUSTOM_ID: 08-markdown-preview-links`) retained unchecked
+boxes. The feature was merged in
+[PR #12](https://github.com/xiaoxinghu/portal/pull/12). Status remains done;
+these original marks are preserved rather than claiming a new item-by-item
+acceptance run during task reconciliation. They are not separate backlog tasks.
+
 - [ ] Clicking a relative link to another Markdown file shows that file in the same view, and the buffer is renamed after it
 - [ ] Relative links in the new document resolve from its directory; local absolute paths and local `file:` URLs follow the same routing rules
 - [ ] Back and Forward in the toolbar, and `l` and `r` in Emacs, move through visited Markdown documents and restore reading positions; unavailable buttons are disabled
