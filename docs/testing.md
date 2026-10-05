@@ -43,8 +43,8 @@ Use a logged-in macOS desktop VM to keep GUI tests from taking the host's focus.
 With passwordless SSH configured as `portal-vm`, run from the checkout to test:
 
 ```sh
-python3 test/vm-gui.py
-python3 test/vm-gui.py -- sh test/launcher-daily-use.sh
+bash test/vm-gui.sh
+bash test/vm-gui.sh sh test/launcher-daily-use.sh
 ```
 
 The runner copies tracked and untracked, non-ignored files (including uncommitted
@@ -53,8 +53,10 @@ and executes the command there. Deleted files, Git metadata and ignored build
 outputs are not copied. For compound commands, pass `sh -c 'command…'` explicitly.
 The test command inherits the installed Emacs app's native compiler library
 path, which direct SSH launches otherwise miss; trampolines remain enabled.
-Use `--host` or `PORTAL_TEST_VM` for another SSH alias. `--timeout` limits each
-build/test stage to 1,200 seconds by default, after it acquires the desktop lock.
+Set `PORTAL_TEST_VM` for another SSH alias. `PORTAL_TEST_TIMEOUT` sets the positive
+integer limit in seconds for each build/test stage (default: 1,200), after the
+runner acquires the desktop lock. The runner uses Bash and macOS's built-in
+`lockf`, SSH and rsync; it needs no Python or additional npm packages.
 
 Each invocation has its own files. Builds and GUI commands queue on one
 guest-wide file lock because they share the desktop and the VM's resources.
@@ -79,8 +81,8 @@ Guest preparation:
   verify the guest host key, and configure an SSH alias. Private keys stay on
   the host. The desktop and SSH account must be the same user.
 - Install Xcode with Swift 6.2 or newer, select its developer directory, and
-  complete its first-launch setup. Install Homebrew, then CMake, Ninja, Python 3
-  and Bun. Homebrew tools must be available under `/opt/homebrew/bin`.
+  complete its first-launch setup. Install Homebrew, then CMake, Ninja and Bun.
+  Homebrew tools must be available under `/opt/homebrew/bin`.
 - Install the same Homebrew Emacs cask as the host. For this environment it is
   `d12frosted/emacs-plus/emacs-plus-app`, build `31.1-349`. Verify the installed
   Emacs revision against [the launcher prerequisites](launcher.md), including

@@ -75,6 +75,8 @@ if(BUILD_TESTING)
     set_tests_properties(processes PROPERTIES TIMEOUT 30)
     add_test(NAME pi-extension COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/portal-pi.test.ts")
     set_tests_properties(pi-extension PROPERTIES TIMEOUT 30)
+    add_test(NAME vm-runner COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/vm-gui.test.ts")
+    set_tests_properties(vm-runner PROPERTIES TIMEOUT 30)
     add_test(NAME host-actions COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/actions.test.ts")
     add_test(NAME host-tasks COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/host/tasks.test.ts")
     add_test(NAME actions

@@ -7,7 +7,7 @@ The task is done when its changes are committed on that branch and the project's
 Before changing code, read [Contributing](CONTRIBUTING.md) for build setup,
 required checks and generated-file boundaries. After rebuilding a loaded native
 module, restart Emacs; it does not hot-reload. Run native GUI checks through
-`python3 test/vm-gui.py -- <command>` in the prepared macOS VM, using a disposable
+`bash test/vm-gui.sh <command>` in the prepared macOS VM, using a disposable
 Emacs. Before running them, read [the VM workflow](docs/testing.md#graphical-checks-in-a-macos-vm)
 for connection, isolation and logs. This keeps test windows off the host desktop.
 
