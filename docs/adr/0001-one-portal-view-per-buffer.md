@@ -1,7 +1,7 @@
 # One Portal view per buffer, following the selected pane
 
-Every view kind uses the same placement rule. A buffer has at most one Portal view, and the view appears in the selected pane that shows the buffer. While the minibuffer is selected, the selected pane is the window it returns to, so a buffer previewed there, as Consult previews, shows its view. Other panes showing the same buffer display only its placeholder text. We chose this rule because a terminal session and a hosted app's document can each be drawn in only one place at a time, and every view kind must behave the same way. To see two web pages side by side, open two buffers.
+Every buffer has at most one Portal view, shown in the selected pane displaying that buffer. While the minibuffer is selected, this means its return window, so previews there, such as Consult's, show their views. Other panes displaying the buffer show only placeholder text. This rule keeps all view kinds consistent: a terminal session or hosted app's document can appear in only one place at a time. For two web pages side by side, open two buffers.
 
 ## Considered Options
 
-- **A native view in every pane showing the buffer.** Web views used to work this way, with each pane holding its own independent page. We dropped it because terminals and hosted apps cannot support it, and keeping it for web alone would give the kinds different lifecycles.
+- **A native view in every pane showing the buffer.** Web views formerly gave each pane an independent page. We dropped this because terminals and hosted apps cannot support it; retaining it for web alone would give view kinds different lifecycles.

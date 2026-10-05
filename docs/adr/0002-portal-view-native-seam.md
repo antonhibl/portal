@@ -1,6 +1,6 @@
 # Portal view native seam: per-target calls, named per-kind exports, frame title on every placement
 
-Emacs drives every Portal view through a small set of lifecycle calls, each addressed by the view's native target (`web:3`, `terminal:2`): open, place, hide, close, inspect. Operations that only make sense for one view kind get their own named exports, such as `portal--web-send` and `portal--terminal-paste`. Each placement call resolves the frame again by temporarily renaming it to a unique title, and nothing about frames is cached across the seam. We chose these because they are the most straightforward options with two view kinds, and because nothing can go stale between Emacs and the native module.
+Emacs drives every Portal view through lifecycle calls addressed by native target (`web:3`, `terminal:2`): open, place, hide, close, inspect. Kind-specific operations have named exports, such as `portal--web-send` and `portal--terminal-paste`. Each placement resolves the frame afresh by temporarily giving it a unique title; no frame information is cached across the seam. These choices are simplest for two view kinds and prevent stale information between Emacs and the native module.
 
 The native module exports these 19 functions:
 
@@ -12,6 +12,6 @@ The native module exports these 19 functions:
 
 ## Considered Options
 
-- **One declarative layout call carrying the placement of every view.** Rejected. Every open view would have to appear in every call, so one registry mismatch breaks all later syncs. The all-or-nothing validation only pays off when views depend on each other, and with one view per buffer they don't (ADR 0001).
-- **A generic `portal--call TARGET VERB JSON` for kind operations.** Rejected. It would mean the native module never changes when a view kind is added, but verbs become strings that are only checked at runtime and can't be documented. That generality serves a third kind that doesn't exist yet.
-- **Caching a native frame handle instead of renaming the frame on each call.** Rejected. A cached handle can go stale, for example when non-native fullscreen swaps the frame's window, which would need an invalidate-and-retry path. Renaming only happens when a view's geometry actually changes, so the cost is small. If Emacs ever exposes a reliable way to identify a frame's native window, only one function in `portal-view.el` changes.
+- **One declarative layout call placing every view.** Rejected. Every call must include every open view, so one registry mismatch breaks all later syncs. All-or-nothing validation pays off only for interdependent views; one view per buffer avoids that dependency (ADR 0001).
+- **A generic `portal--call TARGET VERB JSON` for kind operations.** Rejected. Adding view kinds would leave the native module unchanged, but string verbs get only runtime checks and can't be documented. This generality serves a third kind that does not yet exist.
+- **Caching a native frame handle instead of renaming on each call.** Rejected. Stale handles, such as after non-native fullscreen swaps the frame's window, would require invalidation and retry. Renaming costs little: it happens only when view geometry changes. If Emacs exposes reliable native-window identification, only one function in `portal-view.el` changes.

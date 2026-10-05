@@ -1,7 +1,7 @@
 # Portal documentation
 
-New to Portal? Start with [build and run](../README.md#build-and-run).
-All shell examples in these guides run from the repository root, not `docs/`.
+Start with [build and run](../README.md#build-and-run).
+Run shell examples from the repository root, not `docs/`.
 
 ## Use Portal
 
@@ -12,14 +12,14 @@ All shell examples in these guides run from the repository root, not `docs/`.
 | Draw and save offline | [Local Excalidraw drawings](excalidraw.md) |
 | Run shells, switch terminals or use a quick terminal | [Terminals and optional Consult/Embark adapters](terminals.md) |
 | Find running agents and understand their activity | [Agent dashboard](agents.md) |
-| Present my own command in a panel or set a global shortcut | [Launchers and global shortcuts](launcher.md) |
+| Present a command in a panel or set a global shortcut | [Launchers and global shortcuts](launcher.md) |
 | Browse, author or complete Markdown tasks | [Markdown task browser and format](tasks.md) |
 | Use the separate `project.org` integration | [Org task view](org-tasks.md) |
 | Diagnose a blank hosted app or restart its process | [App host lifecycle and diagnostics](app-host.md) |
 
-The repository's current task store is `tasks/`; `project.org` and its archive
-are historical references. The Org integration remains available for projects
-that use it, but is not a parallel task store to maintain here.
+This repository stores tasks in `tasks/`; `project.org` and its archive are
+historical references. Org integration remains available for projects using it,
+not as a parallel task store here.
 
 ## Build and change Portal
 
@@ -28,7 +28,7 @@ that use it, but is not a parallel task store to maintain here.
 - [Testing Portal](testing.md): batch coverage, graphical procedures, standalone
   native checks and opt-in smoke tests. Recorded results are not a new test run.
 - [Domain vocabulary](../CONTEXT.md): view, terminal, hosted-app and Org task terms.
-  For Markdown task identity and readiness, use the [task format](tasks.md#writing-tasks).
+  See the [task format](tasks.md#writing-tasks) for Markdown identity and readiness.
 - [Implementation and native boundaries](architecture.md): state ownership,
   lifetimes, platform interfaces and failure invariants.
 - [Input bridge](terminal-input-bridge.md): key routing and the notification pipe.
@@ -41,14 +41,14 @@ that use it, but is not a parallel task store to maintain here.
   M-x.app migration/rollback, automated checks and dated manual acceptance.
 - [Application launcher integration](launcher-applications.md): launcher.el
   follow-ups, optional smoke test and the removed built-in adapter's evidence.
-- [Terminal benchmarks](terminal-benchmark.md): measuring and interpreting latency
-  and frame timing, not a guarantee of parity with standalone Ghostty.
+- [Terminal benchmarks](terminal-benchmark.md): latency/frame timing measurement
+  and interpretation, not guaranteed parity with standalone Ghostty.
 
 ## Decisions, proposals and research
 
-These documents preserve rationale and evidence. A proposal or historical
-measurement is not a claim that every described feature ships today; use the
-user guides above for current behavior.
+These records preserve rationale and evidence. Proposals and historical
+measurements do not claim every described feature ships today; see the user
+guides for current behavior.
 
 ### Architectural decisions
 
@@ -60,19 +60,21 @@ user guides above for current behavior.
 
 - [Initial native-view research](../RESEARCH.md): original feasibility and
   proposed architecture, not current setup instructions.
-- [Input design proposal](input-design.md): superseded prefix/passthrough model;
-  retained for its research.
+- [Input design proposal](input-design.md): research on the superseded
+  prefix/passthrough model.
 - [Toolbar design](toolbar-design.md): implemented controls and later ownership
   updates, with historical alternatives and a dated [mockup](toolbar-mockup.html).
 - [Markdown task browser specification](task-browser-spec.md): design contract
   and acceptance criteria; [the task guide](tasks.md) describes shipped usage.
 - [Task dependency display research](task-dependency-display-research.md):
-  alternatives and source comparisons behind the dependency display.
+  alternatives and source comparisons.
 - [Terminal session management research](terminal-session-management-research.md):
   package integration options and the original navigation proposal.
 - [Agent discovery research](agent-discovery-research.md): recorded agent
   lifecycles, status-source limitations, fixtures and prototype artifacts.
 - [Agent dashboard refresh research](emacs-agent-dashboard-research.md):
   Emacs precedents, refresh policy and measurements.
+- [Launcher content sizing research](launcher-content-sizing-research.md):
+  content-driven sizing investigation.
 - [Bun distribution options](bun-distribution.md): current packaging, size
   measurements and alternatives to revisit.
