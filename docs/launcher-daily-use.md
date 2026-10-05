@@ -86,44 +86,42 @@ handlers.
 
 ## Repeatable checks
 
-After building, run batch checks and the focused graphical checks:
+Follow [Verifying work](testing.md#verifying-work), including the host compiler
+environment setup. After building on the host, run batch checks there and the
+focused graphical checks in the VM:
 
 ```sh
 ctest --test-dir build --output-on-failure
-sh test/launcher-daily-use.sh > build/launcher-daily-use.log 2>&1
+bash test/vm.sh sh test/launcher-daily-use.sh
 ```
 
+The runner copies this checkout, builds in the VM and holds its desktop lock.
 The script compiles the test-only AppKit injector, opens disposable `emacs -Q`,
-runs two tests, prints ERT output and exits nonzero for failures or skips.
-Native windows temporarily take focus; wait for completion before using other apps.
-`EMACS` selects another executable, which must match the build's header and
-supported revision. The [combined graphical suite](testing.md#combined-graphical-suite)
+runs two tests and exits nonzero for failures or skips. Windows take focus only
+inside the VM. Build and ERT logs return to `.cache/vm/<run>/`.
+The guest Emacs must match the build's header and supported revision.
+The [combined graphical suite](testing.md#combined-graphical-suite)
 also exercises launcher lifecycle, focus, geometry and completion. Select
 `"^portal-launcher-"` instead of `"^portal-"` for only the 28 launcher tests.
 
-To check an isolated completion/theme fragment without changing your init:
+To check an isolated completion/theme fragment, put it in a non-ignored file
+inside this checkout, such as `test/local-completion-and-theme.el`. The runner
+copies it with the other source files. Pass its path through `env` so the setting
+reaches the guest:
 
 ```sh
-PORTAL_LAUNCHER_CONFIG=/absolute/path/to/completion-and-theme.el \
-  sh test/launcher-daily-use.sh > build/launcher-configured.log 2>&1
+bash test/vm.sh env PORTAL_LAUNCHER_CONFIG=test/local-completion-and-theme.el \
+  sh test/launcher-daily-use.sh
 ```
 
-The fragment adds installed packages to `load-path`, enables their modes and
-loads the theme before testing. The completion test preserves its settings.
+The fragment adds guest-installed packages to `load-path`, enables their modes
+and loads the theme before testing. Use guest paths and install any needed
+packages and fonts in the VM. The completion test preserves its settings.
 Do not pass a full init: it may start unrelated services or UI. Use the fresh
 normal-session procedure for that acceptance check. Default runs use
-CMake-downloaded packages.
-
-On the validation machine, batch native-trampoline compilation requires the
-existing Homebrew GCC library-path workaround. Missing `emutls_w` means compiler
-setup failure. The successful run used:
-
-```sh
-export LIBRARY_PATH="/opt/homebrew/lib/gcc/current:/opt/homebrew/lib/gcc/current/gcc/aarch64-apple-darwin25/15${LIBRARY_PATH:+:$LIBRARY_PATH}"
-```
-
-This path is machine-specific; verify the installed GCC directory elsewhere.
-The checks keep native trampolines enabled and do not change compiler settings.
+CMake-downloaded packages. Remove the local fragment after testing; do not commit
+personal settings. The checks keep native trampolines enabled; the VM runner
+reads the guest Emacs app's compiler environment.
 
 The combined suite exposed test isolation failure: ordinary native-window
 mutation/deletion can asynchronously activate the previous app, correctly
