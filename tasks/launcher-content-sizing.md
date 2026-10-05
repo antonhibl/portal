@@ -298,7 +298,7 @@ All passed:
 
 - `./build.sh`
 - `ctest --test-dir build --output-on-failure`: 33 of 33, including
-  `launcher` (34 tests) and `module`
+  `launcher` (35 tests, after review) and `module`
 - `bun run --cwd host check` and `bun run --cwd host typecheck`
 - `python3 -B -m unittest discover -s test -p 'test_*.py'`: 8 tests
 - `git diff --check`
@@ -327,3 +327,8 @@ by a test event monitor while the panel resized; a physical CJK input method
 was not tested. Physical display disconnection and VoiceOver with a fitted
 panel were not tested; display changes are covered by standalone native
 notifications. The hands-on daily-use checklist was not re-run.
+
+Review follow-up: enabling `portal-launcher-mode` now also requires the
+module's `portal--launcher-fit`, so new Lisp with a module loaded before the
+rebuild asks for a rebuild and restart instead of failing in redisplay. The
+full checks above and three graphical tests passed again.

@@ -89,12 +89,31 @@
     (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
               ((symbol-function 'portal-view--load) #'ignore)
               ((symbol-function 'portal--launcher-attach) #'ignore)
-              ((symbol-function 'portal--launcher-prepare) #'ignore))
+              ((symbol-function 'portal--launcher-prepare) #'ignore)
+              ((symbol-function 'portal--launcher-fit) #'ignore))
       (should-error (portal-launcher-mode 1) :type 'user-error)
       (should-not portal-launcher-mode)
       (should-not portal-launcher--frame)
       (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters))
       (should-not (memq #'portal-launcher--before-delete delete-frame-functions)))))
+
+(ert-deftest portal-launcher-rejects-a-module-missing-its-bindings ()
+  ;; A module loaded before a rebuild stays loaded, so it can lack a binding
+  ;; this Lisp calls, such as the fit that redisplay calls.
+  (dolist (missing '(portal--launcher-attach portal--launcher-prepare portal--launcher-fit))
+    (let ((portal-launcher-mode nil) (portal-launcher--frame nil))
+      (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
+                ((symbol-function 'portal-view--load) #'ignore)
+                ((symbol-function 'portal-launcher--check-guard) (lambda () (ert-fail "Reached the guard")))
+                ((symbol-function 'portal--launcher-attach) #'ignore)
+                ((symbol-function 'portal--launcher-prepare) #'ignore)
+                ((symbol-function 'portal--launcher-fit) #'ignore))
+        (fmakunbound missing)
+        (should (string-prefix-p "Rebuild Portal"
+                                 (cadr (should-error (portal-launcher-mode 1) :type 'user-error))))
+        (should-not portal-launcher-mode)
+        (should-not (advice-member-p #'portal-launcher--guard-parameters #'modify-frame-parameters))
+        (should-not (memq #'portal-launcher--before-delete delete-frame-functions))))))
 
 (ert-deftest portal-launcher-role-guard-is-atomic-and-scoped ()
   (let ((portal-launcher--frame (selected-frame)) passed)

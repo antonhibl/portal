@@ -232,8 +232,11 @@ Emacs; start in a disposable Emacs."
           (progn
             (portal-launcher--check-support)
             (portal-view--load)
+            ;; A module loaded before a rebuild stays loaded without the
+            ;; bindings this Lisp calls, including during redisplay.
             (unless (and (fboundp 'portal--launcher-attach)
-                         (fboundp 'portal--launcher-prepare))
+                         (fboundp 'portal--launcher-prepare)
+                         (fboundp 'portal--launcher-fit))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
             (portal-launcher--check-guard))
