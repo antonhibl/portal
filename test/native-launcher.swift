@@ -51,6 +51,18 @@ struct LauncherChecks {
                 }
                 check(NativeLauncher.rectangle(placement(100000, 100000, -100000, 100000), in: area) == area)
                 check(NativeLauncher.rectangle(placement(713, 407, -100000, 100000), in: area).origin == area.origin)
+                // Fitting keeps the left, width and top edges of the first
+                // placement, moving only the bottom edge, within the area.
+                let placed = NativeLauncher.rectangle(placement(713, 100, -137, 81), in: area)
+                for height: Int64 in [100, 164, 407, 120] {
+                    let fitted = NativeLauncher.fitted(placed, height: height, in: area)
+                    check(fitted.minX == placed.minX && fitted.width == placed.width && fitted.maxY == placed.maxY)
+                    check(fitted.height == CGFloat(height) && area.contains(fitted))
+                }
+                let tall = NativeLauncher.fitted(placed, height: 100000, in: area)
+                check(tall.maxY == placed.maxY && tall.minY == area.minY && tall.minX == placed.minX)
+                let low = NativeLauncher.rectangle(placement(713, 100, 0, 100000), in: area)
+                check(NativeLauncher.fitted(low, height: 407, in: area) == low)
             }
             func rejected(file: StaticString = #filePath, line: UInt = #line, _ body: () throws -> Void) {
                 do { try body(); fail("Accepted invalid launcher operation", file: file, line: line) }
@@ -96,15 +108,48 @@ struct LauncherChecks {
                     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
                     check(NSScreen.screens.contains { $0.visibleFrame.contains(launcher.panel.frame) })
                     rejected { try launcher.place(placement(199, 407)) }
+                    // Fitting is layout only: the session, focus watching and
+                    // first responder stay, as do the left, width and top edges.
+                    let session = NativeLauncher.session
+                    try launcher.place(placement(713, 100), present: false)
+                    let placed = launcher.panel.frame
+                    let area = require(launcher.panel.screen).visibleFrame
+                    for height: Int64 in [164, 100, 407, 100000, 120] {
+                        try launcher.fit(session: session, height: height)
+                        check(launcher.panel.frame == NativeLauncher.fitted(placed, height: height, in: area))
+                        check(NativeLauncher.session == session)
+                        check(launcher.panel.firstResponder === editor)
+                        check(NativeLauncher.describe()["watchingFocus"] as? Bool == true)
+                    }
+                    check(launcher.panel.frame.maxY == placed.maxY && launcher.panel.frame.height == 120)
+                    rejected { try launcher.fit(session: session, height: 99) }
+                    try launcher.fit(session: session + 1, height: 300)
+                    check(launcher.panel.frame.height == 120, "A stale session resized the panel")
+                    // A display change centers the fitted height again, and
+                    // later fits keep that new top edge.
+                    launcher.panel.setFrameOrigin(NSPoint(x: -100000, y: -100000))
+                    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                    let replaced = launcher.panel.frame
+                    check(replaced.height == 120)
+                    check(replaced == NativeLauncher.rectangle(placement(713, 120), in: require(launcher.panel.screen).visibleFrame))
+                    try launcher.fit(session: session, height: 300)
+                    check(launcher.panel.frame.maxY == replaced.maxY && launcher.panel.frame.height == 300)
                     // Panel notifications carry the current presentation,
                     // and explicit hide/detach never emit a new dismissal.
                     NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
                     check(records() == "launcher-blur \(NativeLauncher.session)\n")
+                    // Fitting keeps the recorded focus loss, so it stays coalesced.
+                    try launcher.fit(session: session, height: 164)
+                    check(NativeLauncher.session == session)
                     NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
                     check(records().isEmpty, "Duplicate focus loss was not coalesced")
                     launcher.hide()
                     check(!launcher.panel.isVisible)
                     check(NativeLauncher.describe()["watchingFocus"] as? Bool == false)
+                    // A late fit cannot resize or reveal a hidden panel.
+                    let hidden = launcher.panel.frame
+                    try launcher.fit(session: NativeLauncher.session, height: 300)
+                    check(!launcher.panel.isVisible && launcher.panel.frame == hidden)
                     NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: launcher.panel)
                     check(records().isEmpty)
                     NativeLauncher.detach()
@@ -116,7 +161,7 @@ struct LauncherChecks {
             donor.close()
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             check(NSApp.windows.allSatisfy { !($0 is LauncherPanel) }, "Closed panels remain: \(NSApp.windows)")
-            print("Launcher native checks passed: geometry, rollback, ownership, focus-loss pipe delivery, 20 attach/detach cycles")
+            print("Launcher native checks passed: geometry, fitting, rollback, ownership, focus-loss pipe delivery, 20 attach/detach cycles")
         }
     }
 }

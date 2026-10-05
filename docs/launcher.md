@@ -303,6 +303,9 @@ with any appearance settings kept:
         portal-launcher-offset '(0 0))
 ```
 
+A numeric size keeps both kinds of panel fixed, as before. Drop it, or use
+`'(720 auto)`, for [minibuffer panels that fit their content](#panel-size).
+
 Free the old chord with `(portal-launcher-mode -1)` before loading the new
 version, `(portal-global-shortcut-remove 'portal-launcher)` afterward, or an
 Emacs restart. Removed options do nothing and vanish on restart. For built-in
@@ -338,16 +341,14 @@ shortcuts or changing completion:
 
 `:kind 'buffer` (default) shows a buffer window above the panel's own minibuffer.
 Displayed buffers appear in the panel; call-created windows are deleted on hide.
-`:kind 'minibuffer` fills the panel: prompt first, inline completion directly
-below, unused lines empty at the bottom. Displayed buffers appear nowhere:
+`:kind 'minibuffer` makes the whole panel a minibuffer: prompt first, inline
+completion directly below. Displayed buffers appear nowhere:
 stock `*Completions*` is hidden, though Tab completes and Return accepts. Vertico,
 Icomplete's vertical mode and Fido show candidates. Commands displaying/previewing
 buffers, splitting windows or otherwise needing a buffer window require `buffer`.
 
-Both kinds use `portal-launcher-size`, not content fitting. Excess completion
-lines clip at the bottom; default 420 points hold Vertico's default 10 candidates.
-Lower the count or increase height. Changing kind replaces the dedicated frame;
-repeating the same kind reuses it.
+Changing kind replaces the dedicated frame; repeating the same kind reuses it.
+By default, a minibuffer panel's height fits its content; see [Panel size](#panel-size).
 
 `:mode-line nil` hides panel mode lines, including new windows and switched
 buffers; default t shows each buffer's own. It sets the `mode-line-format`
@@ -372,13 +373,13 @@ Functions must be synchronous. Invoke after any existing minibuffer has
 finished. Functions that deliberately use other frames or catch arbitrary
 throws need explicit wrappers.
 
-Customize `portal-launcher-size` (default `(720 420)`), `portal-launcher-offset`
+Customize [`portal-launcher-size`](#panel-size) (default nil), `portal-launcher-offset`
 (`(0 0)`, positive right/down), `portal-launcher-screen` (nil: pointer's monitor),
 `portal-launcher-font`, `portal-launcher-shadow` and `portal-launcher-corner-radius`.
-Show again to apply. Size/offsets use AppKit logical points, independent of Retina
-scale. The panel centers in the monitor's usable area, clamps onscreen and
-repositions on display changes. `portal-launcher-frame-parameters` sets initial
-colors, fringes and borders.
+Each presentation or show applies them, including `let` bindings. Size/offsets use
+AppKit logical points, independent of Retina scale. The panel centers in the
+monitor's usable area, clamps onscreen and repositions on display changes.
+`portal-launcher-frame-parameters` sets initial colors, fringes and borders.
 
 Fonts, buffers and appearance use ordinary Emacs customization. Native roles are
 fixed: decoration, fullscreen, parentage, toolbar and focus-policy changes are
@@ -391,3 +392,59 @@ active launcher minibuffer before hiding it. Outbound native drag-and-drop is
 cancelled. The [daily-use guide](launcher-daily-use.md) records the user's
 IME and VoiceOver validation.
 See [implementation and measured geometry](launcher-native-panel.md).
+
+#### Panel size
+
+`portal-launcher-size` sets each kind's size, in AppKit logical points:
+
+| Value | Minibuffer panel | Buffer panel |
+| --- | --- | --- |
+| `nil` (default) | Width 720, height fits its content | 720 × 420 |
+| `(WIDTH auto)` | Width WIDTH, height fits its content | Error: buffer panels cannot fit |
+| `(WIDTH HEIGHT)` | Fixed WIDTH × HEIGHT | Fixed WIDTH × HEIGHT |
+
+WIDTH is an integer of at least 200, HEIGHT one of at least 100. A fitted
+minibuffer panel's height follows what it displays, as that changes: the
+prompt, the input with its wrapped lines, the completion UI's visible rows
+(including group titles and annotations) and messages shown inline in the
+minibuffer, plus the frame's internal borders. Typing that narrows five
+candidates to two or none shrinks the panel; deleting it grows the panel again.
+Completion updates from timers fit without a key press, and nested prompts fit
+as they start and end. Your completion UI still chooses how many rows to show,
+for example with `vertico-count`; Portal changes no completion setting.
+
+The panel opens no taller than its content at that moment, normally the
+minimum before the prompt appears, centered as the offset and screen settings
+say. That first placement fixes its screen, left edge, width and top edge for
+the presentation: later changes move only the bottom edge, so the prompt stays
+put, and moving the pointer to another display moves nothing. The height never
+drops below 100 points, so a one-line prompt can leave space below it. Growth
+stops at the bottom of the monitor's usable area; rows beyond it are clipped,
+while the prompt stays at the top and completion keys keep working. A change
+in the display arrangement may center the panel again; its new top edge then
+stays. An echo-area message, which briefly replaces the minibuffer, keeps the
+input's height.
+
+```elisp
+(defvar vertico-count)  ; Vertico's option: bind it dynamically, as Vertico reads it
+
+(defun my/app-launcher-five ()
+  "Run `my/app-launcher' showing five Vertico rows, at width 640."
+  (interactive)
+  (let ((portal-launcher-size '(640 auto))
+        (vertico-count 5))
+    (my/app-launcher)))
+```
+
+Numeric sizes are fixed, not maxima: an existing `'(720 240)` keeps its blank
+space below a short list, and content taller than a fixed height clips at the
+bottom. Remove the setting, or replace it with `'(720 auto)`, for fitting.
+`portal-launcher-resize` always sets numeric dimensions, for both kinds; it
+refuses to run during a minibuffer presentation, whose panel cannot become a
+buffer panel. Interactively it offers the current numbers, or 720 × 420.
+
+![A fitted panel with five Vertico rows and group titles](evidence/launcher-minibuffer-fitted-rows.png)
+
+![The same panel after typing "alp"](evidence/launcher-minibuffer-fitted-filtered.png)
+
+![No matches: the 100-point minimum](evidence/launcher-minibuffer-fitted-minimum.png)

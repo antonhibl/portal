@@ -404,6 +404,23 @@ LISP_FUNCTION(Flauncher_show)
                                           &error), &error);
 }
 
+LISP_FUNCTION(Flauncher_fit)
+{
+    intmax_t values[2];
+    for (size_t i = 0; i < 2; i++) {
+        values[i] = env->extract_integer(env, args[i]);
+        if (!returning(env))
+            return NULL;
+    }
+    if (values[0] < 0 || values[1] < 100) {
+        signal_error(env, "Launcher fit needs a session >= 0 and height >= 100", NULL);
+        return NULL;
+    }
+    portal_text error = {0};
+    return done(env, portal_launcher_fit((uint64_t) values[0], (int64_t) values[1], &error),
+                &error);
+}
+
 LISP_FUNCTION(Fopen)
 {
     portal_text kind = {0}, target = {0}, error = {0};
@@ -736,6 +753,8 @@ static const struct export {
      "Attach new hidden launcher frame TITLE on the validated GNU Emacs NS build."},
     {"portal--launcher-show", 7, 7, Flauncher_show, NULL,
      "Present the launcher at WIDTH HEIGHT DX DY SCREEN SHADOW RADIUS, in logical points."},
+    {"portal--launcher-fit", 2, 2, Flauncher_fit, NULL,
+     "Resize presentation SESSION's panel to HEIGHT points, keeping its top edge; no focus change."},
     {"portal--launcher-prepare", 0, 0, STRINGS_FUNCTION(launcher_prepare, RESULT_T),
      "Capture cancellation focus before creating or selecting a launcher frame."},
     {"portal--launcher-hide", 0, 1, Flauncher_hide, NULL,

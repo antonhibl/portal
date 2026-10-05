@@ -263,6 +263,68 @@ static emacs_value capture(emacs_env *env, ptrdiff_t nargs, emacs_value *args, v
     return nilValue;
 }
 
+/* Move the pointer to X Y, in AppKit points from the main display's
+   bottom-left corner, if given. Return where AppKit reports it, (X . Y). */
+static emacs_value pointer(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)data;
+    if (nargs == 2) {
+        CGFloat top = NSMaxY(NSScreen.screens.firstObject.frame);
+        CGWarpMouseCursorPosition(CGPointMake(env->extract_integer(env, args[0]),
+                                              top - env->extract_integer(env, args[1])));
+    }
+    NSPoint location = NSEvent.mouseLocation;
+    emacs_value pair[] = {env->make_integer(env, (intmax_t)floor(location.x)),
+                          env->make_integer(env, (intmax_t)floor(location.y))};
+    return env->funcall(env, env->intern(env, "cons"), 2, pair);
+}
+
+/* Compose TEXT in the targeted window's first responder as an input method
+   does: as marked text or, with COMMIT, inserted, ending the composition.
+   Emacs reads either only while it handles an event, so a one-shot monitor
+   does this as Emacs's own event loop dispatches a posted F19 key. */
+static emacs_value compose(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)data;
+    emacs_value nilValue = env->intern(env, "nil");
+    ptrdiff_t size = 0;
+    if (!env->copy_string_contents(env, args[0], NULL, &size)) return nilValue;
+    char *bytes = malloc((size_t)size);
+    if (!bytes) return nilValue;
+    if (!env->copy_string_contents(env, args[0], bytes, &size)) { free(bytes); return nilValue; }
+    NSString *text = [[NSString alloc] initWithBytes:bytes length:(NSUInteger)(size - 1)
+                                         encoding:NSUTF8StringEncoding];
+    free(bytes);
+    NSWindow *window = activeWindow();
+    if (!window || !text) return nilValue;
+    BOOL commit = nargs > 1 && env->is_not_nil(env, args[1]);
+    __block id monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                                               handler:^NSEvent *(NSEvent *event) {
+        if (event.window != window || event.keyCode != kVK_F19) return event;
+        [NSEvent removeMonitor:monitor];
+        monitor = nil;
+        id<NSTextInputClient> client = (id<NSTextInputClient>)window.firstResponder;
+        NSRange none = NSMakeRange(NSNotFound, 0);
+        if (commit) [client insertText:text replacementRange:none];
+        else [client setMarkedText:text selectedRange:NSMakeRange(text.length, 0) replacementRange:none];
+        return nil;
+    }];
+    [NSApp postEvent:[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0
+                                       timestamp:NSProcessInfo.processInfo.systemUptime
+                                    windowNumber:window.windowNumber context:nil characters:@""
+                     charactersIgnoringModifiers:@"" isARepeat:NO keyCode:kVK_F19]
+             atStart:NO];
+    return env->intern(env, "t");
+}
+
+static emacs_value marked(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)args; (void)data;
+    id responder = activeWindow().firstResponder;
+    BOOL composing = [responder respondsToSelector:@selector(hasMarkedText)] && [responder hasMarkedText];
+    return env->intern(env, composing ? "t" : "nil");
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -305,6 +367,18 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-capture-target");
     args[1] = env->make_function(env, 1, 1, capture,
         "Save what Emacs last drew in the targeted frame as a PNG at FILE.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-pointer");
+    args[1] = env->make_function(env, 0, 2, pointer,
+        "Move the pointer to X Y, AppKit points, if given; return its position as (X . Y).", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-compose");
+    args[1] = env->make_function(env, 1, 2, compose,
+        "Compose TEXT in the targeted frame as an input method does; COMMIT inserts it.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-marked-text");
+    args[1] = env->make_function(env, 0, 0, marked,
+        "Whether the targeted frame's first responder has marked text.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     return 0;
 }

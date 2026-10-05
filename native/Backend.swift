@@ -68,6 +68,12 @@ public func portalLauncherShow(_ width: Int64, _ height: Int64, _ dx: Int64, _ d
     } != nil
 }
 
+@_cdecl("portal_launcher_fit")
+public func portalLauncherFit(_ session: UInt64, _ height: Int64,
+                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { try NativeLauncher.attached?.fit(session: session, height: height) } != nil
+}
+
 @_cdecl("portal_launcher_prepare")
 public func portalLauncherPrepare(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
     perform(error) { NativeLauncher.prepare() } != nil

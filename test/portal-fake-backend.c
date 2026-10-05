@@ -965,6 +965,7 @@ static portal_text launcher_title;
 static int64_t launcher_values[6];
 static bool launcher_visible, launcher_shadow;
 static unsigned launcher_calls;
+static uint64_t launcher_session;
 
 bool portal_launcher_attach(portal_string title, portal_text *error)
 {
@@ -987,6 +988,17 @@ bool portal_launcher_show(int64_t width, int64_t height, int64_t dx, int64_t dy,
     memcpy(launcher_values, values, sizeof values);
     launcher_shadow = shadow;
     launcher_visible = true;
+    launcher_session++;
+    return true;
+}
+
+/* As on the platform, only the visible panel's current session changes. */
+bool portal_launcher_fit(uint64_t session, int64_t height, portal_text *error)
+{
+    (void) error;
+    launcher_calls++;
+    if (launcher_visible && session == launcher_session)
+        launcher_values[1] = height;
     return true;
 }
 
@@ -996,6 +1008,7 @@ bool portal_launcher_hide(bool restore_focus, portal_text *error)
     (void) error;
     launcher_calls++;
     launcher_visible = false;
+    launcher_session++;
     return true;
 }
 
@@ -1012,6 +1025,7 @@ bool portal_launcher_detach(portal_text *error)
     free(launcher_title.data);
     launcher_title = (portal_text) {0};
     launcher_visible = false;
+    launcher_session++;
     return true;
 }
 
@@ -1023,6 +1037,7 @@ bool portal_launcher_describe(portal_text *state, portal_text *error)
     put(&json, prefix, strlen(prefix));
     put_string(&json, launcher_title);
     put_format(&json, ",\"calls\":%lld", launcher_calls);
+    put_format(&json, ",\"session\":%lld", launcher_session);
     put_format(&json, ",\"attached\":%lld", launcher_title.data != NULL);
     put_format(&json, ",\"visible\":%lld", launcher_visible);
     put_format(&json, ",\"shadow\":%lld", launcher_shadow);

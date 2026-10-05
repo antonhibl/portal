@@ -12,6 +12,7 @@
 (declare-function portal--launcher-attach "portal-launcher" (title))
 (declare-function portal--launcher-prepare "portal-launcher" ())
 (declare-function portal--launcher-show "portal-launcher" (width height dx dy screen shadow radius))
+(declare-function portal--launcher-fit "portal-launcher" (session height))
 (declare-function portal--launcher-hide "portal-launcher" (&optional restore-focus))
 (declare-function portal--launcher-detach "portal-launcher" ())
 (declare-function portal--launcher-inspect "portal-launcher" ())
@@ -21,7 +22,10 @@
 (defvar portal-launcher-mode nil)
 
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
-  tag native-id teardown blurred)
+  tag native-id teardown blurred
+  ;; nil for a fixed size; for an automatic height, the last height asked
+  ;; of the native panel, or t before the first.
+  fit)
 (defvar portal-launcher--session nil "The active command session, or nil.")
 
 (defconst portal-launcher--session-map
@@ -31,11 +35,27 @@
     map)
   "Keys active only while a launcher command is running.")
 
-(defcustom portal-launcher-size '(720 420)
-  "Launcher width and height in AppKit logical points, at least 200 by 100.
-Apply changes with `portal-launcher-show'. The panel is clamped to the
-monitor's usable area. Retina backing scale does not change these units."
-  :type '(list integer integer))
+(defcustom portal-launcher-size nil
+  "Launcher width and height in AppKit logical points, or nil.
+nil, the default, gives a minibuffer panel width 720 and an automatic
+height, and a buffer panel 720 by 420. (WIDTH auto) gives a minibuffer
+panel WIDTH and an automatic height; a buffer panel cannot fit its
+content, so presenting or showing one signals an error. (WIDTH HEIGHT)
+fixes both dimensions for both kinds of panel. WIDTH is an integer of at
+least 200 and HEIGHT one of at least 100.
+
+An automatic height follows what the minibuffer displays: its prompt,
+input and completion rows, including group titles and messages inline in
+the minibuffer, with the frame's internal borders. It changes as these
+change, never below 100 points. The width and top edge stay where the
+panel opened; only the bottom edge moves, and stops at the bottom of the
+usable area. Each presentation reads this value, including a `let'
+binding of it. The panel is clamped to the monitor's usable area.
+Retina backing scale does not change these units."
+  :type '(choice (const :tag "Fit minibuffer panels; buffer panels 720 by 420" nil)
+                 (list :tag "Size" (integer :tag "Width")
+                       (choice (const :tag "Fit minibuffer content" auto)
+                               (integer :tag "Height")))))
 
 (defcustom portal-launcher-offset '(0 0)
   "Offset right and down from the usable monitor area's center, in points.
@@ -212,8 +232,11 @@ Emacs; start in a disposable Emacs."
           (progn
             (portal-launcher--check-support)
             (portal-view--load)
+            ;; A module loaded before a rebuild stays loaded without the
+            ;; bindings this Lisp calls, including during redisplay.
             (unless (and (fboundp 'portal--launcher-attach)
-                         (fboundp 'portal--launcher-prepare))
+                         (fboundp 'portal--launcher-prepare)
+                         (fboundp 'portal--launcher-fit))
               (user-error "Rebuild Portal and restart Emacs for launcher support"))
             (portal-launcher--hooks t)
             (portal-launcher--check-guard))
@@ -346,10 +369,9 @@ OPTIONS are keywords, each followed by its value:
   minibuffer. Buffers that FUNCTION displays show in the panel, and windows
   it creates there are deleted when the panel hides; earlier ones stay.
   `minibuffer' makes the whole panel a minibuffer: its prompts and an inline
-  completion UI, such as Vertico, start at the top, and unused lines stay
-  empty below. Buffers that FUNCTION displays, including stock completion's
-  *Completions* list, show nowhere, so commands that display buffers or need
-  windows require `buffer'.
+  completion UI, such as Vertico, start at the top. Buffers that FUNCTION
+  displays, including stock completion's *Completions* list, show nowhere,
+  so commands that display buffers or need windows require `buffer'.
 :mode-line nil hides the mode lines of the panel's windows, including ones
   that FUNCTION creates, without changing how their buffers look elsewhere.
   t, the default, shows each buffer's own. A minibuffer panel has none.
@@ -360,9 +382,12 @@ OPTIONS are keywords, each followed by its value:
   panel stays open. Its buffers belong to the caller and are not killed.
   nil, the default, hides the panel when FUNCTION returns. A minibuffer
   panel cannot stay open.
-Both kinds have `portal-launcher-size'; a completion UI taller than the
-panel is clipped at the bottom. An invalid FUNCTION or option signals an
-error before anything is shown or an active session is cancelled.
+`portal-launcher-size' sets each kind's size. By default, a minibuffer
+panel's height follows what it displays, as that changes, with its top
+edge fixed; a buffer panel is 720 by 420 points. Content taller than the
+panel, at a fixed height or the bottom of the screen, is clipped at the
+bottom. An invalid FUNCTION, option or launcher setting signals an error
+before anything is shown or an active session is cancelled.
 
 A second invocation, such as the same global shortcut pressed again,
 cancels the active session and presents nothing, so a command bound to a
@@ -374,7 +399,8 @@ activate the previous app. Functions that catch arbitrary throws or
 deliberately select other frames are outside this interface. Do not invoke
 from an existing minibuffer."
   (portal-launcher--check-function function)
-  (pcase-let ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options)))
+  (pcase-let* ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options))
+               (fit (eq 'auto (nth 1 (portal-launcher--placement kind)))))
     (when portal-launcher--session (portal-launcher-cancel))
     (when (active-minibuffer-window)
       (user-error "Finish the current minibuffer before presenting a launcher command"))
@@ -385,14 +411,15 @@ from an existing minibuffer."
                 portal-launcher--return-window
               (selected-window)))
            (previous-frame (window-frame previous-window))
-           (session (portal-launcher--make-session :tag (make-symbol "launcher-session")))
+           (session (portal-launcher--make-session :tag (make-symbol "launcher-session") :fit fit))
            (portal-launcher--session session)
            (emulation-mode-map-alists
             (cons `((portal-launcher--session . ,portal-launcher--session-map)) emulation-mode-map-alists))
            (enable-recursive-minibuffers t)
            (minibuffer-follows-selected-frame nil)
-           ;; The panel keeps its native placement; Emacs must not fit it.
-           (resize-mini-frames nil)
+           ;; Emacs's own fitting would move and resize the natively placed
+           ;; panel. An automatic height fits it natively instead.
+           (resize-mini-frames (and fit #'portal-launcher--fit))
            (portal-launcher--mode-line-parameters nil)
            (windows nil)
            (outcome 'error))
@@ -410,6 +437,7 @@ from an existing minibuffer."
                         (when (and (eq kind 'buffer) (not mode-line))
                           (add-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines))
                         (add-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
+                        (when fit (add-hook 'post-command-hook #'portal-launcher--refit))
                         (let ((default-minibuffer-frame portal-launcher--frame)
                               (display-buffer-alist nil)
                               (display-buffer-overriding-action
@@ -443,6 +471,7 @@ from an existing minibuffer."
                 (portal-launcher--restore-windows windows))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
             (remove-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
+            (remove-hook 'post-command-hook #'portal-launcher--refit)
             (portal-launcher--forget-blur)
             (pcase-dolist (`(,window . ,value) portal-launcher--mode-line-parameters)
               (when (window-live-p window)
@@ -478,18 +507,77 @@ from an existing minibuffer."
           (delete-frame portal-launcher--frame t))
         (setq portal-launcher--frame nil)))))
 
-(defun portal-launcher--placement ()
-  "Return validated native presentation arguments without modifying a frame."
-  (unless (and (proper-list-p portal-launcher-size) (= (length portal-launcher-size) 2)
-               (cl-every #'integerp portal-launcher-size)
-               (>= (car portal-launcher-size) 200) (>= (cadr portal-launcher-size) 100)
-               (proper-list-p portal-launcher-offset) (= (length portal-launcher-offset) 2)
-               (cl-every #'integerp portal-launcher-offset)
-               (or (null portal-launcher-screen) (natnump portal-launcher-screen))
-               (natnump portal-launcher-corner-radius))
-    (user-error "Invalid launcher size, offset, screen or corner radius"))
-  (append portal-launcher-size portal-launcher-offset
-          (list (or portal-launcher-screen -1) portal-launcher-shadow portal-launcher-corner-radius)))
+(defun portal-launcher--size (kind)
+  "Return the (WIDTH HEIGHT) of KIND of panel that `portal-launcher-size' sets.
+HEIGHT is `auto' for a minibuffer panel that fits its content. Signal a
+`user-error' if the setting is invalid, or automatic for a buffer panel."
+  (let ((size (or portal-launcher-size (list 720 (if (eq kind 'minibuffer) 'auto 420)))))
+    (unless (and (proper-list-p size) (= (length size) 2)
+                 (integerp (car size)) (>= (car size) 200)
+                 (or (eq (cadr size) 'auto)
+                     (and (integerp (cadr size)) (>= (cadr size) 100))))
+      (user-error "Launcher size is nil, (WIDTH auto) or (WIDTH HEIGHT), at least 200 by 100, not %S"
+                  size))
+    (when (and (eq (cadr size) 'auto) (not (eq kind 'minibuffer)))
+      (user-error "Only a minibuffer launcher fits its content; give buffer panels a numeric height, not %S"
+                  size))
+    size))
+
+(defun portal-launcher--placement (kind)
+  "Return validated native arguments to present KIND, without modifying a frame.
+The height is `auto' for a minibuffer panel that fits its content."
+  (let ((size (portal-launcher--size kind)))
+    (unless (and (proper-list-p portal-launcher-offset) (= (length portal-launcher-offset) 2)
+                 (cl-every #'integerp portal-launcher-offset)
+                 (or (null portal-launcher-screen) (natnump portal-launcher-screen))
+                 (natnump portal-launcher-corner-radius))
+      (user-error "Invalid launcher offset, screen or corner radius"))
+    (append size portal-launcher-offset
+            (list (or portal-launcher-screen -1) portal-launcher-shadow portal-launcher-corner-radius))))
+
+(defun portal-launcher--fitted-height (frame)
+  "Return the native height that fits what minibuffer-only FRAME displays.
+This measures the minibuffer as Emacs displays it at its current width,
+so wrapped lines and overlay strings, such as an inline completion UI's
+candidates, count. The frame's other rows, such as its internal borders,
+count once. The result is at least the native minimum of 100 points; on
+NS, Emacs's frame pixels are the panel's logical points."
+  (let* ((window (minibuffer-window frame))
+         ;; The panel cannot be taller than the display: measure no further.
+         (text (cdr (window-text-pixel-size window nil nil nil (display-pixel-height frame)))))
+    (max 100 (+ text (- (frame-pixel-height frame) (window-body-height window t))))))
+
+(defun portal-launcher--fit (frame)
+  "Fit the presentation's automatic minibuffer panel FRAME to its content.
+As `resize-mini-frames' during that presentation, Emacs calls this while
+it redisplays a minibuffer-only frame's active minibuffer that may have
+changed, after the commands, timers and completion UI that changed it.
+It only asks the native panel for a new height, never redisplaying or
+presenting, and only when that height differs from the last one asked.
+Emacs then redisplays the frame at the new size, whose content is the
+same. An echo area message, which briefly replaces the minibuffer's
+buffer, keeps the input's height; messages inline in the minibuffer fit.
+`portal-launcher--refit' calls this after commands as well."
+  (when-let* ((session portal-launcher--session)
+              (last (portal-launcher--session-fit session))
+              (id (portal-launcher--session-native-id session))
+              ((eq frame portal-launcher--frame))
+              ((frame-live-p frame))
+              ((frame-visible-p frame))
+              ((minibufferp (window-buffer (minibuffer-window frame))))
+              (height (portal-launcher--fitted-height frame))
+              ((not (eql height last))))
+    (setf (portal-launcher--session-fit session) height)
+    (portal--launcher-fit id height)))
+
+(defun portal-launcher--refit ()
+  "Fit an automatic minibuffer panel after a command, or as a prompt starts.
+Redisplay fits content that changed, but can miss a nested prompt
+starting or ending: Emacs compares the minibuffer window's record of
+the last buffer it showed with the next buffer's changes. A command
+loop runs this as each prompt starts, and the command that read an
+inner prompt ends with this in the outer one."
+  (portal-launcher--fit portal-launcher--frame))
 
 ;;;###autoload
 (defun portal-launcher-show (&optional buffer)
@@ -508,7 +596,7 @@ A buffer launcher shows BUFFER if non-nil, and hides its windows' mode
 lines unless MODE-LINE. A frame made for the other kind is replaced."
   (when (and buffer (not (buffer-live-p (get-buffer buffer))))
     (user-error "Launcher buffer is not live: %s" buffer))
-  (let ((placement (portal-launcher--placement))
+  (let ((placement (portal-launcher--placement kind))
         (buffer (if buffer (get-buffer buffer)
                   (unless (portal-launcher--live-p kind) (current-buffer)))))
     (unless portal-launcher-mode (portal-launcher-mode 1))
@@ -529,6 +617,11 @@ lines unless MODE-LINE. A frame made for the other kind is replaced."
     (condition-case error
         (progn
           (select-frame portal-launcher--frame 'norecord)
+          ;; Open at the height of what the minibuffer shows now, normally
+          ;; the minimum: the prompt comes later. This first placement
+          ;; fixes the top edge, so later content grows the panel down.
+          (when (eq (nth 1 placement) 'auto)
+            (setf (nth 1 placement) (portal-launcher--fitted-height portal-launcher--frame)))
           (apply #'portal--launcher-show placement)
           (when portal-launcher--session
             (setf (portal-launcher--session-native-id portal-launcher--session)
@@ -555,10 +648,27 @@ An active command session is cancelled before hiding its minibuffers."
     (make-frame-invisible portal-launcher--frame t)
     (portal-launcher--restore-selection)))
 
+(defun portal-launcher--check-resize ()
+  "Refuse to resize during a minibuffer presentation."
+  (when (and portal-launcher--session (portal-launcher--live-p 'minibuffer))
+    (user-error "A minibuffer launcher cannot become a buffer panel; resize after it closes")))
+
 (defun portal-launcher-resize (width height)
-  "Set the launcher's WIDTH and HEIGHT in logical points and show it again."
-  (interactive (list (read-number "Width (points): " (car portal-launcher-size))
-                     (read-number "Height (points): " (cadr portal-launcher-size))))
+  "Fix the launcher at WIDTH by HEIGHT logical points and show it again.
+This sets `portal-launcher-size' for both kinds of panel, so minibuffer
+panels stop fitting their content until it is nil or (WIDTH auto) again.
+Showing uses the buffer launcher, as `portal-launcher-show' does, so
+during a minibuffer presentation this signals an error and changes
+nothing. Interactively, prompt with the current numeric dimensions, or
+720 by 420."
+  (interactive
+   (progn
+     (portal-launcher--check-resize)
+     (let ((size portal-launcher-size))
+       (list (read-number "Width (points): " (if (integerp (car-safe size)) (car size) 720))
+             (read-number "Height (points): "
+                          (if (integerp (car-safe (cdr-safe size))) (cadr size) 420))))))
+  (portal-launcher--check-resize)
   (let ((portal-launcher-size (list width height))) (portal-launcher-show))
   (setq portal-launcher-size (list width height)))
 
