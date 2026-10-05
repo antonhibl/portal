@@ -154,6 +154,15 @@ both when queuing and dispatching. Hide/detach suppress their own notifications
 and remove the app and mouse observers; detach also removes the panel observer.
 There is no polling timer or extra process.
 
+The event alone can be lost. Emacs reads an event as special only when it
+arrives while Emacs waits for input. One queued while Lisp runs, such as a
+command waiting for a process, is read later as an ordinary key, which fails,
+and Emacs's error report, in a buffer or a minibuffer, discards all queued
+input. So the session also records the ID, and a `post-command-hook`, which
+each command loop runs as it starts and after every command, including one
+that failed, dismisses a session that lost focus. Cleanup removes the
+session's queued events.
+
 ## Presentation kinds
 
 `portal-launcher-present` takes `:kind` and `:mode-line`. A `buffer`
@@ -209,3 +218,37 @@ A buffer panel split during the call, with each window's mode line, then with
 ![A split buffer panel with mode lines](evidence/launcher-buffer-mode-lines.png)
 
 ![The same split with :mode-line nil](evidence/launcher-buffer-no-mode-lines.png)
+
+## Persistent buffer panels
+
+With `:keep-open t`, the session continues after its function returns:
+`portal-launcher-present` enters a recursive edit inside the same catch tag,
+so the panel's commands run with the session's emulation keymap, display
+rules, minibuffer ownership and focus-loss handling still bound. Their prompts
+open in the panel's minibuffer, and the panel's cancellation unwinds them
+with the recursive edit. Every dismissal is one of the session's own:
+Escape, C-g, `portal-launcher-hide` or `portal-launcher-cancel`, another
+invocation, deletion and disable throw to the tag and cancel, and focus loss
+throws `blur`. Leaving the recursive edit with `exit-recursive-edit` or
+`abort-recursive-edit` cancels as well. The call then returns nil; the
+function's value is discarded. `top-level` also hides the panel as a
+cancellation, while unwinding the caller too. A minibuffer panel would have
+nothing left to use, so `:keep-open t` with `:kind 'minibuffer` is rejected
+before anything is shown.
+
+The command loop of the recursive edit reports a later command's error and
+keeps reading, so the panel stays usable. In batch Emacs, that report exits
+Emacs, so the batch tests replace `command-error-function`. Cleanup is
+unchanged: it hides the panel, deletes the windows the call created and kills
+no buffer. Windows from before the call keep their last buffers until the
+next presentation shows `*Portal Launcher*` in the selected one.
+
+Emacs counts the recursive edit in mode lines: `%[` in the default
+`mode-line-modes` shows brackets around the mode name while a persistent panel
+is open, in every frame. A keyboard macro's end also ends a recursive edit;
+the batch tests rely on it so that a test cannot wait for input.
+
+A persistent hello-world panel with `:mode-line nil`, after its local `n`
+command read a name from the panel's minibuffer:
+
+![A persistent hello-world panel](evidence/launcher-persistent-hello.png)

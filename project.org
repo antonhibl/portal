@@ -392,7 +392,7 @@ from its Emacs view's IOSurface; the injector's builds now link IOSurface.
 - =check-launcher= passes. Changed Lisp, including tests, byte-compiles
   without warnings. Org lint, task IDs, dependencies and internal links pass.
 
-** TODO Keep custom buffer UIs interactive after their setup function returns :task:
+** DONE Keep custom buffer UIs interactive after their setup function returns :task:
 :PROPERTIES:
 :CUSTOM_ID: launcher-persistent-buffer
 :ID: e21d74b9-3d4c-412c-93a3-84961f7109f4
@@ -427,6 +427,37 @@ callbacks and scoped appearance settings.
 - Keep ownership of user buffers with their callers. Hiding a persistent
   presentation must not kill the supplied buffer or discard its contents.
 
+*** Lifetime policy
+Recorded before implementation.
+- =:keep-open= takes t or nil and defaults to nil for both kinds. A
+  =user-error= rejects another value, and =:keep-open t= with
+  =:kind 'minibuffer=, before any frame or native state changes and before an
+  active session is cancelled. A minibuffer panel has only its prompt, so
+  nothing would remain to use once FUNCTION returned.
+- =:keep-open t= waits for dismissal. When FUNCTION returns, the same session
+  continues: =portal-launcher-present= enters a recursive edit, so Emacs reads
+  commands in the panel with the session's display rules, Escape and C-g,
+  minibuffer ownership and focus-loss handling still in effect. Prompts that
+  the panel's commands open use its minibuffer. Callers see no recursive edit,
+  session or native state; the call returns when the panel is dismissed.
+- It returns nil. A persistent panel ends only by dismissal, and dismissal
+  already returns nil; FUNCTION's value is discarded. Escape, C-g, another
+  invocation, =portal-launcher-hide= and =portal-launcher-cancel=, deletion and
+  disable cancel, as now, so focus returns to the previous app only while the
+  panel owns the keyboard. Leaving the recursive edit otherwise, with
+  =exit-recursive-edit= or =abort-recursive-edit=, cancels too; =top-level=
+  cancels and unwinds the caller as well. Focus loss, from a click elsewhere
+  or another app's activation, such as one a panel command causes, hides it
+  without activating the previous app.
+- An error in FUNCTION ends the session and propagates, as now. The command
+  loop reports an error in a later command, and the panel stays open. That
+  report discards queued input, including a queued focus-loss event, so the
+  session also records focus loss and checks it after every command.
+- Dismissal kills no buffer. As now, windows the call created are deleted,
+  and windows from before it keep their last buffers until the next
+  presentation. Mode lines that show the recursion depth, as the default
+  does, show brackets around the major mode while a persistent panel is open.
+
 *** Plan
 - Extend the existing session lifecycle to include the period after setup
   returns. Preserve display rules, key handling and focus-loss delivery for
@@ -441,17 +472,88 @@ callbacks and scoped appearance settings.
   no external application package is needed.
 
 *** Acceptance
-- [ ] The hello-world example remains visible after its setup function finishes;
+- [X] The hello-world example remains visible after its setup function finishes;
   a local buffer command and a subsequent minibuffer prompt accept real input.
-- [ ] Omitting =:keep-open= retains close-on-return semantics and existing
+- [X] Omitting =:keep-open= retains close-on-return semantics and existing
   command results. Invalid lifetime/layout combinations fail before display.
-- [ ] Escape, C-g, click-away, a second invocation, hide, deletion and disable
+- [X] Escape, C-g, click-away, a second invocation, hide, deletion and disable
   clean up the complete interaction without leaked recursive edits or hooks.
-- [ ] Setup failures and later command failures are recoverable; a new
+- [X] Setup failures and later command failures are recoverable; a new
   presentation works, user buffers survive, and stale events are ignored.
-- [ ] Cancellation restores focus appropriately; successful external actions
+- [X] Cancellation restores focus appropriately; successful external actions
   and click-away retain their destination's focus. Relevant batch and real
   graphical session/input checks pass.
+
+*** Outcome
+=portal-launcher-present= follows the lifetime policy above. With
+=:keep-open t=, once FUNCTION returns it enters a recursive edit inside the
+session's catch tag, so the existing session, with its keymap, display rules,
+minibuffer settings, mode-line hook and cleanup, covers the whole interaction.
+No native code changed.
+
+Found while implementing: a focus-loss event is read as a special event only
+when it arrives while Emacs waits for input. One queued while Lisp runs, such
+as a command or setup function waiting for a process, is read later as an
+ordinary key and fails with =args-out-of-range=. Emacs's error report, both
+=command-error-default-function= and the minibuffer's
+=minibuffer-error-function=, then discards all queued input, focus loss
+included. Either left the panel open over the app that took focus; this also
+applied to prompts in sessions without =:keep-open=. The session now records
+the loss, and a session-scoped =post-command-hook=, which each command loop
+runs as it starts and after every command, including one that failed,
+dismisses it. Cleanup removes the session's queued events, which a later read
+would report as an error.
+
+The task's example erases a buffer that its own =special-mode= made read-only,
+so calling it twice fails. The README's version, a derived mode with a local
+=n= command, binds =inhibit-read-only=. The README, the docstring and the
+[[file:docs/launcher-native-panel.md][panel documentation]] describe the option, the example and the recursion
+brackets; the panel documentation shows a picture from [[file:docs/evidence][docs/evidence]].
+
+*** Verification
+- =./build.sh= and all 34 CTest suites pass. The =launcher= suite has 29
+  tests, 6 of them new. With only the native frame stubbed, a keyboard macro
+  drives a hello-world buffer: a local command reads a name from a prompt; then
+  Escape, C-g, another invocation, toggle, hide, cancel and deletion, from the
+  buffer and from a later command's prompt, and =exit-recursive-edit= and
+  =abort-recursive-edit= from the buffer, each leave no session, recursion
+  level or hook and keep the buffer. A later command's error leaves the panel
+  reading commands. Focus loss queued by a command that then fails, in the
+  buffer or a prompt, or by the setup function, hides the panel without
+  restoring focus and leaves no queued event; a later presentation ignores the
+  earlier one's. A failed setup is followed by a working presentation. Invalid
+  =:keep-open= values, and =:keep-open t= with =:kind 'minibuffer=, signal
+  before any show or cancellation, and close-on-return values are unchanged.
+  Copies without the after-command check, the event cleanup or the recursive
+  edit each fail these tests.
+- Graphical, in disposable Emacs 31.1 NS with =--module-assertions=: the 20
+  =portal-launcher-gui-= tests, 3 of them new, passed 20 of 20 in three runs
+  after the last change. Native keys =n=, =o=, =k= and Return reached the
+  hello panel's local command and its prompt, which was in the panel. In
+  between, the session was active one recursion level deep, the panel visible
+  and key, showing =*Hello*= with the greeting and no mode line. Afterward no
+  hook, event or session remained, and the buffer kept its text.
+- Each of Escape, queued C-g, another invocation, the shortcut, hide, deletion,
+  disable and native focus moved to the ordinary frame dismissed the panel from
+  its buffer and from a later command's prompt, each followed by re-entry. A
+  later command's error was reported, and then a command and its prompt
+  worked. A command that waited until the panel lost focus, then failed, had
+  its queued event discarded by Emacs's real error report, in the buffer and in
+  a prompt, and the panel hid. With the after-command check removed, that test
+  timed out with the panel still open.
+- Escape on a persistent panel left the previously frontmost app in front. A
+  panel command that activated another running app, or Finder, left it in
+  front as the panel hid. At first this test failed in one of three full runs
+  and two of four isolated ones: the next presentation lost focus before its
+  keys arrived, as AppKit reported the earlier activation once the next
+  session watched focus. It now waits for the frontmost app to settle after
+  each activation, and passed six of six isolated runs.
+  The daily-use tests and the =portal-global-shortcut-gui-= tests, 6 in all,
+  passed. Physical C-g and a real mouse click-away were not repeated.
+- The README's example, run twice through the stubbed session, greeted a name
+  typed into the panel's prompt and kept =*Hello*= and its text.
+- Changed Lisp, including tests, byte-compiles without warnings. Org lint, task
+  IDs, dependencies and internal links pass.
 
 ** TODO Compose application launchers entirely in user configuration :task:
 :PROPERTIES:
