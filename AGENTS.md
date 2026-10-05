@@ -6,10 +6,10 @@ The task is done when its changes are committed on that branch and the project's
 
 Before changing code, read [Contributing](CONTRIBUTING.md) for build setup,
 required checks and generated-file boundaries. After rebuilding a loaded native
-module, restart Emacs; it does not hot-reload. Run native GUI checks through
-`bash test/vm.sh <command>` in the prepared macOS VM, using a disposable
-Emacs. Before running them, read [the VM workflow](docs/testing.md#tests-in-a-macos-vm)
-for connection, isolation and logs. This keeps test windows off the host desktop.
+module, restart Emacs; it does not hot-reload.
+Before verifying work, read [Testing Portal](docs/testing.md#verifying-work).
+Run non-GUI checks on the host. Run only GUI checks in the VM through
+`bash test/vm.sh <command>`.
 
 Before changing view ownership or platform interfaces, read
 [the native boundaries](docs/architecture.md) and its linked ADRs. When editing

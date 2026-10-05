@@ -1,7 +1,25 @@
 # Testing Portal
 
 Tests define coverage. Do not duplicate their inventory here.
-Routine commands: [checks before a PR](../CONTRIBUTING.md#checks-before-a-pr).
+
+## Verifying work
+
+1. Run all non-GUI checks on the host: CTest, Bun and Python tests, lint, and
+   type checks. Follow [checks before a PR](../CONTRIBUTING.md#checks-before-a-pr).
+   Do not send these checks to the VM.
+2. Run only GUI checks in the VM through `bash test/vm.sh <command>`.
+   This includes graphical Emacs tests and standalone AppKit checks.
+   For native view, keyboard, toolbar or launcher changes, run the relevant
+   checks below. Never run GUI checks on the host.
+3. Report commands, results and skipped checks. If the VM is unavailable,
+   report GUI checks as not run; do not fall back to the host.
+
+For this Homebrew Emacs build, set its native compiler library path before host
+CTest runs. CLI launches do not inherit the app's environment:
+
+```sh
+export LIBRARY_PATH="$(/usr/libexec/PlistBuddy -c Print:LSEnvironment:LIBRARY_PATH /Applications/Emacs.app/Contents/Info.plist)"
+```
 
 ## Writing tests
 
@@ -26,9 +44,9 @@ Fake-backend tests cannot prove native window behavior. Injected AppKit or Carbo
 events cannot prove physical-key delivery, Accessibility, Spaces or fullscreen
 behavior. Verify those manually.
 
-Run native checks in disposable graphical Emacs or standalone processes; they can
-steal focus or crash. Keep launcher subroutine trampolines enabled. Report skips
-and manual checks separately from passes. Record the native acceptance
+Run GUI checks in disposable graphical Emacs or standalone processes inside the
+VM; they can steal focus or crash. Keep launcher subroutine trampolines enabled.
+Report skips and manual checks separately from passes. Record the native acceptance
 environment; old results are not current evidence.
 
 Live-agent checks are opt-in and use trusted projects, credentials and real
@@ -38,15 +56,15 @@ Mixed Pi check: use a disposable agent directory with `portal-pi.ts`. Disable
 terminal progress. Define `/portal-test-prompt` to call
 `ctx.ui.input("Portal smoke test", "Type PORTAL_OK")`. Leave user settings untouched.
 
-## Tests in a macOS VM
+## GUI checks in a macOS VM
 
-Run GUI or non-GUI checks in a logged-in macOS desktop VM. GUI windows stay in
-the guest, preserving host focus. Set up passwordless SSH as `portal-vm`.
+Use a logged-in macOS desktop VM for GUI checks only. GUI windows stay in the
+guest, preserving host focus. Set up passwordless SSH as `portal-vm`.
 Run from the checkout under test:
 
 ```sh
 bash test/vm.sh
-bash test/vm.sh ctest --test-dir build --output-on-failure
+bash test/vm.sh sh test/launcher-daily-use.sh
 ```
 
 Each run copies tracked and untracked non-ignored files, including uncommitted
@@ -64,7 +82,8 @@ Requires Bash, macOS's built-in `lockf`, SSH and rsync. No Python or extra npm
 packages.
 
 Runs have separate files but share the desktop and VM resources. One guest-wide
-file lock queues all builds and commands, including non-GUI checks.
+file lock queues builds and GUI commands. The guest build prepares the GUI test
+artifacts; it does not replace host verification.
 Always use the runner for GUI work; manual tests bypass its lock.
 Keep commands in the foreground. The runner terminates their process group on
 completion or timeout. SSH disconnects can leave runs active until timeout.
@@ -101,28 +120,31 @@ Guest preparation:
   AppKit, WebKit or Ghostty works.
 
 Default: launcher daily-use acceptance check, not the full GUI suite.
-Pass other graphical, non-GUI or standalone commands as needed.
+Pass other graphical Emacs or standalone AppKit checks as needed.
 
 ## Terminal graphical checks
 
 Use [launcher-daily-use.sh](../test/launcher-daily-use.sh) to compile/load the
-test-only event injector and add `build/elpa` to Emacs's load path.
+test-only event injector in the VM and add `build/elpa` to Emacs's load path.
 The injector needs no Accessibility permission. Reuse this setup for other GUI
 suites; keep dependency versions there.
 
 ## Combined graphical suite
 
-Test coexistence in one fresh graphical Emacs. Load `portal.el`, the injector,
-`test/portal-tests.el` and `test/portal-terminal-tests.el` before
+Test coexistence in one fresh graphical Emacs inside the VM. Load `portal.el`,
+the injector, `test/portal-tests.el` and `test/portal-terminal-tests.el` before
 `test/portal-integration-tests.el`. Add relevant `test/*-gui-tests.el` files.
 Run `M-x ert` with selector `^portal-`. Batch Emacs cannot test native windows.
 
 ## Standalone AppKit checks
 
 These checks isolate native integration from Emacs bindings and Ghostty.
-No build target exists. Build Portal, then run from the repository root:
+No build target exists. From your checkout, use the VM runner to build Portal
+and run these commands in the guest:
 
 ```sh
+bash test/vm.sh sh -c '
+set -eu
 for core in channel views input terminals web toolbar shortcuts; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
@@ -137,6 +159,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   build/web.o build/toolbar.o build/shortcuts.o \
   -framework AppKit -framework WebKit -framework Carbon -o build/check-focus
 build/check-focus
+'
 ```
 
 Swap `test/native-toolbar.swift`, `test/native-launcher.swift` or
@@ -145,7 +168,7 @@ match. These checks open real windows or register real hot keys.
 
 ## C core checks
 
-Use the standalone build for shared rules without the native backend.
+Run this standalone build on the host for shared rules without the native backend.
 It still needs macOS for `F_SETNOSIGPIPE`; a fake platform does not make the pipe
 portable.
 
