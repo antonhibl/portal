@@ -113,9 +113,10 @@ The build installs the locked host dependencies and CMake downloads hash-checked
 Emacs packages for integration tests. CTest exercises the real C core with a fake
 backend, Lisp behavior, and the compiled app host; it does not validate native
 windows. For native view, keyboard, toolbar or launcher changes, also run the
-relevant [graphical and standalone checks](docs/testing.md) in a disposable
-Emacs. They open windows and can take focus. Credential-dependent agent smoke
-tests and physical-key/manual checks are opt-in; report any not run.
+relevant [graphical and standalone checks](docs/testing.md) in the VM through
+`bash test/vm.sh <command>`. Use disposable processes; windows can take guest focus.
+Credential-dependent agent smoke tests and physical-key/manual checks are opt-in;
+report any not run.
 
 For a focused change to the C core, the [standalone core build](docs/testing.md#c-core-checks)
 avoids Swift, Bun and Ghostty. CMake's registered tests are the source of truth
