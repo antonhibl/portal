@@ -1,9 +1,9 @@
-;;; portal-launcher-recipe-tests.el --- The README's launcher.el recipe -*- lexical-binding: t; -*-
+;;; portal-launcher-recipe-tests.el --- The launcher guide's launcher.el recipe -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Optional integration smoke test, outside CTest: Portal does not need
 ;; launcher.el.  Run with test/launcher-recipe.sh, which puts the package on
-;; `load-path', in a disposable graphical Emacs.  The README's recipe runs in
+;; `load-path', in a disposable graphical Emacs.  The guide's recipe runs in
 ;; the real panel and reads native keys.  The input test mocks Spotlight,
 ;; `open' and the browser; the launch test uses real Spotlight and `open' to
 ;; activate Finder, which is already running.

@@ -1,7 +1,7 @@
 # Application launcher integration
 
-Portal includes no application picker. The current setup is the README's
-[launcher.el recipe](../README.md#application-launcher-with-launcherel-optional),
+Portal includes no application picker. The current setup is the
+[launcher.el recipe](launcher.md#application-launcher-with-launcherel-optional),
 in user configuration, with an optional integration smoke test outside the
 build. Until 2026-10-05, Portal included an adapter around launcher.el,
 `portal-launcher-applications`, ran it by default and downloaded launcher.el
@@ -29,7 +29,7 @@ Its prompt uses stock completion's map, where Space runs
 `minibuffer-complete-word`. Typing `!gh portal` there, with Space, searched
 Google for `!ghportal`: completion consumed the space.
 
-So launcher.el needs these upstream changes before the README's wrapper,
+So launcher.el needs these upstream changes before the documented wrapper,
 `my/launcher-read` and its variable `my/launcher-reader`, can go:
 
 1. An empty or blank completion result takes no action.
@@ -72,7 +72,7 @@ with launcher.el:
 PORTAL_LAUNCHER_EL=/absolute/path/to/launcher.el-directory sh test/launcher-recipe.sh
 ```
 
-It loads the README's recipe from a file with dynamic binding, with its chord
+It loads the launcher guide's recipe from a file with dynamic binding, with its chord
 moved to Control-Option-Command-F20, and types native key events into the real
 panel.
 The input test, with Spotlight, `open` and the browser mocked, checks with

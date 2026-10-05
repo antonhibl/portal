@@ -2,7 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Real native terminals, keys and focus with the Consult adapter, Vertico and
-;; Orderless, from `build/elpa' (see README.md).  Keys are AppKit events for
+;; Orderless, from `build/elpa' (see docs/testing.md).  Keys are AppKit events for
 ;; this frame's window, typed as a person types: each once Emacs is idle, as
 ;; Vertico, like Consult, skips its work while input is pending.  From a
 ;; focused terminal, a native binding starts the picker.  C-] records the

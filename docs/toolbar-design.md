@@ -4,7 +4,7 @@ Design date: 23 September 2026. Mockups: [toolbar-mockup.html](toolbar-mockup.ht
 (open it in a browser; its prefix and passthrough states predate their removal
 on 30 September 2026). The toolbar's look and controls below are implemented. Where
 its state lives changed later: see [Ownership](#ownership), which describes the code
-today, and the README's implementation notes. [Changes to existing
+today, and the [implementation notes](architecture.md#toolbar-state). [Changes to existing
 code](#changes-to-existing-code) and [Rejected alternatives](#rejected-alternatives)
 are historical.
 

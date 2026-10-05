@@ -9,7 +9,7 @@ to the recorded environment.
 That checklist ran with the application picker Portal then included and the
 chord `portal-launcher-mode` registered. Since 2026-10-05, user configuration
 composes launchers instead; the setup, migration and rollback steps below use
-the README's [launcher.el recipe](../README.md#application-launcher-with-launcherel-optional).
+the [launcher.el recipe](launcher.md#application-launcher-with-launcherel-optional).
 The panel's native behavior is unchanged; the manual results are historical
 for the removed picker.
 
@@ -38,7 +38,7 @@ use the panel's minibuffer; commands that choose other frames need wrappers.
 1. Follow [Build and run](../README.md#build-and-run), using the Emacs installation
    that will load the module. Rebuild Portal and restart Emacs after a native
    update. Never mix new Lisp with an old module already loaded in the process.
-2. Install `launcher.el` at the tested revision and copy the README's recipe,
+2. Install `launcher.el` at the tested revision and copy the launcher guide's recipe,
    or another launcher of your own, into the configuration to try. Portal does
    not install or download it.
 3. Load Portal and evaluate that launcher setup in a disposable graphical Emacs
@@ -48,8 +48,8 @@ use the panel's minibuffer; commands that choose other frames need wrappers.
    `native-comp-enable-subr-trampolines` enabled; address native compiler errors
    before presenting, without bypassing the guard.
 4. Try the workflow below, then repeat in a **fresh normal session**, explicitly
-   evaluating the README setup. Record the actual packages, theme, input source,
-   keyboard and monitor arrangement. A copied settings fragment does not count
+   evaluating the documented launcher setup. Record the actual packages, theme,
+   input source, keyboard and monitor arrangement. A copied settings fragment does not count
    as the complete normal configuration.
 5. Keep an ordinary Emacs frame open with a text buffer and live Portal web and
    terminal views. Confirm they remain usable before, during and after launcher
@@ -100,9 +100,9 @@ The script compiles the test-only AppKit injector, opens a disposable `emacs -Q`
 runs two tests, prints ERT output and exits nonzero on a failure or skipped test.
 It creates native windows and temporarily takes focus; let it finish before
 interacting with other apps. `EMACS` can select a different executable, which
-must match the build's header and supported revision. Run the README's combined
-graphical suite to exercise the existing launcher lifecycle, focus, geometry
-and completion matrix as well. Use its selector `"^portal-launcher-"` instead
+must match the build's header and supported revision. Run the
+[combined graphical suite](testing.md#combined-graphical-suite) to exercise the
+existing launcher lifecycle, focus, geometry and completion matrix as well. Use its selector `"^portal-launcher-"` instead
 of `"^portal-"` to run just the 21 launcher tests.
 
 To check an isolated completion/theme fragment without changing your init:
@@ -141,7 +141,8 @@ focus-loss observer remains unchanged.
 
 The procedures name the commands of the time. With the current setup, use
 your launcher command, such as `my/app-launcher`, for `portal-launcher-present`,
-its global shortcut for the launcher chord, and the README's rollback.
+its global shortcut for the launcher chord, and the
+[documented rollback](launcher.md#migrate-from-the-built-in-launcher).
 
 For future regression runs, record date, Portal commit, Emacs revision, macOS build, complete init used,
 completion/theme versions, keyboard/input-source names, display layout and the
@@ -225,8 +226,8 @@ removed. The two automated daily-use tests now run without launcher.el. The
 completion test presents a picker that records what it would launch, with
 the caller's completion and theme settings: a typed name, Escape, Return with
 no typed text, a failing launch and a recovery prompt. The coexistence test
-evaluates the README's picker, hello and shortcut examples, the shortcuts twice
-per cycle, on test chords. In each of three cycles, disabling the panel left
+evaluates the [launcher guide's](launcher.md) picker, hello and shortcut examples,
+the shortcuts twice per cycle, on test chords. In each of three cycles, disabling the panel left
 all three shortcuts set, and removing them freed their chords, while the shell
 and web page kept working. Both passed in the full launcher graphical run;
 the [application notes](launcher-applications.md) record the separate

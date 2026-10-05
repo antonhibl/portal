@@ -17,7 +17,8 @@ terminal prefix configuration remains an alias. The legacy web interceptions
 were removed directly. Expanded delayed help, a key-routing inspector, general
 native shortcut maps for webviews, and a transport watchdog remain possible
 follow-ups; they are not part of this minimal trial. The historical inventory
-and proposed API names below describe the research stage; see README for usage.
+and proposed API names below describe the research stage; see the
+[keyboard guide](keyboard.md) for current usage.
 
 Portal should give every embedded application the same input contract: the
 application receives ordinary input; a configurable Portal prefix temporarily

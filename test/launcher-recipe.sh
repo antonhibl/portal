@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Optional integration smoke test of the README's launcher.el recipe, outside
+# Optional integration smoke test of docs/launcher.md's launcher.el recipe, outside
 # CTest: Portal does not need launcher.el. Set PORTAL_LAUNCHER_EL to a
 # directory holding the package's launcher.el, such as a checkout of the tested
 # revision. Run after ./build.sh, in a desktop session; it uses disposable

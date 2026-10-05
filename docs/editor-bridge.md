@@ -138,19 +138,20 @@ reaches its buffer's bridge function with the messages in order, and
 hosted app and loads over the bridge. The same file covers scene persistence,
 save failures, stale replies and revert.
 
-`ctest -R web-core` runs `test/portal-web-tests.c`, the core's bridge and
+`ctest --test-dir build -R web-core` runs `test/portal-web-tests.c`, the core's bridge and
 web rules against the fake platform: message order and coalescing, draining
 and re-arming, invalid senders and reserved types, ordinary pages, navigation
 decisions, handoffs after an escape, closed views and stale deliveries.
 
-The standalone AppKit check in `test/native-focus.swift` (see the README)
+The [standalone AppKit check](testing.md#standalone-appkit-checks) in `test/native-focus.swift`
 checks the bridge in a real WebKit page: only the main frame's messages
 arrive, in order, under one record until received; the bridge works again
 after a reload; a failed delivery reaches Emacs; and a web view that is not a
 hosted app has no bridge.
 
-The graphical tests need a disposable graphical Emacs with the test event
-module from the README loaded. Load `test/portal-excalidraw-gui-tests.el`, then
+The graphical tests need a disposable graphical Emacs with the
+[test event injector](testing.md#terminal-graphical-checks) loaded.
+Load `test/portal-excalidraw-gui-tests.el`, then
 run `M-x ert` with selector `^portal-excalidraw-gui-`. They exercise the real
 WKWebView, offline fonts, paste, image round trips, several drawings, revert,
 hidden views keeping their state, and a rapid `C-x C-s` reaching Emacs. The
