@@ -320,7 +320,7 @@ the pipe shared by every Portal view
 keys until Lisp can read the keymap and run the command. Ordinary I/O stays
 native, without polling timers or Lisp terminal redraws.
 
-The terminal uses the pinned [GhosttyTerminal Swift wrapper](https://github.com/Lakr233/libghostty-spm/tree/1.6.20260909)
+The terminal uses the pinned [GhosttyTerminal Swift wrapper](https://github.com/Lakr233/libghostty-spm/tree/2.2.2026100303)
 and its Ghostty build. Themes come from the wrapper's bundled catalog;
 standalone Ghostty preferences are not loaded.
 Ghostty app-level window/tab commands are unimplemented; its Command bindings
