@@ -26,7 +26,7 @@ Recorded environments and validation limits are in the
 ## Build and run
 
 You need graphical macOS Emacs and its matching `emacs-module.h`, Apple's
-Swift 6/Clang toolchain (Xcode), CMake 3.29 or newer, Ninja, and Bun with
+Swift 6.2 or newer and Clang (Xcode), CMake 3.29 or newer, Ninja, and Bun with
 `Bun.markdown.html` (tested with Bun 1.3.14). Install CMake and Ninja with
 `brew install cmake ninja` or your tool manager, and install Bun for building.
 The first build downloads locked host/test dependencies and the pinned
