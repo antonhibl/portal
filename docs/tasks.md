@@ -4,84 +4,71 @@
 
 ## Task browser
 
-`M-x portal-tasks-browser`, or `(portal-tasks-browser)` from Lisp, lists the
-current project's saved Markdown tasks in a web view with the navigation
-toolbar. The view opens
-at once and loads the list when the app host is ready, starting the host first
-if needed. Click a task to read it in the same view; the **Tasks** link returns
-to the list. Emacs stays the editor: the page shows saved files, and every
-change to a task is saved by Emacs. Nothing moves or deletes task files.
+`M-x portal-tasks-browser`, or Lisp's `(portal-tasks-browser)`, lists the current
+project's saved Markdown tasks in a navigation-toolbar web view. It opens
+immediately, starting the host if needed, and loads on host readiness. Click a
+task to read it in the same view; **Tasks** returns to the list. Pages show saved files; Emacs
+saves every edit. Nothing moves or deletes task files.
 
-This repository authors and maintains tasks in `tasks/`, the default root:
-either `<name>.md` or `<name>/content.md` with supporting assets beside it.
-`project.org` and `project.org_archive` are historical references, not a
-parallel task store to maintain. See [Writing tasks](#writing-tasks) for the
-format. Agents use the
+This repository maintains tasks in the default root, `tasks/`: `<name>.md` or
+`<name>/content.md` with adjacent assets. `project.org` and `project.org_archive`
+are historical references, not a parallel task store. See
+[Writing tasks](#writing-tasks) for the format; agents use the
 [author-tasks skill](../.agents/skills/author-tasks/SKILL.md).
 
 ### Completing and editing tasks
 
-Each list row and task page has **Complete**, or **Reopen** for a completed
-task, and **Edit in Emacs**. They are ordinary buttons, apart from the task
-link: click one, or Tab to it and press Return or Space.
+Each row and task page has **Complete** (or **Reopen** when completed) and
+**Edit in Emacs**: ordinary buttons separate from task links. Click, or Tab
+then Return/Space.
 
-**Complete** and **Reopen** save the task with `status: done` or
-`status: todo`. They change only that value: the body, other front matter,
-comments, quoting, a byte order mark and CRLF line ends all stay as they were.
-A status written some other way, such as with a YAML tag, an anchor or in more
-than one place, is left alone, and the page asks you to edit it in Emacs. So
-are a task with unsaved changes in an Emacs buffer (save it first), a
-read-only file, a file that changes while the action runs, and a failed save;
-each reports why and changes nothing, since the file is replaced whole. The
-file is checked once more just before it is replaced; like any editor's save,
-only a save elsewhere in that instant could still be overwritten. An
-unmodified buffer visiting the task shows the saved file.
-Each button sets the status it names, so pressing it again, or twice, leaves
-the task as it asked. The page shows what is happening, and reports success
-only once the file is saved. The file is saved in the viewed task folder
-alone: no commit, branch or other checkout changes, and a worktree's copy of
-a task is independent of the main checkout's.
+**Complete** and **Reopen** save `status: done` or `status: todo`, changing only
+that value. Body, other front matter, comments, quoting, byte order mark and
+CRLF endings remain unchanged. Other status forms, such as YAML tags, anchors
+or duplicate entries, are left untouched with a request to edit in Emacs.
+Unsaved Emacs edits (save first), read-only files, concurrent file changes and
+save failures also leave files unchanged and report why: replacement is
+whole-file. A final check precedes replacement; as with any editor save, a
+concurrent save in that instant could still be overwritten. Unmodified visiting
+buffers show the saved file.
+Buttons set their named status, so repeated/double presses have the same result.
+The page shows progress and reports success only after saving. Saves affect
+only the viewed task folder, not commits, branches or other checkouts; worktree
+tasks are independent of the main checkout's copies.
 
-**Edit in Emacs** opens the task's current source in another pane, reusing a
-buffer that visits it, unsaved changes and all, and gives Emacs the keyboard.
-The task page and its history stay; `M-x portal-preview-return` comes back.
+**Edit in Emacs** opens current source in another pane with Emacs focus, reusing
+any visiting buffer, including unsaved edits. The task page and history remain;
+`M-x portal-preview-return` returns.
 
-Saving any file in the task folder in Emacs refreshes the task browser pages
-of that folder in place, from the saved files: the address, history, view, filter,
-folds, reading position and keyboard focus stay, and Emacs keeps the keyboard.
-A hidden view refreshes once it is shown again, and a page that Back or Forward
-shows again is checked the same way. Completing a row that the filter hides
-moves focus to the row that takes its place. A deleted, invalid or conflicting
-task shows its problem, with a link back to the list. `g` still reloads the
-page, which picks up changes made outside Emacs.
+Saving any file in a task folder through Emacs refreshes that folder's browser
+pages from saved files, preserving address, history, view, filter, folds, reading
+position and focus; Emacs keeps the keyboard. Hidden views refresh on redisplay;
+Back/Forward pages get the same check. If completion filters out a row, focus
+moves to its replacement. Deleted, invalid or conflicting tasks show the problem
+and a list link. `g` reloads, also picking up changes outside Emacs.
 
 ### Implementing a task
 
-Click **Implement with Claude** on a task detail to open a dedicated native
-terminal using Emacs's display rules. Claude starts in the project root with
-`--dangerously-skip-permissions` and an initial prompt such as
-`implement @tasks/fix-search.md`. Folder tasks use their actual `content.md`
-path. The project is captured when the task browser opens; selecting another
-project later does not change the launch directory.
+**Implement with Claude** on task detail opens a dedicated native terminal
+using Emacs display rules. Claude starts at the project root with
+`--dangerously-skip-permissions` and a prompt such as `implement @tasks/fix-search.md`.
+Folder tasks use their actual `content.md` path. The project is captured on
+browser opening; later project selection does not change the launch directory.
 
-The task page submits a normal form to the app host, which resolves the current
-source by task ID and requests the terminal through Emacs. Duplicate submissions
-share one launch. Reloading the result page does not start another session.
-Errors appear on the detail page. A task folder with no known project remains
-browsable but cannot launch Claude.
+The page submits a normal form to the host, which resolves current source by
+task ID and requests a terminal through Emacs. Duplicate submissions share one
+launch; result-page reloads do not relaunch. Errors appear on the detail page. Folders without
+a known project remain browsable but cannot launch Claude.
 
-Configure `portal-tasks-claude-program` and `portal-tasks-claude-arguments` before
-opening a task browser to choose the executable or adjust its arguments. The
-program defaults to `claude`; arguments default to
-`("--dangerously-skip-permissions")`. The terminal starts your interactive login
-shell, loads its startup files, and resolves `claude` on that shell's PATH.
-Programs such as `gh` therefore use your shell setup even when GUI-launched
-Emacs cannot find them. No Emacs environment-import package is required for
-Portal terminals. Lisp-side `setenv` and `exec-path` changes do not configure
-these programs; use your shell dotfiles or an explicit executable path.
-A missing program's error appears inside the terminal. Claude's first-run login
-or setup can still appear there. The view keeps running when hidden, and
-killing its terminal buffer ends it.
+Before opening the browser, configure `portal-tasks-claude-program` and
+`portal-tasks-claude-arguments` to choose the executable and arguments. Defaults
+are `claude` and `("--dangerously-skip-permissions")`. The terminal runs your
+interactive login shell, loads startup files and resolves `claude` on its PATH.
+Programs such as `gh` use shell setup even if GUI-launched Emacs cannot find
+them; Portal terminals need no environment-import package. Lisp's `setenv` and
+`exec-path` do not configure these programs: use shell dotfiles or an explicit
+executable path. Missing-program errors appear in the terminal, as can Claude's
+first-run login or setup. Hiding keeps it running; killing its buffer ends it.
 
 See [hosted app actions](hosted-actions.md) for the reusable instance/action
 interface and its process protocol. Restart Emacs after rebuilding the native
@@ -89,31 +76,29 @@ module, and use the matching app host (protocol 3).
 
 ### Choosing the task root
 
-`portal-tasks-directory` names the task root. It defaults to `tasks/`, which is
-relative to the `project.el` root; an absolute directory is used as it is. Set
-it for one project in that project's `.dir-locals.el`:
+`portal-tasks-directory` defaults to `tasks/` relative to the `project.el` root;
+absolute directories are used unchanged. Set it per project in `.dir-locals.el`:
 
 ```elisp
 ((nil . ((portal-tasks-directory . "backlog/"))))
 ```
 
-The project is the one being edited. From a terminal, a web view or another
-auxiliary buffer, it is the project of the file or Dired buffer the frame
-selected last, as for [quick terminals](terminals.md#quick-project-terminal), and that
-project's directory-local settings apply. Outside a project, the command asks
-for a task folder, and `C-u M-x portal-tasks-browser` chooses any local folder. Remote
-folders are rejected, and symbolic links in the path are resolved.
+The project is the one being edited. Terminals, web views and other auxiliary
+buffers use the frame's last selected file/Dired buffer's project, as for
+[quick terminals](terminals.md#quick-project-terminal), including its directory-local
+settings. Outside projects, the command prompts for a task folder;
+`C-u M-x portal-tasks-browser` chooses any local folder. Remote folders are
+rejected; path symlinks are resolved.
 
-Each task root has one buffer, such as `*portal: tasks ~/src/app/tasks*`.
-Running the command again shows it at its current page; another project gets
-its own. A missing task folder shows how to start one, without creating it. A
-folder with no tasks shows "No tasks", and one with only completed tasks offers
-**Show completed**.
+Each task root reuses one buffer, such as `*portal: tasks ~/src/app/tasks*`,
+at its current page; other projects get their own. Missing folders show creation
+instructions without creating anything. Folders without tasks show "No tasks";
+completed-only folders offer **Show completed**.
 
 ### Writing tasks
 
-A task is a single Markdown file, or a folder holding its document and
-attachments. Both work the same, at any depth, and folders group tasks:
+Tasks are Markdown files or folders containing documents and attachments.
+Both work identically at any depth; folders group tasks:
 
 ```text
 tasks/
@@ -131,11 +116,10 @@ tasks/
   README.md                     # a document, since it has no status
 ```
 
-Every `.md` file under the task root, at any depth, can be a task. A file named
-exactly `content.md` is its folder's own task, except directly in the root,
-where it is a task named `content`. Other files are supporting material, and
-symbolic links are never followed. A document is a task when its YAML front
-matter has a `status`:
+Any `.md` file under the root can be a task. Exactly `content.md` names its
+folder's task, except directly under the root, where it names task `content`.
+Other files are supporting material; symlinks are never followed. Documents
+become tasks through YAML front matter `status`:
 
 ```markdown
 ---
@@ -147,49 +131,45 @@ status: todo
 Searching with spaces returns no results.
 ```
 
-`status` is `todo` or `done`, exactly. Completed tasks leave the list until you
-turn on **Show completed**, and their pages stay reachable. Documents without
-front matter, or without a `status`, are not listed. Front matter that is not
-closed or not a YAML mapping, an invalid status or title, and unreadable files
-and folders are listed under **Problems** with their paths, and the other tasks
-still show.
+`status` is exactly `todo` or `done`. Completed tasks are hidden until
+**Show completed**, but their pages remain reachable. Documents without front
+matter or `status` are unlisted. Unclosed/non-mapping front matter, invalid
+status/title and unreadable files/folders appear under **Problems** with paths;
+other tasks still show.
 
-Supporting Markdown inside a task folder is a task too once it has a `status`:
-before nested folders were discovered, it was ignored. Remove `status` from a
-supporting document that should stay a document.
+Supporting Markdown inside a task folder with `status` is also a task; it was
+ignored before nested folder discovery. Remove `status` to keep it a document.
 
-A task's title is its front matter `title`, or else its first level-one
-heading outside code fences, or else its ID. The ID is the front matter `id`
-or, without one, the task's path in the root: `big refactor/extract something in c`
-for `big refactor/extract something in c.md`, and `big refactor/implement something`
-for its `content.md`. Moving `fix-search.md` to `fix-search/content.md` keeps
-the task's ID and address. Without an `id`, renaming or moving the file changes
-both; with one, the task keeps its ID and address wherever it moves, including
-into another folder. An `id` is lowercase letters and digits in words joined by
-single hyphens, such as `extract-c-interface`. Before moving a task that others
-depend on, give it an `id`; its current name keeps their references working
-when it fits that form.
+Titles use front matter `title`, then the first level-one heading outside code
+fences, then ID. IDs use front matter `id` or the root-relative path:
+`big refactor/extract something in c` for `big refactor/extract something in c.md`,
+and `big refactor/implement something` for its `content.md`. Moving
+`fix-search.md` to `fix-search/content.md` preserves ID and address. Otherwise,
+without `id`, renaming/moving changes both; explicit IDs preserve both across
+moves, including between folders. An `id` uses lowercase letters/digits in
+single-hyphen-separated words, such as `extract-c-interface`. Before moving a
+prerequisite task, assign an `id`; using its current name preserves references
+if it fits that form.
 
-IDs are unique in the task root, whether written or taken from a path, and one
-location holds one task. If two tasks share an ID, or `fix-search.md` and
-`fix-search/content.md` both exist, neither is listed: **Problems** names the
-files, and each task's page shows the conflict until it is resolved. The same
-file name in two folders, such as `a/fix.md` and `b/fix.md`, is two tasks.
+IDs, explicit or path-derived, are unique within the root; each location holds
+one task. Shared IDs, or coexisting `fix-search.md` and `fix-search/content.md`,
+hide both tasks: **Problems** names the files and their pages show the conflict
+until resolved. Matching filenames in different folders, such as `a/fix.md` and
+`b/fix.md`, are separate tasks.
 
 #### Folders
 
-A folder without a task of its own is a group, named after the folder. It has
-no status or ID, and it cannot be a dependency. A folder with a task
-`content.md` is a parent task, shown with its title, and it can hold more tasks
-and folders. When a folder's `content.md` has no `status`, it is a document and
-the folder is a group; when it is invalid or conflicting, **Problems** shows it
-and the folder is a group, so its tasks stay reachable. `a/fix.md` beside a
-folder `a/fix/` with no task of its own shows as a task and a separate group.
+Folders without their own task are folder-named groups, with no status or ID,
+and cannot be dependencies. A task `content.md` makes its folder a titled parent task,
+which can hold more tasks/folders. A `content.md` without `status` is a document,
+leaving a group; invalid/conflicting ones appear in **Problems**, also leaving
+a group so children stay reachable. `a/fix.md` beside taskless `a/fix/` appears
+as a task and separate group.
 
-Folders only organize work. A parent's `status` and `depends_on` are its own:
-nothing is inherited, completing the tasks in a folder completes nothing else,
-and depending on a parent waits for that parent's own status. To make a parent
-wait for its tasks, list their IDs in its `depends_on`.
+Folders only organize: a parent's `status` and `depends_on` are independent,
+never inherited. Completing children completes nothing else; depending on a
+parent waits for its own status. To make parents wait for children, list their
+IDs in `depends_on`.
 
 #### Dependencies and order
 
@@ -206,64 +186,56 @@ depends_on:
 # Implement the C adapter
 ```
 
-A todo task is **Ready** when every task it depends on is done, and otherwise
-**Blocked** by them. Status stays exactly what you saved: nothing is marked
-done for you. Only `depends_on` makes a dependency; links and a `Blocked by`
-section in the body are for readers. IDs in `depends_on` are compared exactly
-and never read as paths.
+Todo tasks are **Ready** when all prerequisites are done, otherwise **Blocked**.
+Status remains as saved; nothing auto-completes. Only `depends_on` creates
+dependencies; links and body `Blocked by` sections are for readers.
+`depends_on` IDs compare exactly, never as paths.
 
-Unfinished tasks are numbered in an order they could be completed: each
-after what it depends on, and otherwise by ID, across every folder. A number
-is a position in that order, not permission to start. A blocked task is dimmed
-and names the positions it waits for, nearest first, such as `after 7, 6`; past
-three it adds a count, such as `+2`. Everything shown at full strength can
-start now. A done task's title is dimmed and struck through. Positions are renumbered as work is done, so they refer only to the
-list on screen. A done task satisfies the tasks that depend on it, whatever its
-own dependencies. Tasks that cannot be ordered, and the unfinished tasks
-waiting on them, have no number: a `depends_on` that is not a list of IDs, a
-missing, invalid, or conflicting task, or a cycle among unfinished tasks. Their
-rows name the problem, or the task they wait for by ID when it has no position.
-**Problems** names each file and ID, including for completed tasks, in either
-view.
+Unfinished tasks are numbered across folders in completion order: prerequisites
+first, otherwise by ID. Numbers indicate position, not permission to start.
+Blocked tasks are dimmed and name awaited positions, nearest first, such as
+`after 7, 6`; beyond three, a count such as `+2` appears. Full-strength tasks
+can start now; done titles are dimmed and struck through. Completion renumbers
+positions, which refer only to the displayed list. Done tasks satisfy dependents
+regardless of their own dependencies. Unorderable tasks and unfinished dependents
+have no number: `depends_on` is not an ID list; a task is missing, invalid or
+conflicting; or unfinished tasks form a cycle. Rows name the problem, or awaited
+task ID when it lacks a position. **Problems** names files and IDs in both views,
+including completed tasks.
 
 #### Tree and execution views
 
-The list has two views, switched with **Tree** and **Execution** at its top.
-Both show the same numbers, what blocked tasks wait for, and problems.
+Switch views with **Tree** and **Execution** atop the list. Both show identical
+numbers, blockers and problems.
 
-- **Tree**, the default, shows each task once in its folders. Press a group's
-  row, or the arrow beside a parent task, to fold what it holds; the arrows
-  are keyboard controls, apart from the task links. Folders and tasks at one
-  level follow their earliest numbered task, then their paths. This is for
-  browsing: a folder's tasks can be interleaved with other folders' work.
-  Completed tasks are marked **done**.
-- **Execution** lists unfinished tasks in order across all folders, each with
-  the folders holding it. Tasks that cannot be ordered follow under **Blocked
-  by dependency problems**, by ID.
+- **Tree** (default) shows each task once in its folders. Press a group row or
+  parent-task arrow to fold children; arrows are keyboard controls separate
+  from task links. Siblings sort by earliest numbered task, then path. This
+  browsing order can interleave work across folders. Completed tasks say **done**.
+- **Execution** orders unfinished tasks across folders, showing each task's
+  containing folders. Unorderable tasks follow under **Blocked
+  by dependency problems**, sorted by ID.
 
-Completed tasks are hidden until **Show completed**, except a completed parent
-task whose folder still holds unfinished work. A group with nothing to show is
-hidden. **Show completed** shows the whole tree, or in the execution view adds
-a separate **Completed** section; it changes no number. The view and filter
-are part of the page address, so links, Back and Forward, `g`, and an app host
-restart keep them. `g` unfolds the tree again.
+Completed tasks are hidden until **Show completed**, except parents containing
+unfinished work. Groups with nothing visible are hidden. **Show completed**
+reveals the whole tree or adds a separate **Completed** execution section,
+without renumbering. View/filter live in the page address and survive links,
+Back/Forward, `g` and host restarts. `g` unfolds the tree.
 
-A task's page shows its ID, the tasks it depends on and the tasks it blocks,
-each with its status, and whether it is ready. Links to completed tasks work
-with either filter. Its folders, above the page, lead back to the list or to
-a parent task's page.
+Task pages show ID, readiness, prerequisites and blocked tasks with their
+statuses. Completed-task links work with either filter. Folder links above
+lead to the list or a parent task.
 
-To complete a task, press **Complete** on its row or page, or edit
-`status: todo` to `status: done` in Emacs and save. Either way the task browser
-refreshes; `g` rereads the page on screen from the saved files, including
-after an app host restart.
+Press **Complete** on a row/page, or save `status: todo` as `status: done` in
+Emacs. Both refresh the browser; `g` rereads the displayed page from saved files,
+including after host restarts.
 
 ### Links and attachments
 
-Relative links and images in a task resolve from its attachment folder: the
-folder holding a single-file task, such as the task root for `fix-search.md`
-or `big refactor/` for a task file in that group, or the task's own folder.
-Moving a task can break its relative links and images, even when its ID stays.
+Relative links/images resolve from the attachment folder: the containing folder
+for single-file tasks (the root for `fix-search.md`, or `big refactor/` for a
+task in that group), otherwise the task's own folder. Moves can break relative
+links/images even with stable IDs.
 
 | Link | Where it goes |
 | --- | --- |
@@ -274,9 +246,8 @@ Moving a task can break its relative links and images, even when its ID stays.
 | A missing file, or one outside the attachment folder | Crossed out, with the reason as its tooltip |
 | `https://…` and other sites | Opens in the default browser |
 
-Mock-up HTML and code open in Emacs as source; the task browser never runs them.
-Opening a file keeps the task page and its history, and
-`M-x portal-preview-return` comes back to it. Back and Forward in the toolbar,
-or `l` and `r`, move between list and task pages, keeping the filter and reading
-position. Raw HTML in a task is shown as text, and the host serves only image
-files from the attachment folder.
+Mock-up HTML and code open as Emacs source, never run in the browser. Opening
+files preserves the task page/history; `M-x portal-preview-return` returns.
+Toolbar Back/Forward, or `l` and `r`, navigate list/task pages, preserving filter
+and reading position. Raw HTML appears as text; the host serves only images
+from the attachment folder.

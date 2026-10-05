@@ -4,16 +4,15 @@
 
 ## HTML files and URLs
 
-Run `M-x portal-preview-html` in a `.html` or `.htm` file buffer to open its
-saved contents in a web view, including relative scripts, styles,
-and images from its directory. From other buffers, it prompts for a local
-path or URL. Relative paths use the current buffer's `default-directory`;
-`C-u M-x portal-preview-html` always prompts. Unsaved edits are not included.
-Previewing the same file again reuses its buffer, such as `*portal: index.html*`,
-and reloads it.
+Run `M-x portal-preview-html` in a `.html` or `.htm` buffer to preview saved
+contents, including relative scripts, styles and images from its directory.
+Other buffers prompt for a local path or URL. Relative paths use the buffer's
+`default-directory`; `C-u M-x portal-preview-html` always prompts. Unsaved edits
+are excluded. Repreviewing a file reuses and reloads its buffer, such as
+`*portal: index.html*`.
 
-`M-x portal-open-url` opens an arbitrary absolute URL in a new buffer each time,
-named after the page, such as `*portal: example.com*`.
+`M-x portal-open-url` opens any absolute URL in a new, page-named buffer each
+time, such as `*portal: example.com*`.
 Both commands accept HTTP, HTTPS, `file:`, `data:`, and `about:` URLs.
 To open a local HTML file programmatically:
 
@@ -21,38 +20,35 @@ To open a local HTML file programmatically:
 (portal-preview-html "/absolute/path/index.html")
 ```
 
-In a web buffer, `g` loads the page again and `q` (`quit-window`) hides the
-view while the page keeps running. Killing the buffer closes the page.
+In a web buffer, `g` reloads and `q` (`quit-window`) hides the still-running
+page. Killing the buffer closes it.
 
 ## Markdown previews
 
-Run `M-x portal-preview-markdown` in a Markdown file buffer to preview it
-directly. Markdown modes and common file extensions are recognised. From other
-buffers, the command prompts for a saved local file. Use `C-u M-x
-portal-preview-markdown` to choose another file explicitly. Each file has one
-preview buffer, such as `*portal: notes.md*`; previewing it again reuses it.
-The Bun server reads the file, renders
+Run `M-x portal-preview-markdown` in a Markdown file buffer to preview it;
+Markdown modes and common extensions are recognised. Other buffers prompt for
+a saved local file. `C-u M-x
+portal-preview-markdown` explicitly chooses another file. Each file reuses one
+preview buffer, such as `*portal: notes.md*`. The Bun server reads and renders
 it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
-and returns a complete HTML page with embedded light/dark CSS. Rendering happens
-in memory, without temporary HTML files or additional npm dependencies.
+returning complete HTML with embedded light/dark CSS. Rendering is in memory:
+no temporary HTML files or additional npm dependencies.
 
-The preview is light or dark with the system's appearance, and switches when
-the system does, even if your Emacs frames force a dark or light title bar with
-`ns-appearance`. To keep previews one way, set `portal-web-appearance`, or run
-`M-x portal-web-set-appearance`:
+Previews follow system light/dark appearance, even when Emacs frames force a
+title-bar appearance with `ns-appearance`. To fix preview appearance, set
+`portal-web-appearance` or run `M-x portal-web-set-appearance`:
 
 ```elisp
 (setopt portal-web-appearance 'light) ; or 'dark; nil follows the system
 ```
 
-This applies to every web view, including the task browser and Excalidraw.
-Open previews change at once, without reloading.
+This affects every web view, including the task browser and Excalidraw;
+open previews change immediately without reloading.
 
-Headings, lists, fenced code, tables, strikethrough, task lists, and heading
-anchors are supported. Press Command-R to reread the file on screen from disk, or
-from Emacs, `g` (`portal-web-reload`), which also starts a
-stopped host. A loaded preview stays as it is while the host stops or restarts.
-Missing or unreadable files produce an error page.
+Previews support headings, lists, fenced code, tables, strikethrough, task lists
+and heading anchors. Command-R rereads the displayed file from disk; from
+Emacs, `g` (`portal-web-reload`) also starts a stopped host. Loaded previews
+survive host stops or restarts. Missing or unreadable files show an error page.
 
 The preview follows links like a browser:
 
@@ -64,87 +60,73 @@ The preview follows links like a browser:
 | A local image or folder | Opens in Emacs, in `image-mode` or Dired |
 | `https://…` and other sites | Opens in the default browser |
 
-Relative links resolve from the folder of the document on screen, and local
-absolute paths and `file:` URLs work the same way. After following a Markdown
-link, the buffer is renamed after the new file, `g` rereads it, and
-`portal-preview-markdown` on that file finds this preview. Back and Forward in
-the toolbar, or `l` and `r` in the preview buffer, move through the documents
-this preview has shown and restore their reading positions. Following a new
-link after going back discards the old forward pages, as in a browser; opening
-a file in Emacs or a website does not.
+Relative links resolve from the displayed document's folder; local absolute
+paths and `file:` URLs also work. Following a Markdown link renames the buffer
+after that file: `g` rereads it, and `portal-preview-markdown` on that file finds
+this preview.
+Toolbar Back/Forward, or `l` and `r` in the buffer, navigate previously shown
+documents and restore reading positions. Following a new link after going back
+discards forward pages, as in a browser; opening files in Emacs or websites does not.
 
-Opening a file in Emacs is one click, with no need to leave the preview first.
-Emacs selects the file's pane and takes the keyboard, ready for editing, while
-the preview stays in its own pane at the same reading position. The file goes
-to another pane, reusing one or splitting the frame. Rules in
-`display-buffer-alist` still decide: if one puts the file in the preview's own
-pane, the hidden preview keeps its page. **Open in Emacs** in the toolbar, or
-`M-x portal-preview-open-in-emacs`, does the same for the Markdown file on
-screen, including after Back or Forward.
+One click opens a file in Emacs and selects its pane with editing focus. The
+preview keeps its pane and reading position; the file reuses another pane or
+splits the frame. `display-buffer-alist` still decides: if it uses the preview's
+pane, the hidden preview keeps its page. Toolbar **Open in Emacs**, or
+`M-x portal-preview-open-in-emacs`, does the same for the displayed Markdown
+file, including after Back/Forward.
 
-To go back to reading, click the preview, which selects its pane and gives it
-the keyboard, or select its pane and press `RET`. From anywhere else,
-`M-x portal-preview-return` selects the preview that the frame last opened a
-file from, showing it again if it was hidden, and gives it the keyboard. The
-page is not reloaded. There is no global key for it; bind one if you like.
+To resume reading, click the preview to select and focus it, or select its pane
+and press `RET`. From elsewhere, `M-x portal-preview-return` shows, selects and
+focuses the preview this frame last opened a file from, without reloading.
+It has no global key; bind one if desired.
 
-This version previews saved contents only, with no automatic refresh. It does
-not show relative inline images, or add syntax highlighting, Mermaid, or math
-rendering. HTTP(S) images and links can use their absolute URLs. Going back past
-an app host restart shows a "Not found" page; `g` reloads from the running host.
-Raw HTML is displayed as text, and a page-specific Content Security Policy
-blocks scripts. Bun currently marks its Markdown API unstable; it is tested
-here with the Bun version in the [build prerequisites](../README.md#build-and-run).
+This version shows saved contents only, without automatic refresh, relative
+inline images, syntax highlighting, Mermaid or math rendering. HTTP(S) images
+and links can use absolute URLs. Going back past a host restart shows "Not found";
+`g` reloads from the running host. Raw HTML appears as text; a page-specific
+Content Security Policy blocks scripts. Bun currently marks its Markdown API unstable;
+Portal tests it with the Bun version in the [build prerequisites](../README.md#build-and-run).
 
 ## Web view behaviour
 
-A web view is a Portal view of the web kind. Remote pages use
-[WebKit's URL request loading](https://developer.apple.com/documentation/webkit/wkwebview);
-local pages use `loadFileURL` with read access to the containing directory so
-relative scripts, styles, and images can load. JavaScript is enabled by default.
+Web views are Portal views of the web kind. Remote pages use
+[WebKit URL request loading](https://developer.apple.com/documentation/webkit/wkwebview);
+local pages use `loadFileURL` with containing-directory read access for relative
+scripts, styles and images. JavaScript is enabled by default.
 
-- Each web buffer has one web view, which appears in the selected pane showing
-  the buffer ([ADR 0001](adr/0001-one-portal-view-per-buffer.md)). Other
-  panes showing the same buffer display only its text. To see two pages side by
-  side, open two buffers.
-- Web views belong to no frame: show the buffer in another frame and its page
-  moves there. Deleting a frame only hides its web views.
-- Hiding the view, with `q` or by showing another buffer, keeps the page loaded,
-  including its navigation, DOM, scroll position, and form state. Cookies use
-  WebKit's default data store, except in hosted apps, which keep no cookies or
-  storage between Emacs sessions.
-- A hosted app's page never leaves the app host. When it would navigate
-  anywhere else, the navigation is cancelled and the URL opens in the default
-  browser. Clicking a link to a local `file:` URL gives Emacs the keyboard and
-  sends a `follow` message with the URL over the [bridge](editor-bridge.md)
-  instead: WebKit never lets an app host page load a local file, so a script
-  in its own content world, out of the page's reach, catches such clicks. Each
-  page a hosted app commits, including after Back and Forward, sends a `page`
-  message. URLs go over the bridge because a long path would not fit in a
-  notification record.
-- Pages see the system's light or dark appearance as CSS's
-  `prefers-color-scheme`, not the appearance an Emacs frame forces with
-  `ns-appearance`. `portal-web-appearance` set to `light` or `dark` overrides it
-  for every web view, open or new.
-- A chord the page does not use reaches Emacs, and Command-Escape works, while a
-  page has focus.
-  Clicking a view to enter it sends a `select TARGET` record, and Emacs selects
-  the pane showing it.
-- This is a URL viewer, without an address bar, downloads, popup windows, or
-  JavaScript dialog UI. Failed loads can be inspected through `:error` in
+- Each web buffer has one view in its selected pane
+  ([ADR 0001](adr/0001-one-portal-view-per-buffer.md)); other panes showing
+  that buffer show only text. Use two buffers for side-by-side pages.
+- Views belong to no frame: showing the buffer elsewhere moves its page.
+  Deleting a frame only hides its views.
+- Hiding with `q` or another buffer preserves the page's navigation, DOM, scroll
+  position and form state. Cookies use WebKit's default store, except hosted
+  apps keep no cookies or storage between Emacs sessions.
+- Hosted pages never leave the app host: other navigation is cancelled and
+  opened in the default browser. Local `file:` links instead give Emacs focus
+  and send the URL in a `follow` message over the [bridge](editor-bridge.md).
+  WebKit forbids hosted pages from loading local files, so a script in its own
+  content world, beyond the page's reach, catches these clicks. Every hosted
+  page commit, including Back/Forward, sends a `page` message. URLs use the
+  bridge because long paths would not fit in notification records.
+- CSS's `prefers-color-scheme` reflects system appearance, not a frame's forced
+  `ns-appearance`. Setting `portal-web-appearance` to `light` or `dark`
+  overrides every web view, open or new.
+- With page focus, unused chords reach Emacs and Command-Escape works. Clicking
+  to enter sends `select TARGET`; Emacs selects the view's pane.
+- This URL viewer has no address bar, downloads, popups or JavaScript dialog UI.
+  Inspect failed loads through `:error` in
   `(portal--inspect (portal-view-target))`.
 
-Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens one
-for the current buffer and loads URL. TOOLBAR is `"navigation"` (back, forward,
-find, zoom and reload), `"contents"` (those and a table of contents),
-`"markdown"` (those, a table of contents and, for a hosted app, Open in Emacs)
-or `"none"`.
-Loading the page a view shows again, ignoring its fragment, reloads it without
-a new history entry.
-`(portal-web-open-hosted PATH TOOLBAR)` opens a hosted app instead: the view
-opens at once, at `about:blank`, and loads PATH, such as `"/hello"`, from the
-app host as soon as the host is ready, starting the host if needed.
-A hosted app and its buffer exchange JSON objects over the
-[bridge](editor-bridge.md): `(portal-web-send PLIST)` sends one to the
-app, and the buffer-local `portal-web-bridge-function` is called with each one
-the app sends, in order. Other web views have no bridge.
+Lisp can give any buffer a web view: `(portal-web-open URL TOOLBAR)` opens and
+loads URL in the current buffer. TOOLBAR is `"navigation"` (back, forward,
+find, zoom and reload), `"contents"` (those plus a table of contents),
+`"markdown"` (those plus a table of contents and, for hosted apps, Open in Emacs)
+or `"none"`. Loading the current page, ignoring its fragment, reloads without
+adding history.
+`(portal-web-open-hosted PATH TOOLBAR)` instead opens immediately at `about:blank`
+and loads hosted PATH, such as `"/hello"`, when the host is ready, starting it
+if needed. Hosted apps exchange JSON objects with their buffers over the
+[bridge](editor-bridge.md): `(portal-web-send PLIST)` sends to the app;
+buffer-local `portal-web-bridge-function` receives app messages in order.
+Other web views have no bridge.

@@ -4,9 +4,9 @@
 
 ## Shared keyboard controls
 
-Emacs is the system, and each native view an app running in it, as a page runs
-in a browser. Terminal, Excalidraw, and HTML/Markdown views behave as their apps
-do outside Emacs, and a chord the app does not use reaches Emacs:
+Native views run apps inside Emacs, like pages in a browser. Terminal,
+Excalidraw and HTML/Markdown views behave as outside Emacs; unused chords
+reach Emacs:
 
 | Keys in a view | Where they go |
 | --- | --- |
@@ -18,50 +18,46 @@ do outside Emacs, and a chord the app does not use reaches Emacs:
 | Command-Escape | Return to Emacs and stay there |
 | `RET`, or a click, while Emacs owns a Portal buffer | Enter the app |
 
-So `s-x`, or any Emacs binding of yours on Command, works inside a terminal
-without leaving it, and `C-x b` works on a page that does not use Control-X.
-A terminal's program gets every Control and Option chord: tmux keeps `C-b`.
-A page gets each chord first, as it would in a browser, and keeps those it uses.
-Plain keys never reach Emacs, since Emacs binds single keys too; for an Evil
-Space leader, bind a chord to it as well, such as `(evil-set-leader 'normal
-(kbd "s-'"))`. Splits, buffers and switching stay Emacs's job: views have no
-tab or split keys.
+`s-x` and other Emacs Command bindings work inside terminals; `C-x b` works
+on pages that leave Control-X unused. Terminal programs get every Control and
+Option chord: tmux keeps `C-b`. Pages get first claim on chords, as in a browser.
+Plain keys never reach Emacs, which also binds single keys. Give an Evil Space
+leader a chord too, such as `(evil-set-leader 'normal
+(kbd "s-'"))`. Emacs handles splits, buffers and switching; views have no tab
+or split keys.
 
-Commands finish their minibuffer interaction before returning to the selected
-native view; explicit unfocus, errors, and selecting an ordinary buffer leave
-Emacs in control. `C-g` cancels a key sequence Emacs is reading. The native
-toolbar's ownership dot is hollow when Emacs owns the keyboard, green when the
-view owns it, and blue while Emacs reads a command. Click the dot to enter or
-return to Emacs. No global physical keybinding is installed in ordinary buffers.
+Commands finish minibuffer interaction before returning to the selected native
+view. Explicit unfocus, errors or selecting an ordinary buffer leave Emacs in
+control. `C-g` cancels Emacs key-sequence reading. The toolbar's ownership dot
+is hollow for Emacs, green for the view, and blue while Emacs reads a command.
+Click it to enter or return to Emacs. Ordinary buffers get no global physical
+keybinding.
 
-The 28 pixel toolbar reserves space above the content. Web pages have back,
-forward, find, zoom, and reload; Markdown and HTML previews also have a table of
-contents, and Markdown previews an **Open in Emacs** button. Terminals have text
-size controls. Excalidraw and quick
-terminals have no toolbar. The command that opens a web view chooses its toolbar.
-`(setq portal-toolbar nil)` hides toolbars live, and `t` restores them. Colors
-follow Emacs faces and update after theme changes.
+The 28 pixel toolbar reserves space above content. Web pages have back,
+forward, find, zoom and reload; Markdown and HTML previews add a table of
+contents, and Markdown adds **Open in Emacs**. Terminals have text size controls;
+Excalidraw and quick terminals have no toolbar. The opening command chooses a
+web view's toolbar. `(setq portal-toolbar nil)` hides toolbars live; `t`
+restores them. Colors follow Emacs faces, including theme changes.
 
 `portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`,
 `portal-find`, `portal-web-back` (`l`), and `portal-web-forward` (`r`) use the
 same state as the buttons. Terminal equivalents are
 `portal-terminal-text-size-increase`, `portal-terminal-text-size-decrease`, and
-`portal-terminal-text-size-reset`, and in a terminal Command-Plus, Command-Minus
-and Command-0 do the same, with or without a toolbar. Command-F runs `portal-find` in a web view
-with a toolbar, and Command-R reloads the page as the Reload button does, unless
-the page uses those chords itself; in Portal's own web buffers, `s-f` and `s-r`
-(`portal-web-reload`) also work while Emacs owns the keyboard. Find opens a field inside the strip; Return
-and Shift-Return navigate matches, and Escape closes it. State survives hiding
-and redisplaying a pane; reload preserves zoom and the TOC. Killing the buffer
-releases it.
+`portal-terminal-text-size-reset`; terminal Command-Plus, Command-Minus and
+Command-0 do the same, with or without a toolbar. In web views with toolbars, Command-F
+runs `portal-find` and Command-R reloads, like the Reload button, unless the
+page claims those chords. In Portal web buffers, `s-f` and `s-r`
+(`portal-web-reload`) also work with Emacs focus. Find opens a toolbar field:
+Return/Shift-Return navigate matches; Escape closes it. State survives hiding
+and redisplay; reload preserves zoom and the TOC. Killing the buffer releases it.
 
 A terminal's native bindings can claim a chord its program would otherwise
 get, such as a Control chord (see [the input bridge](terminal-input-bridge.md)).
 macOS's own shortcuts, such as Command-Space, still come first.
 
-Click inside a page or press `RET` to interact. A click that enters a view also
-selects the Emacs pane showing it, so the selected pane and the keyboard always
-agree. After returning to Emacs, `q` hides the web view and `g` loads its page
-again. The mode line and minibuffer remain available.
+Click a page or press `RET` to interact. Entering by click also selects its
+Emacs pane, keeping selection and keyboard focus aligned. Back in Emacs, `q`
+hides the web view and `g` reloads. The mode line and minibuffer remain available.
 
 Restart Emacs after rebuilding the native module to try these controls.
