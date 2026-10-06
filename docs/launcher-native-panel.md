@@ -20,6 +20,11 @@ automatic minibuffer height, during a session (layout only)
   post-command-hook: measure the displayed minibuffer, then ask the panel
   for that height; it keeps its screen, left edge, width and top edge
 
+automatic buffer height, during a session (layout only)
+  post-command-hook and the start of each redisplay, via
+  pre-redisplay-function: measure the window's buffer from its start and
+  the minibuffer, then ask the panel for that height, as above
+
 portal-launcher-hide
   hide native panel and Emacs frame; retain buffer and windows
   restore the previously selected ordinary window
@@ -245,11 +250,12 @@ A buffer panel split during the call, with each window's mode line, then with
 
 `portal-launcher-size` resolves per presentation, before anything is shown or
 an active session is cancelled: nil gives a minibuffer panel `(720 auto)` and a
-buffer panel `(720 420)`; `(WIDTH auto)` is rejected for buffer panels, which do
-not fit arbitrary buffers; numeric pairs stay fixed for both kinds. Only an
-automatic minibuffer presentation fits. Its session binds `resize-mini-frames`
-to `portal-launcher--fit` and adds `portal-launcher--refit` to
-`post-command-hook`; fixed presentations bind it to nil. The binding unwinds
+buffer panel `(720 420)`; `(WIDTH auto)` fits both kinds, a buffer panel only in
+a presentation ([content-fitted buffer panels](#content-fitted-buffer-panels));
+numeric pairs stay fixed for both kinds. An automatic minibuffer presentation's
+session binds `resize-mini-frames` to `portal-launcher--fit` and adds
+`portal-launcher--refit` to `post-command-hook`; other presentations bind it to
+nil. The binding unwinds
 and cleanup removes the hook on every exit path, and the option keeps its value:
 no measured height replaces it. There is no timer or polling.
 
@@ -349,7 +355,7 @@ the value it started with, so later bindings and fitting leave both the session
 and the option unchanged; a fixed session has no limits.
 
 `portal-launcher--request-height SESSION HEIGHT` is the one resizing path. The
-minibuffer fitter calls it, and so will fitters of other content. It takes the
+minibuffer and buffer fitters call it. It takes the
 session object, never a raw native ID, and does nothing unless that session is
 still current, automatic and visible, so a timer from a finished presentation
 cannot resize a newer one. It bounds HEIGHT to the larger of the legal height,
@@ -357,24 +363,35 @@ a numeric MIN and HEIGHT capped at MAX, skips a height equal to the last one it
 asked and calls `portal_launcher_fit`. The first placement bounds its measured
 height the same way.
 
-The legal height is `frame-windows-min-size` with IGNORE t, in pixels, plus the
-frame's pixel height minus its inner height (internal borders and any tab bar),
-or the frame's `min-height` parameter in lines when that is larger. IGNORE t is
-the minimum that `resize_frame_windows` falls back to as a frame shrinks: one
-line of each window's text with its tab, header and mode lines, ignoring
-`window-min-height` and rounded up to whole lines unless
-`window-resize-pixelwise`; the minibuffer window adds its line. Native resizes
-reach Emacs through `change_frame_size`, whose `adjust_frame_size` keeps the
-frame at least `frame-windows-min-size` with IGNORE `safe` plus borders, which
-is never larger
+The legal height is `frame-windows-min-size` with IGNORE nil, in pixels, plus
+the frame's pixel height minus its inner height (internal borders and any tab
+bar), or the frame's `min-height` parameter in lines when that is larger. IGNORE
+nil gives each window a line of its text with its tab, header and mode lines,
+rounded up to whole lines unless `window-resize-pixelwise`, and at least
+`window-min-height` lines; the minibuffer window adds its line, and a
+minibuffer-only frame needs only that. Emacs itself lets a frame shrink
+further: `resize_frame_windows` falls back to IGNORE t, which ignores
+`window-min-height`, as a frame shrinks, and native resizes reach Emacs through
+`change_frame_size`, whose `adjust_frame_size` keeps the frame at least
+`frame-windows-min-size` with IGNORE `safe` plus borders, which is never larger
 ([frame.c](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/frame.c),
 [window.c](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/window.c)).
-A shorter panel would leave Emacs's frame taller than its view, cutting off the
-minibuffer, and could give a window less than a line. Portal changes neither
-`window-min-height` nor the safe minima. The C bindings and the platform accept
-any positive height: the floor is Lisp policy from Emacs's own window rules,
-not a native constant, and numeric `portal-launcher-size` heights still start
-at 100.
+But Emacs's Lisp resizing of the minibuffer window, `window--resize-mini-window`
+in `window.el`, limits its change by the root window's height minus
+`(window-min-size root nil nil t)`, which honors `window-min-height`. With the
+root window below that, the limit is negative: every resize, even by zero
+lines, gives the minibuffer a negative height and signals `args-out-of-range`.
+Completion UIs resize the minibuffer that way: Vertico grows it for its rows in
+every normal frame, and the buffer picker prototype, commit `9005099`, hit
+this failure at a 100-point panel. A batch test reproduces it. A buffer
+panel's floor therefore honors `window-min-height`, 4 lines by default; a
+minibuffer panel's is one line either way. A shorter panel would also leave
+Emacs's frame taller than its view, cutting off the minibuffer. Portal changes
+neither `window-min-height` nor the safe minima; lowering `window-min-height`
+gives more compact buffer panels. The C bindings and the platform accept any
+positive height: the floor is Lisp policy from Emacs's own window rules, not a
+native constant, and numeric `portal-launcher-size` heights still start at
+100.
 
 A MAX below the legal height is invalid, and like every other limit error it
 is found before a session is cancelled, a panel hidden or a frame replaced.
@@ -382,20 +399,29 @@ The legal height depends on the frame's font and parameters, while a
 presentation may create or replace its frame, and a second invocation cancels
 the active session before presenting anything. A preflight in
 `portal-launcher-present` therefore measures, before any of that, the frame
-the presentation would show: the dedicated frame when presenting reuses it
-unchanged (made for the kind, with no `portal-launcher-font` to apply), or else
-a candidate standing in for it. Presenting reuses a live frame of its kind and
-only applies the font, so that candidate takes the live frame's own internal
-border, `min-height`, horizontal scroll bar and bottom divider parameters,
-which may have changed since `portal-launcher-frame-parameters` made it; only
-a presentation that makes or replaces the frame is measured with a new frame's
-parameters. The candidate stays hidden, unattached and unselected, and is
-deleted again; its font is applied without customizing the default face. A
-buffer panel's windows would also count, but buffer panels do not fit content
-yet. If the legal height grows later in a
-presentation, as with a larger font, it wins over MAX rather than cutting off
-the prompt. The monitor wins over all: the platform clamps the bottom edge to
-the usable area, even below MIN or the legal height.
+the presentation would show: the dedicated minibuffer frame when presenting
+reuses it unchanged (made for the kind, with no `portal-launcher-font` to
+apply), or else a candidate standing in for it. Presenting reuses a live frame
+of its kind and only applies the font, so that candidate takes its own font,
+internal border, `min-height`, horizontal scroll bar and bottom divider
+parameters, which may have changed since `portal-launcher-frame-parameters`
+made it, or directly on the frame; only a presentation that makes or replaces
+the frame is measured with a new frame's parameters. A buffer panel always gets
+a candidate, set up as the presentation first shows the panel: the live panel's
+windows, which presenting keeps, with their buffers and decoration parameters
+(copied with `window-state-get` and `window-state-put`, minus the selected
+window, so the hidden candidate is never selected); `*Portal Launcher*`, the
+buffer the presentation shows first, in the window for the selected one; and
+no mode lines for `:mode-line nil`. Measuring the live panel itself counted the
+mode line and the header line of whatever buffer it last showed, so with
+`window-min-height` 1 and Menlo 13 a `(content 70)` presentation with
+`:mode-line nil`, legal at 62 points, was rejected as below 77; a single-window
+candidate missed a kept split. The candidate stays hidden, unattached and
+unselected, and is deleted again; its font is applied without customizing the
+default face. If the legal height grows later in a presentation, as with a
+larger font, another buffer's header line or a split, it wins over MAX rather
+than cutting off the prompt. The monitor wins over all: the platform clamps the
+bottom edge to the usable area, even below MIN or the legal height.
 
 Graphical tests in a disposable Emacs in the macOS test VM on 2026-10-06, on its
 "Apple Virtual" display (usable area `(0, 74, 1326, 742)`, scale 2), with Menlo
@@ -426,15 +452,18 @@ launcher font was 188 points, not a new panel's 60: `(content 144)` failed in a
 session and outside one, leaving the same state, and `(content 188)` presented
 at 188 points.
 
-A normal frame, with a buffer window above its own minibuffer, in place of the
-buffer fitting that a later task adds: with Menlo 13 (15-point lines), a
-request for 1 point gave its legal height, 77 points with the mode line (a text
-line, the mode line, the minibuffer's line and both borders) and 62 without.
-Emacs's frame matched, one text line showed, and the minibuffer read input.
-A maximum of 300 points capped a request for 100000. Standalone native checks
-cover placing and fitting heights below 100 points, including on offset and
-negative-origin placements, after display changes, and rejecting zero and
-negative heights.
+A buffer panel, a buffer window above its own minibuffer, fitting one line of
+content at `(content 300)` with Menlo 13 (15-point lines), opened and stayed at
+its legal height: 107 points with Emacs's default `window-min-height`, with or
+without the mode line (the window's four lines, the minibuffer's line and both
+borders). With `window-min-height` 1 it was 77 points with the mode line (a text
+line, the mode line, the minibuffer's line and both borders) and 62 without,
+the heights a request for 1 point gave before buffer panels fitted. Emacs's
+frame matched, the text line showed, and the minibuffer read input. A hundred
+more lines stopped at the 300-point maximum. (Measured 2026-10-07 in the same
+VM.) Standalone native checks cover placing and fitting heights below 100
+points, including on offset and negative-origin placements, after display
+changes, and rejecting zero and negative heights.
 
 A minibuffer panel at `(content 144)`, five rows capped at 144 points, then at
 its 60-point legal height with no matches:
@@ -443,12 +472,140 @@ its 60-point legal height with no matches:
 
 ![The legal minimum: the prompt alone](evidence/launcher-minibuffer-legal-minimum.png)
 
-A normal frame at its legal height, with and without the mode line, reading a
-name in its minibuffer:
+A buffer panel at its legal height, reading a name in its minibuffer: with the
+default `window-min-height`, then at 1 with and without the mode line:
 
-![A normal frame at its legal height](evidence/launcher-buffer-legal-minimum.png)
+![A buffer panel at its default legal height](evidence/launcher-buffer-legal-default.png)
+
+![The same with window-min-height 1](evidence/launcher-buffer-legal-minimum.png)
 
 ![The same without the mode line](evidence/launcher-buffer-legal-minimum-no-mode-line.png)
+
+## Content-fitted buffer panels
+
+With `(WIDTH auto)`, a `buffer` presentation fits its frame's ordinary window and
+minibuffer through the same session-bound request as minibuffer panels, and the
+same anchored native resize. Only a presentation fits: `portal-launcher-show`
+outside one refuses an automatic size, since nothing would end the observation.
+The session adds `portal-launcher--refit` to `post-command-hook` and, with
+`add-function`, `portal-launcher--fit-on-redisplay` after
+`pre-redisplay-function`; cleanup removes both on every exit path. It binds
+`resize-mini-frames` to nil: in a normal frame Emacs then resizes an active
+minibuffer window on every redisplay, as below. There is no timer or polling,
+and the code names no completion package, mode or buffer.
+
+`portal-launcher--buffer-height` measures the window with
+`window-text-pixel-size` from `point-min` to `point-max`, wherever the window
+starts, so scrolling and point never change the height. Its Y-LIMIT is MAX, or
+the display's height, so a long chat or log costs at most a full panel's layout
+per measurement. The measurement follows the display iterator: wrapped lines,
+faces of other heights, line spacing, images, and overlay strings. A final
+newline adds the empty line after it, where point can be; otherwise Emacs would
+scroll to show a cursor there. The window's mode, header and tab lines, the
+minibuffer and the frame's other rows are added. Emacs drops a window's mode,
+header and tab lines when it is too short for them and a line of text, which
+`window-min-height` below 4 allows; each one the window asks for and drops
+counts a frame line, so the panel grows to show it instead of settling without
+it, depending on how tall it was before. The window counts at least
+`(window-min-size WINDOW nil nil t)`, the least height that the
+[legal height](#height-limits-and-legal-frame-heights) keeps for Lisp minibuffer
+resizing.
+
+The minibuffer counts as its line, or, while it shows an active minibuffer that
+the ordinary window does not also show, as `window-text-pixel-size` of it: the
+prompt, the input and an inline completion UI's overlay rows. Emacs's
+`resize_frame_windows` gives the minibuffer window exactly one line whenever the
+frame's size changes
+([window.c](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/window.c)),
+then `redisplay_window` grows an active one into the room with
+`resize_mini_window`, as `max-mini-window-height` allows
+([xdisp.c](https://github.com/emacs-mirror/emacs/blob/a360712c9d272d950d8d8255ef74570f7e90b7d9/src/xdisp.c)).
+Counting the minibuffer window's own height instead loops: an echo-area message
+grows it, the panel grows, the resize gives it one line again and the panel
+shrinks, on every redisplay, as an instrumented graphical run showed. So an echo
+message shows as in any frame, within the space Emacs gives it, and never
+resizes the panel. Because every resize leaves the minibuffer one line and the
+request never drops below the legal height, the ordinary window is at least its
+least height after each resize, and Emacs grows the minibuffer only down to it.
+
+Commands are fitted from `post-command-hook`, before Emacs redisplays. NS turns
+the native resize into a delayed frame size change, which `redisplay_internal`
+applies before laying out windows, so the window never shows a command's changes
+at the old size. Timers, process output and echo-area messages change the panel
+with no command. Emacs calls `pre-redisplay-function` from `prepare_menu_bars`
+at the start of every redisplay, after those changes; the window list it passes
+leaves out minibuffer windows, so the panel is measured each time, while it is
+visible. That redisplay lays out the old size, then applies the new one and
+redisplays again. A window too short for point has scrolled by then, so once all
+of the buffer fits, the fitter sets the window's start back to `point-min` with
+NOFORCE: point never moves, and a longer buffer keeps its scroll. Measuring
+unchanged content gives the height last asked, which asks nothing of the native
+panel.
+
+With the root window split, the request is the frame's own height, which the
+bounded request still raises to the split layout's legal height; windows are
+never deleted or resized by Portal. A numeric resize during the presentation
+places a new native session, which `portal-launcher--show` records, and clears
+the session's limits, so later requests do nothing.
+
+Graphical tests in a disposable Emacs in the macOS test VM on 2026-10-07, on the
+display measured above, with 16-point internal borders and Emacs's default
+`window-min-height`, at width 640. Heights are native and Emacs frame heights,
+which matched at every step; each step kept the native session, key status, left
+and top edges and width, and was fitted before the next key or timer looked:
+
+| Font, limits | Content | Height |
+| --- | --- | --- |
+| Menlo 24, `(content 400)` | First placement, before content | 172, the legal height |
+| | Five lines | 228 |
+| | Forty lines | 400, scrollable; window start and point stayed at 1 |
+| | Point moved to the end | 400; Emacs scrolled the window |
+| | Two lines | 172, the window's four-line least height |
+| | Another buffer: header line, two lines, final newline | 200 |
+| | The first buffer again | 172 |
+| Menlo 24, `(content nil)`, offset 150 down | A hundred lines | 307, bottom at the usable area's |
+| Menlo 24, `(content 400)` | Thirty lines from a process, no key pressed | 400; start and point stayed at 1 |
+| | A timer cut it to three lines | 200 |
+| Menlo 18, `(content nil)`, mode line | A wrapped line | 137, the legal height |
+| | Seven lines, one at face height 2.0 | 241 |
+| | The same with line spacing 8 | 297 |
+| | Six after-string rows added | 367 |
+| | Two before-string rows instead | 283 |
+| | A header line instead | 262 |
+
+Without the mode line, the same steps gave 137, 220, 276, 346, 262 and 241.
+After the presentation, more process output asked nothing of the native panel.
+A split of a six-line, 200-point panel raised it to the split's legal height,
+221, where three more lines left it; one window again fitted nine lines at 263.
+`portal-launcher-resize 600 300` then held at 300 as content grew. The guide's
+fitted hello panel, Menlo 18 without a mode line, stayed at its 137-point legal
+height for one to four lines and grew to 179 for six.
+
+With Menlo 18, one line of content and `window-min-height` 4, the panel's legal
+height is 137 points; at 1 it is 95. A three-line `read-string` prompt grew it to
+179 (137); the default `max-mini-window-height` left the minibuffer one line, the
+rest going to the buffer window. A one-line inner prompt fitted 137 (95), and the
+outer prompt 179 again. With the prompt shown in the buffer window as well and
+the minibuffer shrunk to its line, it counted once: 137. Vertico showed five rows
+at 242 (200), its minibuffer 126 points tall, and three rows at 200 (158); no
+`args-out-of-range` was reported and Vertico's update hook stayed installed.
+After the prompt the panel returned to 137 (95). With eight lines of content, a
+six-line echo-area message took a second minibuffer line over the buffer's last
+line, and the panel stayed at 242.
+
+The panel with five lines, forty capped at 400 points, scrolled to the end, and
+shrunk to two lines; then Vertico's three rows in the minibuffer of a compact
+panel:
+
+![Five lines](evidence/launcher-buffer-fitted-short.png)
+
+![Forty lines at the maximum](evidence/launcher-buffer-fitted-capped.png)
+
+![Scrolled to the end at the same height](evidence/launcher-buffer-fitted-scrolled.png)
+
+![Two lines at the window's least height](evidence/launcher-buffer-fitted-shrunk.png)
+
+![Vertico's rows in a buffer panel's minibuffer](evidence/launcher-buffer-fitted-vertico.png)
 
 ## Persistent buffer panels
 

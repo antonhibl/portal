@@ -145,6 +145,28 @@ buffers; `*Hello*` retains its contents. `:keep-open` requires `:kind 'buffer`
 and defaults to nil, hiding on function return. The open panel runs a recursive
 edit, bracketing the mode name in the default mode line.
 
+### A buffer that fits its content
+
+A buffer panel can take the height of what it shows, as a minibuffer panel does
+by default. Bind an automatic size around the call:
+
+<!-- example: launcher-fitted-hello -->
+```elisp
+(defun my/hello-fitted ()
+  "Show `my/hello' as tall as its text, up to 480 points."
+  (interactive)
+  (let ((portal-launcher-size '(640 auto))
+        (portal-launcher-height-limits '(content 480)))
+    (my/hello)))
+```
+
+The panel opens at its least height and grows a line with each greeting, then
+stops at 480 points, where its window scrolls as usual. Text that timers and
+processes insert fits too, without a key press. See
+[buffer panels that fit](#buffer-panels-that-fit) for what counts.
+
+![The fitted hello panel after five greetings](evidence/launcher-buffer-fitted-hello.png)
+
 ### Global shortcuts for launchers
 
 Set a global shortcut for each launcher that should open from any
@@ -303,8 +325,9 @@ with any appearance settings kept:
         portal-launcher-offset '(0 0))
 ```
 
-A numeric size keeps both kinds of panel fixed, as before. Drop it, or use
-`'(720 auto)`, for [minibuffer panels that fit their content](#panel-size).
+A numeric size keeps both kinds of panel fixed, as before. Drop it for
+[minibuffer panels that fit their content](#panel-size), or use `'(720 auto)`
+for buffer panels that fit too.
 
 Free the old chord with `(portal-launcher-mode -1)` before loading the new
 version, `(portal-global-shortcut-remove 'portal-launcher)` afterward, or an
@@ -348,7 +371,8 @@ Icomplete's vertical mode and Fido show candidates. Commands displaying/previewi
 buffers, splitting windows or otherwise needing a buffer window require `buffer`.
 
 Changing kind replaces the dedicated frame; repeating the same kind reuses it.
-By default, a minibuffer panel's height fits its content; see [Panel size](#panel-size).
+By default, a minibuffer panel's height fits its content, and with `(WIDTH auto)` a
+buffer panel's does too; see [Panel size](#panel-size).
 
 `:mode-line nil` hides panel mode lines, including new windows and switched
 buffers; default t shows each buffer's own. It sets the `mode-line-format`
@@ -401,10 +425,12 @@ See [implementation and measured geometry](launcher-native-panel.md).
 | Value | Minibuffer panel | Buffer panel |
 | --- | --- | --- |
 | `nil` (default) | Width 720, height fits its content | 720 × 420 |
-| `(WIDTH auto)` | Width WIDTH, height fits its content | Error: buffer panels cannot fit |
+| `(WIDTH auto)` | Width WIDTH, height fits its content | Width WIDTH, height fits its buffer in a presentation |
 | `(WIDTH HEIGHT)` | Fixed WIDTH × HEIGHT | Fixed WIDTH × HEIGHT |
 
-WIDTH is an integer of at least 200, HEIGHT one of at least 100. A fitted
+WIDTH is an integer of at least 200, HEIGHT one of at least 100. Buffer panels
+keep their size unless you choose `(WIDTH auto)`; see
+[buffer panels that fit](#buffer-panels-that-fit). A fitted
 minibuffer panel's height follows what it displays, as that changes: the
 prompt, the input with its wrapped lines, the completion UI's visible rows
 (including group titles and annotations) and messages shown inline in the
@@ -440,16 +466,62 @@ input's height.
 
 Numeric sizes are fixed, not maxima: an existing `'(720 240)` keeps its blank
 space below a short list, and content taller than a fixed height clips at the
-bottom. Remove the setting, or replace it with `'(720 auto)`, for fitting.
-`portal-launcher-resize` always sets numeric dimensions, for both kinds; it
-refuses to run during a minibuffer presentation, whose panel cannot become a
-buffer panel. Interactively it offers the current numbers, or 720 × 420.
+bottom. Remove the setting to fit minibuffer panels, or replace it with
+`'(720 auto)` to fit both kinds. `portal-launcher-resize` always sets numeric
+dimensions, for both kinds, and stops a buffer panel fitting for the rest of
+its presentation; it refuses to run during a minibuffer presentation, whose
+panel cannot become a buffer panel. Interactively it offers the current
+numbers, or 720 × 420.
 
 ![A fitted panel with five Vertico rows and group titles](evidence/launcher-minibuffer-fitted-rows.png)
 
 ![The same panel after typing "alp"](evidence/launcher-minibuffer-fitted-filtered.png)
 
 ![No matches: the 100-point minimum](evidence/launcher-minibuffer-fitted-minimum.png)
+
+#### Buffer panels that fit
+
+With `(WIDTH auto)`, a buffer panel's height follows its window's buffer during a
+`portal-launcher-present` call, as a minibuffer panel's follows its prompt. Bind
+it around the calls that should fit, as in
+[a buffer that fits its content](#a-buffer-that-fits-its-content), or set it for
+both kinds. Outside a presentation, `portal-launcher-show` needs a numeric size
+and signals an error otherwise.
+
+The panel measures the buffer as Emacs displays it at the panel's width:
+wrapped lines, faces and line spacing, images and overlay strings, plus the
+window's mode, header and tab lines and the frame's internal borders. A final
+newline adds the empty line after it, where the cursor can be. It measures from
+the buffer's beginning wherever the window is scrolled, so scrolling or moving
+point never shrinks the panel, and it stops measuring at the maximum height, so
+a long chat or log costs no more than a full panel. Typing, commands, text that
+timers and processes insert, and switching the window to another buffer all
+refit, in the same panel, native session and keyboard focus, without a key
+press. Portal never moves point, scrolls or truncates: at the maximum height or
+the bottom of the screen, the window scrolls as Emacs always does, and whether
+it follows new output is up to the buffer's own code.
+
+The buffer window never gets shorter than Emacs's `window-min-height`, 4 lines
+by default, so a one-line buffer leaves blank lines below it; lower that option
+for more compact panels. Completion UIs such as Vertico grow and shrink the
+minibuffer from Lisp, which signals `args-out-of-range` in a window shorter
+than that.
+
+The minibuffer below counts as one line. While it reads a prompt, the panel
+makes room for what the prompt displays, including an inline completion UI's
+rows, and shrinks again as they narrow; a prompt that the buffer window also
+shows, as `vertico-buffer` does, counts once. Emacs's `max-mini-window-height`,
+a quarter of the frame by default, still decides how much of that room the
+minibuffer takes; the buffer window gets the rest. Vertico lets its minibuffer
+take all it needs. An echo-area message never resizes the panel: Emacs shows it
+as in any frame, over the buffer's last lines when it needs more than one, and
+the buffer shows whole again once the message clears.
+
+The panel fits one window. If the call splits it, the height stays as it is,
+but at least the split windows' legal height, and the windows are left as the
+call made them; fitting resumes once one window is left. While all of the
+buffer fits, the window shows it from its beginning. `portal-launcher-resize`
+stops fitting for the rest of the call.
 
 #### Height limits
 
@@ -475,13 +547,17 @@ Four heights decide the panel's size, each overriding the ones before it:
 2. **Configured limits**: MIN raises it and MAX caps it. Content beyond MAX
    is clipped at the bottom, as at the screen's edge.
 3. **Legal frame height**: the least height Emacs allows the panel's frame:
-   one line of each window's text with its mode and header lines, the
-   minibuffer's line and the internal borders, at the frame's font. A
-   minibuffer panel needs one line; with Menlo 24 and the default 16-point
-   borders that is 60 points. With MIN `content`, a one-line prompt shrinks
-   the panel to it; a numeric MIN below it gives it too. Emacs keeps a frame
-   at least this tall, so a shorter panel would cut off its prompt; Portal
-   never asks for one, and changes no window-size setting to allow one.
+   the minibuffer's line, each other window's least height, and the internal
+   borders, at the frame's font. A window's least height is a line of its text
+   with its mode and header lines, and at least `window-min-height` lines.
+   A minibuffer panel needs one line; with Menlo 24 and the default 16-point
+   borders that is 60 points. A buffer panel needs its window's least height
+   too, four lines with Emacs's default `window-min-height`. With MIN
+   `content`, a one-line prompt shrinks the panel to it; a numeric MIN below
+   it gives it too. Emacs keeps a frame at least this tall, so a shorter panel
+   would cut off its prompt or break completion UIs that resize the
+   minibuffer; Portal never asks for one, and changes no window-size setting
+   to allow one.
 4. **Available space**: the panel stops at the bottom of the monitor's usable
    area, below its anchored top edge. This wins over everything, so a panel
    near the bottom of a small display can be shorter than MIN or than its
@@ -490,13 +566,17 @@ Four heights decide the panel's size, each overriding the ones before it:
 Invalid limits signal an error before anything is shown, an active session is
 cancelled or a shown panel is replaced. That includes a MIN larger than MAX and
 a MAX below the legal height of the panel the presentation would show. The
-legal height depends on that panel's font and decorations: Portal measures the
-existing panel when the presentation would reuse it unchanged. Otherwise it
-measures a hidden candidate frame, then deletes it: with the existing panel's
-own borders and other size parameters plus `portal-launcher-font` when the
-presentation would reuse that panel with that font, or with a new panel's
-parameters when it would make one. If the legal height grows later in a presentation, as with a larger font,
-it wins over MAX rather than cutting off the prompt. Each presentation reads
+legal height depends on that panel's font and decorations: Portal measures an
+existing minibuffer panel when the presentation would reuse it unchanged.
+Otherwise it measures a hidden candidate frame, then deletes it: with the
+existing panel's own borders and other size parameters plus
+`portal-launcher-font` when the presentation would reuse that panel with that
+font, or with a new panel's parameters when it would make one. A buffer panel's
+candidate has the existing panel's font and windows, which the presentation
+keeps, with the buffer the presentation shows first in the selected one, and
+mode lines as `:mode-line` asks. If the legal height grows later in a
+presentation, as with a larger font or another buffer's header line, it wins
+over MAX rather than cutting off the prompt. Each presentation reads
 the option once, including a `let` binding of it; fitting never changes it.
 
 With `'(content 144)`, Menlo 24 and the default borders, five rows stop at 144
