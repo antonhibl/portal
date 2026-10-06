@@ -728,30 +728,36 @@ borders. A minibuffer-only frame needs one line."
             (if (fixnump lines) (* (max lines 1) (frame-char-height frame)) 0)))))
 
 (defconst portal-launcher--floor-parameters
-  '(internal-border-width min-height horizontal-scroll-bars scroll-bar-height bottom-divider-width)
-  "Frame parameters, besides its font and fixed role, that its legal height uses.")
+  '(font internal-border-width min-height horizontal-scroll-bars scroll-bar-height bottom-divider-width)
+  "Frame parameters, besides its fixed role, that its legal height uses.")
+
+(defconst portal-launcher--window-parameters
+  '(mode-line-format header-line-format tab-line-format)
+  "Window parameters that decide which lines a window shows besides its text.")
 
 (defun portal-launcher--candidate-legal-height (kind mode-line)
   "Return the legal height of the frame presenting KIND would show.
 That is the live dedicated frame made for KIND, which presenting reuses,
 changing only its font, or else a new one. A hidden candidate frame
 stands in for it, with `portal-launcher-font': for a reused frame, with
-that frame's own `portal-launcher--floor-parameters', which can differ
-from `portal-launcher-frame-parameters', applied only when it was made;
-for a new frame, with the parameters a presentation makes one with. A
-buffer panel's candidate window shows `portal-launcher--buffer', as the
-presentation does first, without a mode line unless MODE-LINE, whose
-decorations count towards the legal height. The candidate stays
-unattached and unselected, and is deleted again; other frames,
-including the live one, are left alone."
+that frame's own `portal-launcher--floor-parameters', its font among
+them, which can differ from those it was made with; for a new frame,
+with the parameters a presentation makes one with. A buffer panel's
+candidate is set up as the presentation first shows it; see
+`portal-launcher--stage-panel'. The candidate stays unattached and
+unselected, and is deleted again; other frames, including the live one,
+are left alone."
   (portal-launcher--check-support)
   (let* ((reused (and (portal-launcher--live-p kind) portal-launcher--frame))
+         (layout (and reused (eq kind 'buffer) (portal-launcher--panel-layout reused)))
          (window (selected-window))
          (frame (make-frame
                  (if reused
                      (append (mapcar (lambda (name) (cons name (frame-parameter reused name)))
                                      portal-launcher--floor-parameters)
-                             '((visibility . nil))
+                             ;; Room for its windows, which only their least
+                             ;; heights measure.
+                             `((height . ,(frame-height reused)) (visibility . nil))
                              (portal-launcher--frame-role kind))
                    (portal-launcher--parameters kind)))))
     (unwind-protect
@@ -762,13 +768,37 @@ including the live one, are left alone."
             (let ((frame-inhibit-implied-resize t))
               (set-frame-font portal-launcher-font nil (list frame) t)))
           (when (eq kind 'buffer)
-            (let ((window (frame-root-window frame)))
-              (set-window-buffer window (get-buffer-create portal-launcher--buffer))
-              (unless mode-line (set-window-parameter window 'mode-line-format 'none))))
+            (portal-launcher--stage-panel frame layout mode-line))
           (portal-launcher--legal-height frame))
       (delete-frame frame t)
       (when (and (window-live-p window) (not (eq window (selected-window))))
         (select-window window 'norecord)))))
+
+(defun portal-launcher--panel-layout (frame)
+  "Return the layout of buffer panel FRAME's windows, which presenting keeps.
+That is (STATE . INDEX): their `window-state-get' state, with their
+buffers and `portal-launcher--window-parameters' but no selected window,
+and the position of FRAME's selected window in canonical order."
+  (let ((window-persistent-parameters
+         (append (mapcar (lambda (name) (cons name t)) portal-launcher--window-parameters)
+                 window-persistent-parameters)))
+    (cons (cl-subst nil '(selected . t) (window-state-get (frame-root-window frame)) :test #'equal)
+          (cl-position (frame-selected-window frame)
+                       (window-list frame 'never (frame-first-window frame))))))
+
+(defun portal-launcher--stage-panel (frame layout mode-line)
+  "Set up buffer panel FRAME as a presentation first shows its panel.
+FRAME takes LAYOUT, the layout of the live panel that presenting reuses,
+from `portal-launcher--panel-layout', or keeps its one window if nil.
+FRAME's window for that panel's selected one shows
+`portal-launcher--buffer', and unless MODE-LINE, no window shows a mode
+line. Their lines besides text count towards FRAME's legal height.
+Putting LAYOUT selects nothing: it has no selected window."
+  (when layout (window-state-put (car layout) (frame-root-window frame) 'safe))
+  (let ((windows (window-list frame 'never (frame-first-window frame))))
+    (set-window-buffer (nth (or (cdr layout) 0) windows) (get-buffer-create portal-launcher--buffer))
+    (unless mode-line
+      (dolist (window windows) (set-window-parameter window 'mode-line-format 'none)))))
 
 (defun portal-launcher--check-maximum (kind limits mode-line)
   "Signal a `user-error' if the maximum in LIMITS is below KIND's legal height.

@@ -401,23 +401,27 @@ the active session before presenting anything. A preflight in
 `portal-launcher-present` therefore measures, before any of that, the frame
 the presentation would show: the dedicated minibuffer frame when presenting
 reuses it unchanged (made for the kind, with no `portal-launcher-font` to
-apply), or else a candidate standing in for it. A buffer panel always gets a
-candidate, since a presentation first changes its window: the candidate's
-window shows `*Portal Launcher*`, the buffer the presentation shows first,
-and hides its mode line for `:mode-line nil`. Measuring the live panel instead
-counted the mode line, and the header line of whatever buffer it last showed,
-so with `window-min-height` 1 and Menlo 13 a `(content 70)` presentation with
-`:mode-line nil`, legal at 62 points, was rejected as below 77. Presenting reuses a live frame of its kind and
-only applies the font, so that candidate takes the live frame's own internal
-border, `min-height`, horizontal scroll bar and bottom divider parameters,
-which may have changed since `portal-launcher-frame-parameters` made it; only
-a presentation that makes or replaces the frame is measured with a new frame's
-parameters. The candidate stays hidden, unattached and unselected, and is
-deleted again; its font is applied without customizing the default face. If
-the legal height grows later in a presentation, as with a larger font, another
-buffer's header line or a split, it wins over MAX rather than cutting off the
-prompt. The monitor wins over all: the platform clamps the bottom edge to
-the usable area, even below MIN or the legal height.
+apply), or else a candidate standing in for it. Presenting reuses a live frame
+of its kind and only applies the font, so that candidate takes its own font,
+internal border, `min-height`, horizontal scroll bar and bottom divider
+parameters, which may have changed since `portal-launcher-frame-parameters`
+made it, or directly on the frame; only a presentation that makes or replaces
+the frame is measured with a new frame's parameters. A buffer panel always gets
+a candidate, set up as the presentation first shows the panel: the live panel's
+windows, which presenting keeps, with their buffers and decoration parameters
+(copied with `window-state-get` and `window-state-put`, minus the selected
+window, so the hidden candidate is never selected); `*Portal Launcher*`, the
+buffer the presentation shows first, in the window for the selected one; and
+no mode lines for `:mode-line nil`. Measuring the live panel itself counted the
+mode line and the header line of whatever buffer it last showed, so with
+`window-min-height` 1 and Menlo 13 a `(content 70)` presentation with
+`:mode-line nil`, legal at 62 points, was rejected as below 77; a single-window
+candidate missed a kept split. The candidate stays hidden, unattached and
+unselected, and is deleted again; its font is applied without customizing the
+default face. If the legal height grows later in a presentation, as with a
+larger font, another buffer's header line or a split, it wins over MAX rather
+than cutting off the prompt. The monitor wins over all: the platform clamps the
+bottom edge to the usable area, even below MIN or the legal height.
 
 Graphical tests in a disposable Emacs in the macOS test VM on 2026-10-06, on its
 "Apple Virtual" display (usable area `(0, 74, 1326, 742)`, scale 2), with Menlo

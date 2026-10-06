@@ -572,8 +572,9 @@ Otherwise it measures a hidden candidate frame, then deletes it: with the
 existing panel's own borders and other size parameters plus
 `portal-launcher-font` when the presentation would reuse that panel with that
 font, or with a new panel's parameters when it would make one. A buffer panel's
-candidate shows the buffer the presentation shows first, with or without its
-mode line as `:mode-line` asks. If the legal height grows later in a
+candidate has the existing panel's font and windows, which the presentation
+keeps, with the buffer the presentation shows first in the selected one, and
+mode lines as `:mode-line` asks. If the legal height grows later in a
 presentation, as with a larger font or another buffer's header line, it wins
 over MAX rather than cutting off the prompt. Each presentation reads
 the option once, including a `let` binding of it; fitting never changes it.

@@ -190,10 +190,24 @@ asks for now counts a frame line. A batch test checks the candidate's set-up
 (and fails for three mutants of it), another the dropped lines, and a GUI test
 checks 62, 77 and the rejection on real frames.
 
+Review round 3: Codex reported two ways the round-2 candidate differed from
+the panel a presentation reuses: a font set directly on the live panel, and
+a split from an explicit show, which presenting keeps. By the user's choice
+(option A of three, fixing the class), the candidate now takes the live
+panel's font with its other floor parameters, and its windows, buffers and
+decoration parameters through `window-state-get` and `window-state-put`, minus
+the selected window so that the hidden candidate is never selected. The live
+layout is captured before the candidate is made. The batch test now also
+covers the font, a split with the lower window selected, and mode lines in
+every window (failing for four mutants); a GUI test measured 116 points for
+Menlo 24 set on the live panel and 122 for a kept split, against 77 for one
+window.
+
 VM checks through the new `bash test/vm.sh sh test/launcher-gui.sh`, the whole
 launcher graphical suite with its daily-use checks in one disposable `emacs -Q
 --module-assertions`: 38 tests, 37 passed, 0 failed, 1 skipped in 131 s;
-after review round 2, 39 tests, 38 passed, 0 failed, 1 skipped in 129 s. The
+after review round 2, 39 tests, 38 passed, 0 failed, 1 skipped in 129 s;
+after review round 3, 40 tests, 39 passed, 0 failed, 1 skipped in 130 s. The
 skip, `portal-launcher-gui-minibuffer-panel-stays-on-its-display`, needs a
 second display. The existing minibuffer, fixed-size, mode-line, persistent and
 session tests passed unchanged, and their screenshots were captured as well.

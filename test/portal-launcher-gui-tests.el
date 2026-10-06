@@ -1068,6 +1068,55 @@ EXACT, the text must also be that many default lines high."
           (should (equal (list (present '(content 70) nil) (present '(content 77) t)) '(62 77)))
           (should (equal frames (frame-list))))))))
 
+(ert-deftest portal-launcher-gui-buffer-panel-maximum-checks-the-reused-panel ()
+  ;; The candidate also has what presenting keeps of the live panel: a font
+  ;; set on it directly, and a split from an explicit show. Rejected
+  ;; presentations leave both, and the selection, as they were.
+  (portal-launcher-gui--with-panel
+    (with-current-buffer content
+      (setq-local header-line-format "A header line")
+      (insert "Shown content"))
+    (let ((window-min-height 1)
+          (portal-launcher-font nil))
+      (cl-flet ((present (limits)
+                  (condition-case error
+                      (let ((portal-launcher-height-limits limits)
+                            (portal-launcher-size '(720 auto)))
+                        (portal-launcher-present
+                         (lambda ()
+                           (list (nth 3 (plist-get (portal--launcher-inspect) :actual))
+                                 (length (window-list portal-launcher--frame 'never))))))
+                    (user-error (cadr error))))
+                (legal (message)
+                  (and (stringp message)
+                       (string-match "legal height of its panel, \\([0-9]+\\) points" message)
+                       (string-to-number (match-string 1 message)))))
+        ;; Menlo 24 set on the live panel, not through `portal-launcher-font'.
+        (portal-launcher-show content)
+        (portal-launcher-hide)
+        (set-frame-font "Menlo 24" nil (list portal-launcher--frame))
+        (pcase-let* ((`(,height ,windows) (present '(content nil)))
+                     (rejected (present (list 'content (1- height)))))
+          (message "Launcher maximum with the panel's own font: %S, %S" height rejected)
+          (should (= windows 1))
+          (should (> height 100))
+          (should (= (legal rejected) height))
+          (should (equal (present (list 'content height)) (list height 1))))
+        ;; A split from an explicit show, which presenting keeps.
+        (let ((portal-launcher-font "Menlo 13"))
+          (portal-launcher-show content)
+          (split-window)
+          (portal-launcher-hide)
+          (let* ((frames (frame-list))
+                 (rejected (present '(content 100)))
+                 (height (legal rejected)))
+            (message "Launcher maximum with a kept split: %S" rejected)
+            (should (> height 100))
+            (should (= 2 (length (window-list portal-launcher--frame 'never))))
+            (should-not (eq (selected-frame) portal-launcher--frame))
+            (should (equal frames (frame-list)))
+            (should (equal (present (list 'content height)) (list height 2)))))))))
+
 ;; Automatic buffer panels: `portal-launcher-size' (WIDTH auto), :kind buffer.
 
 (defun portal-launcher-gui--record-buffer ()

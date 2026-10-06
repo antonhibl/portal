@@ -1027,53 +1027,100 @@ The selected frame stands in for the panel, and deleting it is a no-op."
 
 (ert-deftest portal-launcher-buffer-maximum-is-checked-on-the-panel-to-show ()
   ;; A buffer panel's maximum is checked on a candidate set up as the
-  ;; presentation first shows its panel: its buffer, with or without the
-  ;; mode line it asks for, even where the live panel, showing a buffer
-  ;; with a header line, could be reused. The batch frame stands in for
-  ;; the candidate here, and its legal height for Menlo 13's at
-  ;; `window-min-height' 1: 15-point lines for the text, the minibuffer
-  ;; and any mode and header lines, and both 16-point borders. The GUI
-  ;; suite measures real candidates.
+  ;; presentation first shows the live panel it reuses: that panel's font
+  ;; and windows, which the presentation keeps, with its first buffer in
+  ;; the selected window and the mode lines it asks for. The batch frame
+  ;; stands in for the candidate here, its layout restored as the candidate
+  ;; is deleted, and its legal height for Menlo 13's at `window-min-height'
+  ;; 1: 15-point lines for each window's text, mode and header lines and
+  ;; the minibuffer, and both 16-point borders. The GUI suite measures real
+  ;; candidates.
   (save-window-excursion
     (delete-other-windows)
     (let* ((window (selected-window))
            (shown (generate-new-buffer " *launcher shown*"))
+           (plain (generate-new-buffer " *launcher plain*"))
            (portal-launcher--frame (selected-frame))
            (portal-launcher-font nil)
-           (made 0) measured)
+           made measured layout)
       (with-current-buffer shown (setq-local header-line-format "Header"))
-      (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
-                ((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
-                ((symbol-function 'make-frame) (lambda (_parameters) (cl-incf made) (selected-frame)))
-                ((symbol-function 'delete-frame)
-                 (lambda (&rest _)
-                   (set-window-parameter window 'mode-line-format nil)
-                   (set-window-buffer window shown)))
-                ((symbol-function 'portal-launcher--legal-height)
-                 (lambda (frame)
-                   (let* ((root (frame-root-window frame))
-                          (mode-line (window-parameter root 'mode-line-format)))
-                     (push (list (buffer-name (window-buffer root)) mode-line) measured)
-                     (+ 32 (* 15 (+ 2 (if (eq mode-line 'none) 0 1)
-                                    (if (buffer-local-value 'header-line-format (window-buffer root))
-                                        1 0))))))))
-        (unwind-protect
-            (progn
-              (set-window-buffer window shown)
-              ;; 62 points without the mode line, not the live panel's 92.
-              (portal-launcher--check-maximum 'buffer '(content 70) nil)
-              (should (equal (cadr (should-error (portal-launcher--check-maximum 'buffer '(content 61) nil)
-                                                 :type 'user-error))
-                             "Launcher maximum height 61 is below the legal height of its panel, 62 points"))
-              ;; 77 with it.
-              (should-error (portal-launcher--check-maximum 'buffer '(content 70) t) :type 'user-error)
-              (portal-launcher--check-maximum 'buffer '(content 77) t)
-              (should (= made 4))
-              (should (equal measured (append (make-list 2 (list portal-launcher--buffer nil))
-                                              (make-list 2 (list portal-launcher--buffer 'none)))))
-              (should (eq (window-buffer window) shown))
-              (should-not (window-parameter window 'mode-line-format)))
-          (kill-buffer shown))))))
+      (cl-flet ((check (max mode-line)
+                  (condition-case error
+                      (progn (portal-launcher--check-maximum 'buffer (list 'content max) mode-line) 'ok)
+                    (user-error (cadr error)))))
+        (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
+                  ((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
+                  ;; A new frame has one window.
+                  ((symbol-function 'make-frame)
+                   (lambda (parameters)
+                     (push parameters made)
+                     (delete-other-windows (frame-first-window))
+                     (selected-frame)))
+                  ((symbol-function 'delete-frame)
+                   (lambda (&rest _)
+                     (set-window-configuration layout)
+                     (dolist (window (window-list nil 'never))
+                       (set-window-parameter window 'mode-line-format nil))))
+                  ((symbol-function 'portal-launcher--legal-height)
+                   (lambda (frame)
+                     (let ((windows (window-list frame 'never (frame-first-window frame))))
+                       (push (mapcar (lambda (window)
+                                       (list (buffer-name (window-buffer window))
+                                             (window-parameter window 'mode-line-format)))
+                                     windows)
+                             measured)
+                       (+ 32 15 (* 15 (apply #'+ (mapcar
+                                                   (lambda (window)
+                                                     (+ 1 (if (eq (window-parameter window 'mode-line-format) 'none)
+                                                              0 1)
+                                                        (if (buffer-local-value 'header-line-format
+                                                                                (window-buffer window))
+                                                            1 0)))
+                                                   windows))))))))
+          (unwind-protect
+              (progn
+                ;; One window showing a buffer with a header line: 62 points
+                ;; without the mode line, 77 with it, not the live panel's 92.
+                (set-window-buffer window shown)
+                (setq layout (current-window-configuration))
+                (should (equal (list (check 70 nil) (check 61 nil) (check 70 t) (check 77 t))
+                               '(ok "Launcher maximum height 61 is below the legal height of its panel, 62 points"
+                                    "Launcher maximum height 70 is below the legal height of its panel, 77 points"
+                                    ok)))
+                (should (equal (reverse measured)
+                               (append (make-list 2 (list (list portal-launcher--buffer 'none)))
+                                       (make-list 2 (list (list portal-launcher--buffer nil))))))
+                ;; The candidate has the live panel's font and room for its
+                ;; windows.
+                (dolist (parameters made)
+                  (should (equal (alist-get 'font parameters) (frame-parameter nil 'font)))
+                  (should (eql (alist-get 'height parameters) (frame-height))))
+                ;; A split the live panel keeps: its selected window, the
+                ;; lower one, shows the presentation's buffer, the other its
+                ;; own with a header line, and both hide their mode lines
+                ;; or neither.
+                (setq window (split-window window))
+                (set-window-buffer window plain)
+                (select-window window)
+                (setq layout (current-window-configuration) measured nil)
+                (should (equal (list (check 92 nil) (check 91 nil) (check 121 t) (check 122 t))
+                               '(ok "Launcher maximum height 91 is below the legal height of its panel, 92 points"
+                                    "Launcher maximum height 121 is below the legal height of its panel, 122 points"
+                                    ok)))
+                (should (equal (reverse measured)
+                               (append (make-list 2 (list (list (buffer-name shown) 'none)
+                                                          (list portal-launcher--buffer 'none)))
+                                       (make-list 2 (list (list (buffer-name shown) nil)
+                                                          (list portal-launcher--buffer nil))))))
+                ;; The live panel's windows, buffers and selection are as
+                ;; they were.
+                (should (eq (selected-window) window))
+                (should (equal (mapcar #'window-buffer (window-list nil 'never (frame-first-window)))
+                               (list shown plain)))
+                (should-not (cl-some (lambda (window) (window-parameter window 'mode-line-format))
+                                     (window-list nil 'never))))
+            (kill-buffer shown)
+            (kill-buffer plain)))))))
 
 (ert-deftest portal-launcher-resize-fixes-both-kinds-outside-minibuffer-panels ()
   (portal-launcher-test--panel
