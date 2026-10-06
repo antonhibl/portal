@@ -646,22 +646,64 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (should (equal (pop shown) '(720 420 -30 40 1 t 14))))
         ;; The first automatic height is within the limits; numeric
         ;; heights ignore them.
+        ;; A maximum below the frame's legal height gives the legal height.
         (pcase-dolist (`(,limits ,content ,size ,height)
                        '(((100 nil) 40 nil 100) ((content nil) 40 nil 60) ((content nil) 137 nil 137)
                          ((80 nil) 40 nil 80) ((content 120) 137 nil 120) ((content 120) 137 (640 auto) 120)
-                         ((content 120) 137 (720 240) 240) ((content 50) 137 (720 240) 240)))
+                         ((content 120) 137 (720 240) 240) ((content 50) 137 (720 240) 240)
+                         ((content 59) 137 nil 60) ((content 1) 40 nil 60) ((1 1) 137 nil 60)))
           (setq fitted content)
           (let ((portal-launcher-height-limits limits) (portal-launcher-size size))
             (portal-launcher-present #'ignore :kind 'minibuffer)
             (should (equal (take 2 (pop shown)) (list (if (eq (car size) 640) 640 720) height)))))
-        ;; A maximum below the frame's legal height shows nothing.
-        (let ((portal-launcher-height-limits '(content 59)))
-          (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error)
-          (should-not shown)
-          (should-not portal-launcher--session))
         ;; The options keep their values; nothing replaced them with a height.
         (should-not portal-launcher-size)
         (should (equal '(100 nil) portal-launcher-height-limits))))))
+
+(ert-deftest portal-launcher-height-limits-never-dismiss-before-failing ()
+  ;; Every height-limit error is found before an existing presentation is
+  ;; cancelled or replaced; a maximum below the legal height is no error.
+  (portal-launcher-test--panel
+    (let (shown)
+      (cl-letf (((symbol-function 'portal--launcher-show) (lambda (&rest args) (push (take 2 args) shown)))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) 137))
+                ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60))
+                ((symbol-function 'delete-frame) (lambda (&rest _) (push 'deleted shown))))
+        ;; During a valid automatic presentation, invalid limits signal and
+        ;; leave the session presenting; `(content 1)' is valid, so the call
+        ;; is an ordinary second invocation, cancelling the session.
+        (should (eq 'continued
+                    (portal-launcher-present
+                     (lambda ()
+                       (let ((session portal-launcher--session))
+                         (let ((portal-launcher-height-limits '(content 0)))
+                           (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
+                         (let ((portal-launcher-height-limits '(300 200)))
+                           (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
+                         (should (eq session portal-launcher--session)))
+                       'continued)
+                     :kind 'minibuffer)))
+        (should (equal (remq 'deleted shown) '((720 137))))
+        (should-not (portal-launcher-present
+                     (lambda ()
+                       (let ((portal-launcher-height-limits '(content 1)))
+                         (portal-launcher-present #'ignore :kind 'minibuffer))
+                       (ert-fail "The session survived a second invocation"))
+                     :kind 'minibuffer))
+        (should (equal (remq 'deleted shown) '((720 137) (720 137))))
+        ;; An explicitly shown buffer panel stays, frame and content, after an
+        ;; invalid minibuffer presentation; a too-small maximum replaces it,
+        ;; as any minibuffer presentation does, with a panel at the legal
+        ;; height. (Here the panel's frame always reads as a buffer panel's.)
+        (setq shown nil)
+        (portal-launcher-show (current-buffer))
+        (let ((portal-launcher-height-limits '(300 200)))
+          (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
+        (should (equal shown '((720 420))))
+        (should (eq (window-buffer (frame-selected-window portal-launcher--frame)) (current-buffer)))
+        (let ((portal-launcher-height-limits '(content 1)))
+          (portal-launcher-present #'ignore :kind 'minibuffer))
+        (should (equal shown '((720 60) deleted (720 420))))))))
 
 (ert-deftest portal-launcher-resize-fixes-both-kinds-outside-minibuffer-panels ()
   (portal-launcher-test--panel

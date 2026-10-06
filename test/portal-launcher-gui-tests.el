@@ -793,14 +793,16 @@ EXACT, the text must also be that many default lines high."
 (ert-deftest portal-launcher-gui-minibuffer-panel-height-limits ()
   ;; Menlo 24's 28-point lines and the 16-point borders make a minibuffer
   ;; frame's legal height 60 points: `content' allows it, below 100. A
-  ;; maximum caps the rows, which clip below the prompt as at the screen.
+  ;; maximum caps the rows, which clip below the prompt as at the screen;
+  ;; one below the legal height gives the legal height.
   (portal-launcher-gui--with-panel
     (let ((portal-launcher-size nil)
           (portal-launcher-font "Menlo 24")
           (read (lambda () (read-from-minibuffer "Fruit: ")))
           (setup (lambda () (portal-launcher-gui--inline-rows portal-launcher-gui--fruits))))
-      (pcase-dolist (`(,limits ,heights)
-                     '(((content 144) (144 116 60 144)) ((80 nil) (200 116 80 200)) ((content nil) (200 116 60 200))))
+      (pcase-dolist (`(,limits ,heights ,clipped)
+                     '(((content 144) (144 116 60 144) (t nil nil t)) ((80 nil) (200 116 80 200) (nil nil nil nil))
+                       ((content nil) (200 116 60 200) (nil nil nil nil)) ((content 1) (60 60 60 60) (t t nil t))))
         (let* ((portal-launcher-height-limits limits)
                (step 0)
                (result (portal-launcher-gui--fit
@@ -818,12 +820,12 @@ EXACT, the text must also be that many default lines high."
           (message "Launcher height limits %S: %S" limits result)
           (should (equal (mapcar (lambda (layout) (plist-get layout :height)) (cdr result)) heights))
           (portal-launcher-gui--check-fitted result 720 '(5 2 0 5) t limits)
-          (dolist (layout (cdr result))
-            ;; The prompt stays at the top, clipped rows or not.
-            (should (= (plist-get layout :start) 1))
-            (should (eq (> (plist-get layout :text) (plist-get layout :body))
-                        (and (cadr limits) (> 200 (cadr limits)) (= (plist-get layout :height) (cadr limits)))))
-            (should (= (plist-get layout :legal) 60)))
+          (cl-loop
+           for layout in (cdr result) for clip in clipped do
+           ;; The prompt stays at the top, clipped rows or not.
+           (should (= (plist-get layout :start) 1))
+           (should (eq (> (plist-get layout :text) (plist-get layout :body)) clip))
+           (should (= (plist-get layout :legal) 60)))
           ;; Fitting changed no setting.
           (should (equal portal-launcher-height-limits limits))))
       (should (equal (default-value 'portal-launcher-height-limits) '(100 nil))))))

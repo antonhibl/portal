@@ -59,13 +59,15 @@ The names above are kept. Implementation refined the contract as follows:
   mode lines, rounded to whole lines, and the minibuffer's line), or the frame's
   `min-height` parameter if larger, plus internal borders and tab bar. A numeric
   MIN below it gives the floor.
-- "A maximum below the legal frame floor" cannot be checked before the frame
-  exists: the floor depends on the frame's font and decorations, and the kind's
-  frame may be created or replaced by that presentation. That one check runs
-  as the panel is about to show, after frame creation and font application and
-  before native presentation; it fails like a native show failure, leaving the
-  frame hidden. If the floor later grows during a presentation (a font change),
-  the floor wins over MAX rather than requesting an illegal height.
+- A maximum below the legal frame floor is **not** an error: the floor wins
+  over MAX, at the first placement and throughout a presentation (for example
+  after a font change). The floor depends on the frame's font and decorations,
+  and a presentation may first create or replace that frame, while a second
+  invocation cancels the active session before presenting; an error found that
+  late would already have dismissed or replaced the existing panel. Human
+  decision on review round 1 (2026-10-06): "Legal height wins", in place of
+  the original "fail" wording for this case. All remaining limit errors are
+  static and raised before anything is shown, mutated or cancelled.
 - The seam is internal: `portal-launcher--request-height SESSION HEIGHT`, taking
   the session object, not a native ID. The minibuffer fitter uses it, so there
   is one resizing path. Configuration only sets the option.
@@ -111,9 +113,9 @@ The names above are kept. Implementation refined the contract as follows:
   selected font/decorations allow it; no negative mini-window heights, native
   errors, unsafe zero-height windows, or clipped prompt caused by an illegal floor.
 - [x] Invalid options/ranges fail before state mutation; limits remain unchanged
-  in user config after fitting and respect dynamic bindings. (A maximum below
-  the frame-dependent legal floor fails before showing, after frame creation;
-  see the refinements above.)
+  in user config after fitting and respect dynamic bindings. (By the recorded
+  decision, a maximum below the frame-dependent legal floor is not invalid:
+  the floor wins; see the refinements above.)
 - [x] Resizing preserves frame/native session, top/left/width/monitor, responder,
   IME marked text where tested, and pending blur; it does not steal focus.
 - [x] Stale/no-op requests are harmless; no reopen after dismissal or resize loop.
@@ -140,36 +142,38 @@ Host checks, all passed:
 
 - `./build.sh`
 - `ctest --test-dir build --output-on-failure`: 34 of 34, including `launcher`
-  (38 tests) and `module`
+  (39 tests) and `module`
 - `bun run --cwd host check` and `bun run --cwd host typecheck`
 - `python3 -B -m unittest discover -s test -p 'test_*.py'`: 8 tests
 - `git diff --check`, and byte compilation of `portal-launcher.el` and both
   launcher test files without warnings
 
-VM checks through `bash test/vm.sh sh -c '…'`, one run:
+VM checks through `bash test/vm.sh sh -c '…'`, run twice:
 
 - Standalone native launcher check, built as in `docs/testing.md` with
   `test/native-launcher.swift`: passed, including heights below 100 points
 - Combined graphical launcher suite in a disposable `emacs -Q
   --module-assertions` with `portal.el`, the test injector and
   `test/portal-launcher-daily-use-tests.el`, selector `^portal-launcher-`:
-  29 passed, 0 failed, 1 skipped in 105 s. The skipped
+  29 passed, 0 failed, 1 skipped in 105 s; after the review-round-1 decision,
+  rerun at the final commit with the same result in 106 s. The skipped
   `portal-launcher-gui-minibuffer-panel-stays-on-its-display` needs a second
   display, which the VM lacks.
 
 Measured heights and screenshots are in `docs/launcher-native-panel.md`,
-section "Height limits and legal frame heights": a minibuffer frame's legal height with Menlo 24 was 60 points; `(content 144)`
-gave 144 (clipped), 116, 60 and 144 for five, two, no and five rows; the
-default gave the earlier 200, 116, 100 and 200. A normal frame with Menlo 13
-reached its legal height, 77 points with a mode line and 62 without, with
-Emacs's frame matching and its minibuffer reading input. Six mutants of
-`portal-launcher.el` (no maximum, no legal floor, no session check, no
-duplicate suppression, no presentation-time maximum check, no MIN/MAX order
-check) each failed the batch suite.
+section "Height limits and legal frame heights". A minibuffer frame's legal
+height with Menlo 24 was 60 points. `(content 144)` gave 144 (clipped), 116, 60
+and 144 for five, two, no and five rows; `(content 1)` stayed at the legal 60
+throughout; the default gave the earlier 200, 116, 100 and 200. A normal frame
+with Menlo 13 reached its legal height, 77 points with a mode line and 62
+without, with Emacs's frame matching and its minibuffer reading input. Six
+mutants of `portal-launcher.el` (no maximum, no legal floor, no session check,
+no duplicate suppression, no MIN/MAX order check, and the round-1 late maximum
+error restored) each failed the batch suite.
 
 GNU ELPA was unreachable from host and VM during this work. The host build
 reused the main checkout's extracted copies of the pinned packages. For the VM
-run only, with the user's approval, `CMakeLists.txt` temporarily fetched the
+runs only, with the user's approval, `CMakeLists.txt` temporarily fetched the
 same tarballs from the Tsinghua ELPA mirror; all eight matched the pinned
 SHA256 hashes, which CMake checked again. That edit was reverted before
 committing; the build files are unchanged.

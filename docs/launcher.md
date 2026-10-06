@@ -479,19 +479,18 @@ Four heights decide the panel's size, each overriding the ones before it:
    minibuffer's line and the internal borders, at the frame's font. A
    minibuffer panel needs one line; with Menlo 24 and the default 16-point
    borders that is 60 points. With MIN `content`, a one-line prompt shrinks
-   the panel to it; a numeric MIN below it gives it too. Emacs keeps a frame
-   at least this tall, so a shorter panel would cut off its prompt; Portal
-   never asks for one, and changes no window-size setting to allow one.
+   the panel to it; a numeric MIN or a MAX below it gives it too. Emacs keeps
+   a frame at least this tall, so a shorter panel would cut off its prompt;
+   Portal never asks for one, and changes no window-size setting to allow one.
 4. **Available space**: the panel stops at the bottom of the monitor's usable
    area, below its anchored top edge. This wins over everything, so a panel
    near the bottom of a small display can be shorter than MIN or than its
    legal height.
 
 Invalid limits, such as a MIN larger than MAX, signal an error before anything
-is shown or an active session is cancelled. A MAX below the legal height also
-signals an error before the panel shows. That height depends on the panel's
-font and decorations, so this one check follows the frame's creation, and a
-larger font applied later in a presentation still wins over MAX. Each
+is shown, an active session is cancelled or a shown panel is replaced. A MAX
+below the legal height is not an error: the legal height depends on the
+panel's font and decorations, which may change, so it wins instead. Each
 presentation reads the option once, including a `let` binding of it; fitting
 never changes it.
 

@@ -67,20 +67,17 @@ selects; numeric heights stay fixed. MIN is a positive integer, or
 `content' for the least height the panel's Emacs frame can legally
 have: one line in each window with its mode and header lines, the
 minibuffer's line and the frame's internal borders, as Emacs computes
-them for the frame's font. A numeric MIN below that legal height gives
-the legal height. MAX is nil, for the space below the panel's top edge
-on its monitor, or a positive integer at least MIN.
-
-A MAX below the frame's legal height signals an error before the panel
-shows. Since that height depends on the frame's font and decorations,
-this check follows the frame's creation; if the legal height grows later
-in a presentation, such as with a larger font, it wins over MAX. The
-monitor's usable area wins over both: a panel near the bottom of the
-screen can be shorter than MIN.
+them for the frame's font. MAX is nil, for the space below the panel's
+top edge on its monitor, or a positive integer at least MIN. The legal
+height wins over both: a numeric MIN or a MAX below it gives the legal
+height, since a shorter panel would cut off the prompt. The monitor's
+usable area wins over all: a panel near the bottom of the screen can be
+shorter than MIN.
 
 The default, (100 nil), keeps a 100-point minimum. Each presentation
-reads this value, including a `let' binding of it; fitting never changes
-it."
+reads this value, including a `let' binding of it; an invalid value
+signals an error before anything is shown or an active session is
+cancelled. Fitting never changes it."
   :type '(list (choice (const :tag "Legal frame minimum" content)
                        (integer :tag "Minimum"))
                (choice (const :tag "Space below the top edge" nil)
@@ -702,15 +699,9 @@ lines unless MODE-LINE. A frame made for the other kind is replaced."
           ;; the minimum: the prompt comes later. This first placement
           ;; fixes the top edge, so later content grows the panel down.
           (when (eq (nth 1 placement) 'auto)
-            (let* ((frame portal-launcher--frame)
-                   (limits (portal-launcher--height-limits))
-                   (legal (portal-launcher--legal-height frame)))
-              ;; The legal height needs the frame, with its font.
-              (when (and (cadr limits) (< (cadr limits) legal))
-                (user-error "Launcher maximum height %d is below this panel's legal height, %d points"
-                            (cadr limits) legal))
-              (setf (nth 1 placement)
-                    (portal-launcher--bounded-height frame limits (portal-launcher--fitted-height frame)))))
+            (setf (nth 1 placement)
+                  (portal-launcher--bounded-height portal-launcher--frame (portal-launcher--height-limits)
+                                                   (portal-launcher--fitted-height portal-launcher--frame))))
           (apply #'portal--launcher-show placement)
           (when portal-launcher--session
             (setf (portal-launcher--session-native-id portal-launcher--session)
