@@ -67,17 +67,22 @@ selects; numeric heights stay fixed. MIN is a positive integer, or
 `content' for the least height the panel's Emacs frame can legally
 have: one line in each window with its mode and header lines, the
 minibuffer's line and the frame's internal borders, as Emacs computes
-them for the frame's font. MAX is nil, for the space below the panel's
-top edge on its monitor, or a positive integer at least MIN. The legal
-height wins over both: a numeric MIN or a MAX below it gives the legal
-height, since a shorter panel would cut off the prompt. The monitor's
-usable area wins over all: a panel near the bottom of the screen can be
-shorter than MIN.
+them for the frame's font. A numeric MIN below that legal height gives
+the legal height. MAX is nil, for the space below the panel's top edge
+on its monitor, or a positive integer at least MIN and at least the
+legal height. The monitor's usable area wins over both: a panel near
+the bottom of the screen can be shorter than MIN.
 
-The default, (100 nil), keeps a 100-point minimum. Each presentation
-reads this value, including a `let' binding of it; an invalid value
-signals an error before anything is shown or an active session is
-cancelled. Fitting never changes it."
+Each presentation reads this value, including a `let' binding of it.
+An invalid value, including a MAX below the legal height, signals an
+error before anything is shown, an active session is cancelled or a
+shown panel is replaced; to find the legal height of a frame it would
+make, Portal measures a hidden candidate frame and deletes it again. If
+the legal height grows later in a presentation, such as with a larger
+font, it wins over MAX rather than cutting off the prompt.
+
+The default, (100 nil), keeps a 100-point minimum. Fitting never
+changes this value."
   :type '(list (choice (const :tag "Legal frame minimum" content)
                        (integer :tag "Minimum"))
                (choice (const :tag "Space below the top edge" nil)
@@ -429,6 +434,7 @@ from an existing minibuffer."
   (pcase-let* ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options))
                (limits (and (eq 'auto (nth 1 (portal-launcher--placement kind)))
                             (portal-launcher--height-limits))))
+    (portal-launcher--check-maximum kind limits)
     (when portal-launcher--session (portal-launcher-cancel))
     (when (active-minibuffer-window)
       (user-error "Finish the current minibuffer before presenting a launcher command"))
@@ -513,20 +519,26 @@ from an existing minibuffer."
               ('disable (portal-launcher--disable))))))
       (when (consp outcome) (cdr outcome)))))
 
-(defun portal-launcher--create (kind)
-  "Create and attach one new dedicated frame for KIND, rolling back on failure."
+(defun portal-launcher--parameters (kind)
+  "Return the parameters of a new hidden dedicated frame for KIND.
+Signal a `user-error' if `portal-launcher-frame-parameters' sets one that
+Portal manages."
   (dolist (parameter portal-launcher-frame-parameters)
     (when (or (assq (car parameter) portal-launcher--role)
               (memq (car parameter) '(visibility name title window-system)))
       (user-error "Launcher initial parameter %s is managed by Portal" (car parameter))))
-  (let ((previous (selected-window)) ready)
+  (append '((name . "Portal launcher") (title . "Portal launcher")
+            (visibility . nil) (width . 80) (height . 20))
+          (portal-launcher--frame-role kind)
+          portal-launcher-frame-parameters))
+
+(defun portal-launcher--create (kind)
+  "Create and attach one new dedicated frame for KIND, rolling back on failure."
+  (let ((parameters (portal-launcher--parameters kind))
+        (previous (selected-window)) ready)
     (unwind-protect
         (progn
-          (setq portal-launcher--frame
-                (make-frame (append '((name . "Portal launcher") (title . "Portal launcher")
-                                      (visibility . nil) (width . 80) (height . 20))
-                                    (portal-launcher--frame-role kind)
-                                    portal-launcher-frame-parameters)))
+          (setq portal-launcher--frame (make-frame parameters))
           (portal-view--with-frame-title portal-launcher--frame #'portal--launcher-attach)
           (setq ready t))
       (when (window-live-p previous) (select-window previous 'norecord))
@@ -602,9 +614,46 @@ FRAME's `min-height' parameter asks, and the frame's internal borders."
        (max (frame-windows-min-size frame nil t t)
             (if (fixnump lines) (* (max lines 1) (frame-char-height frame)) 0)))))
 
+(defun portal-launcher--candidate-legal-height (kind)
+  "Return the legal height of a new dedicated frame for KIND, with its font.
+The candidate frame, made as a presentation would make one, stays hidden,
+unattached and unselected, and is deleted again; other frames, including
+an existing panel, are left alone."
+  (portal-launcher--check-support)
+  (let* ((window (selected-window))
+         (frame (make-frame (portal-launcher--parameters kind))))
+    (unwind-protect
+        (progn
+          (when portal-launcher-font
+            ;; As `portal-launcher--show' applies it, but leaving the user's
+            ;; customization of the default face alone.
+            (let ((frame-inhibit-implied-resize t))
+              (set-frame-font portal-launcher-font nil (list frame) t)))
+          (portal-launcher--legal-height frame))
+      (delete-frame frame t)
+      (when (and (window-live-p window) (not (eq window (selected-window))))
+        (select-window window 'norecord)))))
+
+(defun portal-launcher--check-maximum (kind limits)
+  "Signal a `user-error' if the maximum in LIMITS is below KIND's legal height.
+That height depends on the panel frame's font and parameters. This
+measures the dedicated frame when presenting would reuse it unchanged:
+it is made for KIND and no `portal-launcher-font' is applied to it.
+Otherwise it measures a candidate frame. Either way, it runs before an
+active session is cancelled or a frame replaced, and changes neither."
+  (when-let* ((max (cadr limits))
+              (legal (if (and (portal-launcher--live-p kind) (not portal-launcher-font))
+                         (portal-launcher--legal-height portal-launcher--frame)
+                       (portal-launcher--candidate-legal-height kind)))
+              ((< max legal)))
+    (user-error "Launcher maximum height %d is below the legal height of its panel, %d points"
+                max legal)))
+
 (defun portal-launcher--bounded-height (frame limits height)
   "Return HEIGHT within LIMITS, (MIN MAX), and never below FRAME's legal height.
-The legal height wins over MAX; the native panel then clamps to the screen."
+A presentation rejects a MAX below the legal height before it starts, so
+the legal height exceeds MAX only if it grew since, as with a larger
+font; it wins then. The native panel then clamps to the screen."
   (pcase-let ((`(,min ,max) limits))
     (max (portal-launcher--legal-height frame) (if (eq min 'content) 0 min)
          (if max (min max height) height))))

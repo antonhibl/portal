@@ -355,8 +355,7 @@ still current, automatic and visible, so a timer from a finished presentation
 cannot resize a newer one. It bounds HEIGHT to the larger of the legal height,
 a numeric MIN and HEIGHT capped at MAX, skips a height equal to the last one it
 asked and calls `portal_launcher_fit`. The first placement bounds its measured
-height the same way. Every limit error is therefore found by the static
-validation above, before a session is cancelled or a frame replaced.
+height the same way.
 
 The legal height is `frame-windows-min-size` with IGNORE t, in pixels, plus the
 frame's pixel height minus its inner height (internal borders and any tab bar),
@@ -377,14 +376,20 @@ any positive height: the floor is Lisp policy from Emacs's own window rules,
 not a native constant, and numeric `portal-launcher-size` heights still start
 at 100.
 
-A MAX below the legal height is not an error: the legal height wins over it,
-including when it grows later in a presentation, as with a larger font.
-Checking it as an error would need the frame, with its font, which a
-presentation may first create or replace, and a second invocation cancels the
-active session before presenting anything; failing there would already have
-dismissed or replaced the existing panel. The monitor wins over all: the
-platform clamps the bottom edge to the usable area, even below MIN or the legal
-height.
+A MAX below the legal height is invalid, and like every other limit error it
+is found before a session is cancelled, a panel hidden or a frame replaced.
+The legal height depends on the frame's font and parameters, while a
+presentation may create or replace its frame, and a second invocation cancels
+the active session before presenting anything. A preflight in
+`portal-launcher-present` therefore measures, before any of that, the frame
+the presentation would show: the dedicated frame when presenting reuses it
+unchanged (made for the kind, with no `portal-launcher-font` to apply), or else
+a candidate made with the same parameters and font. The candidate stays hidden,
+unattached and unselected, and is deleted again; its font is applied without
+customizing the default face. If the legal height grows later in a
+presentation, as with a larger font, it wins over MAX rather than cutting off
+the prompt. The monitor wins over all: the platform clamps the bottom edge to
+the usable area, even below MIN or the legal height.
 
 Graphical tests in a disposable Emacs in the macOS test VM on 2026-10-06, on its
 "Apple Virtual" display (usable area `(0, 74, 1326, 742)`, scale 2), with Menlo
@@ -397,14 +402,19 @@ minibuffer panel to two, none and five again:
 | `(80 nil)` | 80 | 200 | 116 | 80 | 200 |
 | `(content nil)` | 60 | 200 | 116 | 60 | 200 |
 | `(content 144)` | 60 | 144, clipped | 116 | 60 | 144, clipped |
-| `(content 1)` | 60 | 60, clipped | 60, clipped | 60 | 60, clipped |
 
 The legal height of that minibuffer frame was 60 points: one line and both
-borders, which also overrode the 1-point maximum. At 144 points the text measured 168 points in a 112-point body, the
+borders. At 144 points the text measured 168 points in a 112-point body, the
 prompt staying at the top. Each step kept the native session ID, key status,
 left and top edges and width, and Emacs's frame matched the native height.
 Marked text stayed through a resize from 200 to 116 points at `(content nil)`
-and committed; the committed text's fallback font then fitted 65 points.
+and committed; the committed text's fallback font then fitted 65 points. With
+`portal-launcher-font` set, a `(content 1)` presentation invoked from a live
+prompt was measured on a candidate frame and failed, "Launcher maximum height
+1 is below the legal height of its panel, 60 points"; the session, prompt, key
+status, native rectangle and frame list were unchanged, and the prompt then
+completed. With a buffer panel shown, the same call left its frame, window,
+buffer, visibility and key status as they were.
 
 A normal frame, with a buffer window above its own minibuffer, in place of the
 buffer fitting that a later task adds: with Menlo 13 (15-point lines), a

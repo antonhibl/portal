@@ -793,8 +793,7 @@ EXACT, the text must also be that many default lines high."
 (ert-deftest portal-launcher-gui-minibuffer-panel-height-limits ()
   ;; Menlo 24's 28-point lines and the 16-point borders make a minibuffer
   ;; frame's legal height 60 points: `content' allows it, below 100. A
-  ;; maximum caps the rows, which clip below the prompt as at the screen;
-  ;; one below the legal height gives the legal height.
+  ;; maximum caps the rows, which clip below the prompt as at the screen.
   (portal-launcher-gui--with-panel
     (let ((portal-launcher-size nil)
           (portal-launcher-font "Menlo 24")
@@ -802,7 +801,7 @@ EXACT, the text must also be that many default lines high."
           (setup (lambda () (portal-launcher-gui--inline-rows portal-launcher-gui--fruits))))
       (pcase-dolist (`(,limits ,heights ,clipped)
                      '(((content 144) (144 116 60 144) (t nil nil t)) ((80 nil) (200 116 80 200) (nil nil nil nil))
-                       ((content nil) (200 116 60 200) (nil nil nil nil)) ((content 1) (60 60 60 60) (t t nil t))))
+                       ((content nil) (200 116 60 200) (nil nil nil nil))))
         (let* ((portal-launcher-height-limits limits)
                (step 0)
                (result (portal-launcher-gui--fit
@@ -829,6 +828,75 @@ EXACT, the text must also be that many default lines high."
           ;; Fitting changed no setting.
           (should (equal portal-launcher-height-limits limits))))
       (should (equal (default-value 'portal-launcher-height-limits) '(100 nil))))))
+
+(defun portal-launcher-gui--untouched ()
+  "Describe what a failed presentation must leave as it was."
+  (redisplay t)
+  (let ((state (portal--launcher-inspect))
+        (mini (active-minibuffer-window)))
+    (list :frames (frame-list) :frame portal-launcher--frame
+          :kind (portal-launcher--kind portal-launcher--frame)
+          :shown (frame-visible-p portal-launcher--frame)
+          :session portal-launcher--session :native-session (plist-get state :session)
+          :visible (plist-get state :visible) :key (plist-get state :key)
+          :actual (plist-get state :actual) :selected (selected-window)
+          :prompt (and mini (with-current-buffer (window-buffer mini) (minibuffer-contents-no-properties)))
+          :buffer (window-buffer (frame-first-window portal-launcher--frame)))))
+
+(ert-deftest portal-launcher-gui-too-small-maximum-leaves-presentations-alone ()
+  ;; A maximum below the legal height fails before an existing panel is
+  ;; cancelled, hidden, replaced or loses the keyboard. With a launcher
+  ;; font, that height is measured on a hidden candidate frame, made and
+  ;; deleted while the prompt is active.
+  (portal-launcher-gui--with-panel
+    (let ((portal-launcher-size nil)
+          (portal-launcher-font "Menlo 24")
+          probes)
+      (should
+       (equal "alpha"
+              (portal-launcher-gui--present
+               (lambda () (read-from-minibuffer "Fruit: "))
+               (append (portal-launcher-gui--text "al") '((30 262144 "\C-]"))
+                       (portal-launcher-gui--text "pha") '((36 0 "\r")))
+               (lambda ()
+                 ;; A failed `should' would only be reported in the prompt.
+                 (let ((before (portal-launcher-gui--untouched))
+                       (outcome (condition-case error
+                                    (let ((portal-launcher-height-limits '(content 1)))
+                                      (portal-launcher-present #'ignore :kind 'minibuffer)
+                                      'presented)
+                                  (user-error (cadr error)))))
+                   (portal-launcher-gui--settle)
+                   (push (list outcome before (portal-launcher-gui--untouched)) probes)))
+               '(:kind minibuffer))))
+      (pcase-let ((`((,outcome ,before ,after)) probes))
+        (message "Launcher too-small maximum in a session: %S" outcome)
+        (should (equal outcome "Launcher maximum height 1 is below the legal height of its panel, 60 points"))
+        (should (equal before after))
+        (should (equal (plist-get after :prompt) "al"))
+        (should (plist-get after :key))
+        (should (plist-get after :visible)))
+      ;; An explicitly shown buffer panel keeps its frame, window, content,
+      ;; visibility and keyboard.
+      (with-current-buffer content (insert "Shown content\n"))
+      (let ((frame (portal-launcher-show content)))
+        (portal-launcher-gui--settle)
+        (let ((before (portal-launcher-gui--untouched)))
+          (let ((portal-launcher-height-limits '(content 1)))
+            (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
+          (portal-launcher-gui--settle)
+          (should (equal before (portal-launcher-gui--untouched)))
+          (should (eq frame portal-launcher--frame))
+          (should (eq (plist-get before :buffer) content))
+          (should (plist-get before :shown))
+          (should (equal "Shown content\n" (with-current-buffer content (buffer-string))))
+          (portal-launcher-hide)))
+      ;; A valid maximum, measured the same way, presents.
+      (let ((portal-launcher-height-limits '(content 300)))
+        (should (equal "ok" (portal-launcher-gui--present
+                             (lambda () (read-string "Name: "))
+                             (append (portal-launcher-gui--text "ok") '((36 0 "\r")))
+                             nil '(:kind minibuffer))))))))
 
 (defun portal-launcher-gui--frame-layout ()
   "Describe the panel's frame, its root window and its minibuffer."

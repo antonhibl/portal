@@ -479,20 +479,23 @@ Four heights decide the panel's size, each overriding the ones before it:
    minibuffer's line and the internal borders, at the frame's font. A
    minibuffer panel needs one line; with Menlo 24 and the default 16-point
    borders that is 60 points. With MIN `content`, a one-line prompt shrinks
-   the panel to it; a numeric MIN or a MAX below it gives it too. Emacs keeps
-   a frame at least this tall, so a shorter panel would cut off its prompt;
-   Portal never asks for one, and changes no window-size setting to allow one.
+   the panel to it; a numeric MIN below it gives it too. Emacs keeps a frame
+   at least this tall, so a shorter panel would cut off its prompt; Portal
+   never asks for one, and changes no window-size setting to allow one.
 4. **Available space**: the panel stops at the bottom of the monitor's usable
    area, below its anchored top edge. This wins over everything, so a panel
    near the bottom of a small display can be shorter than MIN or than its
    legal height.
 
-Invalid limits, such as a MIN larger than MAX, signal an error before anything
-is shown, an active session is cancelled or a shown panel is replaced. A MAX
-below the legal height is not an error: the legal height depends on the
-panel's font and decorations, which may change, so it wins instead. Each
-presentation reads the option once, including a `let` binding of it; fitting
-never changes it.
+Invalid limits signal an error before anything is shown, an active session is
+cancelled or a shown panel is replaced. That includes a MIN larger than MAX and
+a MAX below the legal height of the panel the presentation would show. The
+legal height depends on that panel's font and decorations: Portal measures the
+existing panel when the presentation would reuse it unchanged, or else a
+hidden candidate frame made as the presentation would make one, then deletes
+it. If the legal height grows later in a presentation, as with a larger font,
+it wins over MAX rather than cutting off the prompt. Each presentation reads
+the option once, including a `let` binding of it; fitting never changes it.
 
 With `'(content 144)`, Menlo 24 and the default borders, five rows stop at 144
 points, then no matches shrink the panel to its 60-point legal height:
