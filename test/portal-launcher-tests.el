@@ -37,7 +37,7 @@
 
 (ert-deftest portal-launcher-rejects-invalid-input-before-enabling ()
   (cl-letf (((symbol-function 'portal-launcher-mode) (lambda (&rest _) (ert-fail "Enabled"))))
-    ;; A buffer panel cannot fit its content.
+    ;; Outside a presentation, a buffer panel cannot fit its content.
     (dolist (size '((199 420) (720 99) (720) (720 420 3) (720 . 420) (720 420.5) (720 auto)))
       (let ((portal-launcher-size size))
         (should-error (portal-launcher-show) :type 'user-error)))
@@ -54,9 +54,10 @@
   (let ((portal-launcher-size nil))
     (should (equal (portal-launcher--size 'minibuffer) '(720 auto)))
     (should (equal (portal-launcher--size 'buffer) '(720 420))))
+  ;; (WIDTH auto) fits both kinds.
   (let ((portal-launcher-size '(640 auto)))
-    (should (equal (portal-launcher--size 'minibuffer) '(640 auto)))
-    (should-error (portal-launcher--size 'buffer) :type 'user-error))
+    (dolist (kind '(minibuffer buffer))
+      (should (equal (portal-launcher--size kind) '(640 auto)))))
   ;; Numbers are fixed sizes for both kinds, not maxima.
   (let ((portal-launcher-size '(720 240)))
     (dolist (kind '(minibuffer buffer))
@@ -287,13 +288,11 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                          (:kind minibuffer :keep-open t) (:keep-open t :kind minibuffer)))
         (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error))
       (should-error (portal-launcher-present (lambda (_x) nil) :kind 'minibuffer) :type 'user-error)
-      ;; So do invalid settings, including an automatic buffer panel.
-      (let ((portal-launcher-size '(720 auto)))
-        (dolist (options '(() (:kind buffer) (:mode-line nil :keep-open t)))
-          (should-error (apply #'portal-launcher-present #'ignore options) :type 'user-error)))
-      (dolist (size '((720 99) (720 fit)))
+      ;; So do invalid settings, for either kind.
+      (dolist (size '((720 99) (720 fit) (199 auto)))
         (let ((portal-launcher-size size))
-          (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error)))
+          (dolist (kind '(minibuffer buffer))
+            (should-error (portal-launcher-present #'ignore :kind kind) :type 'user-error))))
       (let ((portal-launcher-offset '(0)))
         (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
       ;; Height limits are checked for every presentation, fixed or not.
@@ -426,15 +425,27 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                             (list (display-buffer other) resize-mini-frames
                                   (length (window-list frame 'never))))
                           :kind 'minibuffer)))))
-      (should-not (portal-launcher-present (lambda () resize-mini-frames)))
-      (should (eq resize-mini-frames 'user-setting))
-      ;; An automatic panel also fits after commands, during its session.
-      (pcase-dolist (`(,size ,kind ,refit) '((nil minibuffer t) ((720 240) minibuffer nil) (nil buffer nil)))
+      ;; Nor a buffer panel's frame, whose minibuffer Emacs then resizes.
+      (dolist (size '(nil (640 auto) (720 240)))
         (let ((portal-launcher-size size))
-          (should (eq refit (portal-launcher-present
-                             (lambda () (and (memq #'portal-launcher--refit (default-value 'post-command-hook)) t))
-                             :kind kind)))))
+          (should-not (portal-launcher-present (lambda () resize-mini-frames)))))
+      (should (eq resize-mini-frames 'user-setting))
+      ;; An automatic panel also fits after commands, and an automatic
+      ;; buffer panel as Emacs starts each redisplay, during the session.
+      (pcase-dolist (`(,size ,kind ,refit ,redisplay)
+                     '((nil minibuffer t nil) ((640 auto) minibuffer t nil) ((720 240) minibuffer nil nil)
+                       (nil buffer nil nil) ((640 auto) buffer t t) ((720 240) buffer nil nil)))
+        (let ((portal-launcher-size size))
+          (should (equal (list refit redisplay)
+                         (portal-launcher-present
+                          (lambda ()
+                            (list (and (memq #'portal-launcher--refit (default-value 'post-command-hook)) t)
+                                  (and (advice-function-member-p #'portal-launcher--fit-on-redisplay
+                                                                 pre-redisplay-function)
+                                       t)))
+                          :kind kind)))))
       (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
+      (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
       ;; An automatic presentation keeps the height limits in effect as it
       ;; started, a `let' binding included; a fixed one has none.
       (pcase-dolist (`(,size ,limits ,kept) '((nil (100 nil) (100 nil)) (nil (content 300) (content 300))
@@ -512,7 +523,8 @@ The selected frame stands in for the panel, and deleting it is a no-op."
     (let ((frame (selected-frame))
           (other (get-buffer-create " *launcher test*"))
           (height 0) asked)
-      (cl-letf (((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) height))
+      (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'minibuffer))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (&rest _) height))
                 ((symbol-function 'portal--launcher-fit)
                  (lambda (session height) (push (list session height) asked))))
         (cl-flet ((fit (new) (setq height new) (funcall resize-mini-frames frame)))
@@ -546,6 +558,57 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                                        (setq height 400)
                                        (portal-launcher--fit frame))
                                      :kind 'minibuffer))
+          (should-not asked)))
+      (kill-buffer other))))
+
+(ert-deftest portal-launcher-buffer-fit-follows-redisplay ()
+  ;; An automatic buffer panel fits as Emacs starts each redisplay, which
+  ;; may change only its minibuffer, measuring no further than the maximum.
+  ;; The measurement is a stand-in; the GUI suite measures real content.
+  (portal-launcher-test--session
+    (let ((frame (selected-frame))
+          (other (get-buffer-create " *launcher test*"))
+          (portal-launcher-size '(640 auto))
+          (height 0) asked limits)
+      (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
+                ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60))
+                ((symbol-function 'portal-launcher--candidate-legal-height) (lambda (_kind) 60))
+                ((symbol-function 'portal-launcher--fitted-height)
+                 (lambda (_frame max) (push max limits) height))
+                ((symbol-function 'portal--launcher-fit)
+                 (lambda (session height) (push (list session height) asked))))
+        (cl-flet ((before-redisplay (new windows)
+                    (setq height new)
+                    (funcall pre-redisplay-function windows)))
+          (let ((portal-launcher-height-limits '(content 480)))
+            (portal-launcher-present
+             (lambda ()
+               (let ((mini (minibuffer-window frame)))
+                 ;; Whichever windows Emacs redisplays, the panel is measured
+                 ;; once: Emacs lists no minibuffer window, whose echo area
+                 ;; message may have changed.
+                 (before-redisplay 120 t)
+                 (before-redisplay 150 nil)
+                 (before-redisplay 200 (list 'other-window))
+                 ;; An echo area message keeps no buffer panel from fitting.
+                 (let ((minibuffer (window-buffer mini)))
+                   (set-window-buffer mini other)
+                   (before-redisplay 260 t)
+                   (set-window-buffer mini minibuffer))
+                 ;; Unchanged heights ask nothing; the maximum caps.
+                 (before-redisplay 260 t)
+                 (before-redisplay 5000 t)
+                 ;; A hidden panel is not measured.
+                 (cl-letf (((symbol-function 'frame-visible-p) #'ignore))
+                   (before-redisplay 300 t))))))
+          (should (equal (reverse asked) '((10 120) (10 150) (10 200) (10 260) (10 480))))
+          (should (equal limits (make-list 6 480)))
+          ;; Nothing fits after the presentation, or in a fixed one.
+          (setq asked nil)
+          (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
+          (portal-launcher--fit-on-redisplay t)
+          (let ((portal-launcher-size '(720 240)))
+            (portal-launcher-present (lambda () (portal-launcher--fit-on-redisplay t))))
           (should-not asked)))
       (kill-buffer other))))
 
@@ -610,35 +673,190 @@ The selected frame stands in for the panel, and deleting it is a no-op."
 
 (ert-deftest portal-launcher-legal-height-follows-the-frames-windows ()
   ;; In batch Emacs, a frame's pixels are its lines, without borders.
-  ;; Each window needs a line of text and its mode and header lines; the
-  ;; minibuffer, a line.
+  ;; Each window needs a line of text and its mode and header lines, and
+  ;; `window-min-height' lines; the minibuffer, a line.
   (save-window-excursion
     (let ((frame (selected-frame)) (buffer (generate-new-buffer " *launcher legal*")))
       (unwind-protect
           (progn
             (delete-other-windows)
-            (should (= 3 (portal-launcher--legal-height frame)))
-            (split-window)
-            (should (= 5 (portal-launcher--legal-height frame)))
-            (with-current-buffer buffer (setq header-line-format "Header"))
-            (set-window-buffer (selected-window) buffer)
-            (should (= 6 (portal-launcher--legal-height frame)))
+            (let ((window-min-height 1))
+              (should (= 3 (portal-launcher--legal-height frame)))
+              (split-window)
+              (should (= 5 (portal-launcher--legal-height frame)))
+              (with-current-buffer buffer (setq header-line-format "Header"))
+              (set-window-buffer (selected-window) buffer)
+              (should (= 6 (portal-launcher--legal-height frame))))
+            ;; Emacs's default of 4 lines, which its Lisp resizing of the
+            ;; minibuffer assumes, wins over that.
+            (should (= 4 (default-value 'window-min-height)))
+            (should (= 9 (portal-launcher--legal-height frame)))
             (delete-other-windows)
+            (should (= 5 (portal-launcher--legal-height frame)))
+            (let ((window-min-height 6))
+              (should (= 7 (portal-launcher--legal-height frame))))
             ;; Emacs keeps a frame as tall as its min-height parameter asks.
             (set-frame-parameter frame 'min-height 10)
             (should (= 10 (portal-launcher--legal-height frame))))
         (set-frame-parameter frame 'min-height nil)
         (kill-buffer buffer)))))
 
+(ert-deftest portal-launcher-legal-height-keeps-the-minibuffer-resizable ()
+  ;; Emacs's Lisp resizing of the minibuffer window, as Vertico grows its
+  ;; candidates, computes a negative height when the root window is below
+  ;; its least height, honoring `window-min-height'. A frame at its legal
+  ;; height never is: there, resizing works.
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((frame (selected-frame)) (mini (minibuffer-window)))
+      (cl-flet ((resize (delta)
+                  (condition-case error
+                      (progn (window-resize mini delta) (window-total-height mini))
+                    (error (car error)))))
+        ;; The prototype's failure: the root window below its least height.
+        (let ((window-min-height 30))
+          (should (< (window-total-height (frame-root-window frame)) 30))
+          (should (eq 'args-out-of-range (resize 0)))
+          (should (eq 'args-out-of-range (resize 1))))
+        ;; With the root at least that tall, no resize fails.
+        (let ((window-min-height (- (window-total-height (frame-root-window frame)) 1)))
+          (should (<= (portal-launcher--legal-height frame) (frame-pixel-height frame)))
+          (should (= 2 (resize 1)))
+          (should (= 1 (resize -1))))))))
+
+(ert-deftest portal-launcher-buffer-height-measures-the-window-and-minibuffer ()
+  ;; In batch Emacs, a frame's pixels are its lines. The GUI suite
+  ;; measures fonts, faces and borders.
+  (save-window-excursion
+    (delete-other-windows)
+    (let* ((frame (selected-frame)) (window (selected-window)) (mini (minibuffer-window))
+           (buffer (generate-new-buffer " *launcher fit*"))
+           (window-min-height 1)
+           ;; The frame's other rows, such as a menu bar here, count once.
+           (rows (- (frame-pixel-height frame) (window-pixel-height window) (window-pixel-height mini)))
+           (prompt nil))
+      (cl-flet ((height (&optional max)
+                  (when-let* ((height (portal-launcher--buffer-height frame (or max 1000))))
+                    (- height rows)))
+                (fill (text) (with-current-buffer buffer (erase-buffer) (insert text) (goto-char (point-min)))))
+        (unwind-protect
+            (progn
+              (set-window-buffer window buffer)
+              ;; A text line and the mode line, the minibuffer's line.
+              (should (= 3 (height)))
+              (fill "1\n2\n3\n4\n5\n6\n7\n8\n9\n10")
+              (should (= 12 (height)))
+              ;; A final newline adds the empty line where point can be.
+              (fill "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n")
+              (should (= 13 (height)))
+              ;; Wherever the window is scrolled, and wherever point is.
+              (set-window-start window (with-current-buffer buffer (- (point-max) 3)))
+              (with-current-buffer buffer (goto-char (point-max)))
+              (set-window-point window (with-current-buffer buffer (point-max)))
+              (should (= 13 (height)))
+              (should (= (window-start window) (with-current-buffer buffer (- (point-max) 3))))
+              ;; Lines wrap at the window's width.
+              (fill (make-string (+ (window-body-width window) 10) ?w))
+              (should (= 4 (height)))
+              (with-current-buffer buffer (setq-local truncate-lines t))
+              (should (= 3 (height)))
+              (with-current-buffer buffer (kill-local-variable 'truncate-lines))
+              ;; Overlay strings at the end count, as a stream or completion
+              ;; UI might show them.
+              (fill "Prompt")
+              (let ((overlay (with-current-buffer buffer (make-overlay (point-max) (point-max)))))
+                (overlay-put overlay 'after-string "\nOne\nTwo\nThree")
+                (should (= 6 (height)))
+                (overlay-put overlay 'after-string nil)
+                (overlay-put overlay 'before-string "\nOne\nTwo")
+                (should (= 5 (height)))
+                (delete-overlay overlay))
+              ;; Header lines count; a hidden mode line does not.
+              (with-current-buffer buffer (setq-local header-line-format "Header"))
+              (should (= 4 (height)))
+              (set-window-parameter window 'mode-line-format 'none)
+              (should (= 3 (height)))
+              (with-current-buffer buffer (kill-local-variable 'header-line-format))
+              (should (= 2 (height)))
+              (set-window-parameter window 'mode-line-format nil)
+              ;; A long buffer is measured to MAX only.
+              (fill (mapconcat #'number-to-string (number-sequence 1 100000) "\n"))
+              (let ((start (float-time)))
+                (should (= 8 (height 6)))
+                (should (< (- (float-time) start) 0.05)))
+              ;; The window never counts below its least height, which
+              ;; honors `window-min-height'.
+              (fill "One line")
+              (should (= 3 (height)))
+              (let ((window-min-height 4))
+                (should (= 5 (height))))
+              ;; The minibuffer counts as its line, to which Emacs resets it
+              ;; as the frame resizes, whatever an echo area message grew
+              ;; it to.
+              (window-resize mini 2)
+              (should (= 3 (height)))
+              (window-resize mini -2)
+              (should (= 3 (height)))
+              ;; A prompt counts at least what it displays, once.
+              (let ((map (make-sparse-keymap)) (global (current-global-map)))
+                (set-keymap-parent map global)
+                (keymap-set map "<f13>" (lambda () (interactive) (read-string "One\nTwo\nThree: ")))
+                (keymap-set map "<f14>"
+                            (lambda ()
+                              (interactive)
+                              (push (height) prompt)
+                              (set-window-buffer window (window-buffer mini))
+                              (push (height) prompt)
+                              (set-window-buffer window buffer)))
+                (use-global-map map)
+                (unwind-protect (execute-kbd-macro (kbd "<f13> <f14> RET"))
+                  (use-global-map global)))
+              ;; 7 if the prompt counted twice.
+              (should (equal (reverse prompt) '(5 5)))
+              ;; Another ordinary window's layout is the caller's: the frame
+              ;; keeps its height.
+              (split-window)
+              (should (= (height) (- (frame-pixel-height frame) rows))))
+          (kill-buffer buffer))))))
+
+(ert-deftest portal-launcher-buffer-panel-shows-a-fitting-buffer-from-its-start ()
+  ;; Emacs scrolls a window too short for point, as a panel can briefly be
+  ;; before it grows; once all of the buffer fits, it shows from its
+  ;; beginning again. A longer buffer, and point, stay as they are.
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((frame (selected-frame)) (window (selected-window))
+          (buffer (generate-new-buffer " *launcher start*")))
+      (unwind-protect
+          (progn
+            (set-window-buffer window buffer)
+            (with-current-buffer buffer
+              (insert (mapconcat #'number-to-string (number-sequence 1 5) "\n") "\n"))
+            (set-window-point window 9)
+            (set-window-start window 5)
+            (portal-launcher--show-buffer-start frame)
+            (should (= 1 (window-start window)))
+            (should (= 9 (window-point window)))
+            (with-current-buffer buffer
+              (save-excursion
+                (goto-char (point-max))
+                (insert (mapconcat #'number-to-string (number-sequence 6 100) "\n"))))
+            (set-window-start window 50)
+            (portal-launcher--show-buffer-start frame)
+            (should (= 50 (window-start window)))
+            (should (= 9 (window-point window))))
+        (kill-buffer buffer)))))
+
 (ert-deftest portal-launcher-automatic-panel-opens-at-its-measured-height ()
   (portal-launcher-test--panel
     (let ((fitted 137) shown)
       (cl-letf (((symbol-function 'portal--launcher-show) (lambda (&rest args) (push args shown)))
-                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) fitted))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (&rest _) fitted))
                 ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60))
                 ((symbol-function 'make-frame) (lambda (_parameters) 'candidate)))
         (pcase-dolist (`(,size ,kind ,expected) '((nil minibuffer (720 137)) (nil buffer (720 420))
                                                   ((640 auto) minibuffer (640 137))
+                                                  ((640 auto) buffer (640 137))
                                                   ((720 240) minibuffer (720 240))
                                                   ((720 240) buffer (720 240))))
           (let ((portal-launcher-size size))
@@ -768,6 +986,40 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (should (equal shown '((640 100))))
           (should (equal portal-launcher-size '(640 auto))))))))
 
+(ert-deftest portal-launcher-numeric-resize-stops-buffer-fitting ()
+  ;; During an automatic buffer presentation, showing again with an
+  ;; automatic size fits the new native session; a numeric resize fixes
+  ;; the panel for the rest of the call. Outside a presentation, a buffer
+  ;; panel cannot fit.
+  (portal-launcher-test--panel
+    (let ((portal-launcher-size '(640 auto)) (session-id 1) shown asked)
+      (cl-letf (((symbol-function 'portal--launcher-show) (lambda (&rest args) (push (take 2 args) shown)))
+                ((symbol-function 'portal--launcher-inspect) (lambda () (list :session session-id)))
+                ((symbol-function 'portal--launcher-fit) (lambda (id height) (push (list id height) asked)))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (&rest _) 150))
+                ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60)))
+        (portal-launcher-present
+         (lambda ()
+           (portal-launcher--fit-on-redisplay t)
+           (portal-launcher--request-height portal-launcher--session 200)
+           (setq session-id 2)
+           (portal-launcher-show)
+           (portal-launcher--fit-on-redisplay t)
+           (portal-launcher--request-height portal-launcher--session 220)
+           (setq session-id 3)
+           (portal-launcher-resize 700 300)
+           (portal-launcher--request-height portal-launcher--session 240)
+           (portal-launcher--fit-on-redisplay t)
+           (should-not (portal-launcher--session-limits portal-launcher--session)))
+         :kind 'buffer)
+        (should (equal (reverse shown) '((640 150) (640 150) (700 300))))
+        (should (equal (reverse asked) '((1 150) (1 200) (2 220))))
+        (should (equal portal-launcher-size '(700 300)))
+        (let ((portal-launcher-size '(640 auto)))
+          (should (string-prefix-p "Only a presentation fits"
+                                   (cadr (should-error (portal-launcher-show) :type 'user-error)))))
+        (should (equal (length shown) 3))))))
+
 (ert-deftest portal-launcher-second-invocation-unwinds-the-command ()
   (portal-launcher-test--session
     (dolist (dismiss (list (lambda () (portal-launcher-present #'ignore))
@@ -863,6 +1115,7 @@ Return its buffer, as setup functions may."
   (should (= depth (recursion-depth)))
   (should-not (memq #'portal-launcher--dismiss-if-blurred (default-value 'post-command-hook)))
   (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
+  (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
   (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions)))
 
 (ert-deftest portal-launcher-keep-open-runs-commands-until-dismissed ()
@@ -1065,7 +1318,7 @@ Return its buffer, as setup functions may."
                 ((symbol-function 'make-frame-invisible) (lambda (&rest _) (push 'invisible events)))
                 ((symbol-function 'make-frame) (lambda (_parameters) 'candidate))
                 ((symbol-function 'delete-frame) (lambda (frame &rest _) (push (list 'delete frame) events)))
-                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) 137))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (&rest _) 137))
                 ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60)))
         (unwind-protect
             (progn
@@ -1124,7 +1377,7 @@ Return its buffer, as setup functions may."
                 ((symbol-function 'portal--launcher-show) (lambda (&rest args) (push (take 2 args) shown)))
                 ((symbol-function 'portal--launcher-hide) (lambda (&rest _) (push 'hide events)))
                 ((symbol-function 'make-frame-invisible) (lambda (&rest _) (push 'invisible events)))
-                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) 137))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (&rest _) 137))
                 ((symbol-function 'portal-launcher--legal-height)
                  (lambda (frame)
                    (+ 28 (* 2 (if (consp frame) (alist-get 'internal-border-width frame) 80))))))
@@ -1232,6 +1485,26 @@ was logged since loading."
       (should (equal (mapcar #'car portal-global-shortcut--registrations)
                      '(pick-fruit hello clock)))
       (should (= 3 (length native))))))
+
+(ert-deftest portal-launcher-readme-fitted-buffer ()
+  ;; The guide's fitted hello panel fits the hello buffer, with its size
+  ;; and limits for that call only.
+  (portal-launcher-test--readme '("launcher-hello" "launcher-fitted-hello")
+    (let ((depth (recursion-depth)) seen)
+      (let ((portal-launcher-test--action
+             (lambda ()
+               (push (list (portal-launcher--session-limits portal-launcher--session)
+                           (and (advice-function-member-p #'portal-launcher--fit-on-redisplay
+                                                          pre-redisplay-function)
+                                t))
+                     seen))))
+        (execute-kbd-macro (kbd "M-x my/hello-fitted RET n Ada RET <f14> <escape>")))
+      (should (equal seen '(((content 480) t))))
+      (should (equal (car shown) '(buffer nil)))
+      (should (equal "Hello world!\nHello Ada!" (with-current-buffer "*Hello*" (buffer-string))))
+      (portal-launcher-test--unwound depth)
+      (should-not portal-launcher-size)
+      (should (equal portal-launcher-height-limits '(100 nil))))))
 
 (ert-deftest portal-launcher-readme-shortcuts-outlast-panels-and-reloads ()
   (portal-launcher-test--readme portal-launcher-test--launchers

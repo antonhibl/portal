@@ -983,39 +983,43 @@ EXACT, the text must also be that many default lines high."
           :input (and (eq (active-minibuffer-window) mini) (minibuffer-contents-no-properties)))))
 
 (ert-deftest portal-launcher-gui-buffer-panel-legal-height ()
-  ;; A normal frame, a buffer window above the frame's own minibuffer, at
-  ;; the least height Emacs allows it, as buffer panels that fit their
-  ;; content will reach: Emacs's frame matches the panel, a text line shows
-  ;; with the mode line, and the minibuffer still reads input. The session
-  ;; is made automatic here in place of that fitting.
+  ;; A normal frame, a buffer window above the frame's own minibuffer,
+  ;; fitting one line of content at the least height Emacs allows it: its
+  ;; frame matches the panel, the line shows with the mode line, and the
+  ;; minibuffer still reads input. The buffer window's least height honors
+  ;; `window-min-height', whose default of 4 lines makes both panels the
+  ;; same height; at 1 line, the panel is a text line, the mode line and
+  ;; the minibuffer's line.
   (portal-launcher-gui--with-panel
-    (with-current-buffer content (insert "First line\nSecond line\nThird line\n"))
-    (dolist (mode-line '(t nil))
-      (let ((portal-launcher-font "Menlo 13")
-            (portal-launcher-height-limits '(content nil))
+    (with-current-buffer content (insert "Only line"))
+    (pcase-dolist (`(,mode-line ,window-min-height) '((t 4) (nil 4) (t 1) (nil 1)))
+      (let ((portal-launcher-size '(720 auto))
+            (portal-launcher-font "Menlo 13")
+            (portal-launcher-height-limits '(content 300))
             initial layouts)
         (should
          (equal "ok"
                 (portal-launcher-gui--present
                  (lambda ()
+                   (setq initial (portal-launcher-gui--frame-layout))
                    (switch-to-buffer content)
                    (goto-char (point-min))
-                   (setq initial (portal-launcher-gui--frame-layout))
-                   (setf (portal-launcher--session-limits portal-launcher--session) portal-launcher-height-limits)
-                   ;; Far below the legal height, which is what the panel gets.
-                   (portal-launcher--request-height portal-launcher--session 1)
                    (read-string "Name: "))
                  (append (portal-launcher-gui--text "ok") '((30 262144 "\C-]")) '((36 0 "\r")))
                  (lambda ()
                    (push (portal-launcher-gui--frame-layout) layouts)
-                   (portal-launcher-gui--capture (format "buffer-legal-height-%s" mode-line))
-                   ;; A maximum caps a tall request; nil leaves the screen's.
-                   (setf (portal-launcher--session-limits portal-launcher--session) '(content 300))
-                   (portal-launcher--request-height portal-launcher--session 100000)
-                   (push (portal-launcher-gui--frame-layout) layouts))
+                   (portal-launcher-gui--capture
+                    (format "buffer-legal-height-%s-%d" mode-line window-min-height))
+                   ;; A maximum caps tall content; nil leaves the screen's.
+                   (with-current-buffer content
+                     (save-excursion (goto-char (point-max)) (insert (make-string 100 ?\n))))
+                   (push (portal-launcher-gui--frame-layout) layouts)
+                   (with-current-buffer content
+                     (delete-region (1+ (length "Only line")) (point-max))))
                  (list :mode-line mode-line))))
         (pcase-let ((`(,low ,capped) (reverse layouts)))
-          (message "Launcher legal buffer height, mode line %s: %S then %S, from %S" mode-line low capped initial)
+          (message "Launcher legal buffer height, mode line %s, window-min-height %d: %S then %S, from %S"
+                   mode-line window-min-height low capped initial)
           (dolist (layout (list low capped))
             (should (equal (mapcar (lambda (key) (plist-get layout key)) '(:session :key :native :left :top :width))
                            (append (mapcar (lambda (key) (plist-get initial key)) '(:session :key))
@@ -1027,10 +1031,568 @@ EXACT, the text must also be that many default lines high."
             (should (>= (plist-get layout :mini) (plist-get layout :line)))
             (should (eq (> (plist-get layout :mode-line) 0) mode-line))
             (should (equal (plist-get layout :input) "ok")))
-          (should (= (plist-get low :height) (plist-get low :legal)))
-          (should (>= (plist-get low :lines) 1))
-          (unless mode-line (should (< (plist-get low :height) 100)))
+          (should (= (plist-get low :height) (plist-get low :legal) (plist-get initial :height)))
+          ;; The window keeps its least height, which Emacs's Lisp resizing
+          ;; of the minibuffer assumes.
+          (should (>= (+ (plist-get low :body) (plist-get low :mode-line))
+                      (* window-min-height (plist-get low :line))))
+          (when (= window-min-height 1) (should (< (plist-get low :height) 100)))
           (should (= (plist-get capped :height) 300)))))))
+
+;; Automatic buffer panels: `portal-launcher-size' (WIDTH auto), :kind buffer.
+
+(defun portal-launcher-gui--record-buffer ()
+  "Describe the buffer panel, from a command or timer, once it settles.
+:fitted is the native height before this redisplayed."
+  (interactive)
+  (let ((fitted (nth 3 (plist-get (portal--launcher-inspect) :actual))))
+    (redisplay t)
+    (let* ((frame portal-launcher--frame)
+           (window (frame-root-window frame))
+           (live (window-live-p window))
+           (buffer (and live (window-buffer window)))
+           (mini (minibuffer-window frame))
+           (state (portal--launcher-inspect))
+           (actual (plist-get state :actual))
+           (screen (cl-position-if (lambda (screen)
+                                     (portal-launcher-gui--rectangle-in actual (plist-get screen :visible)))
+                                   (plist-get state :screens))))
+      (push (list :fitted fitted :session (plist-get state :session) :key (plist-get state :key)
+                  :native (equal (plist-get state :requested) actual)
+                  :left (nth 0 actual) :top (+ (nth 1 actual) (nth 3 actual))
+                  :width (nth 2 actual) :height (nth 3 actual)
+                  :frame (list (frame-pixel-width frame) (frame-pixel-height frame))
+                  :windows (length (window-list frame 'never))
+                  :buffer buffer
+                  :rows (- (frame-pixel-height frame) (window-pixel-height window) (window-pixel-height mini))
+                  :text (and live (cdr (window-text-pixel-size window)))
+                  ;; The empty line after a final newline, where point can be.
+                  :trailing (if (and live (with-current-buffer buffer
+                                            (and (< (point-min) (point-max))
+                                                 (eq (char-before (point-max)) ?\n))))
+                                (window-default-line-height window)
+                              0)
+                  :body (and live (window-body-height window t))
+                  :decorations (and live (- (window-pixel-height window) (window-body-height window t)))
+                  :header (and live (window-header-line-height window))
+                  :least (and live (window-min-size window nil nil t))
+                  :line (and live (window-default-line-height window))
+                  :mini (window-pixel-height mini)
+                  ;; The minibuffer's line, as resize_frame_windows sizes it.
+                  :unit (+ (frame-char-height frame) (- (window-pixel-height mini) (window-body-height mini t)))
+                  :prompt (and (minibufferp (window-buffer mini) t)
+                               (cdr (window-text-pixel-size mini)))
+                  :legal (portal-launcher--legal-height frame)
+                  ;; All of the buffer shows, the empty last line included.
+                  :all (and live (pos-visible-in-window-p (with-current-buffer buffer (point-min)) window)
+                            (pos-visible-in-window-p (with-current-buffer buffer (point-max)) window))
+                  :start (and live (window-start window)) :point (and live (window-point window))
+                  :end (and live (with-current-buffer buffer (point-max)))
+                  :area (plist-get (nth screen (plist-get state :screens)) :visible))
+            portal-launcher-gui--layouts))))
+
+(defun portal-launcher-gui--snap (name)
+  "A command recording the buffer panel, then capturing it as NAME."
+  (lambda ()
+    (interactive)
+    (portal-launcher-gui--record-buffer)
+    (portal-launcher-gui--capture name)))
+
+(defun portal-launcher-gui--fit-buffer (setup steps &rest options)
+  "Present SETUP in a buffer panel kept open, take STEPS, then dismiss it.
+STEPS are native strokes, and commands that C-] calls, such as
+`portal-launcher-gui--record-buffer', in order; Escape then dismisses the
+panel. OPTIONS are more `portal-launcher-present' options. Return
+\(INITIAL . LAYOUTS): the panel's rectangle as SETUP started, before any
+content, and what the steps recorded."
+  (let ((portal-launcher-gui--layouts nil) strokes actions initial
+        (timer-max-repeats 1))
+    (dolist (step steps)
+      (if (functionp step)
+          (progn (push '(30 262144 "\C-]") strokes) (push step actions))
+        (push step strokes)))
+    (setq actions (nreverse actions))
+    ;; An earlier message would show in the panel's echo area.
+    (message nil)
+    (portal-launcher-gui--present
+     (lambda ()
+       (setq initial (plist-get (portal--launcher-inspect) :actual))
+       (funcall setup))
+     (append (nreverse strokes) '((53 0 "\e")))
+     (lambda () (funcall (pop actions)))
+     (append '(:keep-open t) options))
+    (should-not actions)
+    (cons initial (reverse portal-launcher-gui--layouts))))
+
+(defun portal-launcher-gui--buffer-wanted (layout)
+  "The height LAYOUT's content wants: its window's, at least its least
+height, and the minibuffer's line, or its prompt's, with the frame's rows."
+  (+ (plist-get layout :rows)
+     (max (plist-get layout :least)
+          (+ (plist-get layout :text) (plist-get layout :trailing) (plist-get layout :decorations)))
+     (max (plist-get layout :unit) (or (plist-get layout :prompt) 0))))
+
+(defun portal-launcher-gui--check-buffer-fitted (initial layouts width &optional limits)
+  "Check that LAYOUTS fit their content, anchored where INITIAL opened.
+Each keeps the session, keyboard, left and top edges and WIDTH, and
+Emacs's frame matches its native height, which was already fitted as
+it was recorded. That height is what the content wants, within LIMITS,
+the presentation's `portal-launcher-height-limits' (default (100 nil)),
+the legal height and the space below the top edge. Uncapped, all of
+the buffer shows, with no blank line but what its least height adds,
+unless `max-mini-window-height' kept the minibuffer below its prompt."
+  (pcase-let ((`(,min ,max) (or limits '(100 nil)))
+              (first (car layouts)))
+    (should (<= (nth 3 initial) (apply #'min (mapcar (lambda (layout) (plist-get layout :height)) layouts))))
+    (dolist (layout layouts)
+      (should (equal (mapcar (lambda (key) (plist-get layout key)) '(:session :key :native :left :top :width))
+                     (list (plist-get first :session) t t (nth 0 initial) (+ (nth 1 initial) (nth 3 initial))
+                           width)))
+      (should (equal (plist-get layout :frame) (list width (plist-get layout :height))))
+      (should (= (plist-get layout :fitted) (plist-get layout :height)))
+      (should (= (plist-get layout :windows) 1))
+      (let ((wanted (portal-launcher-gui--buffer-wanted layout))
+            (below (- (plist-get layout :top) (nth 1 (plist-get layout :area)))))
+        (should (= (plist-get layout :height)
+                   (min below (max (plist-get layout :legal) (if (eq min 'content) 0 min)
+                                   (if max (min max wanted) wanted)))))
+        (when (= (plist-get layout :height) wanted)
+          (should (plist-get layout :all)))
+        (when (and (= (plist-get layout :height) wanted)
+                   (>= (plist-get layout :mini) (or (plist-get layout :prompt) 0)))
+          (should (= (plist-get layout :body)
+                     (max (- (plist-get layout :least) (plist-get layout :decorations))
+                          (+ (plist-get layout :text) (plist-get layout :trailing))))))))))
+
+(defun portal-launcher-gui--lines (from to)
+  "Lines \"Line FROM\" to \"Line TO\", each but the last ending in a newline."
+  (mapconcat (lambda (n) (format "Line %d" n)) (number-sequence from to) "\n"))
+
+(ert-deftest portal-launcher-gui-buffer-panel-fits-content ()
+  ;; Short content, long content at the maximum, scrolled to its end,
+  ;; short again, another buffer and back: the panel fits each, from its
+  ;; first top edge, in one presentation and native session. Scrolling and
+  ;; point stay the user's.
+  (portal-launcher-gui--with-panel
+    (let* ((portal-launcher-size '(640 auto))
+           (portal-launcher-font "Menlo 24")
+           (portal-launcher-height-limits '(content 400))
+           (portal-launcher-offset '(0 -150))
+           (other (generate-new-buffer " *launcher GUI other*"))
+           (result
+            (unwind-protect
+                (portal-launcher-gui--fit-buffer
+                 (lambda ()
+                   (with-current-buffer other
+                     (insert (portal-launcher-gui--lines 1 2) "\n")
+                     (setq-local header-line-format "Another buffer"))
+                   (switch-to-buffer content)
+                   (insert (portal-launcher-gui--lines 1 5))
+                   (goto-char (point-min)))
+                 (list (portal-launcher-gui--snap "buffer-fit-short")
+                       (lambda () (interactive)
+                         (save-excursion (goto-char (point-max)) (insert "\n" (portal-launcher-gui--lines 6 40))))
+                       (portal-launcher-gui--snap "buffer-fit-capped")
+                       ;; The user moves to the end: Emacs scrolls the window.
+                       (lambda () (interactive) (goto-char (point-max)))
+                       (portal-launcher-gui--snap "buffer-fit-scrolled")
+                       (lambda () (interactive) (delete-region (point-min) (point-max))
+                         (insert (portal-launcher-gui--lines 1 2)) (goto-char (point-min)))
+                       (portal-launcher-gui--snap "buffer-fit-shrunk")
+                       (lambda () (interactive) (switch-to-buffer other))
+                       #'portal-launcher-gui--record-buffer
+                       (lambda () (interactive) (switch-to-buffer content))
+                       #'portal-launcher-gui--record-buffer))
+              (kill-buffer other)))
+           (layouts (cdr result)))
+      (message "Launcher fitted buffer: %S" result)
+      (portal-launcher-gui--check-buffer-fitted (car result) layouts 640 '(content 400))
+      (pcase-let ((`(,short ,capped ,scrolled ,shrunk ,switched ,back) layouts))
+        ;; Five lines fit; forty stop at the maximum, scrollable; the end of
+        ;; the buffer shows, scrolled, at the same height.
+        (should (< (plist-get short :height) 400))
+        (should (plist-get short :all))
+        (should (= (plist-get capped :height) (plist-get scrolled :height) 400))
+        (should (> (plist-get capped :text) (plist-get capped :body)))
+        (should (equal (list (plist-get capped :start) (plist-get capped :point)) '(1 1)))
+        (should (> (plist-get scrolled :start) 1))
+        (should (= (plist-get scrolled :point) (plist-get scrolled :end)))
+        ;; Two lines: the window's least height, then the other buffer,
+        ;; with a header line and a final newline, and the first again.
+        (should (< (plist-get shrunk :height) (plist-get short :height)))
+        (should (= (plist-get shrunk :height) (plist-get back :height)))
+        (should (> (plist-get switched :height) (plist-get shrunk :height)))
+        (should (> (plist-get switched :trailing) 0))
+        (should (plist-get switched :all))))
+    ;; Without a maximum, long content stops at the bottom of the screen.
+    (let* ((portal-launcher-size '(640 auto))
+           (portal-launcher-font "Menlo 24")
+           (portal-launcher-height-limits '(content nil))
+           (portal-launcher-offset '(0 150))
+           (result (portal-launcher-gui--fit-buffer
+                    (lambda ()
+                      (switch-to-buffer content)
+                      (erase-buffer)
+                      (insert (portal-launcher-gui--lines 1 100))
+                      (goto-char (point-min)))
+                    (list #'portal-launcher-gui--record-buffer)))
+           (layout (cadr result)))
+      (message "Launcher fitted buffer at the screen's bottom: %S" result)
+      (portal-launcher-gui--check-buffer-fitted (car result) (cdr result) 640 '(content nil))
+      (should (= (- (plist-get layout :top) (plist-get layout :height)) (nth 1 (plist-get layout :area))))
+      (should (> (plist-get layout :text) (plist-get layout :body))))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-fits-rendered-lines ()
+  ;; Wrapped lines, a taller face, line spacing, overlay strings, header
+  ;; lines and hidden mode lines are measured as Emacs displays them.
+  (portal-launcher-gui--with-panel
+    (let* ((portal-launcher-size '(640 auto))
+           (portal-launcher-font "Menlo 18")
+           (portal-launcher-height-limits '(content nil))
+           (portal-launcher-offset '(0 -150))
+           (overlay nil)
+           (steps
+            (list (lambda () (interactive) (insert (make-string (+ (window-body-width) 5) ?w)))
+                  #'portal-launcher-gui--record-buffer
+                  (lambda () (interactive)
+                    (erase-buffer)
+                    (insert (portal-launcher-gui--lines 1 3) "\n"
+                            (propertize "Tall line" 'face '(:height 2.0)) "\n"
+                            (portal-launcher-gui--lines 5 7)))
+                  #'portal-launcher-gui--record-buffer
+                  (lambda () (interactive) (setq-local line-spacing 8))
+                  #'portal-launcher-gui--record-buffer
+                  (lambda () (interactive)
+                    (kill-local-variable 'line-spacing)
+                    (setq overlay (make-overlay (point-max) (point-max)))
+                    (overlay-put overlay 'after-string
+                                 (concat "\n" (portal-launcher-gui--lines 1 6))))
+                  #'portal-launcher-gui--record-buffer
+                  (lambda () (interactive)
+                    (overlay-put overlay 'after-string nil)
+                    (overlay-put overlay 'before-string (concat "\n" (portal-launcher-gui--lines 1 2))))
+                  (portal-launcher-gui--snap "buffer-fit-overlay")
+                  (lambda () (interactive) (delete-overlay overlay)
+                    (setq-local header-line-format "A header line"))
+                  #'portal-launcher-gui--record-buffer)))
+      (dolist (mode-line '(t nil))
+        (let* ((portal-launcher-gui--layouts nil)
+               (result (portal-launcher-gui--fit-buffer
+                        (lambda () (switch-to-buffer content) (erase-buffer))
+                        steps :mode-line mode-line))
+               (layouts (cdr result)))
+          (message "Launcher fitted rendered lines, mode line %s: %S" mode-line result)
+          (portal-launcher-gui--check-buffer-fitted (car result) layouts 640 '(content nil))
+          (pcase-let ((`(,wrapped ,tall ,spaced ,after ,before ,header) layouts))
+            ;; Every layout fits its content, or the window's least height.
+            (dolist (layout layouts)
+              (should (= (plist-get layout :height) (portal-launcher-gui--buffer-wanted layout)))
+              (should (plist-get layout :all)))
+            (should (= (plist-get wrapped :text) (* 2 (plist-get wrapped :line))))
+            (should (> (plist-get tall :text) (* 7 (plist-get tall :line))))
+            (should (> (plist-get spaced :text) (plist-get tall :text)))
+            (should (= (plist-get after :text) (+ (plist-get tall :text) (* 6 (plist-get after :line)))))
+            (should (= (plist-get before :text) (+ (plist-get tall :text) (* 2 (plist-get after :line)))))
+            (should (> (plist-get header :header) 0))
+            (should (= (plist-get header :decorations)
+                       (+ (plist-get before :decorations) (plist-get header :header))))
+            (should (eq (> (plist-get before :decorations) 0) mode-line))))
+        (with-current-buffer content (kill-all-local-variables))))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-follows-streamed-output ()
+  ;; A process's output, then a timer's change, fit with no key pressed,
+  ;; stop at the maximum and leave point and the view at the beginning.
+  ;; After the presentation, more output resizes nothing.
+  (portal-launcher-gui--with-panel
+    (let* ((portal-launcher-size '(640 auto))
+           (portal-launcher-font "Menlo 24")
+           (portal-launcher-height-limits '(content 400))
+           (portal-launcher-offset '(0 -150))
+           (portal-launcher-gui--layouts nil)
+           (filter (lambda (_process text)
+                     (with-current-buffer content
+                       (save-excursion (goto-char (point-max)) (insert text)))))
+           (asks 0)
+           (count (lambda (&rest _) (cl-incf asks)))
+           initial process)
+      (advice-add 'portal--launcher-fit :before count)
+      (message nil)
+      (unwind-protect
+          (progn
+            (portal-launcher-gui--drive
+             (lambda ()
+               (portal-launcher-present
+                (lambda ()
+                  (setq initial (plist-get (portal--launcher-inspect) :actual))
+                  (switch-to-buffer content)
+                  (insert "Streamed output")
+                  (goto-char (point-min))
+                  (setq process
+                        (make-process
+                         :name "launcher-stream" :noquery t :connection-type 'pipe
+                         :command '("/bin/sh" "-c" "i=1; while [ $i -le 30 ]; do printf '\\nLine %d' $i; i=$((i+1)); sleep 0.03; done")
+                         :filter filter
+                         :sentinel
+                         (lambda (_process _event)
+                           (run-with-timer
+                            0.5 nil
+                            (lambda ()
+                              (portal-launcher-gui--record-buffer)
+                              (portal-launcher-gui--capture "buffer-fit-streamed")
+                              ;; A timer shrinks the content, with no key.
+                              (with-current-buffer content
+                                (save-excursion
+                                  (goto-char (point-min))
+                                  (forward-line 3)
+                                  (delete-region (point) (point-max))))
+                              (run-with-timer
+                               0.5 nil
+                               (lambda ()
+                                 (portal-launcher-gui--record-buffer)
+                                 (setq unread-command-events
+                                       (append unread-command-events '(escape)))))))))))
+                :keep-open t))
+             nil)
+            (let ((layouts (reverse portal-launcher-gui--layouts)))
+              (message "Launcher fitted streamed output: %S" layouts)
+              (portal-launcher-gui--check-buffer-fitted initial layouts 640 '(content 400))
+              (pcase-let ((`(,streamed ,shrunk) layouts))
+                (should (= (plist-get streamed :height) 400))
+                (should (> (plist-get streamed :text) (plist-get streamed :body)))
+                (should (< (plist-get shrunk :height) 400))
+                (dolist (layout layouts)
+                  (should (equal (list (plist-get layout :start) (plist-get layout :point)) '(1 1))))))
+            ;; The presentation is over: output no longer reaches the panel.
+            (setq asks 0)
+            (let ((native (plist-get (portal--launcher-inspect) :actual))
+                  (late (make-process
+                         :name "launcher-late" :noquery t :connection-type 'pipe
+                         :command '("/bin/sh" "-c" "printf '\\nLate\\nLate\\nLate'")
+                         :filter filter)))
+              (while (process-live-p late) (accept-process-output late 0.05))
+              (portal-launcher-gui--settle)
+              (should (= asks 0))
+              (should (equal native (plist-get (portal--launcher-inspect) :actual)))
+              (should (string-suffix-p "Late" (with-current-buffer content (buffer-string))))))
+        (advice-remove 'portal--launcher-fit count)
+        (when (process-live-p process) (delete-process process))))))
+
+(defvar portal-launcher-gui--echo nil
+  "What the echo area test saw: a layout during a message.")
+
+(ert-deftest portal-launcher-gui-buffer-panel-fits-the-minibuffer ()
+  ;; A compact panel at its least height grows for a multi-line prompt, a
+  ;; nested prompt and Vertico's rows in its minibuffer, and returns.
+  ;; Completion UIs resize the minibuffer from Lisp: at that height, with
+  ;; Emacs's `window-min-height' or 1, no resize fails. A prompt that the
+  ;; ordinary window also shows counts once. An echo area message shows
+  ;; as in any frame, without resizing the panel.
+  (require 'vertico)
+  (portal-launcher-gui--with-panel
+    (dolist (window-min-height '(4 1))
+      (let* ((portal-launcher-size '(640 auto))
+             (portal-launcher-font "Menlo 18")
+             (portal-launcher-height-limits '(content nil))
+             (portal-launcher-offset '(0 -150))
+             (vertico-sort-function nil) (vertico-count 5)
+             (completion-styles '(basic)) (completion-category-defaults nil)
+             (errors (with-current-buffer "*Messages*" (point-max)))
+             (exhibit nil)
+             (portal-launcher-gui--echo nil)
+             (record #'portal-launcher-gui--record-buffer)
+             result)
+        (vertico-mode 1)
+        (unwind-protect
+            (setq result
+                  (portal-launcher-gui--fit-buffer
+                   (lambda () (switch-to-buffer content) (erase-buffer) (insert "One line"))
+                   (append
+                    (list record
+                          (lambda () (interactive) (read-string "One\nTwo\nThree: ")))
+                    (portal-launcher-gui--text "ok")
+                    (list record
+                          (lambda () (interactive) (read-string "Inner: "))
+                          record
+                          '(36 0 "\r")
+                          record
+                          ;; The outer prompt, shown in the ordinary window as well,
+                          ;; with the minibuffer window at its least height, as
+                          ;; vertico-buffer shows it.
+                          (lambda () (interactive)
+                            (let ((mini (active-minibuffer-window)))
+                              (set-window-buffer (frame-root-window portal-launcher--frame)
+                                                 (window-buffer mini))
+                              (window-resize mini (- (window-pixel-height mini)) nil nil t)))
+                          record
+                          (lambda () (interactive)
+                            (set-window-buffer (frame-root-window portal-launcher--frame) content))
+                          '(36 0 "\r")
+                          record
+                          (lambda () (interactive)
+                            (completing-read "Pick: " (mapcar (lambda (n) (format "al%02d" n))
+                                                              (number-sequence 1 12))))
+                          (lambda () (interactive)
+                            (setq exhibit (and (memq 'vertico--exhibit post-command-hook) t))
+                            (portal-launcher-gui--record-buffer)))
+                    ;; Three candidates of twelve.
+                    (portal-launcher-gui--text "al1")
+                    (list (portal-launcher-gui--snap (format "buffer-fit-vertico-%d" window-min-height))
+                          '(36 0 "\r")
+                          record
+                          ;; Eight lines of content, then a six-line message.
+                          (lambda () (interactive)
+                            (insert "\n" (portal-launcher-gui--lines 2 8))
+                            (goto-char (point-min)))
+                          record
+                          (lambda () (interactive)
+                            (let ((message-log-max nil))
+                              (message "%s" (portal-launcher-gui--lines 1 6)))
+                            (dotimes (_ 4) (redisplay t))
+                            (portal-launcher-gui--record-buffer)
+                            (setq portal-launcher-gui--echo (pop portal-launcher-gui--layouts)))
+                          (lambda () (interactive)
+                            (message nil)
+                            (portal-launcher-gui--record-buffer))))))
+          (vertico-mode -1))
+        (message "Launcher fitted minibuffer, window-min-height %d: %S; echo %S"
+                 window-min-height result portal-launcher-gui--echo)
+        (pcase-let ((`(,compact ,outer ,inner ,outer-again ,twice ,after ,vertico ,filtered ,done
+                                ,eight ,cleared)
+                     (cdr result)))
+          ;; No resize of the minibuffer failed, and Vertico kept updating.
+          (should-not (with-current-buffer "*Messages*"
+                        (save-excursion (goto-char errors) (search-forward "args-out-of-range" nil t))))
+          (should exhibit)
+          (portal-launcher-gui--check-buffer-fitted
+           (car result) (list compact outer inner outer-again after vertico filtered done eight)
+           640 '(content nil))
+          ;; At its least height, then taller for the three-line prompt and
+          ;; its typed input; Emacs's `max-mini-window-height' decides how
+          ;; much of the panel the minibuffer then takes. A one-line inner
+          ;; prompt keeps the minibuffer's grown height, and so the panel's.
+          (should (= (plist-get compact :height) (plist-get compact :legal)))
+          (should (= (plist-get outer :prompt) (* 3 (plist-get outer :line))))
+          (should (= (plist-get outer :height)
+                     (+ (plist-get compact :height) (* 2 (plist-get outer :line)))))
+          (should (<= (plist-get inner :height) (plist-get outer :height)))
+          (should (= (plist-get outer-again :height) (plist-get outer :height)))
+          ;; Shown twice, the prompt counts once.
+          (should (minibufferp (plist-get twice :buffer)))
+          (should (> (plist-get twice :prompt) (plist-get twice :unit)))
+          (should (= (plist-get twice :height)
+                     (+ (plist-get twice :rows)
+                        (max (plist-get twice :least) (+ (plist-get twice :text) (plist-get twice :decorations)))
+                        (plist-get twice :unit))))
+          (should (equal (plist-get twice :frame) (list 640 (plist-get twice :height))))
+          ;; Vertico's five rows show in the grown minibuffer, and the
+          ;; panel shrinks as they become three.
+          (should (= (plist-get vertico :prompt) (plist-get vertico :mini) (* 6 (plist-get compact :line))))
+          (should (= (plist-get filtered :prompt) (plist-get filtered :mini) (* 4 (plist-get compact :line))))
+          (should (= (plist-get filtered :height) (- (plist-get vertico :height) (* 2 (plist-get compact :line)))))
+          (should (= (plist-get done :height) (plist-get compact :height)))
+          (should (> (plist-get eight :height) (plist-get compact :height)))
+          ;; Once the message clears, the buffer shows whole again.
+          (should (= (plist-get cleared :height) (plist-get eight :height)))
+          (should (equal (plist-get cleared :frame) (list 640 (plist-get eight :height))))
+          ;; Emacs showed the message over the buffer's last line; the
+          ;; panel kept its height, and Emacs's frame matched it.
+          (let ((echo portal-launcher-gui--echo))
+            (should (> (plist-get echo :mini) (plist-get eight :mini)))
+            (should (< (plist-get echo :body) (plist-get eight :body)))
+            (should (= (plist-get echo :height) (plist-get eight :height)
+                       (portal-launcher-gui--buffer-wanted echo)))
+            (should (equal (plist-get echo :frame) (list 640 (plist-get echo :height))))
+            (should (plist-get cleared :all))))))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-guide-example ()
+  ;; The launcher guide's fitted hello panel, from its own text: at its
+  ;; least height until the greetings outgrow it, then a line each.
+  (portal-launcher-gui--with-panel
+    (portal-launcher-gui--example "launcher-hello")
+    (portal-launcher-gui--example "launcher-fitted-hello")
+    (let* ((portal-launcher-font "Menlo 18")
+           (portal-launcher-gui--layouts nil)
+           (record '((30 262144 "\C-]")))
+           (greet (lambda (name) (append (portal-launcher-gui--text (concat "n" name)) '((36 0 "\r")))))
+           (actions (list #'portal-launcher-gui--record-buffer #'portal-launcher-gui--record-buffer
+                          #'portal-launcher-gui--record-buffer
+                          (portal-launcher-gui--snap "buffer-fit-hello")))
+           initial)
+      (message nil)
+      (unwind-protect
+          (portal-launcher-gui--drive
+           (lambda ()
+             (run-with-timer 0 nil (lambda () (setq initial (plist-get (portal--launcher-inspect) :actual))))
+             (funcall (intern "my/hello-fitted")))
+           (append record (funcall greet "Ada") record (funcall greet "Bob") (funcall greet "Cy") record
+                   (funcall greet "Dee") (funcall greet "Eve") record '((53 0 "\e")))
+           (lambda () (funcall (pop actions))))
+        (when (get-buffer "*Hello*") (kill-buffer "*Hello*")))
+      (let ((layouts (reverse portal-launcher-gui--layouts)))
+        (message "Launcher guide's fitted hello: %S" layouts)
+        (should-not actions)
+        (portal-launcher-gui--check-buffer-fitted initial layouts 640 '(content 480))
+        (pcase-let ((`(,hello ,ada ,cy ,eve) layouts))
+          ;; One and two lines show at the window's least height, four lines.
+          (should (= (plist-get hello :height) (plist-get ada :height) (plist-get hello :legal)))
+          (should (= (plist-get cy :height) (plist-get hello :height)))
+          (should (= (plist-get eve :height) (+ (plist-get cy :height) (* 2 (plist-get eve :line)))))
+          (dolist (layout layouts)
+            (should (plist-get layout :all))
+            (should (= (plist-get layout :decorations) 0))))))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-pauses-for-splits-and-resizes ()
+  ;; A caller's split keeps the panel's height, raised to the split's legal
+  ;; height, until one window is left; a numeric resize fixes it for the
+  ;; rest of the presentation.
+  (portal-launcher-gui--with-panel
+    (let* ((portal-launcher-size '(640 auto))
+           (portal-launcher-font "Menlo 18")
+           (portal-launcher-height-limits '(content nil))
+           (portal-launcher-offset '(0 -150))
+           (more (lambda () (interactive)
+                   (with-current-buffer content
+                     (save-excursion (goto-char (point-max)) (insert "\nMore\nMore\nMore")))))
+           (split nil)
+           (result
+            (unwind-protect
+                (portal-launcher-gui--fit-buffer
+                 (lambda () (switch-to-buffer content) (erase-buffer) (insert (portal-launcher-gui--lines 1 6)))
+                 (list #'portal-launcher-gui--record-buffer
+                       (lambda () (interactive) (setq split (split-window)))
+                       #'portal-launcher-gui--record-buffer
+                       more
+                       #'portal-launcher-gui--record-buffer
+                       (lambda () (interactive) (delete-window split))
+                       #'portal-launcher-gui--record-buffer
+                       (lambda () (interactive) (portal-launcher-resize 600 300))
+                       #'portal-launcher-gui--record-buffer
+                       more
+                       #'portal-launcher-gui--record-buffer))
+              (setq portal-launcher-size '(640 auto))))
+           (layouts (cdr result)))
+      (message "Launcher buffer splits and resizes: %S" result)
+      (pcase-let ((`(,fitted ,split ,grown ,joined ,resized ,fixed) layouts))
+        (portal-launcher-gui--check-buffer-fitted (car result) (list fitted joined) 640 '(content nil))
+        ;; The split panel keeps its height and session, at least the split
+        ;; windows' legal height, its windows remain, and new content does
+        ;; not resize it.
+        (dolist (layout (list split grown))
+          (should (= (plist-get layout :windows) 2))
+          (should (equal (mapcar (lambda (key) (plist-get layout key)) '(:session :top))
+                         (mapcar (lambda (key) (plist-get fitted key)) '(:session :top))))
+          (should (= (plist-get layout :height)
+                     (max (plist-get fitted :height) (plist-get split :legal))))
+          (should (equal (plist-get layout :frame) (list 640 (plist-get layout :height)))))
+        ;; One window again: the content's three new lines fit.
+        (should (> (plist-get joined :height) (plist-get fitted :height)))
+        ;; The resize's numbers hold, in its new native session.
+        (dolist (layout (list resized fixed))
+          (should (equal (list (plist-get layout :width) (plist-get layout :height)) '(600 300)))
+          (should (equal (plist-get layout :frame) '(600 300)))
+          (should (plist-get layout :key)))
+        (should-not (equal (plist-get resized :session) (plist-get fitted :session)))
+        (should (equal (plist-get fixed :session) (plist-get resized :session)))))))
 
 (ert-deftest portal-launcher-gui-minibuffer-panel-follows-later-changes ()
   ;; A timer's change fits with no key pressed; an echo area message keeps

@@ -58,7 +58,10 @@ The names above are kept. Implementation refined the contract as follows:
   with IGNORE t, pixelwise (one text line per window plus its tab, header and
   mode lines, rounded to whole lines, and the minibuffer's line), or the frame's
   `min-height` parameter if larger, plus internal borders and tab bar. A numeric
-  MIN below it gives the floor.
+  MIN below it gives the floor. [Buffer content fitting](launcher-buffer-content-fit.md)
+  later changed IGNORE to nil, honoring `window-min-height`, so that Lisp
+  minibuffer resizing cannot fail in a normal frame; minibuffer-only frames
+  are unchanged.
 - A maximum below the legal frame floor stays invalid, as specified above: it
   fails before anything is shown, mutated or cancelled, including an active
   session or an explicitly shown panel of the other kind (human decision on

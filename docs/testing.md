@@ -140,6 +140,24 @@ The standalone focus check below also verifies live escape rebinding and the
 inactive content cue, including rendering and click-through without a toolbar.
 Physical-key delivery on the affected macOS version still needs a manual check.
 
+## Launcher graphical checks
+
+For the launcher's whole graphical suite, daily-use checks included, in one
+fresh Emacs:
+
+```sh
+bash test/vm.sh sh test/launcher-gui.sh
+```
+
+Pass an ERT selector regexp to run part of it. Tests that need a second display
+skip. A successful run deletes `repo/`, so save the panel's drawings beside it,
+then copy them back from the printed run directory:
+
+```sh
+bash test/vm.sh sh -c 'mkdir -p ../screenshots &&
+  PORTAL_LAUNCHER_SCREENSHOTS="$(cd .. && pwd)/screenshots" sh test/launcher-gui.sh'
+```
+
 ## Combined graphical suite
 
 Test coexistence in one fresh graphical Emacs inside the VM. Load `portal.el`,
