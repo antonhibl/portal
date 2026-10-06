@@ -23,9 +23,11 @@
 
 (cl-defstruct (portal-launcher--session (:constructor portal-launcher--make-session))
   tag native-id teardown blurred
-  ;; nil for a fixed size; for an automatic height, the last height asked
-  ;; of the native panel, or t before the first.
-  fit)
+  ;; nil for a fixed size; for an automatic height, the (MIN MAX) of
+  ;; `portal-launcher-height-limits' when the presentation started.
+  limits
+  ;; The last automatic height asked of the native panel, or nil.
+  height)
 (defvar portal-launcher--session nil "The active command session, or nil.")
 
 (defconst portal-launcher--session-map
@@ -47,15 +49,44 @@ least 200 and HEIGHT one of at least 100.
 An automatic height follows what the minibuffer displays: its prompt,
 input and completion rows, including group titles and messages inline in
 the minibuffer, with the frame's internal borders. It changes as these
-change, never below 100 points. The width and top edge stay where the
-panel opened; only the bottom edge moves, and stops at the bottom of the
-usable area. Each presentation reads this value, including a `let'
-binding of it. The panel is clamped to the monitor's usable area.
-Retina backing scale does not change these units."
+change, within `portal-launcher-height-limits', by default never below
+100 points. The width and top edge stay where the panel opened; only the
+bottom edge moves, and stops at the bottom of the usable area. Each
+presentation reads this value, including a `let' binding of it. The
+panel is clamped to the monitor's usable area. Retina backing scale does
+not change these units."
   :type '(choice (const :tag "Fit minibuffer panels; buffer panels 720 by 420" nil)
                  (list :tag "Size" (integer :tag "Width")
                        (choice (const :tag "Fit minibuffer content" auto)
                                (integer :tag "Height")))))
+
+(defcustom portal-launcher-height-limits '(100 nil)
+  "Least and greatest automatic launcher heights, (MIN MAX), in points.
+They bound only a height that fits content, as `portal-launcher-size'
+selects; numeric heights stay fixed. MIN is a positive integer, or
+`content' for the least height the panel's Emacs frame can legally
+have: one line in each window with its mode and header lines, the
+minibuffer's line and the frame's internal borders, as Emacs computes
+them for the frame's font. A numeric MIN below that legal height gives
+the legal height. MAX is nil, for the space below the panel's top edge
+on its monitor, or a positive integer at least MIN and at least the
+legal height. The monitor's usable area wins over both: a panel near
+the bottom of the screen can be shorter than MIN.
+
+Each presentation reads this value, including a `let' binding of it.
+An invalid value, including a MAX below the legal height, signals an
+error before anything is shown, an active session is cancelled or a
+shown panel is replaced; to find the legal height of a frame it would
+make, Portal measures a hidden candidate frame and deletes it again. If
+the legal height grows later in a presentation, such as with a larger
+font, it wins over MAX rather than cutting off the prompt.
+
+The default, (100 nil), keeps a 100-point minimum. Fitting never
+changes this value."
+  :type '(list (choice (const :tag "Legal frame minimum" content)
+                       (integer :tag "Minimum"))
+               (choice (const :tag "Space below the top edge" nil)
+                       (integer :tag "Maximum"))))
 
 (defcustom portal-launcher-offset '(0 0)
   "Offset right and down from the usable monitor area's center, in points.
@@ -384,10 +415,11 @@ OPTIONS are keywords, each followed by its value:
   panel cannot stay open.
 `portal-launcher-size' sets each kind's size. By default, a minibuffer
 panel's height follows what it displays, as that changes, with its top
-edge fixed; a buffer panel is 720 by 420 points. Content taller than the
-panel, at a fixed height or the bottom of the screen, is clipped at the
-bottom. An invalid FUNCTION, option or launcher setting signals an error
-before anything is shown or an active session is cancelled.
+edge fixed, within `portal-launcher-height-limits'; a buffer panel is 720
+by 420 points. Content taller than the panel, at a fixed or maximum
+height or the bottom of the screen, is clipped at the bottom. An invalid
+FUNCTION, option or launcher setting signals an error before anything is
+shown or an active session is cancelled.
 
 A second invocation, such as the same global shortcut pressed again,
 cancels the active session and presents nothing, so a command bound to a
@@ -400,7 +432,9 @@ deliberately select other frames are outside this interface. Do not invoke
 from an existing minibuffer."
   (portal-launcher--check-function function)
   (pcase-let* ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options))
-               (fit (eq 'auto (nth 1 (portal-launcher--placement kind)))))
+               (limits (and (eq 'auto (nth 1 (portal-launcher--placement kind)))
+                            (portal-launcher--height-limits))))
+    (portal-launcher--check-maximum kind limits)
     (when portal-launcher--session (portal-launcher-cancel))
     (when (active-minibuffer-window)
       (user-error "Finish the current minibuffer before presenting a launcher command"))
@@ -411,7 +445,7 @@ from an existing minibuffer."
                 portal-launcher--return-window
               (selected-window)))
            (previous-frame (window-frame previous-window))
-           (session (portal-launcher--make-session :tag (make-symbol "launcher-session") :fit fit))
+           (session (portal-launcher--make-session :tag (make-symbol "launcher-session") :limits limits))
            (portal-launcher--session session)
            (emulation-mode-map-alists
             (cons `((portal-launcher--session . ,portal-launcher--session-map)) emulation-mode-map-alists))
@@ -419,7 +453,7 @@ from an existing minibuffer."
            (minibuffer-follows-selected-frame nil)
            ;; Emacs's own fitting would move and resize the natively placed
            ;; panel. An automatic height fits it natively instead.
-           (resize-mini-frames (and fit #'portal-launcher--fit))
+           (resize-mini-frames (and limits #'portal-launcher--fit))
            (portal-launcher--mode-line-parameters nil)
            (windows nil)
            (outcome 'error))
@@ -437,7 +471,7 @@ from an existing minibuffer."
                         (when (and (eq kind 'buffer) (not mode-line))
                           (add-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines))
                         (add-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
-                        (when fit (add-hook 'post-command-hook #'portal-launcher--refit))
+                        (when limits (add-hook 'post-command-hook #'portal-launcher--refit))
                         (let ((default-minibuffer-frame portal-launcher--frame)
                               (display-buffer-alist nil)
                               (display-buffer-overriding-action
@@ -485,20 +519,26 @@ from an existing minibuffer."
               ('disable (portal-launcher--disable))))))
       (when (consp outcome) (cdr outcome)))))
 
-(defun portal-launcher--create (kind)
-  "Create and attach one new dedicated frame for KIND, rolling back on failure."
+(defun portal-launcher--parameters (kind)
+  "Return the parameters of a new hidden dedicated frame for KIND.
+Signal a `user-error' if `portal-launcher-frame-parameters' sets one that
+Portal manages."
   (dolist (parameter portal-launcher-frame-parameters)
     (when (or (assq (car parameter) portal-launcher--role)
               (memq (car parameter) '(visibility name title window-system)))
       (user-error "Launcher initial parameter %s is managed by Portal" (car parameter))))
-  (let ((previous (selected-window)) ready)
+  (append '((name . "Portal launcher") (title . "Portal launcher")
+            (visibility . nil) (width . 80) (height . 20))
+          (portal-launcher--frame-role kind)
+          portal-launcher-frame-parameters))
+
+(defun portal-launcher--create (kind)
+  "Create and attach one new dedicated frame for KIND, rolling back on failure."
+  (let ((parameters (portal-launcher--parameters kind))
+        (previous (selected-window)) ready)
     (unwind-protect
         (progn
-          (setq portal-launcher--frame
-                (make-frame (append '((name . "Portal launcher") (title . "Portal launcher")
-                                      (visibility . nil) (width . 80) (height . 20))
-                                    (portal-launcher--frame-role kind)
-                                    portal-launcher-frame-parameters)))
+          (setq portal-launcher--frame (make-frame parameters))
           (portal-view--with-frame-title portal-launcher--frame #'portal--launcher-attach)
           (setq ready t))
       (when (window-live-p previous) (select-window previous 'norecord))
@@ -523,10 +563,24 @@ HEIGHT is `auto' for a minibuffer panel that fits its content. Signal a
                   size))
     size))
 
+(defun portal-launcher--height-limits ()
+  "Return `portal-launcher-height-limits' as (MIN MAX).
+Signal a `user-error' if the setting is invalid."
+  (pcase portal-launcher-height-limits
+    ((and `(,min ,max)
+          (guard (or (eq min 'content) (and (fixnump min) (> min 0))))
+          (guard (or (null max) (and (fixnump max) (> max 0))))
+          (guard (not (and max (fixnump min) (< max min)))))
+     (list min max))
+    (limits
+     (user-error "Launcher height limits are (MIN MAX), MIN `content' or a positive integer and MAX nil or an integer at least MIN, not %S"
+                 limits))))
+
 (defun portal-launcher--placement (kind)
   "Return validated native arguments to present KIND, without modifying a frame.
 The height is `auto' for a minibuffer panel that fits its content."
   (let ((size (portal-launcher--size kind)))
+    (portal-launcher--height-limits)
     (unless (and (proper-list-p portal-launcher-offset) (= (length portal-launcher-offset) 2)
                  (cl-every #'integerp portal-launcher-offset)
                  (or (null portal-launcher-screen) (natnump portal-launcher-screen))
@@ -536,39 +590,131 @@ The height is `auto' for a minibuffer panel that fits its content."
             (list (or portal-launcher-screen -1) portal-launcher-shadow portal-launcher-corner-radius))))
 
 (defun portal-launcher--fitted-height (frame)
-  "Return the native height that fits what minibuffer-only FRAME displays.
+  "Return the height that fits what minibuffer-only FRAME displays.
 This measures the minibuffer as Emacs displays it at its current width,
 so wrapped lines and overlay strings, such as an inline completion UI's
 candidates, count. The frame's other rows, such as its internal borders,
-count once. The result is at least the native minimum of 100 points; on
-NS, Emacs's frame pixels are the panel's logical points."
+count once. On NS, Emacs's frame pixels are the panel's logical points."
   (let* ((window (minibuffer-window frame))
          ;; The panel cannot be taller than the display: measure no further.
          (text (cdr (window-text-pixel-size window nil nil nil (display-pixel-height frame)))))
-    (max 100 (+ text (- (frame-pixel-height frame) (window-body-height window t))))))
+    (+ text (- (frame-pixel-height frame) (window-body-height window t)))))
+
+(defun portal-launcher--legal-height (frame)
+  "Return the least height, in points, that FRAME can have unclipped.
+Emacs keeps a frame at least as tall as its windows' minimum sizes and
+decorations, so a shorter native panel would cut off its bottom, the
+minibuffer. This is that minimum when Emacs resizes a frame, ignoring
+`window-min-height' as Emacs then may: one line of each window's text
+with its mode, tab and header lines, the minibuffer's line, as many as
+FRAME's `min-height' parameter asks, and the frame's internal borders."
+  (let ((lines (frame-parameter frame 'min-height)))
+    ;; Emacs's frame_windows_min_size uses the parameter instead, if set.
+    (+ (- (frame-pixel-height frame) (frame-inner-height frame))
+       (max (frame-windows-min-size frame nil t t)
+            (if (fixnump lines) (* (max lines 1) (frame-char-height frame)) 0)))))
+
+(defconst portal-launcher--floor-parameters
+  '(internal-border-width min-height horizontal-scroll-bars scroll-bar-height bottom-divider-width)
+  "Frame parameters, besides its font and fixed role, that its legal height uses.")
+
+(defun portal-launcher--candidate-legal-height (kind)
+  "Return the legal height of the frame presenting KIND would show.
+That is the live dedicated frame made for KIND, which presenting reuses,
+changing only its font, or else a new one. A hidden candidate frame
+stands in for it, with `portal-launcher-font': for a reused frame, with
+that frame's own `portal-launcher--floor-parameters', which can differ
+from `portal-launcher-frame-parameters', applied only when it was made;
+for a new frame, with the parameters a presentation makes one with. The
+candidate stays unattached and unselected, and is deleted again; other
+frames, including the live one, are left alone. A buffer panel's
+windows would matter too, but buffer panels do not fit content yet."
+  (portal-launcher--check-support)
+  (let* ((reused (and (portal-launcher--live-p kind) portal-launcher--frame))
+         (window (selected-window))
+         (frame (make-frame
+                 (if reused
+                     (append (mapcar (lambda (name) (cons name (frame-parameter reused name)))
+                                     portal-launcher--floor-parameters)
+                             '((visibility . nil))
+                             (portal-launcher--frame-role kind))
+                   (portal-launcher--parameters kind)))))
+    (unwind-protect
+        (progn
+          (when portal-launcher-font
+            ;; As `portal-launcher--show' applies it, but leaving the user's
+            ;; customization of the default face alone.
+            (let ((frame-inhibit-implied-resize t))
+              (set-frame-font portal-launcher-font nil (list frame) t)))
+          (portal-launcher--legal-height frame))
+      (delete-frame frame t)
+      (when (and (window-live-p window) (not (eq window (selected-window))))
+        (select-window window 'norecord)))))
+
+(defun portal-launcher--check-maximum (kind limits)
+  "Signal a `user-error' if the maximum in LIMITS is below KIND's legal height.
+That height depends on the panel frame's font and parameters. This
+measures the dedicated frame when presenting would reuse it unchanged:
+it is made for KIND and no `portal-launcher-font' is applied to it.
+Otherwise it measures a candidate standing in for the frame presenting
+would show; see `portal-launcher--candidate-legal-height'. Either way,
+it runs before an active session is cancelled or a frame replaced, and
+changes neither."
+  (when-let* ((max (cadr limits))
+              (legal (if (and (portal-launcher--live-p kind) (not portal-launcher-font))
+                         (portal-launcher--legal-height portal-launcher--frame)
+                       (portal-launcher--candidate-legal-height kind)))
+              ((< max legal)))
+    (user-error "Launcher maximum height %d is below the legal height of its panel, %d points"
+                max legal)))
+
+(defun portal-launcher--bounded-height (frame limits height)
+  "Return HEIGHT within LIMITS, (MIN MAX), and never below FRAME's legal height.
+A presentation rejects a MAX below the legal height before it starts, so
+the legal height exceeds MAX only if it grew since, as with a larger
+font; it wins then. The native panel then clamps to the screen."
+  (pcase-let ((`(,min ,max) limits))
+    (max (portal-launcher--legal-height frame) (if (eq min 'content) 0 min)
+         (if max (min max height) height))))
+
+(defun portal-launcher--request-height (session height)
+  "Ask the native panel of automatic SESSION for HEIGHT points, within limits.
+HEIGHT is what the content needs, decorations included. It is bounded
+by SESSION's limits and the panel frame's legal height, then natively by
+the space below the panel's top edge. This does nothing unless SESSION
+is the current presentation, with an automatic height and a visible
+panel, or if the bounded height is the one last asked. Layout only: it
+never redisplays, presents or changes focus, so Emacs may call it while
+it redisplays. A requester that runs later, such as a timer, passes the
+session it started in, which a newer presentation does not answer to."
+  (when-let* (((eq session portal-launcher--session))
+              (limits (portal-launcher--session-limits session))
+              (id (portal-launcher--session-native-id session))
+              (frame portal-launcher--frame)
+              ((frame-live-p frame))
+              ((frame-visible-p frame))
+              (height (portal-launcher--bounded-height frame limits height))
+              ((not (eql height (portal-launcher--session-height session)))))
+    (setf (portal-launcher--session-height session) height)
+    (portal--launcher-fit id height)))
 
 (defun portal-launcher--fit (frame)
   "Fit the presentation's automatic minibuffer panel FRAME to its content.
 As `resize-mini-frames' during that presentation, Emacs calls this while
 it redisplays a minibuffer-only frame's active minibuffer that may have
 changed, after the commands, timers and completion UI that changed it.
-It only asks the native panel for a new height, never redisplaying or
-presenting, and only when that height differs from the last one asked.
-Emacs then redisplays the frame at the new size, whose content is the
-same. An echo area message, which briefly replaces the minibuffer's
-buffer, keeps the input's height; messages inline in the minibuffer fit.
-`portal-launcher--refit' calls this after commands as well."
+It asks `portal-launcher--request-height' for the fitted height, never
+redisplaying or presenting. Emacs then redisplays the frame at the new
+size, whose content is the same. An echo area message, which briefly
+replaces the minibuffer's buffer, keeps the input's height; messages
+inline in the minibuffer fit. `portal-launcher--refit' calls this after
+commands as well."
   (when-let* ((session portal-launcher--session)
-              (last (portal-launcher--session-fit session))
-              (id (portal-launcher--session-native-id session))
+              ((portal-launcher--session-limits session))
               ((eq frame portal-launcher--frame))
               ((frame-live-p frame))
-              ((frame-visible-p frame))
-              ((minibufferp (window-buffer (minibuffer-window frame))))
-              (height (portal-launcher--fitted-height frame))
-              ((not (eql height last))))
-    (setf (portal-launcher--session-fit session) height)
-    (portal--launcher-fit id height)))
+              ((minibufferp (window-buffer (minibuffer-window frame)))))
+    (portal-launcher--request-height session (portal-launcher--fitted-height frame))))
 
 (defun portal-launcher--refit ()
   "Fit an automatic minibuffer panel after a command, or as a prompt starts.
@@ -621,7 +767,9 @@ lines unless MODE-LINE. A frame made for the other kind is replaced."
           ;; the minimum: the prompt comes later. This first placement
           ;; fixes the top edge, so later content grows the panel down.
           (when (eq (nth 1 placement) 'auto)
-            (setf (nth 1 placement) (portal-launcher--fitted-height portal-launcher--frame)))
+            (setf (nth 1 placement)
+                  (portal-launcher--bounded-height portal-launcher--frame (portal-launcher--height-limits)
+                                                   (portal-launcher--fitted-height portal-launcher--frame))))
           (apply #'portal--launcher-show placement)
           (when portal-launcher--session
             (setf (portal-launcher--session-native-id portal-launcher--session)

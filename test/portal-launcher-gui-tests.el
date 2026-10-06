@@ -29,6 +29,7 @@
            (ordinary-buffer (window-buffer))
            (content (generate-new-buffer " *launcher GUI*"))
            (portal-launcher-size '(720 420))
+           (portal-launcher-height-limits '(100 nil))
            (portal-launcher-offset '(0 0))
            (portal-launcher-screen nil))
        (unwind-protect
@@ -601,6 +602,8 @@ rows change after each command and on `portal-launcher-gui--refresh'."
                   :text (cdr (window-text-pixel-size window))
                   :line (with-current-buffer (window-buffer window) (default-line-height))
                   :border (frame-internal-border-width frame)
+                  :legal (portal-launcher--legal-height frame)
+                  :mini (window-pixel-height window)
                   :start (window-start window)
                   :screen screen
                   :area (plist-get (nth screen (plist-get state :screens)) :visible))
@@ -634,13 +637,15 @@ panel's rectangle before the prompt was displayed, and the descriptions."
     (should-not actions)
     (cons initial (reverse portal-launcher-gui--layouts))))
 
-(defun portal-launcher-gui--check-fitted (result width rows &optional exact)
+(defun portal-launcher-gui--check-fitted (result width rows &optional exact limits)
   "Check that the layouts in RESULT fit ROWS lines below their first, at WIDTH.
 RESULT is what `portal-launcher-gui--fit' returned. Each layout's height
-must fit its text exactly, above the minimum, with the presentation's
-session, focus, left and top edges unchanged since it opened, no taller.
-With EXACT, the text must also be that many default lines high."
+must fit its text exactly, within LIMITS, the presentation's
+`portal-launcher-height-limits' (default (100 nil)), with the session,
+focus, left and top edges unchanged since it opened, no taller. With
+EXACT, the text must also be that many default lines high."
   (pcase-let* ((`(,initial . ,layouts) result)
+               (`(,min ,max) (or limits '(100 nil)))
                (first (car layouts)))
     (should (= (length layouts) (length rows)))
     (should (<= (nth 3 initial) (apply #'min (mapcar (lambda (layout) (plist-get layout :height)) layouts))))
@@ -653,7 +658,11 @@ With EXACT, the text must also be that many default lines high."
      ;; Emacs's frame follows the native panel; its text fills it exactly.
      (let ((border (plist-get layout :border)) (text (plist-get layout :text)))
        (should (equal (plist-get layout :frame) (list width (plist-get layout :height))))
-       (should (= (plist-get layout :height) (max 100 (+ text (* 2 border)))))
+       (should (= (plist-get layout :height)
+                  (max (plist-get layout :legal) (if (eq min 'content) 0 min)
+                       (min (or max most-positive-fixnum) (+ text (* 2 border))))))
+       ;; Never below the legal height: the minibuffer keeps a line.
+       (should (>= (plist-get layout :mini) (plist-get layout :line)))
        (should (= (plist-get layout :body) (- (plist-get layout :height) (* 2 border))))
        (when exact (should (= text (* (1+ count) (plist-get layout :line)))))))))
 
@@ -781,6 +790,248 @@ With EXACT, the text must also be that many default lines high."
         (should (equal (plist-get last :height) (plist-get first :height)))
         (portal-launcher-gui--check-fitted (cons (car result) (list first last)) 720 '(5 5) t)))))
 
+(ert-deftest portal-launcher-gui-minibuffer-panel-height-limits ()
+  ;; Menlo 24's 28-point lines and the 16-point borders make a minibuffer
+  ;; frame's legal height 60 points: `content' allows it, below 100. A
+  ;; maximum caps the rows, which clip below the prompt as at the screen.
+  (portal-launcher-gui--with-panel
+    (let ((portal-launcher-size nil)
+          (portal-launcher-font "Menlo 24")
+          (read (lambda () (read-from-minibuffer "Fruit: ")))
+          (setup (lambda () (portal-launcher-gui--inline-rows portal-launcher-gui--fruits))))
+      (pcase-dolist (`(,limits ,heights ,clipped)
+                     '(((content 144) (144 116 60 144) (t nil nil t)) ((80 nil) (200 116 80 200) (nil nil nil nil))
+                       ((content nil) (200 116 60 200) (nil nil nil nil))))
+        (let* ((portal-launcher-height-limits limits)
+               (step 0)
+               (result (portal-launcher-gui--fit
+                        read
+                        (mapcar (lambda (step-or-stroke)
+                                  (if (not (functionp step-or-stroke)) step-or-stroke
+                                    (lambda ()
+                                      (interactive)
+                                      (portal-launcher-gui--record)
+                                      (when (equal limits '(content 144))
+                                        (portal-launcher-gui--capture
+                                         (format "minibuffer-limits-%d" (cl-incf step)))))))
+                                portal-launcher-gui--five-two-none-five)
+                        setup)))
+          (message "Launcher height limits %S: %S" limits result)
+          (should (equal (mapcar (lambda (layout) (plist-get layout :height)) (cdr result)) heights))
+          (portal-launcher-gui--check-fitted result 720 '(5 2 0 5) t limits)
+          (cl-loop
+           for layout in (cdr result) for clip in clipped do
+           ;; The prompt stays at the top, clipped rows or not.
+           (should (= (plist-get layout :start) 1))
+           (should (eq (> (plist-get layout :text) (plist-get layout :body)) clip))
+           (should (= (plist-get layout :legal) 60)))
+          ;; Fitting changed no setting.
+          (should (equal portal-launcher-height-limits limits))))
+      (should (equal (default-value 'portal-launcher-height-limits) '(100 nil))))))
+
+(defun portal-launcher-gui--untouched ()
+  "Describe what a failed presentation must leave as it was."
+  (redisplay t)
+  (let ((state (portal--launcher-inspect))
+        (mini (active-minibuffer-window)))
+    (list :frames (frame-list) :frame portal-launcher--frame
+          :kind (portal-launcher--kind portal-launcher--frame)
+          :shown (frame-visible-p portal-launcher--frame)
+          :session portal-launcher--session :native-session (plist-get state :session)
+          :visible (plist-get state :visible) :key (plist-get state :key)
+          :actual (plist-get state :actual) :selected (selected-window)
+          :prompt (and mini (with-current-buffer (window-buffer mini) (minibuffer-contents-no-properties)))
+          :buffer (window-buffer (frame-first-window portal-launcher--frame)))))
+
+(ert-deftest portal-launcher-gui-too-small-maximum-leaves-presentations-alone ()
+  ;; A maximum below the legal height fails before an existing panel is
+  ;; cancelled, hidden, replaced or loses the keyboard. With a launcher
+  ;; font, that height is measured on a hidden candidate frame, made and
+  ;; deleted while the prompt is active.
+  (portal-launcher-gui--with-panel
+    (let ((portal-launcher-size nil)
+          (portal-launcher-font "Menlo 24")
+          probes)
+      (should
+       (equal "alpha"
+              (portal-launcher-gui--present
+               (lambda () (read-from-minibuffer "Fruit: "))
+               (append (portal-launcher-gui--text "al") '((30 262144 "\C-]"))
+                       (portal-launcher-gui--text "pha") '((36 0 "\r")))
+               (lambda ()
+                 ;; A failed `should' would only be reported in the prompt.
+                 (let ((before (portal-launcher-gui--untouched))
+                       (outcome (condition-case error
+                                    (let ((portal-launcher-height-limits '(content 1)))
+                                      (portal-launcher-present #'ignore :kind 'minibuffer)
+                                      'presented)
+                                  (user-error (cadr error)))))
+                   (portal-launcher-gui--settle)
+                   (push (list outcome before (portal-launcher-gui--untouched)) probes)))
+               '(:kind minibuffer))))
+      (pcase-let ((`((,outcome ,before ,after)) probes))
+        (message "Launcher too-small maximum in a session: %S" outcome)
+        (should (equal outcome "Launcher maximum height 1 is below the legal height of its panel, 60 points"))
+        (should (equal before after))
+        (should (equal (plist-get after :prompt) "al"))
+        (should (plist-get after :key))
+        (should (plist-get after :visible)))
+      ;; An explicitly shown buffer panel keeps its frame, window, content,
+      ;; visibility and keyboard.
+      (with-current-buffer content (insert "Shown content\n"))
+      (let ((frame (portal-launcher-show content)))
+        (portal-launcher-gui--settle)
+        (let ((before (portal-launcher-gui--untouched)))
+          (let ((portal-launcher-height-limits '(content 1)))
+            (should-error (portal-launcher-present #'ignore :kind 'minibuffer) :type 'user-error))
+          (portal-launcher-gui--settle)
+          (should (equal before (portal-launcher-gui--untouched)))
+          (should (eq frame portal-launcher--frame))
+          (should (eq (plist-get before :buffer) content))
+          (should (plist-get before :shown))
+          (should (equal "Shown content\n" (with-current-buffer content (buffer-string))))
+          (portal-launcher-hide)))
+      ;; A valid maximum, measured the same way, presents.
+      (let ((portal-launcher-height-limits '(content 300)))
+        (should (equal "ok" (portal-launcher-gui--present
+                             (lambda () (read-string "Name: "))
+                             (append (portal-launcher-gui--text "ok") '((36 0 "\r")))
+                             nil '(:kind minibuffer))))))))
+
+(ert-deftest portal-launcher-gui-too-small-maximum-on-a-changed-panel ()
+  ;; The live minibuffer panel's internal border changes to 80 points, from
+  ;; the initial 16. Presenting reuses that panel, applying the launcher
+  ;; font, so its legal height is 188 points with Menlo 24, not the 60 of a
+  ;; new panel: a 144-point maximum fails, in a session and outside one,
+  ;; and 188 presents.
+  (portal-launcher-gui--with-panel
+    (let ((portal-launcher-size nil)
+          (portal-launcher-font "Menlo 24")
+          (step 0)
+          (expected "Launcher maximum height 144 is below the legal height of its panel, 188 points")
+          probes legal)
+      (cl-flet ((invalid ()
+                  (condition-case error
+                      (let ((portal-launcher-height-limits '(content 144)))
+                        (portal-launcher-present #'ignore :kind 'minibuffer)
+                        'presented)
+                    (user-error (cadr error)))))
+        (should
+         (equal "alpha"
+                (portal-launcher-gui--present
+                 (lambda () (read-from-minibuffer "Fruit: "))
+                 (append (portal-launcher-gui--text "al") '((30 262144 "\C-]") (30 262144 "\C-]"))
+                         (portal-launcher-gui--text "pha") '((36 0 "\r")))
+                 (lambda ()
+                   (if (= (cl-incf step) 1)
+                       (progn
+                         ;; Emacs keeps the panel's size; fitting follows.
+                         (let ((frame-inhibit-implied-resize t))
+                           (set-frame-parameter portal-launcher--frame 'internal-border-width 80))
+                         (portal-launcher-gui--settle)
+                         (setq legal (portal-launcher--legal-height portal-launcher--frame)))
+                     (let ((before (portal-launcher-gui--untouched))
+                           (outcome (invalid)))
+                       (portal-launcher-gui--settle)
+                       (push (list outcome before (portal-launcher-gui--untouched)) probes))))
+                 '(:kind minibuffer))))
+        (message "Launcher too-small maximum on a changed panel: legal %S, %S" legal (caar probes))
+        (should (= legal 188))
+        (pcase-let ((`((,outcome ,before ,after)) probes))
+          (should (equal outcome expected))
+          (should (equal before after))
+          (should (equal (plist-get after :prompt) "al"))
+          (should (plist-get after :key))
+          (should (plist-get after :visible)))
+        ;; The hidden panel, reused by the next presentation, without a session.
+        (should (portal-launcher--live-p 'minibuffer))
+        (let ((before (portal-launcher-gui--untouched)))
+          (should (equal (invalid) expected))
+          (should (equal before (portal-launcher-gui--untouched)))
+          (should-not (plist-get before :visible)))
+        ;; A maximum that panel allows presents on it, at its legal height.
+        (let ((portal-launcher-height-limits '(content 188)) layout)
+          (should (equal "ok" (portal-launcher-gui--present
+                               (lambda () (read-string "Name: "))
+                               (append (portal-launcher-gui--text "ok") '((30 262144 "\C-]") (36 0 "\r")))
+                               (lambda ()
+                                 (redisplay t)
+                                 (setq layout (list (nth 3 (plist-get (portal--launcher-inspect) :actual))
+                                                    (frame-pixel-height portal-launcher--frame)
+                                                    (frame-parameter portal-launcher--frame 'internal-border-width))))
+                               '(:kind minibuffer))))
+          (should (equal layout '(188 188 80))))))))
+
+(defun portal-launcher-gui--frame-layout ()
+  "Describe the panel's frame, its root window and its minibuffer."
+  (redisplay t)
+  (let* ((frame portal-launcher--frame)
+         (state (portal--launcher-inspect))
+         (actual (plist-get state :actual))
+         (root (frame-root-window frame))
+         (mini (minibuffer-window frame)))
+    (list :session (plist-get state :session) :key (plist-get state :key)
+          :native (equal (plist-get state :requested) actual)
+          :left (nth 0 actual) :top (+ (nth 1 actual) (nth 3 actual))
+          :width (nth 2 actual) :height (nth 3 actual)
+          :frame (list (frame-pixel-width frame) (frame-pixel-height frame))
+          :legal (portal-launcher--legal-height frame)
+          :line (frame-char-height frame)
+          :body (window-body-height root t) :lines (window-body-height root)
+          :mode-line (window-mode-line-height root)
+          :mini (window-pixel-height mini)
+          :input (and (eq (active-minibuffer-window) mini) (minibuffer-contents-no-properties)))))
+
+(ert-deftest portal-launcher-gui-buffer-panel-legal-height ()
+  ;; A normal frame, a buffer window above the frame's own minibuffer, at
+  ;; the least height Emacs allows it, as buffer panels that fit their
+  ;; content will reach: Emacs's frame matches the panel, a text line shows
+  ;; with the mode line, and the minibuffer still reads input. The session
+  ;; is made automatic here in place of that fitting.
+  (portal-launcher-gui--with-panel
+    (with-current-buffer content (insert "First line\nSecond line\nThird line\n"))
+    (dolist (mode-line '(t nil))
+      (let ((portal-launcher-font "Menlo 13")
+            (portal-launcher-height-limits '(content nil))
+            initial layouts)
+        (should
+         (equal "ok"
+                (portal-launcher-gui--present
+                 (lambda ()
+                   (switch-to-buffer content)
+                   (goto-char (point-min))
+                   (setq initial (portal-launcher-gui--frame-layout))
+                   (setf (portal-launcher--session-limits portal-launcher--session) portal-launcher-height-limits)
+                   ;; Far below the legal height, which is what the panel gets.
+                   (portal-launcher--request-height portal-launcher--session 1)
+                   (read-string "Name: "))
+                 (append (portal-launcher-gui--text "ok") '((30 262144 "\C-]")) '((36 0 "\r")))
+                 (lambda ()
+                   (push (portal-launcher-gui--frame-layout) layouts)
+                   (portal-launcher-gui--capture (format "buffer-legal-height-%s" mode-line))
+                   ;; A maximum caps a tall request; nil leaves the screen's.
+                   (setf (portal-launcher--session-limits portal-launcher--session) '(content 300))
+                   (portal-launcher--request-height portal-launcher--session 100000)
+                   (push (portal-launcher-gui--frame-layout) layouts))
+                 (list :mode-line mode-line))))
+        (pcase-let ((`(,low ,capped) (reverse layouts)))
+          (message "Launcher legal buffer height, mode line %s: %S then %S, from %S" mode-line low capped initial)
+          (dolist (layout (list low capped))
+            (should (equal (mapcar (lambda (key) (plist-get layout key)) '(:session :key :native :left :top :width))
+                           (append (mapcar (lambda (key) (plist-get initial key)) '(:session :key))
+                                   (list t)
+                                   (mapcar (lambda (key) (plist-get initial key)) '(:left :top :width)))))
+            ;; Emacs's frame matches the panel: nothing is cut off.
+            (should (equal (plist-get layout :frame) (list 720 (plist-get layout :height))))
+            (should (>= (plist-get layout :body) (plist-get layout :line)))
+            (should (>= (plist-get layout :mini) (plist-get layout :line)))
+            (should (eq (> (plist-get layout :mode-line) 0) mode-line))
+            (should (equal (plist-get layout :input) "ok")))
+          (should (= (plist-get low :height) (plist-get low :legal)))
+          (should (>= (plist-get low :lines) 1))
+          (unless mode-line (should (< (plist-get low :height) 100)))
+          (should (= (plist-get capped :height) 300)))))))
+
 (ert-deftest portal-launcher-gui-minibuffer-panel-follows-later-changes ()
   ;; A timer's change fits with no key pressed; an echo area message keeps
   ;; the input's height; a nested prompt fits, and its outer prompt again.
@@ -877,55 +1128,58 @@ With EXACT, the text must also be that many default lines high."
   ;; marked text, every key would go to the input method.
   (skip-unless (fboundp 'portal-test-compose))
   (portal-launcher-gui--with-panel
-    (let ((portal-launcher-size nil)
-          (portal-launcher-font "Menlo 24")
-          (portal-launcher-gui--layouts nil)
-          (portal-launcher-gui--row-limit 5)
-          initial marked value)
-      (cl-flet ((record ()
-                  (with-current-buffer (window-buffer (active-minibuffer-window))
-                    (portal-launcher-gui--record)))
-                (later (seconds function) (run-with-timer seconds nil function)))
-        (unwind-protect
-            (setq value
-                  (with-timeout (10 (error "Composition timed out"))
-                    (portal-launcher-present
-                     (lambda ()
-                       (minibuffer-with-setup-hook
-                           (lambda ()
-                             (setq initial (plist-get (portal--launcher-inspect) :actual))
-                             (portal-launcher-gui--inline-rows
-                              '("alpha" "alpine" "alto" "also" "altar" "nihao" "nihaoma"))
-                             (portal-view--with-frame-title portal-launcher--frame
-                                                            #'portal-test-native-target-frame)
-                             (later 0.3 (lambda () (record) (portal-test-compose "nihao")))
-                             ;; While composing, the completion UI updates
-                             ;; without a key: two rows instead of five.
-                             (later 0.8 (lambda ()
-                                          (push (portal-test-marked-text) marked)
-                                          (record)
-                                          (setq portal-launcher-gui--row-limit 2)
-                                          (funcall portal-launcher-gui--refresh)))
-                             (later 1.3 (lambda ()
-                                          (push (portal-test-marked-text) marked)
-                                          (record)
-                                          (portal-test-compose "你好" t)))
-                             (later 2.0 (lambda ()
-                                          (push (portal-test-marked-text) marked)
-                                          (record)
-                                          (portal-test-native-post-key 36 0 "\r"))))
-                         (read-from-minibuffer "Compose: ")))
-                     :kind 'minibuffer)))
-          (portal-test-native-target-frame nil)))
-      (let ((layouts (reverse portal-launcher-gui--layouts)))
-        (message "Launcher fitted composition: %S %S" (reverse marked) layouts)
-        (should (equal value "你好"))
-        (should (equal (reverse marked) '(t t nil)))
-        ;; Emacs shows marked text in an overlay at point, not as input.
-        (should (equal (mapcar (lambda (layout) (plist-get layout :input)) (take 3 layouts)) '("" "" "")))
-        (portal-launcher-gui--check-fitted (cons initial (take 3 layouts)) 720 '(5 5 2) t)
-        ;; The committed text's fallback font may set its own line height.
-        (portal-launcher-gui--check-fitted (cons initial layouts) 720 '(5 5 2 0))))))
+    ;; At the default limits, then down to the frame's legal height.
+    (dolist (limits '((100 nil) (content nil)))
+      (let ((portal-launcher-size nil)
+            (portal-launcher-height-limits limits)
+            (portal-launcher-font "Menlo 24")
+            (portal-launcher-gui--layouts nil)
+            (portal-launcher-gui--row-limit 5)
+            initial marked value)
+        (cl-flet ((record ()
+                    (with-current-buffer (window-buffer (active-minibuffer-window))
+                      (portal-launcher-gui--record)))
+                  (later (seconds function) (run-with-timer seconds nil function)))
+          (unwind-protect
+              (setq value
+                    (with-timeout (10 (error "Composition timed out"))
+                      (portal-launcher-present
+                       (lambda ()
+                         (minibuffer-with-setup-hook
+                             (lambda ()
+                               (setq initial (plist-get (portal--launcher-inspect) :actual))
+                               (portal-launcher-gui--inline-rows
+                                '("alpha" "alpine" "alto" "also" "altar" "nihao" "nihaoma"))
+                               (portal-view--with-frame-title portal-launcher--frame
+                                                              #'portal-test-native-target-frame)
+                               (later 0.3 (lambda () (record) (portal-test-compose "nihao")))
+                               ;; While composing, the completion UI updates
+                               ;; without a key: two rows instead of five.
+                               (later 0.8 (lambda ()
+                                            (push (portal-test-marked-text) marked)
+                                            (record)
+                                            (setq portal-launcher-gui--row-limit 2)
+                                            (funcall portal-launcher-gui--refresh)))
+                               (later 1.3 (lambda ()
+                                            (push (portal-test-marked-text) marked)
+                                            (record)
+                                            (portal-test-compose "你好" t)))
+                               (later 2.0 (lambda ()
+                                            (push (portal-test-marked-text) marked)
+                                            (record)
+                                            (portal-test-native-post-key 36 0 "\r"))))
+                           (read-from-minibuffer "Compose: ")))
+                       :kind 'minibuffer)))
+            (portal-test-native-target-frame nil)))
+        (let ((layouts (reverse portal-launcher-gui--layouts)))
+          (message "Launcher fitted composition: %S %S" (reverse marked) layouts)
+          (should (equal value "你好"))
+          (should (equal (reverse marked) '(t t nil)))
+          ;; Emacs shows marked text in an overlay at point, not as input.
+          (should (equal (mapcar (lambda (layout) (plist-get layout :input)) (take 3 layouts)) '("" "" "")))
+          (portal-launcher-gui--check-fitted (cons initial (take 3 layouts)) 720 '(5 5 2) t limits)
+          ;; The committed text's fallback font may set its own line height.
+          (portal-launcher-gui--check-fitted (cons initial layouts) 720 '(5 5 2 0) nil limits))))))
 
 (ert-deftest portal-launcher-gui-minibuffer-panel-fits-vertico ()
   ;; Vertico draws its rows in an end-of-buffer before-string, with group

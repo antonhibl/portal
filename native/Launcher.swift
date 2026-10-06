@@ -213,7 +213,7 @@ final class NativeLauncher {
 
     func place(_ placement: Placement, present: Bool = true) throws {
         guard editor.window === panel else { throw NativeError.message("Emacs replaced the native launcher window") }
-        guard placement.width >= 200, placement.height >= 100, placement.screen >= -1,
+        guard placement.width >= 200, placement.height > 0, placement.screen >= -1,
               placement.radius >= 0 else { throw NativeError.message("Invalid Portal launcher placement") }
         let screens = NSScreen.screens
         guard let screen = screens.indices.contains(Int(placement.screen)) ? screens[Int(placement.screen)]
@@ -253,7 +253,7 @@ final class NativeLauncher {
     /// the view's resize only queues Emacs's frame size change, and nothing
     /// is drawn here.
     func fit(session: UInt64, height: Int64) throws {
-        guard height >= 100 else { throw NativeError.message("Invalid Portal launcher height") }
+        guard height > 0 else { throw NativeError.message("Invalid Portal launcher height") }
         guard session == Self.session, presenting, panel.isVisible, editor.window === panel,
               placement != nil else { return }
         // A display change centers this height again.
