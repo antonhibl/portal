@@ -1,6 +1,6 @@
 ---
 id: launcher-panel-height-bounds
-status: todo
+status: done
 depends_on:
   - launcher-content-sizing
 ---
@@ -46,6 +46,33 @@ presentation and respecting `let` bindings:
 Names are proposed, not available on main yet. Record any necessary refinement
 here and in the downstream launcher configuration task before implementation.
 
+### Refinements recorded at implementation
+
+The names above are kept. Implementation refined the contract as follows:
+
+- MIN and MAX are positive fixnums (or `content`/nil), and a numeric MIN must
+  not exceed MAX. Limits are validated for every presentation and show, fixed
+  or automatic, together with the other launcher settings, before anything is
+  shown, mutated or cancelled. They bound only automatic heights.
+- The legal frame floor is Emacs's own resize minimum: `frame-windows-min-size`
+  with IGNORE t, pixelwise (one text line per window plus its tab, header and
+  mode lines, rounded to whole lines, and the minibuffer's line), or the frame's
+  `min-height` parameter if larger, plus internal borders and tab bar. A numeric
+  MIN below it gives the floor.
+- "A maximum below the legal frame floor" cannot be checked before the frame
+  exists: the floor depends on the frame's font and decorations, and the kind's
+  frame may be created or replaced by that presentation. That one check runs
+  as the panel is about to show, after frame creation and font application and
+  before native presentation; it fails like a native show failure, leaving the
+  frame hidden. If the floor later grows during a presentation (a font change),
+  the floor wins over MAX rather than requesting an illegal height.
+- The seam is internal: `portal-launcher--request-height SESSION HEIGHT`, taking
+  the session object, not a native ID. The minibuffer fitter uses it, so there
+  is one resizing path. Configuration only sets the option.
+- The downstream launcher.el configuration task
+  (`tasks/configuration-and-acceptance.md` in that repository) is not edited
+  from this repository; it should adopt these names and the refinements above.
+
 ## Plan
 
 1. Follow Portal's worktree, native-safety, and testing instructions. Read
@@ -76,19 +103,21 @@ here and in the downstream launcher configuration task before implementation.
 
 ## Acceptance
 
-- [ ] Existing valid calls and default minibuffer-only tests retain their current
+- [x] Existing valid calls and default minibuffer-only tests retain their current
   geometry/lifecycle, and explicit numeric sizes remain fixed.
-- [ ] Configurable automatic max height is enforced without re-presentation;
+- [x] Configurable automatic max height is enforced without re-presentation;
   default max still uses available screen space.
-- [ ] `MIN=content` permits an actually legal sub-100-point panel where the
+- [x] `MIN=content` permits an actually legal sub-100-point panel where the
   selected font/decorations allow it; no negative mini-window heights, native
   errors, unsafe zero-height windows, or clipped prompt caused by an illegal floor.
-- [ ] Invalid options/ranges fail before state mutation; limits remain unchanged
-  in user config after fitting and respect dynamic bindings.
-- [ ] Resizing preserves frame/native session, top/left/width/monitor, responder,
+- [x] Invalid options/ranges fail before state mutation; limits remain unchanged
+  in user config after fitting and respect dynamic bindings. (A maximum below
+  the frame-dependent legal floor fails before showing, after frame creation;
+  see the refinements above.)
+- [x] Resizing preserves frame/native session, top/left/width/monitor, responder,
   IME marked text where tested, and pending blur; it does not steal focus.
-- [ ] Stale/no-op requests are harmless; no reopen after dismissal or resize loop.
-- [ ] Bounds/clamping and errors have batch/native checks; real low-height and
+- [x] Stale/no-op requests are harmless; no reopen after dismissal or resize loop.
+- [x] Bounds/clamping and errors have batch/native checks; real low-height and
   maximum-height input behavior has disposable VM evidence. Record physical IME,
   VoiceOver, and monitor-disconnect coverage separately from injected tests.
 
@@ -98,3 +127,54 @@ Run host checks from `CONTRIBUTING.md`, relevant standalone native and graphical
 checks only via `bash test/vm.sh ...`, and byte compilation/diff checks. Restart
 Emacs after any native rebuild. Record actual versions/results and screenshots.
 No live config changes. This task is independent of launcher.el implementation.
+
+### Completion record, 2026-10-06
+
+Implemented from base `a23027e` on branch
+`task/implement-next-todo-in-tasks-862ecc04`. Host: macOS 27.0.1 on Apple
+Silicon, GNU Emacs NS 31.1 at `a360712c9d272d950d8d8255ef74570f7e90b7d9`,
+Swift 6.4, Bun 1.3.14, CMake 4.0.3. VM: macOS 27.0.1 guest, same Emacs build,
+one "Apple Virtual" display, usable area `(0, 74, 1326, 742)`, scale 2.
+
+Host checks, all passed:
+
+- `./build.sh`
+- `ctest --test-dir build --output-on-failure`: 34 of 34, including `launcher`
+  (38 tests) and `module`
+- `bun run --cwd host check` and `bun run --cwd host typecheck`
+- `python3 -B -m unittest discover -s test -p 'test_*.py'`: 8 tests
+- `git diff --check`, and byte compilation of `portal-launcher.el` and both
+  launcher test files without warnings
+
+VM checks through `bash test/vm.sh sh -c '…'`, one run:
+
+- Standalone native launcher check, built as in `docs/testing.md` with
+  `test/native-launcher.swift`: passed, including heights below 100 points
+- Combined graphical launcher suite in a disposable `emacs -Q
+  --module-assertions` with `portal.el`, the test injector and
+  `test/portal-launcher-daily-use-tests.el`, selector `^portal-launcher-`:
+  29 passed, 0 failed, 1 skipped in 105 s. The skipped
+  `portal-launcher-gui-minibuffer-panel-stays-on-its-display` needs a second
+  display, which the VM lacks.
+
+Measured heights and screenshots are in `docs/launcher-native-panel.md`,
+section "Height limits and legal frame heights": a minibuffer frame's legal height with Menlo 24 was 60 points; `(content 144)`
+gave 144 (clipped), 116, 60 and 144 for five, two, no and five rows; the
+default gave the earlier 200, 116, 100 and 200. A normal frame with Menlo 13
+reached its legal height, 77 points with a mode line and 62 without, with
+Emacs's frame matching and its minibuffer reading input. Six mutants of
+`portal-launcher.el` (no maximum, no legal floor, no session check, no
+duplicate suppression, no presentation-time maximum check, no MIN/MAX order
+check) each failed the batch suite.
+
+GNU ELPA was unreachable from host and VM during this work. The host build
+reused the main checkout's extracted copies of the pinned packages. For the VM
+run only, with the user's approval, `CMakeLists.txt` temporarily fetched the
+same tarballs from the Tsinghua ELPA mirror; all eight matched the pinned
+SHA256 hashes, which CMake checked again. That edit was reverted before
+committing; the build files are unchanged.
+
+Not tested: a physical input method (marked text was injected through Emacs's
+NS text-input client), VoiceOver with a short panel, and monitor
+disconnection (display changes are covered by standalone native
+notifications). The hands-on daily-use checklist was not re-run.

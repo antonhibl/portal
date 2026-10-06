@@ -394,8 +394,9 @@ LISP_FUNCTION(Flauncher_show)
         if (!returning(env))
             return NULL;
     }
-    if (values[0] < 200 || values[1] < 100 || values[4] < -1 || values[5] < 0) {
-        signal_error(env, "Launcher needs size >= 200x100, screen >= -1 and radius >= 0", NULL);
+    if (values[0] < 200 || values[1] < 1 || values[4] < -1 || values[5] < 0) {
+        signal_error(env, "Launcher needs width >= 200, height >= 1, screen >= -1 and radius >= 0",
+                     NULL);
         return NULL;
     }
     portal_text error = {0};
@@ -412,8 +413,8 @@ LISP_FUNCTION(Flauncher_fit)
         if (!returning(env))
             return NULL;
     }
-    if (values[0] < 0 || values[1] < 100) {
-        signal_error(env, "Launcher fit needs a session >= 0 and height >= 100", NULL);
+    if (values[0] < 0 || values[1] < 1) {
+        signal_error(env, "Launcher fit needs a session >= 0 and height >= 1", NULL);
         return NULL;
     }
     portal_text error = {0};

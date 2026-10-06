@@ -63,6 +63,15 @@ struct LauncherChecks {
                 check(tall.maxY == placed.maxY && tall.minY == area.minY && tall.minX == placed.minX)
                 let low = NativeLauncher.rectangle(placement(713, 100, 0, 100000), in: area)
                 check(NativeLauncher.fitted(low, height: 407, in: area) == low)
+                // Lisp chooses legal heights below 100 points; the panel
+                // places and fits them exactly, with the same anchoring.
+                for height: Int64 in [1, 44, 60, 99] {
+                    let short = NativeLauncher.rectangle(placement(713, height, -137, 81), in: area)
+                    check(short.height == CGFloat(height) && area.contains(short))
+                    check(short.minY == floor(area.midY - CGFloat(height) / 2 - 81))
+                    let fitted = NativeLauncher.fitted(placed, height: height, in: area)
+                    check(fitted.maxY == placed.maxY && fitted.minX == placed.minX && fitted.height == CGFloat(height))
+                }
             }
             func rejected(file: StaticString = #filePath, line: UInt = #line, _ body: () throws -> Void) {
                 do { try body(); fail("Accepted invalid launcher operation", file: file, line: line) }
@@ -108,13 +117,18 @@ struct LauncherChecks {
                     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
                     check(NSScreen.screens.contains { $0.visibleFrame.contains(launcher.panel.frame) })
                     rejected { try launcher.place(placement(199, 407)) }
+                    rejected { try launcher.place(placement(713, 0)) }
+                    rejected { try launcher.place(placement(713, -60)) }
                     // Fitting is layout only: the session, focus watching and
                     // first responder stay, as do the left, width and top edges.
                     let session = NativeLauncher.session
+                    try launcher.place(placement(713, 60), present: false)
+                    check(launcher.panel.frame.height == 60)
+                    check(NativeLauncher.session == session && launcher.panel.firstResponder === editor)
                     try launcher.place(placement(713, 100), present: false)
                     let placed = launcher.panel.frame
                     let area = require(launcher.panel.screen).visibleFrame
-                    for height: Int64 in [164, 100, 407, 100000, 120] {
+                    for height: Int64 in [164, 100, 60, 1, 407, 100000, 44, 120] {
                         try launcher.fit(session: session, height: height)
                         check(launcher.panel.frame == NativeLauncher.fitted(placed, height: height, in: area))
                         check(NativeLauncher.session == session)
@@ -122,16 +136,22 @@ struct LauncherChecks {
                         check(NativeLauncher.describe()["watchingFocus"] as? Bool == true)
                     }
                     check(launcher.panel.frame.maxY == placed.maxY && launcher.panel.frame.height == 120)
-                    rejected { try launcher.fit(session: session, height: 99) }
+                    rejected { try launcher.fit(session: session, height: 0) }
+                    rejected { try launcher.fit(session: session, height: -1) }
                     try launcher.fit(session: session + 1, height: 300)
                     check(launcher.panel.frame.height == 120, "A stale session resized the panel")
                     // A display change centers the fitted height again, and
-                    // later fits keep that new top edge.
-                    launcher.panel.setFrameOrigin(NSPoint(x: -100000, y: -100000))
-                    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                    // later fits keep that new top edge, at any height.
+                    for height: Int64 in [120, 60] {
+                        try launcher.fit(session: session, height: height)
+                        launcher.panel.setFrameOrigin(NSPoint(x: -100000, y: -100000))
+                        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                        check(launcher.panel.frame.height == CGFloat(height))
+                        check(launcher.panel.frame == NativeLauncher.rectangle(placement(713, height),
+                                                                               in: require(launcher.panel.screen).visibleFrame))
+                        check(NativeLauncher.session == session && launcher.panel.firstResponder === editor)
+                    }
                     let replaced = launcher.panel.frame
-                    check(replaced.height == 120)
-                    check(replaced == NativeLauncher.rectangle(placement(713, 120), in: require(launcher.panel.screen).visibleFrame))
                     try launcher.fit(session: session, height: 300)
                     check(launcher.panel.frame.maxY == replaced.maxY && launcher.panel.frame.height == 300)
                     // Panel notifications carry the current presentation,
@@ -161,7 +181,7 @@ struct LauncherChecks {
             donor.close()
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             check(NSApp.windows.allSatisfy { !($0 is LauncherPanel) }, "Closed panels remain: \(NSApp.windows)")
-            print("Launcher native checks passed: geometry, fitting, rollback, ownership, focus-loss pipe delivery, 20 attach/detach cycles")
+            print("Launcher native checks passed: geometry, fitting (including heights below 100), rollback, ownership, focus-loss pipe delivery, 20 attach/detach cycles")
         }
     }
 }

@@ -373,7 +373,8 @@ Functions must be synchronous. Invoke after any existing minibuffer has
 finished. Functions that deliberately use other frames or catch arbitrary
 throws need explicit wrappers.
 
-Customize [`portal-launcher-size`](#panel-size) (default nil), `portal-launcher-offset`
+Customize [`portal-launcher-size`](#panel-size) (default nil),
+[`portal-launcher-height-limits`](#height-limits) (default `(100 nil)`), `portal-launcher-offset`
 (`(0 0)`, positive right/down), `portal-launcher-screen` (nil: pointer's monitor),
 `portal-launcher-font`, `portal-launcher-shadow` and `portal-launcher-corner-radius`.
 Each presentation or show applies them, including `let` bindings. Size/offsets use
@@ -417,8 +418,9 @@ The panel opens no taller than its content at that moment, normally the
 minimum before the prompt appears, centered as the offset and screen settings
 say. That first placement fixes its screen, left edge, width and top edge for
 the presentation: later changes move only the bottom edge, so the prompt stays
-put, and moving the pointer to another display moves nothing. The height never
-drops below 100 points, so a one-line prompt can leave space below it. Growth
+put, and moving the pointer to another display moves nothing. By default the
+height never drops below 100 points, so a one-line prompt can leave space below
+it; [height limits](#height-limits) change that bound and add a maximum. Growth
 stops at the bottom of the monitor's usable area; rows beyond it are clipped,
 while the prompt stays at the top and completion keys keep working. A change
 in the display arrangement may center the panel again; its new top edge then
@@ -448,3 +450,54 @@ buffer panel. Interactively it offers the current numbers, or 720 × 420.
 ![The same panel after typing "alp"](evidence/launcher-minibuffer-fitted-filtered.png)
 
 ![No matches: the 100-point minimum](evidence/launcher-minibuffer-fitted-minimum.png)
+
+#### Height limits
+
+`portal-launcher-height-limits` bounds a fitted height as `(MIN MAX)`, in
+points. It applies only where `portal-launcher-size` fits content; numeric
+sizes stay fixed and ignore it. The default `(100 nil)` keeps the behavior
+above.
+
+| Element | Values |
+| --- | --- |
+| MIN | A positive integer, or `content` for the panel frame's legal height |
+| MAX | `nil` for the space below the panel's top edge, or a positive integer of at least MIN |
+
+```elisp
+;; As short as the prompt allows, and at most 480 points tall:
+(setopt portal-launcher-height-limits '(content 480))
+```
+
+Four heights decide the panel's size, each overriding the ones before it:
+
+1. **Content height**: what the panel displays, plus the frame's internal
+   borders, as described above.
+2. **Configured limits**: MIN raises it and MAX caps it. Content beyond MAX
+   is clipped at the bottom, as at the screen's edge.
+3. **Legal frame height**: the least height Emacs allows the panel's frame:
+   one line of each window's text with its mode and header lines, the
+   minibuffer's line and the internal borders, at the frame's font. A
+   minibuffer panel needs one line; with Menlo 24 and the default 16-point
+   borders that is 60 points. With MIN `content`, a one-line prompt shrinks
+   the panel to it; a numeric MIN below it gives it too. Emacs keeps a frame
+   at least this tall, so a shorter panel would cut off its prompt; Portal
+   never asks for one, and changes no window-size setting to allow one.
+4. **Available space**: the panel stops at the bottom of the monitor's usable
+   area, below its anchored top edge. This wins over everything, so a panel
+   near the bottom of a small display can be shorter than MIN or than its
+   legal height.
+
+Invalid limits, such as a MIN larger than MAX, signal an error before anything
+is shown or an active session is cancelled. A MAX below the legal height also
+signals an error before the panel shows. That height depends on the panel's
+font and decorations, so this one check follows the frame's creation, and a
+larger font applied later in a presentation still wins over MAX. Each
+presentation reads the option once, including a `let` binding of it; fitting
+never changes it.
+
+With `'(content 144)`, Menlo 24 and the default borders, five rows stop at 144
+points, then no matches shrink the panel to its 60-point legal height:
+
+![Five rows capped at 144 points](evidence/launcher-minibuffer-limited-maximum.png)
+
+![The 60-point legal height: the prompt alone](evidence/launcher-minibuffer-legal-minimum.png)
