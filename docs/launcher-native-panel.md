@@ -384,9 +384,15 @@ the active session before presenting anything. A preflight in
 `portal-launcher-present` therefore measures, before any of that, the frame
 the presentation would show: the dedicated frame when presenting reuses it
 unchanged (made for the kind, with no `portal-launcher-font` to apply), or else
-a candidate made with the same parameters and font. The candidate stays hidden,
-unattached and unselected, and is deleted again; its font is applied without
-customizing the default face. If the legal height grows later in a
+a candidate standing in for it. Presenting reuses a live frame of its kind and
+only applies the font, so that candidate takes the live frame's own internal
+border, `min-height`, horizontal scroll bar and bottom divider parameters,
+which may have changed since `portal-launcher-frame-parameters` made it; only
+a presentation that makes or replaces the frame is measured with a new frame's
+parameters. The candidate stays hidden, unattached and unselected, and is
+deleted again; its font is applied without customizing the default face. A
+buffer panel's windows would also count, but buffer panels do not fit content
+yet. If the legal height grows later in a
 presentation, as with a larger font, it wins over MAX rather than cutting off
 the prompt. The monitor wins over all: the platform clamps the bottom edge to
 the usable area, even below MIN or the legal height.
@@ -414,7 +420,11 @@ prompt was measured on a candidate frame and failed, "Launcher maximum height
 1 is below the legal height of its panel, 60 points"; the session, prompt, key
 status, native rectangle and frame list were unchanged, and the prompt then
 completed. With a buffer panel shown, the same call left its frame, window,
-buffer, visibility and key status as they were.
+buffer, visibility and key status as they were. After the live minibuffer
+panel's internal border changed from 16 to 80 points, its legal height with the
+launcher font was 188 points, not a new panel's 60: `(content 144)` failed in a
+session and outside one, leaving the same state, and `(content 188)` presented
+at 188 points.
 
 A normal frame, with a buffer window above its own minibuffer, in place of the
 buffer fitting that a later task adds: with Menlo 13 (15-point lines), a

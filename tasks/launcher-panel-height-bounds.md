@@ -67,8 +67,11 @@ The names above are kept. Implementation refined the contract as follows:
   `portal-launcher-present` measures the frame the presentation would show
   before cancelling or replacing anything: the dedicated frame when presenting
   reuses it unchanged (same kind, no `portal-launcher-font` to apply), or else
-  a hidden, unattached candidate frame made with the same parameters and font,
-  deleted again. If the floor grows later during a presentation (a font
+  a hidden, unattached candidate frame, deleted again. When presenting reuses
+  the live frame with a font, the candidate has that frame's own
+  floor-affecting parameters (internal border, `min-height`, horizontal scroll
+  bars, bottom divider) and the font; only when presenting makes or replaces
+  the frame does it use a new frame's parameters (review round 2). If the floor grows later during a presentation (a font
   change), the floor wins over MAX rather than clipping the prompt.
 - The seam is internal: `portal-launcher--request-height SESSION HEIGHT`, taking
   the session object, not a native ID. The minibuffer fitter uses it, so there
@@ -143,7 +146,7 @@ Host checks, all passed:
 
 - `./build.sh`
 - `ctest --test-dir build --output-on-failure`: 34 of 34, including `launcher`
-  (40 tests) and `module`
+  (41 tests) and `module`
 - `bun run --cwd host check` and `bun run --cwd host typecheck`
 - `python3 -B -m unittest discover -s test -p 'test_*.py'`: 8 tests
 - `git diff --check`, and byte compilation of `portal-launcher.el` and both
@@ -157,7 +160,7 @@ VM checks through `bash test/vm.sh sh -c '…'`, run twice:
   --module-assertions` with `portal.el`, the test injector and
   `test/portal-launcher-daily-use-tests.el`, selector `^portal-launcher-`:
   29 passed, 0 failed, 1 skipped in 105 s; rerun at the final commit after
-  review round 1, with the new regression: 31 tests, 30 passed, 0 failed, 1
+  review round 2, with the new regressions: 32 tests, 31 passed, 0 failed, 1
   skipped in 105 s. The skipped
   `portal-launcher-gui-minibuffer-panel-stays-on-its-display` needs a second
   display, which the VM lacks.
@@ -169,14 +172,18 @@ and 144 for five, two, no and five rows; the default gave the earlier 200,
 116, 100 and 200. A `(content 1)` invocation, measured on a hidden candidate
 frame during a live prompt, and again with a buffer panel shown, failed with
 "Launcher maximum height 1 is below the legal height of its panel, 60 points"
-and left the session, prompt, key status, frames and buffers unchanged. A
-normal frame with Menlo 13 reached its legal height, 77 points with a mode line
+and left the session, prompt, key status, frames and buffers unchanged. After
+the live panel's internal border changed from 16 to 80 points, its legal height
+with the launcher font was 188: a `(content 144)` invocation failed, in a
+session and outside one, leaving the same state, and `(content 188)` presented
+at 188 points. A normal frame with Menlo 13 reached its legal height, 77 points with a mode line
 and 62 without, with Emacs's frame matching and its minibuffer reading input.
 Five
 mutants of `portal-launcher.el` (no maximum, no legal floor, no session check,
-no duplicate suppression, no MIN/MAX order check) and four of the preflight
+no duplicate suppression, no MIN/MAX order check) and five of the preflight
 (removed, moved after the session's cancellation, candidate not deleted,
-launcher font ignored) each failed the batch suite.
+launcher font ignored, new-frame parameters for a reused frame) each failed the
+batch suite.
 
 GNU ELPA was unreachable from host and VM during this work. The host build
 reused the main checkout's extracted copies of the pinned packages. For the VM

@@ -898,6 +898,70 @@ EXACT, the text must also be that many default lines high."
                              (append (portal-launcher-gui--text "ok") '((36 0 "\r")))
                              nil '(:kind minibuffer))))))))
 
+(ert-deftest portal-launcher-gui-too-small-maximum-on-a-changed-panel ()
+  ;; The live minibuffer panel's internal border changes to 80 points, from
+  ;; the initial 16. Presenting reuses that panel, applying the launcher
+  ;; font, so its legal height is 188 points with Menlo 24, not the 60 of a
+  ;; new panel: a 144-point maximum fails, in a session and outside one,
+  ;; and 188 presents.
+  (portal-launcher-gui--with-panel
+    (let ((portal-launcher-size nil)
+          (portal-launcher-font "Menlo 24")
+          (step 0)
+          (expected "Launcher maximum height 144 is below the legal height of its panel, 188 points")
+          probes legal)
+      (cl-flet ((invalid ()
+                  (condition-case error
+                      (let ((portal-launcher-height-limits '(content 144)))
+                        (portal-launcher-present #'ignore :kind 'minibuffer)
+                        'presented)
+                    (user-error (cadr error)))))
+        (should
+         (equal "alpha"
+                (portal-launcher-gui--present
+                 (lambda () (read-from-minibuffer "Fruit: "))
+                 (append (portal-launcher-gui--text "al") '((30 262144 "\C-]") (30 262144 "\C-]"))
+                         (portal-launcher-gui--text "pha") '((36 0 "\r")))
+                 (lambda ()
+                   (if (= (cl-incf step) 1)
+                       (progn
+                         ;; Emacs keeps the panel's size; fitting follows.
+                         (let ((frame-inhibit-implied-resize t))
+                           (set-frame-parameter portal-launcher--frame 'internal-border-width 80))
+                         (portal-launcher-gui--settle)
+                         (setq legal (portal-launcher--legal-height portal-launcher--frame)))
+                     (let ((before (portal-launcher-gui--untouched))
+                           (outcome (invalid)))
+                       (portal-launcher-gui--settle)
+                       (push (list outcome before (portal-launcher-gui--untouched)) probes))))
+                 '(:kind minibuffer))))
+        (message "Launcher too-small maximum on a changed panel: legal %S, %S" legal (caar probes))
+        (should (= legal 188))
+        (pcase-let ((`((,outcome ,before ,after)) probes))
+          (should (equal outcome expected))
+          (should (equal before after))
+          (should (equal (plist-get after :prompt) "al"))
+          (should (plist-get after :key))
+          (should (plist-get after :visible)))
+        ;; The hidden panel, reused by the next presentation, without a session.
+        (should (portal-launcher--live-p 'minibuffer))
+        (let ((before (portal-launcher-gui--untouched)))
+          (should (equal (invalid) expected))
+          (should (equal before (portal-launcher-gui--untouched)))
+          (should-not (plist-get before :visible)))
+        ;; A maximum that panel allows presents on it, at its legal height.
+        (let ((portal-launcher-height-limits '(content 188)) layout)
+          (should (equal "ok" (portal-launcher-gui--present
+                               (lambda () (read-string "Name: "))
+                               (append (portal-launcher-gui--text "ok") '((30 262144 "\C-]") (36 0 "\r")))
+                               (lambda ()
+                                 (redisplay t)
+                                 (setq layout (list (nth 3 (plist-get (portal--launcher-inspect) :actual))
+                                                    (frame-pixel-height portal-launcher--frame)
+                                                    (frame-parameter portal-launcher--frame 'internal-border-width))))
+                               '(:kind minibuffer))))
+          (should (equal layout '(188 188 80))))))))
+
 (defun portal-launcher-gui--frame-layout ()
   "Describe the panel's frame, its root window and its minibuffer."
   (redisplay t)

@@ -491,9 +491,11 @@ Invalid limits signal an error before anything is shown, an active session is
 cancelled or a shown panel is replaced. That includes a MIN larger than MAX and
 a MAX below the legal height of the panel the presentation would show. The
 legal height depends on that panel's font and decorations: Portal measures the
-existing panel when the presentation would reuse it unchanged, or else a
-hidden candidate frame made as the presentation would make one, then deletes
-it. If the legal height grows later in a presentation, as with a larger font,
+existing panel when the presentation would reuse it unchanged. Otherwise it
+measures a hidden candidate frame, then deletes it: with the existing panel's
+own borders and other size parameters plus `portal-launcher-font` when the
+presentation would reuse that panel with that font, or with a new panel's
+parameters when it would make one. If the legal height grows later in a presentation, as with a larger font,
 it wins over MAX rather than cutting off the prompt. Each presentation reads
 the option once, including a `let` binding of it; fitting never changes it.
 

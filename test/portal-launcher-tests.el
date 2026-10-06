@@ -668,39 +668,67 @@ The selected frame stands in for the panel, and deleting it is a no-op."
         (should (equal '(100 nil) portal-launcher-height-limits))))))
 
 (ert-deftest portal-launcher-maximum-is-checked-on-the-frame-to-show ()
-  ;; Legal heights are stand-ins here; the GUI suite measures real frames.
-  (let ((portal-launcher--frame (selected-frame))
-        (portal-launcher-font nil)
-        (native-comp-enable-subr-trampolines nil)
-        made deleted fonts)
-    (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
+  ;; Frames and legal heights are stand-ins here: a candidate frame is its
+  ;; parameters, whose legal height is a 28-point line, as many as its
+  ;; min-height, plus both borders. The GUI suite measures real frames.
+  (let* ((portal-launcher--frame (selected-frame))
+         (portal-launcher-font nil)
+         (native-comp-enable-subr-trampolines nil)
+         ;; The live minibuffer panel's own parameters, changed since it was
+         ;; made with `portal-launcher-frame-parameters' (16-point borders).
+         (live '((internal-border-width . 80) (min-height . nil)))
+         (kind 'minibuffer)
+         made deleted fonts)
+    (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) kind))
               ((symbol-function 'portal-launcher--check-support) #'ignore)
-              ((symbol-function 'make-frame) (lambda (parameters) (push parameters made) 'candidate))
+              ((symbol-function 'frame-parameter)
+               (lambda (frame name)
+                 (should (eq frame portal-launcher--frame))
+                 (alist-get name live)))
+              ((symbol-function 'make-frame) (lambda (parameters) (push parameters made) parameters))
               ((symbol-function 'delete-frame) (lambda (frame &rest _) (push frame deleted)))
               ((symbol-function 'set-frame-font)
                (lambda (font _keep-size frames inhibit-customize)
-                 (push (list font frames inhibit-customize) fonts)))
+                 (push (list font (length frames) inhibit-customize) fonts)))
               ((symbol-function 'portal-launcher--legal-height)
-               (lambda (frame) (if (eq frame 'candidate) 60 80))))
+               (lambda (frame)
+                 (let ((parameters (if (consp frame) frame live)))
+                   (+ (* 28 (max 1 (or (alist-get 'min-height parameters) 1)))
+                      (* 2 (alist-get 'internal-border-width parameters)))))))
       ;; Without a maximum, nothing is measured.
-      (portal-launcher--check-maximum 'buffer '(content nil))
+      (portal-launcher--check-maximum 'minibuffer '(content nil))
       (portal-launcher--check-maximum 'minibuffer nil)
-      ;; A frame that presenting reuses unchanged is measured as it is.
-      (portal-launcher--check-maximum 'buffer '(content 80))
-      (should (equal '(user-error "Launcher maximum height 79 is below the legal height of its panel, 80 points")
-                     (should-error (portal-launcher--check-maximum 'buffer '(content 79)) :type 'user-error)))
+      ;; A frame that presenting reuses unchanged is measured as it is: its
+      ;; 80-point borders need 188 points.
+      (portal-launcher--check-maximum 'minibuffer '(content 188))
+      (should (equal '(user-error "Launcher maximum height 144 is below the legal height of its panel, 188 points")
+                     (should-error (portal-launcher--check-maximum 'minibuffer '(content 144)) :type 'user-error)))
       (should-not made)
-      ;; A frame of another kind, or with a font to apply, is measured on a
-      ;; hidden candidate made as presenting would make one, then deleted.
+      ;; With a font to apply, a hidden candidate stands in for the frame
+      ;; presenting reuses: its own borders and min-height, not the initial
+      ;; parameters, which would give 60 points; then it is deleted.
+      (let ((portal-launcher-font "Menlo 24"))
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 144)) :type 'user-error)
+        (portal-launcher--check-maximum 'minibuffer '(content 188))
+        (setf (alist-get 'min-height live) 3)
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 188)) :type 'user-error)
+        (portal-launcher--check-maximum 'minibuffer '(content 244)))
+      (should (= 4 (length made)))
+      (dolist (parameters made)
+        (should (eq 'only (alist-get 'minibuffer parameters)))
+        (should-not (alist-get 'visibility parameters))
+        (should (= 80 (alist-get 'internal-border-width parameters))))
+      (should (equal (mapcar (lambda (parameters) (alist-get 'min-height parameters)) made) '(3 3 nil nil)))
+      (should (equal deleted made))
+      ;; Its font is applied without customizing the default face.
+      (should (equal fonts (make-list 4 '("Menlo 24" 1 t))))
+      ;; A frame of another kind is replaced: the candidate has the
+      ;; parameters a presentation makes a frame with.
+      (setq made nil deleted nil kind 'buffer)
       (portal-launcher--check-maximum 'minibuffer '(content 60))
       (should-error (portal-launcher--check-maximum 'minibuffer '(content 59)) :type 'user-error)
-      (let ((portal-launcher-font "Menlo 24"))
-        (should-error (portal-launcher--check-maximum 'buffer '(content 59)) :type 'user-error))
-      (should (equal (mapcar (lambda (parameters) (cdr (assq 'minibuffer parameters))) made) '(t only only)))
-      (should (equal (car made) (portal-launcher--parameters 'buffer)))
-      (should (equal deleted '(candidate candidate candidate)))
-      ;; Its font is applied without customizing the default face.
-      (should (equal fonts '(("Menlo 24" (candidate) t))))
+      (should (equal made (make-list 2 (portal-launcher--parameters 'minibuffer))))
+      (should (equal deleted made))
       ;; Unsupported builds make no frame; a failed measurement still
       ;; deletes its candidate.
       (setq made nil deleted nil)
@@ -709,7 +737,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
       (should-not made)
       (cl-letf (((symbol-function 'portal-launcher--legal-height) (lambda (_frame) (error "Failed"))))
         (should-error (portal-launcher--check-maximum 'minibuffer '(content 300))))
-      (should (equal deleted '(candidate))))))
+      (should (equal deleted made)))))
 
 (ert-deftest portal-launcher-resize-fixes-both-kinds-outside-minibuffer-panels ()
   (portal-launcher-test--panel
@@ -1073,6 +1101,65 @@ Return its buffer, as setup functions may."
               (should (equal "Shown content" (with-current-buffer content (buffer-string))))
               (should (eq (selected-frame) portal-launcher--frame)))
           (kill-buffer content))))))
+
+(ert-deftest portal-launcher-too-small-maximum-checks-the-reused-frame ()
+  ;; The live minibuffer panel's border became 80 points after it was made
+  ;; with 16. Presenting reuses it, applying the launcher font, so the
+  ;; preflight's candidate has that border: a 144-point maximum, enough for
+  ;; the initial parameters' 60 points, is below its 188. Candidate frames
+  ;; are their parameters here, and legal heights stand-ins.
+  (portal-launcher-test--panel
+    (let ((portal-launcher-font "Menlo 24")
+          (original (symbol-function 'frame-parameter))
+          shown events probes)
+      (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'minibuffer))
+                ((symbol-function 'frame-parameter)
+                 (lambda (frame name)
+                   (if (and (eq frame portal-launcher--frame) (eq name 'internal-border-width))
+                       80
+                     (funcall original frame name))))
+                ((symbol-function 'set-frame-font) #'ignore)
+                ((symbol-function 'make-frame) (lambda (parameters) (push 'made events) parameters))
+                ((symbol-function 'delete-frame) (lambda (frame &rest _) (push (if (consp frame) 'deleted frame) events)))
+                ((symbol-function 'portal--launcher-show) (lambda (&rest args) (push (take 2 args) shown)))
+                ((symbol-function 'portal--launcher-hide) (lambda (&rest _) (push 'hide events)))
+                ((symbol-function 'make-frame-invisible) (lambda (&rest _) (push 'invisible events)))
+                ((symbol-function 'portal-launcher--fitted-height) (lambda (_frame) 137))
+                ((symbol-function 'portal-launcher--legal-height)
+                 (lambda (frame)
+                   (+ 28 (* 2 (if (consp frame) (alist-get 'internal-border-width frame) 80))))))
+        (portal-launcher-mode 1)
+        (setq portal-launcher--frame (selected-frame))
+        (cl-flet ((invalid ()
+                    (condition-case error
+                        (let ((portal-launcher-height-limits '(content 144)))
+                          (portal-launcher-present #'ignore :kind 'minibuffer)
+                          'presented)
+                      (user-error (cadr error)))))
+          ;; In a valid presentation's prompt, which then goes on.
+          (let ((portal-launcher-test--action
+                 (lambda ()
+                   (let ((session portal-launcher--session) (before (list shown events)))
+                     (push (list (invalid) (eq session portal-launcher--session) (minibuffer-contents)
+                                 (equal (list shown (cl-set-difference events '(made deleted)))
+                                        before))
+                           probes)))))
+            (should (equal "ab" (portal-launcher-test--type "a <f14> b RET"
+                                                            (lambda () (read-string "Name: "))
+                                                            :kind 'minibuffer))))
+          (should (equal probes '(("Launcher maximum height 144 is below the legal height of its panel, 188 points"
+                                   t "a" t))))
+          (should (equal shown '((720 188))))
+          ;; Without a session: nothing is shown, hidden or deleted.
+          (setq events nil)
+          (should (equal (invalid) "Launcher maximum height 144 is below the legal height of its panel, 188 points"))
+          (should (equal events '(deleted made)))
+          (should (equal shown '((720 188))))
+          ;; A maximum the reused frame allows presents on it.
+          (let ((portal-launcher-height-limits '(content 188)))
+            (portal-launcher-present #'ignore :kind 'minibuffer))
+          (should (equal shown '((720 188) (720 188))))
+          (should-not (memq portal-launcher--frame events)))))))
 
 ;; The launcher guide's user configuration composes launchers without launcher.el.
 (defmacro portal-launcher-test--readme (examples &rest body)

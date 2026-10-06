@@ -614,14 +614,31 @@ FRAME's `min-height' parameter asks, and the frame's internal borders."
        (max (frame-windows-min-size frame nil t t)
             (if (fixnump lines) (* (max lines 1) (frame-char-height frame)) 0)))))
 
+(defconst portal-launcher--floor-parameters
+  '(internal-border-width min-height horizontal-scroll-bars scroll-bar-height bottom-divider-width)
+  "Frame parameters, besides its font and fixed role, that its legal height uses.")
+
 (defun portal-launcher--candidate-legal-height (kind)
-  "Return the legal height of a new dedicated frame for KIND, with its font.
-The candidate frame, made as a presentation would make one, stays hidden,
-unattached and unselected, and is deleted again; other frames, including
-an existing panel, are left alone."
+  "Return the legal height of the frame presenting KIND would show.
+That is the live dedicated frame made for KIND, which presenting reuses,
+changing only its font, or else a new one. A hidden candidate frame
+stands in for it, with `portal-launcher-font': for a reused frame, with
+that frame's own `portal-launcher--floor-parameters', which can differ
+from `portal-launcher-frame-parameters', applied only when it was made;
+for a new frame, with the parameters a presentation makes one with. The
+candidate stays unattached and unselected, and is deleted again; other
+frames, including the live one, are left alone. A buffer panel's
+windows would matter too, but buffer panels do not fit content yet."
   (portal-launcher--check-support)
-  (let* ((window (selected-window))
-         (frame (make-frame (portal-launcher--parameters kind))))
+  (let* ((reused (and (portal-launcher--live-p kind) portal-launcher--frame))
+         (window (selected-window))
+         (frame (make-frame
+                 (if reused
+                     (append (mapcar (lambda (name) (cons name (frame-parameter reused name)))
+                                     portal-launcher--floor-parameters)
+                             '((visibility . nil))
+                             (portal-launcher--frame-role kind))
+                   (portal-launcher--parameters kind)))))
     (unwind-protect
         (progn
           (when portal-launcher-font
@@ -639,8 +656,10 @@ an existing panel, are left alone."
 That height depends on the panel frame's font and parameters. This
 measures the dedicated frame when presenting would reuse it unchanged:
 it is made for KIND and no `portal-launcher-font' is applied to it.
-Otherwise it measures a candidate frame. Either way, it runs before an
-active session is cancelled or a frame replaced, and changes neither."
+Otherwise it measures a candidate standing in for the frame presenting
+would show; see `portal-launcher--candidate-legal-height'. Either way,
+it runs before an active session is cancelled or a frame replaced, and
+changes neither."
   (when-let* ((max (cadr limits))
               (legal (if (and (portal-launcher--live-p kind) (not portal-launcher-font))
                          (portal-launcher--legal-height portal-launcher--frame)
