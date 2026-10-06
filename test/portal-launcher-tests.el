@@ -450,7 +450,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
       ;; started, a `let' binding included; a fixed one has none.
       (pcase-dolist (`(,size ,limits ,kept) '((nil (100 nil) (100 nil)) (nil (content 300) (content 300))
                                               ((640 auto) (80 nil) (80 nil)) ((720 240) (content 300) nil)))
-        (cl-letf (((symbol-function 'portal-launcher--candidate-legal-height) (lambda (_kind) 60))
+        (cl-letf (((symbol-function 'portal-launcher--candidate-legal-height) (lambda (&rest _) 60))
                   (portal-launcher-size size) (portal-launcher-height-limits limits))
           (should (equal kept (portal-launcher-present
                                (lambda ()
@@ -606,7 +606,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (height 0) asked limits)
       (cl-letf (((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
                 ((symbol-function 'portal-launcher--legal-height) (lambda (_frame) 60))
-                ((symbol-function 'portal-launcher--candidate-legal-height) (lambda (_kind) 60))
+                ((symbol-function 'portal-launcher--candidate-legal-height) (lambda (&rest _) 60))
                 ((symbol-function 'portal-launcher--fitted-height)
                  (lambda (_frame max) (push max limits) height))
                 ((symbol-function 'portal--launcher-fit)
@@ -652,7 +652,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
   (portal-launcher-test--session
     (let ((legal 60) asked)
       (cl-letf (((symbol-function 'portal-launcher--legal-height) (lambda (_frame) legal))
-                ((symbol-function 'portal-launcher--candidate-legal-height) (lambda (_kind) legal))
+                ((symbol-function 'portal-launcher--candidate-legal-height) (lambda (&rest _) legal))
                 ((symbol-function 'portal--launcher-fit)
                  (lambda (session height) (push (list session height) asked))))
         (cl-flet ((heights (limits requests)
@@ -853,6 +853,40 @@ The selected frame stands in for the panel, and deleting it is a no-op."
               (should (= (height) (- (frame-pixel-height frame) rows))))
           (kill-buffer buffer))))))
 
+(ert-deftest portal-launcher-buffer-panel-counts-lines-a-short-window-drops ()
+  ;; Emacs drops the mode, header and tab lines of a window too short for
+  ;; them and a text line, as `window-min-height' 1 allows. The fitted
+  ;; height counts a line for each the window asks for, so the panel grows
+  ;; to show them rather than staying that short.
+  (save-window-excursion
+    (delete-other-windows)
+    (let* ((window-min-height 1)
+           (buffer (generate-new-buffer " *launcher dropped*"))
+           (window (selected-window))
+           (other (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer window buffer)
+            (should (= 0 (portal-launcher--dropped-lines window)))
+            (window-resize window (- 1 (window-total-height window)) nil 'safe)
+            (should (= 1 (window-total-height window)))
+            (should (= 0 (window-mode-line-height window)))
+            (should (= 1 (portal-launcher--dropped-lines window)))
+            (with-current-buffer buffer
+              (setq-local header-line-format "Header" tab-line-format "Tabs"))
+            (should (= 3 (portal-launcher--dropped-lines window)))
+            ;; Hidden ones are not asked for.
+            (set-window-parameter window 'mode-line-format 'none)
+            (set-window-parameter window 'header-line-format 'none)
+            (should (= 1 (portal-launcher--dropped-lines window)))
+            ;; Tall enough, the window shows what it asks for.
+            (set-window-parameter window 'mode-line-format nil)
+            (set-window-parameter window 'header-line-format nil)
+            (delete-window other)
+            (should (> (window-mode-line-height window) 0))
+            (should (= 0 (portal-launcher--dropped-lines window))))
+        (kill-buffer buffer)))))
+
 (ert-deftest portal-launcher-buffer-panel-shows-a-fitting-buffer-from-its-start ()
   ;; Emacs scrolls a window too short for point, as a panel can briefly be
   ;; before it grows; once all of the buffer fits, it shows from its
@@ -948,23 +982,23 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                    (+ (* 28 (max 1 (or (alist-get 'min-height parameters) 1)))
                       (* 2 (alist-get 'internal-border-width parameters)))))))
       ;; Without a maximum, nothing is measured.
-      (portal-launcher--check-maximum 'minibuffer '(content nil))
-      (portal-launcher--check-maximum 'minibuffer nil)
+      (portal-launcher--check-maximum 'minibuffer '(content nil) t)
+      (portal-launcher--check-maximum 'minibuffer nil t)
       ;; A frame that presenting reuses unchanged is measured as it is: its
       ;; 80-point borders need 188 points.
-      (portal-launcher--check-maximum 'minibuffer '(content 188))
+      (portal-launcher--check-maximum 'minibuffer '(content 188) t)
       (should (equal '(user-error "Launcher maximum height 144 is below the legal height of its panel, 188 points")
-                     (should-error (portal-launcher--check-maximum 'minibuffer '(content 144)) :type 'user-error)))
+                     (should-error (portal-launcher--check-maximum 'minibuffer '(content 144) t) :type 'user-error)))
       (should-not made)
       ;; With a font to apply, a hidden candidate stands in for the frame
       ;; presenting reuses: its own borders and min-height, not the initial
       ;; parameters, which would give 60 points; then it is deleted.
       (let ((portal-launcher-font "Menlo 24"))
-        (should-error (portal-launcher--check-maximum 'minibuffer '(content 144)) :type 'user-error)
-        (portal-launcher--check-maximum 'minibuffer '(content 188))
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 144) t) :type 'user-error)
+        (portal-launcher--check-maximum 'minibuffer '(content 188) t)
         (setf (alist-get 'min-height live) 3)
-        (should-error (portal-launcher--check-maximum 'minibuffer '(content 188)) :type 'user-error)
-        (portal-launcher--check-maximum 'minibuffer '(content 244)))
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 188) t) :type 'user-error)
+        (portal-launcher--check-maximum 'minibuffer '(content 244) t))
       (should (= 4 (length made)))
       (dolist (parameters made)
         (should (eq 'only (alist-get 'minibuffer parameters)))
@@ -977,19 +1011,69 @@ The selected frame stands in for the panel, and deleting it is a no-op."
       ;; A frame of another kind is replaced: the candidate has the
       ;; parameters a presentation makes a frame with.
       (setq made nil deleted nil kind 'buffer)
-      (portal-launcher--check-maximum 'minibuffer '(content 60))
-      (should-error (portal-launcher--check-maximum 'minibuffer '(content 59)) :type 'user-error)
+      (portal-launcher--check-maximum 'minibuffer '(content 60) t)
+      (should-error (portal-launcher--check-maximum 'minibuffer '(content 59) t) :type 'user-error)
       (should (equal made (make-list 2 (portal-launcher--parameters 'minibuffer))))
       (should (equal deleted made))
       ;; Unsupported builds make no frame; a failed measurement still
       ;; deletes its candidate.
       (setq made nil deleted nil)
       (cl-letf (((symbol-function 'portal-launcher--check-support) (lambda () (user-error "Unsupported"))))
-        (should-error (portal-launcher--check-maximum 'minibuffer '(content 300)) :type 'user-error))
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 300) t) :type 'user-error))
       (should-not made)
       (cl-letf (((symbol-function 'portal-launcher--legal-height) (lambda (_frame) (error "Failed"))))
-        (should-error (portal-launcher--check-maximum 'minibuffer '(content 300))))
+        (should-error (portal-launcher--check-maximum 'minibuffer '(content 300) t)))
       (should (equal deleted made)))))
+
+(ert-deftest portal-launcher-buffer-maximum-is-checked-on-the-panel-to-show ()
+  ;; A buffer panel's maximum is checked on a candidate set up as the
+  ;; presentation first shows its panel: its buffer, with or without the
+  ;; mode line it asks for, even where the live panel, showing a buffer
+  ;; with a header line, could be reused. The batch frame stands in for
+  ;; the candidate here, and its legal height for Menlo 13's at
+  ;; `window-min-height' 1: 15-point lines for the text, the minibuffer
+  ;; and any mode and header lines, and both 16-point borders. The GUI
+  ;; suite measures real candidates.
+  (save-window-excursion
+    (delete-other-windows)
+    (let* ((window (selected-window))
+           (shown (generate-new-buffer " *launcher shown*"))
+           (portal-launcher--frame (selected-frame))
+           (portal-launcher-font nil)
+           (made 0) measured)
+      (with-current-buffer shown (setq-local header-line-format "Header"))
+      (cl-letf (((symbol-function 'portal-launcher--check-support) #'ignore)
+                ((symbol-function 'portal-launcher--kind) (lambda (_frame) 'buffer))
+                ((symbol-function 'make-frame) (lambda (_parameters) (cl-incf made) (selected-frame)))
+                ((symbol-function 'delete-frame)
+                 (lambda (&rest _)
+                   (set-window-parameter window 'mode-line-format nil)
+                   (set-window-buffer window shown)))
+                ((symbol-function 'portal-launcher--legal-height)
+                 (lambda (frame)
+                   (let* ((root (frame-root-window frame))
+                          (mode-line (window-parameter root 'mode-line-format)))
+                     (push (list (buffer-name (window-buffer root)) mode-line) measured)
+                     (+ 32 (* 15 (+ 2 (if (eq mode-line 'none) 0 1)
+                                    (if (buffer-local-value 'header-line-format (window-buffer root))
+                                        1 0))))))))
+        (unwind-protect
+            (progn
+              (set-window-buffer window shown)
+              ;; 62 points without the mode line, not the live panel's 92.
+              (portal-launcher--check-maximum 'buffer '(content 70) nil)
+              (should (equal (cadr (should-error (portal-launcher--check-maximum 'buffer '(content 61) nil)
+                                                 :type 'user-error))
+                             "Launcher maximum height 61 is below the legal height of its panel, 62 points"))
+              ;; 77 with it.
+              (should-error (portal-launcher--check-maximum 'buffer '(content 70) t) :type 'user-error)
+              (portal-launcher--check-maximum 'buffer '(content 77) t)
+              (should (= made 4))
+              (should (equal measured (append (make-list 2 (list portal-launcher--buffer nil))
+                                              (make-list 2 (list portal-launcher--buffer 'none)))))
+              (should (eq (window-buffer window) shown))
+              (should-not (window-parameter window 'mode-line-format)))
+          (kill-buffer shown))))))
 
 (ert-deftest portal-launcher-resize-fixes-both-kinds-outside-minibuffer-panels ()
   (portal-launcher-test--panel
@@ -1532,7 +1616,9 @@ was logged since loading."
                                                           (default-value 'pre-redisplay-function))
                                 t))
                      seen))))
-        (execute-kbd-macro (kbd "M-x my/hello-fitted RET n Ada RET <f14> <escape>")))
+        ;; Batch Emacs makes no candidate frame; the GUI suite does.
+        (cl-letf (((symbol-function 'portal-launcher--candidate-legal-height) (lambda (&rest _) 60)))
+          (execute-kbd-macro (kbd "M-x my/hello-fitted RET n Ada RET <f14> <escape>"))))
       (should (equal seen '(((content 480) t))))
       (should (equal (car shown) '(buffer nil)))
       (should (equal "Hello world!\nHello Ada!" (with-current-buffer "*Hello*" (buffer-string))))

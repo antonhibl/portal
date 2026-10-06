@@ -155,7 +155,7 @@ VM: macOS 27.0.1 guest, same Emacs build, one "Apple Virtual" display, usable
 area `(0, 74, 1326, 742)`, scale 2. No native code changed.
 
 Host checks, all passed: `./build.sh`; `ctest --test-dir build
---output-on-failure`, 34 of 34, including `launcher` (48 tests); `bun run --cwd
+--output-on-failure`, 34 of 34, including `launcher` (50 tests); `bun run --cwd
 host check` and `typecheck`; `python3 -B -m unittest discover -s test -p
 'test_*.py'`; `git diff --check`; byte compilation of `portal-launcher.el` and
 both launcher test files without warnings. Fourteen mutants of
@@ -175,9 +175,25 @@ spellings expand alike; by the user's choice the calls now name
 and ends presentations from buffers with their own value. That test and the
 existing ones failed for mutants installing or removing on the local value.
 
+Review round 2: Codex reported that the maximum-height preflight measured a
+buffer panel with its mode line although `:mode-line nil` hides it, so with
+`window-min-height` 1 and Menlo 13 a `(content 70)` presentation, legal at 62
+points, was rejected as below 77. The same held for the header line of
+whatever buffer the live panel showed. By the user's choice (option A of
+three), a buffer panel's maximum is always checked on a hidden candidate set
+up as the presentation first shows it: `*Portal Launcher*` in its window, its
+mode line hidden for `:mode-line nil`, and the launcher font. Verifying it
+showed a related hysteresis: Emacs drops the mode, header and tab lines of a
+window too short for them, so after a one-line panel without a mode line, a
+presentation asking for one stayed at one line. Each dropped line the window
+asks for now counts a frame line. A batch test checks the candidate's set-up
+(and fails for three mutants of it), another the dropped lines, and a GUI test
+checks 62, 77 and the rejection on real frames.
+
 VM checks through the new `bash test/vm.sh sh test/launcher-gui.sh`, the whole
 launcher graphical suite with its daily-use checks in one disposable `emacs -Q
---module-assertions`: 38 tests, 37 passed, 0 failed, 1 skipped in 131 s. The
+--module-assertions`: 38 tests, 37 passed, 0 failed, 1 skipped in 131 s;
+after review round 2, 39 tests, 38 passed, 0 failed, 1 skipped in 129 s. The
 skip, `portal-launcher-gui-minibuffer-panel-stays-on-its-display`, needs a
 second display. The existing minibuffer, fixed-size, mode-line, persistent and
 session tests passed unchanged, and their screenshots were captured as well.

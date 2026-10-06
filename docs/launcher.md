@@ -566,13 +566,16 @@ Four heights decide the panel's size, each overriding the ones before it:
 Invalid limits signal an error before anything is shown, an active session is
 cancelled or a shown panel is replaced. That includes a MIN larger than MAX and
 a MAX below the legal height of the panel the presentation would show. The
-legal height depends on that panel's font and decorations: Portal measures the
-existing panel when the presentation would reuse it unchanged. Otherwise it
-measures a hidden candidate frame, then deletes it: with the existing panel's
-own borders and other size parameters plus `portal-launcher-font` when the
-presentation would reuse that panel with that font, or with a new panel's
-parameters when it would make one. If the legal height grows later in a presentation, as with a larger font,
-it wins over MAX rather than cutting off the prompt. Each presentation reads
+legal height depends on that panel's font and decorations: Portal measures an
+existing minibuffer panel when the presentation would reuse it unchanged.
+Otherwise it measures a hidden candidate frame, then deletes it: with the
+existing panel's own borders and other size parameters plus
+`portal-launcher-font` when the presentation would reuse that panel with that
+font, or with a new panel's parameters when it would make one. A buffer panel's
+candidate shows the buffer the presentation shows first, with or without its
+mode line as `:mode-line` asks. If the legal height grows later in a
+presentation, as with a larger font or another buffer's header line, it wins
+over MAX rather than cutting off the prompt. Each presentation reads
 the option once, including a `let` binding of it; fitting never changes it.
 
 With `'(content 144)`, Menlo 24 and the default borders, five rows stop at 144

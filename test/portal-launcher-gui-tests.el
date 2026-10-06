@@ -1039,6 +1039,35 @@ EXACT, the text must also be that many default lines high."
           (when (= window-min-height 1) (should (< (plist-get low :height) 100)))
           (should (= (plist-get capped :height) 300)))))))
 
+(ert-deftest portal-launcher-gui-buffer-panel-maximum-checks-the-panel-to-show ()
+  ;; With Menlo 13 and `window-min-height' 1, a buffer panel's legal height
+  ;; is 77 points with its mode line and 62 without. A maximum is checked
+  ;; on a hidden candidate set up as the presentation shows its panel, not
+  ;; on the live panel, which shows a buffer with a header line and stays
+  ;; as it is when the check fails.
+  (portal-launcher-gui--with-panel
+    (with-current-buffer content
+      (setq-local header-line-format "A header line")
+      (insert "Shown content"))
+    (let ((portal-launcher-font "Menlo 13")
+          (window-min-height 1))
+      (portal-launcher-show content)
+      (portal-launcher-hide)
+      (let ((portal-launcher-size '(720 auto))
+            (frames (frame-list)))
+        (cl-flet ((present (limits mode-line)
+                    (condition-case error
+                        (let ((portal-launcher-height-limits limits))
+                          (portal-launcher-present
+                           (lambda () (nth 3 (plist-get (portal--launcher-inspect) :actual)))
+                           :mode-line mode-line))
+                      (user-error (cadr error)))))
+          (should (equal (present '(content 70) t)
+                         "Launcher maximum height 70 is below the legal height of its panel, 77 points"))
+          (should (eq (window-buffer (frame-first-window portal-launcher--frame)) content))
+          (should (equal (list (present '(content 70) nil) (present '(content 77) t)) '(62 77)))
+          (should (equal frames (frame-list))))))))
+
 ;; Automatic buffer panels: `portal-launcher-size' (WIDTH auto), :kind buffer.
 
 (defun portal-launcher-gui--record-buffer ()

@@ -399,18 +399,23 @@ The legal height depends on the frame's font and parameters, while a
 presentation may create or replace its frame, and a second invocation cancels
 the active session before presenting anything. A preflight in
 `portal-launcher-present` therefore measures, before any of that, the frame
-the presentation would show: the dedicated frame when presenting reuses it
-unchanged (made for the kind, with no `portal-launcher-font` to apply), or else
-a candidate standing in for it. Presenting reuses a live frame of its kind and
+the presentation would show: the dedicated minibuffer frame when presenting
+reuses it unchanged (made for the kind, with no `portal-launcher-font` to
+apply), or else a candidate standing in for it. A buffer panel always gets a
+candidate, since a presentation first changes its window: the candidate's
+window shows `*Portal Launcher*`, the buffer the presentation shows first,
+and hides its mode line for `:mode-line nil`. Measuring the live panel instead
+counted the mode line, and the header line of whatever buffer it last showed,
+so with `window-min-height` 1 and Menlo 13 a `(content 70)` presentation with
+`:mode-line nil`, legal at 62 points, was rejected as below 77. Presenting reuses a live frame of its kind and
 only applies the font, so that candidate takes the live frame's own internal
 border, `min-height`, horizontal scroll bar and bottom divider parameters,
 which may have changed since `portal-launcher-frame-parameters` made it; only
 a presentation that makes or replaces the frame is measured with a new frame's
 parameters. The candidate stays hidden, unattached and unselected, and is
-deleted again; its font is applied without customizing the default face. A
-buffer panel's window is measured as it is before the presentation shows its
-buffers. If the legal height grows later in a presentation, as with a larger
-font, a header line or a split, it wins over MAX rather than cutting off the
+deleted again; its font is applied without customizing the default face. If
+the legal height grows later in a presentation, as with a larger font, another
+buffer's header line or a split, it wins over MAX rather than cutting off the
 prompt. The monitor wins over all: the platform clamps the bottom edge to
 the usable area, even below MIN or the legal height.
 
@@ -493,7 +498,11 @@ per measurement. The measurement follows the display iterator: wrapped lines,
 faces of other heights, line spacing, images, and overlay strings. A final
 newline adds the empty line after it, where point can be; otherwise Emacs would
 scroll to show a cursor there. The window's mode, header and tab lines, the
-minibuffer and the frame's other rows are added, and the window counts at least
+minibuffer and the frame's other rows are added. Emacs drops a window's mode,
+header and tab lines when it is too short for them and a line of text, which
+`window-min-height` below 4 allows; each one the window asks for and drops
+counts a frame line, so the panel grows to show it instead of settling without
+it, depending on how tall it was before. The window counts at least
 `(window-min-size WINDOW nil nil t)`, the least height that the
 [legal height](#height-limits-and-legal-frame-heights) keeps for Lisp minibuffer
 resizing.

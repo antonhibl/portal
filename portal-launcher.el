@@ -134,6 +134,8 @@ also be changed directly on the live launcher frame."
   "Immutable parameters of the dedicated buffer launcher frame.
 A minibuffer launcher's frame is minibuffer-only instead.")
 (defvar portal-launcher--frame nil "The dedicated frame, or nil before creation.")
+(defconst portal-launcher--buffer "*Portal Launcher*"
+  "The buffer a presentation's function runs in, which a buffer panel shows first.")
 (defvar portal-launcher--return-window nil "Ordinary window selected before presentation.")
 (defvar comp-installed-trampolines-h)
 
@@ -452,7 +454,7 @@ from an existing minibuffer."
   (pcase-let* ((`(,kind ,mode-line ,keep-open) (portal-launcher--options options))
                (limits (and (eq 'auto (nth 1 (portal-launcher--placement kind)))
                             (portal-launcher--height-limits))))
-    (portal-launcher--check-maximum kind limits)
+    (portal-launcher--check-maximum kind limits mode-line)
     (when portal-launcher--session (portal-launcher-cancel))
     (when (active-minibuffer-window)
       (user-error "Finish the current minibuffer before presenting a launcher command"))
@@ -481,7 +483,7 @@ from an existing minibuffer."
           (setq outcome
                 (catch (portal-launcher--session-tag session)
                   (condition-case nil
-                      (let ((buffer (get-buffer-create "*Portal Launcher*")))
+                      (let ((buffer (get-buffer-create portal-launcher--buffer)))
                         (let ((portal-launcher--session nil))
                           (portal-launcher--show kind buffer mode-line))
                         (when (eq kind 'buffer)
@@ -633,9 +635,11 @@ logical points. A buffer panel's FRAME is measured as
 (defun portal-launcher--buffer-height (frame max)
   "Return the height that fits what buffer panel FRAME displays.
 Its one ordinary window counts its buffer from the beginning to the end,
-or to MAX, wherever it is scrolled, with its mode, header and tab lines.
-The minibuffer counts at its least height, a line, or while it reads a
-prompt, at the prompt's height; a prompt that the ordinary window also
+or to MAX, wherever it is scrolled, with its mode, header and tab lines,
+including those that the window is too short to show yet; see
+`portal-launcher--dropped-lines'. The minibuffer counts at its least
+height, a line, or while it reads a prompt, at the prompt's height; a
+prompt that the ordinary window also
 shows, as some completion UIs do, counts once. Emacs resets the
 minibuffer window to that line whenever the frame's size changes, then
 grows it for a prompt, so counting an echo area message's height instead
@@ -658,11 +662,29 @@ minibuffer height and signals `args-out-of-range'."
                          (not (eq (window-buffer mini) (window-buffer window)))
                          (cdr (window-text-pixel-size mini nil nil nil max)))))
         (+ (- (frame-pixel-height frame) (window-pixel-height window) (window-pixel-height mini))
+           (portal-launcher--dropped-lines window)
            (max (window-min-size window nil nil t)
                 (+ text (- (window-pixel-height window) (window-body-height window t))))
            ;; As resize_frame_windows sizes the minibuffer window.
            (max (+ (frame-char-height frame) (- (window-pixel-height mini) (window-body-height mini t)))
                 (or prompt 0)))))))
+
+(defun portal-launcher--dropped-lines (window)
+  "Return the height of the mode, header and tab lines WINDOW drops.
+Emacs leaves them out of a window too short for them and a line of
+text, as a `window-min-height' below 4 allows, so measuring the window
+would keep a panel at that height without them. This counts a frame line
+for each that WINDOW's formats ask for and it does not show; once the
+panel grows, it shows them, at their own heights."
+  (let ((buffer (window-buffer window)))
+    (* (frame-char-height (window-frame window))
+       (cl-count-if (pcase-lambda (`(,format . ,height))
+                      (let ((parameter (window-parameter window format)))
+                        (and (zerop height) (not (eq parameter 'none))
+                             (or parameter (buffer-local-value format buffer)))))
+                    `((mode-line-format . ,(window-mode-line-height window))
+                      (header-line-format . ,(window-header-line-height window))
+                      (tab-line-format . ,(window-tab-line-height window)))))))
 
 (defun portal-launcher--text-height (window max)
   "Return the height of WINDOW's buffer as displayed from its beginning.
@@ -709,18 +731,19 @@ borders. A minibuffer-only frame needs one line."
   '(internal-border-width min-height horizontal-scroll-bars scroll-bar-height bottom-divider-width)
   "Frame parameters, besides its font and fixed role, that its legal height uses.")
 
-(defun portal-launcher--candidate-legal-height (kind)
+(defun portal-launcher--candidate-legal-height (kind mode-line)
   "Return the legal height of the frame presenting KIND would show.
 That is the live dedicated frame made for KIND, which presenting reuses,
 changing only its font, or else a new one. A hidden candidate frame
 stands in for it, with `portal-launcher-font': for a reused frame, with
 that frame's own `portal-launcher--floor-parameters', which can differ
 from `portal-launcher-frame-parameters', applied only when it was made;
-for a new frame, with the parameters a presentation makes one with. The
-candidate stays unattached and unselected, and is deleted again; other
-frames, including the live one, are left alone. A buffer panel's
-window is measured as the candidate shows it, before the presentation
-shows its buffers."
+for a new frame, with the parameters a presentation makes one with. A
+buffer panel's candidate window shows `portal-launcher--buffer', as the
+presentation does first, without a mode line unless MODE-LINE, whose
+decorations count towards the legal height. The candidate stays
+unattached and unselected, and is deleted again; other frames,
+including the live one, are left alone."
   (portal-launcher--check-support)
   (let* ((reused (and (portal-launcher--live-p kind) portal-launcher--frame))
          (window (selected-window))
@@ -738,24 +761,31 @@ shows its buffers."
             ;; customization of the default face alone.
             (let ((frame-inhibit-implied-resize t))
               (set-frame-font portal-launcher-font nil (list frame) t)))
+          (when (eq kind 'buffer)
+            (let ((window (frame-root-window frame)))
+              (set-window-buffer window (get-buffer-create portal-launcher--buffer))
+              (unless mode-line (set-window-parameter window 'mode-line-format 'none))))
           (portal-launcher--legal-height frame))
       (delete-frame frame t)
       (when (and (window-live-p window) (not (eq window (selected-window))))
         (select-window window 'norecord)))))
 
-(defun portal-launcher--check-maximum (kind limits)
+(defun portal-launcher--check-maximum (kind limits mode-line)
   "Signal a `user-error' if the maximum in LIMITS is below KIND's legal height.
-That height depends on the panel frame's font and parameters. This
-measures the dedicated frame when presenting would reuse it unchanged:
-it is made for KIND and no `portal-launcher-font' is applied to it.
-Otherwise it measures a candidate standing in for the frame presenting
-would show; see `portal-launcher--candidate-legal-height'. Either way,
-it runs before an active session is cancelled or a frame replaced, and
-changes neither."
+That height depends on the panel frame's font and parameters, and for a
+buffer panel, on its window's buffer and whether MODE-LINE shows. This
+measures the dedicated minibuffer frame when presenting would reuse it
+unchanged: it is made for KIND and no `portal-launcher-font' is applied
+to it. Otherwise, as for every buffer panel, which the presentation
+first changes, it measures a candidate standing in for the frame
+presenting would show; see `portal-launcher--candidate-legal-height'.
+Either way, it runs before an active session is cancelled or a frame
+replaced, and changes neither."
   (when-let* ((max (cadr limits))
-              (legal (if (and (portal-launcher--live-p kind) (not portal-launcher-font))
+              (legal (if (and (eq kind 'minibuffer) (portal-launcher--live-p kind)
+                              (not portal-launcher-font))
                          (portal-launcher--legal-height portal-launcher--frame)
-                       (portal-launcher--candidate-legal-height kind)))
+                       (portal-launcher--candidate-legal-height kind mode-line)))
               ((< max legal)))
     (user-error "Launcher maximum height %d is below the legal height of its panel, %d points"
                 max legal)))
