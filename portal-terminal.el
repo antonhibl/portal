@@ -88,8 +88,8 @@ process.  A terminal whose program has exited is killed without asking."
 (define-derived-mode portal-terminal-mode special-mode "Ghostty"
   "A real native Ghostty surface occupies this buffer's displayed pane.
 RET focuses Ghostty.  The shell gets typing and Control and Meta chords; a
-Super chord reaches Emacs, which runs it in this buffer.  Command-Escape
-always returns focus to Emacs.  Scrollback belongs to Ghostty."
+Super chord reaches Emacs, which runs it in this buffer.
+`portal-input-escape-key' always returns focus to Emacs.  Scrollback belongs to Ghostty."
   (setq-local cursor-type nil)
   (add-hook 'kill-buffer-hook #'portal-terminal--dismiss-quick nil t)
   (add-hook 'kill-buffer-query-functions #'portal-terminal--kill-query nil t)
@@ -257,7 +257,8 @@ QUICK-ROOT, or to the project of `default-directory', where it starts."
                   portal-terminal--last-buffer previous)
             (let ((inhibit-read-only t))
               (insert "Native Ghostty terminal\n\n"
-                      "RET or a click focuses Ghostty. Command-Escape returns to Emacs.\n"
+                      "RET or a click focuses Ghostty. The configured escape returns to Emacs.\n"
+                      "See M-x customize-option RET portal-input-escape-key for that key.\n"
                       "Super chords, such as your s- bindings, reach Emacs from Ghostty.\n"
                       "This buffer has one live view, which follows its selected pane.\n")))
           (if quick-root

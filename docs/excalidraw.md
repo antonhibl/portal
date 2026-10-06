@@ -13,7 +13,8 @@ saves it. Existing `.excalidraw` files opened with `C-x C-f` or Dired enter
 - Command-S, `C-x C-s` and the drawing's **Save** button save through Emacs.
   Drawings leave `C-x` unused, so `C-x C-s` reaches Emacs even with drawing
   focus. `C-c C-r` in the buffer reopens the drawing.
-- Command-Escape returns keyboard focus to Emacs; `RET` re-enters the drawing.
+- Command-period (`⌘.`, configurable via `portal-input-escape-key`) returns
+  keyboard focus to Emacs and subtly grays out the drawing; `RET` re-enters it.
   Bare Escape remains available for drawing/text editing.
 - Each drawing buffer has one Excalidraw hosted web view: it opens immediately
   and loads when the app host is ready. Switching buffers hides it, preserving

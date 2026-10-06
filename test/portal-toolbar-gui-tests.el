@@ -99,7 +99,7 @@
       (should (portal-input--action "focused" target))
       ;; Closing find after the user returned to Emacs leaves Emacs the keyboard.
       (portal-find)
-      (should (portal-test-native-key 53 (ash 1 20) "\e"))
+      (should (portal-test-native-key 47 (ash 1 20) "."))
       (should-not (portal-input--action "focused" target))
       (portal-toolbar--action "close-find")
       (should-not (portal-toolbar-gui--state 'find))

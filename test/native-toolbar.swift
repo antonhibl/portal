@@ -95,7 +95,7 @@ struct CheckToolbar {
         // The dot moves the keyboard, and buttons never take it.
         dot().performClick(nil)
         check(container.state.owner == .view && Views.owner(target) == PORTAL_OWNER_VIEW)
-        check(dot().toolTip == "Click to return to Emacs · ⌘⎋")
+        check(dot().toolTip == "Click to return to Emacs")
         let responder = window.firstResponder
         button("Zoom in").performClick(nil)
         check(window.firstResponder === responder)

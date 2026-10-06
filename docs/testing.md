@@ -129,6 +129,17 @@ test-only event injector in the VM and add `build/elpa` to Emacs's load path.
 The injector needs no Accessibility permission. Reuse this setup for other GUI
 suites; keep dependency versions there.
 
+For the shared input, terminal, toolbar and coexistence checks in a fresh
+Emacs process:
+
+```sh
+bash test/vm.sh sh test/input-gui.sh
+```
+
+The standalone focus check below also verifies live escape rebinding and the
+inactive content cue, including rendering and click-through without a toolbar.
+Physical-key delivery on the affected macOS version still needs a manual check.
+
 ## Combined graphical suite
 
 Test coexistence in one fresh graphical Emacs inside the VM. Load `portal.el`,

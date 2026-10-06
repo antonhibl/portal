@@ -94,14 +94,28 @@ The page records every key press, and uses Control-K itself."
       (should (portal-input--action "focused"))
       (should (= (portal-excalidraw-gui--js "return keys.length") 1)))))
 
-(ert-deftest portal-input-gui-web-command-escape-returns-to-emacs ()
+(ert-deftest portal-input-gui-web-command-period-returns-to-emacs ()
   (portal-input-gui--page
-    (portal-test-native-key 53 portal-input-gui--command "\e")
+    (portal-test-native-key 47 portal-input-gui--command ".")
     (should-not (portal-input--action "focused"))
     (should-not (portal-input--action "pending"))
     (portal-integration-test--emacs-input)
     (portal-input-focus)
     (should (portal-input--action "focused"))))
+
+(ert-deftest portal-input-gui-web-configured-escape-preempts-the-page ()
+  (portal-input-gui--page
+    ;; This page explicitly claims C-k. Reserving it must bypass the page.
+    (let ((portal-input-escape-key "C-k"))
+      (portal-test-native-key 40 portal-input-gui--control "\C-k")
+      (should-not (portal-input--action "focused"))
+      (should (= (portal-excalidraw-gui--js "return keys.length") 0)))
+    (portal-input-focus)
+    (portal-test-native-key 40 portal-input-gui--control "\C-k")
+    (portal-input-gui--settled 1)
+    (should (portal-input--action "focused"))
+    (portal-test-native-key 47 portal-input-gui--command ".")
+    (should-not (portal-input--action "focused"))))
 
 (ert-deftest portal-input-gui-web-command-c-and-v-copy-and-paste ()
   (portal-input-gui--page

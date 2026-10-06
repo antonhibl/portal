@@ -112,7 +112,8 @@ scripts, styles and images. JavaScript is enabled by default.
 - CSS's `prefers-color-scheme` reflects system appearance, not a frame's forced
   `ns-appearance`. Setting `portal-web-appearance` to `light` or `dark`
   overrides every web view, open or new.
-- With page focus, unused chords reach Emacs and Command-Escape works. Clicking
+- With page focus, unused chords reach Emacs and the configured escape
+  (Command-period by default) returns control to Emacs. Clicking
   to enter sends `select TARGET`; Emacs selects the view's pane.
 - This URL viewer has no address bar, downloads, popups or JavaScript dialog UI.
   Inspect failed loads through `:error` in

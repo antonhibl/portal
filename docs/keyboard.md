@@ -15,7 +15,7 @@ reach Emacs:
 | Command-C, Command-V | Copy and paste, in every view |
 | Command-F, Command-R | Find and reload, in a web view with a toolbar |
 | Any other chord | Emacs, as if typed in the view's buffer; Emacs reads the rest of its key sequence |
-| Command-Escape | Return to Emacs and stay there |
+| Command-period (`⌘.`, configurable) | Return to Emacs and stay there |
 | `RET`, or a click, while Emacs owns a Portal buffer | Enter the app |
 
 `s-x` and other Emacs Command bindings work inside terminals; `C-x b` works
@@ -30,8 +30,26 @@ Commands finish minibuffer interaction before returning to the selected native
 view. Explicit unfocus, errors or selecting an ordinary buffer leave Emacs in
 control. `C-g` cancels Emacs key-sequence reading. The toolbar's ownership dot
 is hollow for Emacs, green for the view, and blue while Emacs reads a command.
-Click it to enter or return to Emacs. Ordinary buffers get no global physical
-keybinding.
+Click it to enter or return to Emacs. Content is subtly grayed out whenever
+Emacs owns the keyboard, including during command handoffs. This cue also works
+without a toolbar; it does not block clicks or pause the app. Native content
+returns to full contrast when it regains the keyboard. Ordinary buffers get no
+global physical keybinding.
+
+`portal-input-escape-key` reserves one chord across all native views, before
+an app can claim it. The default is `"s-."` (Command-period). Change it live with
+Customize or, for example:
+
+```elisp
+(setq portal-input-escape-key "C-s-g") ; Control-Command-G
+```
+
+Use a single printable ASCII key or `<escape>` with Control (`C`), Option (`M`)
+or Command (`s`). Multi-key sequences, function keys, and bare or Shift-only
+keys are not supported. Write shifted punctuation as `"s-!"`, not `"s-S-1"`.
+The previous chord stops being reserved when the setting changes. The escape
+works during pending handoffs too, without waiting for Lisp or the app. macOS
+and system-wide shortcut utilities can still intercept keys before Portal.
 
 The 28 pixel toolbar reserves space above content. Web pages have back,
 forward, find, zoom and reload; Markdown and HTML previews add a table of

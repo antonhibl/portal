@@ -30,7 +30,7 @@
 
    Keys: all views share one window, where one attached view at a time can
    have the keyboard, and Emacs has it otherwise.  Tests press keys, click
-   and press Command-Escape as a user would, and the fake routes each press
+   and press the configured escape as a user would, and the fake routes each press
    as the macOS platform does: holding what the core says to hold, and
    replaying it when a test runs the event loop.  It logs where each press
    went. */
@@ -846,6 +846,10 @@ void portal_fake_press(portal_chord chord, bool repeat)
 {
     struct press press = {chord, repeat};
     struct portal_view *view = capturing();
+    if ((view || focused()) && portal_input_is_escape(chord)) {
+        portal_fake_escape();
+        return;
+    }
     if (view && view->holding) {
         if (view->held_count == MAX_KEYS)
             abort();

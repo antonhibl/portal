@@ -112,7 +112,7 @@ The root is `portal-markdown-gui--directory'."
                  (format "const s = %s.querySelector(':scope > details > summary'); s.focus(); return document.activeElement === s;"
                          (portal-tasks-gui--node label)))))
   (should (portal-test-native-key 36 0 "\r"))
-  (portal-test-native-key 53 (ash 1 20) "\e")
+  (portal-test-native-key 47 (ash 1 20) ".")
   (portal-integration-test--emacs-input))
 
 (ert-deftest portal-tasks-gui-list-and-detail-keep-history-filter-and-position ()
@@ -320,7 +320,7 @@ The root is `portal-markdown-gui--directory'."
       (portal-terminal-test--wait
        (lambda () (equal (portal-excalidraw-gui--js "return document.activeElement.getAttribute('aria-label');")
                          label))))
-    (portal-test-native-key 53 (ash 1 20) "\e")
+    (portal-test-native-key 47 (ash 1 20) ".")
     (portal-integration-test--emacs-input)
     ;; Real keys operate the disclosures of groups and parent tasks.
     (portal-tasks-gui--toggle "big refactor")
@@ -500,7 +500,7 @@ make the selected pane's buffer current."
       (should (string-search "Reopened “Task 10”." (portal-tasks-gui--notice)))
       (should (equal (portal-excalidraw-gui--js "return history.length;") history))
       (should (portal-input--action "focused" target))
-      (portal-test-native-key 53 (ash 1 20) "\e")
+      (portal-test-native-key 47 (ash 1 20) ".")
       (portal-integration-test--emacs-input))))
 
 (ert-deftest portal-tasks-gui-edit-save-refresh-and-revalidate-history ()

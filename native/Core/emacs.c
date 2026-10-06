@@ -614,6 +614,15 @@ LISP_FUNCTION(Fterminal_bindings)
     return result;
 }
 
+LISP_FUNCTION(Finput_escape_key)
+{
+    portal_chord chord = {0};
+    portal_text error = {0};
+    if (!read_chord(env, args[0], args[1], &chord))
+        return NULL;
+    return done(env, portal_input_set_escape(chord, &error), &error);
+}
+
 LISP_FUNCTION(Finput)
 {
     portal_text target = {0}, action = {0}, error = {0};
@@ -747,6 +756,8 @@ static const struct export {
      "Return foreground process facts carrying environment VARIABLE; no agent classification."},
     {"portal--terminal-bindings", 1, 1, Fterminal_bindings, NULL,
      "Atomically replace runtime binding profiles from JSON."},
+    {"portal--input-escape-key", 2, 2, Finput_escape_key, NULL,
+     "Reserve CHARACTER with MODIFIERS for returning to Emacs in every view."},
     {"portal--input", 2, 3, Finput, NULL,
      "Perform ACTION on native TARGET, optionally validating its handoff SERIAL."},
     {"portal--launcher-attach", 1, 1, Flauncher_attach, NULL,

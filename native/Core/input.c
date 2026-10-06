@@ -3,9 +3,10 @@
    its trigger to the end of its command.  Emacs is the system and the view
    an app in it, as a page is in a browser.  A key goes, in order:
 
-   1. With Command-Escape, back to Emacs, which keeps the keyboard.  The
-      platform does this itself (portal_input_focus), so it works even while
-      Emacs or the core is busy.
+   1. With the configured escape (Super-period by default), back to Emacs,
+      which keeps the keyboard. The platform checks portal_input_is_escape
+      before holding events and returns focus itself (portal_input_focus),
+      without waiting for Lisp or the app.
    2. To Emacs, when it is the first chord of a native binding: a key the
       user claimed for Emacs in a terminal.
    3. To the view's app.  Only a chord can go further: a key that types a
@@ -54,6 +55,7 @@ static struct {
 
 /* C-g, which cancels the key sequence Emacs is reading. */
 static const portal_chord cancel = {'g', PORTAL_CONTROL};
+static portal_chord escape = {'.', PORTAL_SUPER};
 
 /* CHORD as the core compares chords: only the known modifiers, a letter in
    lower case, and no Shift on another printable ASCII character, which
@@ -81,6 +83,21 @@ static bool first_chord(portal_chord chord)
 {
     return chord.character >= ' ' && chord.character <= '~' && chord.modifiers
         && !(chord.modifiers & ~(uint32_t) MODIFIERS) && normalize(chord).modifiers;
+}
+
+bool portal_input_set_escape(portal_chord chord, portal_text *error)
+{
+    if ((!first_chord(chord) && chord.character != 27)
+        || !(chord.modifiers & (PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER))
+        || (chord.modifiers & ~(uint32_t) MODIFIERS))
+        return fail_with(error, "Escape must be modified ASCII or Escape with Control, Meta or Super");
+    escape = normalize(chord);
+    return true;
+}
+
+bool portal_input_is_escape(portal_chord chord)
+{
+    return same(normalize(chord), escape);
 }
 
 /* Whether KEY, normalized, is a chord, which can leave the view's app: a key

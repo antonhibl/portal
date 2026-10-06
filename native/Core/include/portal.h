@@ -468,6 +468,13 @@ typedef struct portal_chord {
     uint32_t modifiers;
 } portal_chord;
 
+/* Whether CHORD is the configured return-to-Emacs key (Super-period by
+   default). Check key-downs before holding or offering events, including
+   during a handoff. On a match return focus and report portal_input_focus
+   even if already unfocused, so the handoff ends without waiting for Lisp
+   or the app. Releases and modifier changes never trigger escape. */
+bool portal_input_is_escape(portal_chord chord);
+
 /* What the platform does with a key press.  PASS: deliver it as it would
    without Portal.  TAKE: drop it.  HOLD: keep it as the view's trigger, and
    hold every key event after it in the view's window, in order, presses,
@@ -506,8 +513,8 @@ portal_key portal_input_unused(portal_string target, portal_chord chord, bool re
    made it; one the platform makes for the core, before that call returns.
    Report the user moving the keyboard too, before anything changes: a click
    that will give the view the keyboard, and the platform's own way back to
-   Emacs, Command-Escape on macOS, which returns the keyboard without asking
-   the core, even when the view does not have it.  A report that neither
+   Emacs, the configured escape chord, which returns the keyboard without
+   waiting for a handoff, even when the view does not have it.  A report that neither
    Emacs nor the core caused abandons the view's handoff. */
 void portal_input_focus(portal_string target, bool focused);
 
