@@ -65,12 +65,24 @@ struct ToolbarState: Sendable {
     }
 }
 
+/// Reduce contrast without making live content transparent to the Emacs
+/// buffer underneath. Never take mouse events or accessibility focus.
+@MainActor
+private final class InactiveOverlay: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.5, alpha: 0.18).setFill()
+        bounds.fill()
+    }
+}
+
 /// A view and, while the core shows one, its toolbar strip above it. The
 /// feature keeps its identity and lifetime; only its available height changes.
 @MainActor
 final class NativeContainer: NSView {
     let content: NSView
     let target: String
+    private let inactive = InactiveOverlay()
     private(set) var toolbar: ToolbarView?
     private(set) var state: ToolbarState
     override var isFlipped: Bool { true }
@@ -81,12 +93,15 @@ final class NativeContainer: NSView {
         self.state = state
         super.init(frame: .zero)
         addSubview(content)
+        inactive.setAccessibilityElement(false)
+        addSubview(inactive)
         apply(state)
     }
     required init?(coder: NSCoder) { nil }
 
     func apply(_ state: ToolbarState) {
         self.state = state
+        inactive.isHidden = state.owner == .view
         if state.visible, toolbar == nil {
             let strip = ToolbarView(target: target)
             toolbar = strip
@@ -105,6 +120,7 @@ final class NativeContainer: NSView {
         let height = toolbar == nil ? 0.0 : min(28, bounds.height)
         toolbar?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
         content.frame = NSRect(x: 0, y: height, width: bounds.width, height: max(0, bounds.height - height))
+        inactive.frame = content.frame
     }
 }
 
@@ -238,7 +254,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         owner?.dot = state.owner
         switch state.owner {
         case .emacs: label(PORTAL_BUTTON_OWNER, "Click to enter")
-        case .view: label(PORTAL_BUTTON_OWNER, "Click to return to Emacs · ⌘⎋")
+        case .view: label(PORTAL_BUTTON_OWNER, "Click to return to Emacs")
         case .pending: label(PORTAL_BUTTON_OWNER, "Emacs is reading a command")
         }
         for (id, button) in buttons { button.isEnabled = state.allows(portal_button(rawValue: id)) }

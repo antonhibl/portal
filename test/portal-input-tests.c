@@ -309,7 +309,7 @@ static void test_shortcuts_before_emacs(void)
 static void test_the_keyboard_moving_during_an_offer(void)
 {
     char *web = open_view("web", false);
-    /* Command-Escape before the page answers: the keys typed after the
+    /* Escape before the page answers: the keys typed after the
        chord follow the keyboard to Emacs, and the chord goes nowhere. */
     press('x', C);
     press('y', 0);
@@ -318,7 +318,7 @@ static void test_the_keyboard_moving_during_an_offer(void)
     portal_fake_run();
     CHECK(went("offered C-x, held y, unused taken C-x, emacs y"));
     CHECK(sent(""));
-    /* Command-Escape with the page using the chord. */
+    /* Escape with the page using the chord. */
     CHECK(act(web, "focus", 0));
     press('x', C);
     press('y', 0);
@@ -403,7 +403,7 @@ static void test_cancelling_a_handoff(void)
     CHECK(sent("cancel %s %" PRId64 " 0\n", terminal, serial));
     CHECK(act(terminal, "finish", serial));
 
-    /* Command-Escape, before Emacs acknowledges: what the view held is
+    /* Escape, before Emacs acknowledges: what the view held is
        dropped, and a late acknowledgement does nothing. */
     CHECK(act(terminal, "focus", 0));
     press('x', S);
@@ -417,7 +417,7 @@ static void test_cancelling_a_handoff(void)
     press('y', 0);
     CHECK(went("held s-x, held x, emacs y"));
 
-    /* Command-Escape while the view has the keyboard only returns it. */
+    /* Escape while the view has the keyboard only returns it. */
     CHECK(act(terminal, "focus", 0));
     portal_fake_escape();
     CHECK(!act(terminal, "focused", 0));
@@ -695,6 +695,53 @@ static void test_keys_after_a_whole_command_stay_with_emacs(void)
     close_view(terminal);
 }
 
+static void test_configurable_escape(void)
+{
+    portal_text error = {0};
+    CHECK(portal_input_is_escape((portal_chord) {'.', S}));
+    CHECK(!portal_input_is_escape((portal_chord) {27, S}));
+    char *terminal = open_view("terminal", false);
+    press('.', S);
+    CHECK(!act(terminal, "focused", 0));
+    CHECK(sent(""));
+    CHECK(went(""));
+
+    CHECK(portal_input_set_escape((portal_chord) {'G', C | S}, &error));
+    CHECK(!portal_input_is_escape((portal_chord) {'.', S}));
+    CHECK(portal_input_is_escape((portal_chord) {'g', C | S}));
+    CHECK(!portal_input_is_escape((portal_chord) {'g', C | S | SHIFT}));
+    const portal_chord bad[] = {{'g', 0}, {'g', SHIFT}, {0, S}, {'g', 128}, {27, 0}};
+    for (size_t i = 0; i < sizeof bad / sizeof *bad; i++) {
+        CHECK(!portal_input_set_escape(bad[i], &error));
+        free(error.data);
+        error = (portal_text) {0};
+        CHECK(portal_input_is_escape((portal_chord) {'g', C | S}));
+    }
+    CHECK(act(terminal, "focus", 0));
+    press('.', S); /* The old escape is now an ordinary Emacs chord. */
+    int64_t serial = key_record(terminal, '.', S);
+    press('x', 0);
+    press('g', C | S); /* Escape before Lisp acknowledges: drop held keys. */
+    CHECK(sent("escape %s %" PRId64 " 0\n", terminal, serial));
+    CHECK(!act(terminal, "pending", 0));
+    CHECK(!act(terminal, "focused", 0));
+    CHECK(went("held s-., held x"));
+    close_view(terminal);
+
+    CHECK(portal_input_set_escape((portal_chord) {27, C}, &error));
+    CHECK(portal_input_is_escape((portal_chord) {27, C}));
+    CHECK(portal_input_set_escape((portal_chord) {'!', S}, &error));
+    CHECK(portal_input_is_escape((portal_chord) {'!', S | SHIFT}));
+    CHECK(portal_input_set_escape((portal_chord) {'.', S}, &error));
+    char *web = open_view("web", false);
+    press('k', C); /* Escape must not wait for the app's answer either. */
+    press('.', S);
+    CHECK(!act(web, "focused", 0));
+    CHECK(went("offered C-k"));
+    CHECK(sent(""));
+    close_view(web);
+}
+
 int main(void)
 {
     int fds[2];
@@ -715,6 +762,7 @@ int main(void)
     test_configuration_changes_atomically();
     test_a_held_chord_takes_one_handoff();
     test_keys_after_a_whole_command_stay_with_emacs();
+    test_configurable_escape();
     CHECK(!portal_fake_calls().misused);
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);

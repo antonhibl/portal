@@ -7,7 +7,8 @@
 ;; sequence with the view's buffer's keymaps and runs the command, then gives
 ;; the view the keyboard back, unless Emacs still waits for keys: a prefix
 ;; argument, a transient keymap, or keys typed meanwhile.
-;; Command-Escape returns to Emacs, and RET in the buffer re-enters the view.
+;; The configured escape (Command-period by default) returns to Emacs;
+;; RET in the buffer re-enters the view.
 ;; The native core decides who gets each key (native/Core/input.c).
 
 (require 'cl-lib)
@@ -16,6 +17,7 @@
 
 (defgroup portal-input nil "Input for Portal native views." :group 'applications)
 (declare-function portal--input "portal" (target action &optional serial))
+(declare-function portal--input-escape-key "portal" (character modifiers))
 (declare-function evil-make-overriding-map "evil-core" (keymap &optional state copy))
 (defvar portal-terminal--native-maps)
 (defvaralias 'portal-terminal--resume 'portal-input--resume)
@@ -26,7 +28,7 @@
 (defvar portal-input-mode-map
   (let ((map (make-sparse-keymap)))
     (keymap-set map "RET" #'portal-input-focus)
-    (keymap-set map "s-<escape>" #'portal-input-unfocus)
+    (keymap-set map "s-." #'portal-input-unfocus)
     map)
   "Keys of a Portal view's buffer while Emacs has the keyboard.")
 ;; Keep the wrapper controls available in Evil states as well.
@@ -52,6 +54,58 @@ reads it: a character and a sum of `portal-input--modifiers' values."
           (cl-loop for (mod . value) in portal-input--modifiers
                    when (memq mod mods) sum value))))
 
+(defun portal-input--escape-chord (value)
+  "Validate escape key VALUE and return its native character and modifiers."
+  (let* ((keys (kbd value))
+         (event (and (= (length keys) 1) (aref keys 0)))
+         (mods (and event (event-modifiers event))))
+    (unless (cl-intersection mods '(control meta super))
+      (error "Portal's escape key needs Control, Meta or Super"))
+    (if (eq (event-basic-type event) 'escape)
+        (progn
+          (unless (cl-every (lambda (mod) (memq mod '(control meta super shift))) mods)
+            (error "Unsupported escape key modifiers"))
+          (list "\e" (cl-loop for (mod . bit) in portal-input--modifiers
+                              when (memq mod mods) sum bit)))
+      (portal-input--chord value))))
+
+(defvar portal-input--escape-installed "s-."
+  "Escape key currently installed in the wrapper keymap.")
+
+(defun portal-input--configure-escape (value)
+  "Apply escape key VALUE to the module and the wrapper keymap."
+  (let ((chord (portal-input--escape-chord value)))
+    (when (fboundp 'portal--input-escape-key)
+      (apply #'portal--input-escape-key chord))
+    (keymap-unset portal-input-mode-map portal-input--escape-installed)
+    (keymap-set portal-input-mode-map value #'portal-input-unfocus)
+    (setq portal-input--escape-installed value)))
+
+(defcustom portal-input-escape-key "s-."
+  "Key that returns from any native view to Emacs and stays there.
+This key is reserved before the embedded app or terminal sees it, even
+while a command handoff is pending.  RET enters the view again.
+Use one modified printable ASCII key or <escape>, with Control, Meta
+or Super: for example \"s-.\", \"C-s-g\" or \"C-<escape>\".
+Use resulting punctuation, such as \"s-!\", not \"s-S-1\".
+System-wide macOS shortcuts still take precedence.  Changes apply live."
+  :type 'string :group 'portal-input
+  :set (lambda (symbol value)
+         (portal-input--configure-escape value)
+         (set-default symbol value)))
+
+(defun portal-input--escape-changed (_symbol value operation _where)
+  "Apply escape key VALUE on variable OPERATION."
+  (when (memq operation '(set let unlet))
+    (portal-input--configure-escape value)))
+(add-variable-watcher 'portal-input-escape-key #'portal-input--escape-changed)
+
+(defun portal-input--initialize ()
+  "Send input settings after loading the native module."
+  (portal-input--configure-escape portal-input-escape-key))
+(add-hook 'portal-view-load-hook #'portal-input--initialize)
+(portal-input--initialize)
+
 (defun portal-input--event (character modifiers)
   "Return the Emacs event for CHARACTER typed with MODIFIERS, a sum of
 `portal-input--modifiers' values.  Shift made CHARACTER, so it is a
@@ -64,7 +118,7 @@ modifier only on space, as in S-SPC."
           (list character))))
 
 (define-minor-mode portal-input-mode
-  "Enter a Portal view with RET; Command-Escape returns to Emacs."
+  "Enter a Portal view with RET; `portal-input-escape-key' returns to Emacs."
   :lighter nil :keymap portal-input-mode-map)
 
 (defun portal-input--target (&optional window)

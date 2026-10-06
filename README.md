@@ -44,7 +44,9 @@ emacs -Q -l "$PWD/portal.el" --eval '(portal-hello)'
 The build produces `build/portal.bundle` and the standalone `build/portal-host`.
 The new Emacs should show **Hello World in a native web view**; its app host
 starts automatically. Click the page or press `RET` to enter it, and press
-Command-Escape to return to Emacs. `q` hides the view; killing its buffer closes it.
+Command-period (`⌘.`) to return to Emacs. Inactive content is subtly grayed out;
+`RET` re-enters it. Customize `portal-input-escape-key` to change the escape chord.
+`q` hides the view; killing its buffer closes it.
 
 Try `M-x portal-terminal` for a shell, `M-x portal-preview-markdown` for a saved
 Markdown file, `M-x portal-tasks-browser` for the project's Markdown tasks, or

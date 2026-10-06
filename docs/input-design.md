@@ -2,7 +2,8 @@
 
 > **Superseded on 30 September 2026.** Portal no longer has a prefix or
 > passthrough. Views behave as their apps do outside Emacs; unused chords fall
-> through to Emacs. Command-Escape is the only reserved key. See
+> through to Emacs. The configurable escape (Command-period by default) is
+> the only reserved key. See
 > [the input bridge](terminal-input-bridge.md) and
 > [its task](../tasks/input-chord-fall-through.md). Retained for its research.
 

@@ -26,8 +26,6 @@ extension portal_chord {
 /// core says so, and tells the core when the view gains or loses the keyboard.
 @MainActor
 final class NativeInput: NativeInputHandler {
-    nonisolated static let modifiers: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
-
     let target: String
     weak var view: NSView?
     var host: NativeHost
@@ -54,7 +52,7 @@ final class NativeInput: NativeInputHandler {
         focusView = focus
     }
 
-    /// Return to Emacs, as Command-Escape does, ending any handoff Emacs is
+    /// Return to Emacs, as the configured escape does, ending any handoff Emacs is
     /// handling: Emacs would otherwise read the next event as its next key.
     func escape() {
         if let view { host.returnFocus(from: view) }
@@ -82,8 +80,7 @@ final class NativeInput: NativeInputHandler {
     /// as its find field, not for its app.
     func handleKeyEvent(_ event: NSEvent, content: Bool) -> Bool {
         // Recovery must work even before Lisp acknowledges, without a JS flush.
-        if event.type == .keyDown, event.keyCode == 53,
-           event.modifierFlags.intersection(Self.modifiers) == .command {
+        if event.type == .keyDown, portal_input_is_escape(portal_chord(event)) {
             escape()
             return true
         }

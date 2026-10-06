@@ -9,9 +9,10 @@ sequences. Runtime Elisp bindings need no rebuild or restart.
 
 The core (`native/Core/input.c`) routes keys pressed in a view to the first taker:
 
-1. **Command-Escape** returns and leaves the keyboard with Emacs. `RET` in the
-   view's buffer or a view click returns it to the view. This sole reserved key is the last
-   resort when an app uses needed keys.
+1. **The configured escape**, Command-period (`⌘.`) by default, returns and
+   leaves the keyboard with Emacs. `RET` in the view's buffer or a view click
+   returns it to the view. Set `portal-input-escape-key` to change this reserved
+   chord live; it is the last resort when an app uses needed keys.
 2. **A native binding** (below): a chord claimed for Emacs in terminals.
 3. **The view's app.** Only chords can continue: character-typing keys with
    Control, Meta (Option) or Super (Command). Plain and Shift keys, and
@@ -28,7 +29,7 @@ The core (`native/Core/input.c`) routes keys pressed in a view to the first take
 
 Plain keys never reach Emacs: single-key bindings such as Evil's `i` would make
 view buffers act strangely. Views resemble Evil's insert state: plain keys type,
-chords reach Emacs, Command-Escape acts as Escape. Give a Space leader a chord
+chords reach Emacs, the configured escape leaves native input. Give a Space leader a chord
 binding too, like Doom's `M-SPC`:
 
 ```elisp
@@ -105,12 +106,14 @@ View handoffs are idle, awaiting acknowledgement, reading a command, or executin
 it, separate from platform-reported keyboard ownership. Lisp actions name the
 handoff serial and act only while it remains active; late acknowledgements or
 completions never affect other handoffs or views. Hiding, closing or Emacs's
-`unfocus` silently ends a handoff. User termination through Command-Escape or a
+`unfocus` silently ends a handoff. User termination through the escape chord or a
 view click first sends `escape`. So do hosted local-link handoffs and toolbar
 Open in Emacs: the web core (`native/Core/web.c`) calls `portal_input_escape`
 before sending `bridge`. Emacs-initiated focus changes, such as opening find,
-never end handoffs. Platform-handled Command-Escape acts immediately, without
-Lisp or JavaScript round trips.
+never end handoffs. The platform checks `portal_input_is_escape` before holding
+or offering a key, then returns focus immediately without Lisp or JavaScript
+round trips. `portal--input-escape-key` validates and replaces the core's reserved
+chord; the same setting updates the Portal buffer's Emacs keymap.
 
 While Emacs reads a sequence, `C-g` cancels it and trigger repeats are dropped.
 Pressing the trigger again joins the sequence, as in `C-x C-x`. WebKit retries
@@ -140,7 +143,7 @@ do not inherit it. Input records include the handoff serial:
 | `binding TARGET SERIAL EVENT` | The view captures the first chord of a native terminal binding |
 | `literal TARGET SERIAL 0` | A binding's first chord is repeated while Emacs reads the rest of the sequence |
 | `cancel TARGET SERIAL 0` | `C-g` is pressed in the view while Emacs reads the rest of the sequence |
-| `escape TARGET SERIAL 0` | Command-Escape cancels a handoff, as does a click that hands off to Emacs or selects the view's pane |
+| `escape TARGET SERIAL 0` | The configured escape cancels a handoff, as does a click that hands off to Emacs or selects the view's pane |
 
 Entering a view by click sends `select TARGET`; Emacs selects its pane. Terminal
 title, working-directory or process-state changes send one `terminal TARGET`
@@ -160,8 +163,10 @@ input types and queues records as events such as
 
 Native bindings start with modified printable ASCII: `C` = Control, `M` = Option,
 `s` = Command. Use resulting punctuation (`s-!`, not `s-S-1`); remaining keys use
-normal Emacs syntax. Command-Escape is fixed. System-wide shortcuts, such as
-Spotlight's Command-Space, intercept events before Portal.
+normal Emacs syntax. The reserved escape accepts one printable ASCII key or
+`<escape>` with Control, Meta or Super; see [keyboard controls](keyboard.md).
+System-wide shortcuts, such as Spotlight's Command-Space, intercept events
+before Portal.
 
 Verified with:
 

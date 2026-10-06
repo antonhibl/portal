@@ -70,7 +70,7 @@ queues commands through `unread-command-events'.")
 
 (define-derived-mode portal-web-mode special-mode "Portal Web"
   "Major mode for a buffer presenting a web view.
-RET or a click enters the page, and Command-Escape returns to Emacs.
+RET or a click enters the page; `portal-input-escape-key' returns to Emacs.
 A chord the page does not use reaches Emacs, which runs it in this buffer.
 g or Command-R loads the page again, l and r go back and forward, and
 Command-F finds text in the page, whether Emacs or the page owns the
@@ -182,20 +182,22 @@ view cannot open, the new buffer is killed."
             (portal-web-mode)
             (let ((inhibit-read-only t))
               (insert "Web view\n\n"
-                      "RET or a click enters the page. Command-Escape returns to Emacs.\n"
+                      "RET or a click enters the page. The configured escape returns to Emacs.\n"
+                      "See M-x customize-option RET portal-input-escape-key for that key.\n"
                       "g loads the page again. q hides it; killing the buffer closes it.\n"
                       "This buffer has one live view, which follows its selected pane.\n"))
             (redisplay t)
             (funcall open)
-            (message "Web view opened. RET enters; Command-Escape returns to Emacs; q hides the view."))
+            (message "Web view opened. RET enters; %s returns to Emacs; q hides the view."
+                     portal-input-escape-key))
         (unless (and (buffer-live-p buffer) (buffer-local-value 'portal-web--target buffer))
           (kill-buffer buffer))))))
 
 ;;;###autoload
 (defun portal-open-url (url)
   "Open URL in a web view, in a new buffer named after its page.
-Click the page or press RET to interact; the Portal prefix or
-Command-Escape returns control to Emacs.  HTTP(S), file, data and about
+Click the page or press RET to interact; `portal-input-escape-key'
+returns control to Emacs.  HTTP(S), file, data and about
 URLs are supported."
   (interactive (list (read-string "Open URL: " "https://")))
   (portal-web--check-url url)

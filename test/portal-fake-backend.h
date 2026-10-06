@@ -71,7 +71,7 @@ void portal_fake_press(portal_chord chord, bool repeat);
 void portal_fake_answer(bool used);
 /* Run the event loop: deliver the presses the core replayed, in order. */
 void portal_fake_run(void);
-/* The user presses Command-Escape. */
+/* The user invokes the reserved return-to-Emacs escape. */
 void portal_fake_escape(void);
 /* The user clicks in TARGET's view, which sends a select record and gives it
    the keyboard.  False if TARGET names no attached view. */

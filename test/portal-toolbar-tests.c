@@ -245,6 +245,11 @@ static void test_each_layout_has_its_buttons(void)
         CHECK(!drawn(bare[i]).visible);
         CHECK(shows(bare[i], "\"strip\":false", NULL));
         CHECK(refuses(bare[i], "state", "No toolbar controls for this native view"));
+        /* Even toolbar-free views draw ownership for their inactive cue. */
+        portal_input_focus(text(bare[i]), true);
+        CHECK(!drawn(bare[i]).visible && drawn(bare[i]).owner == PORTAL_OWNER_VIEW);
+        portal_input_focus(text(bare[i]), false);
+        CHECK(!drawn(bare[i]).visible && drawn(bare[i]).owner == PORTAL_OWNER_EMACS);
     }
     CHECK(shows(navigation, "\"strip\":true", NULL));
     CHECK(refuses("web:0", "state", "No Portal view web:0"));

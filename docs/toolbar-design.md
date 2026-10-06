@@ -95,11 +95,13 @@ include it; changes redraw the strip immediately without polling.
 | State | Appearance | Tooltip | Click |
 | --- | --- | --- | --- |
 | Emacs has the keyboard | Hollow ring, `shadow` color | Click to enter | Focus the view, same as clicking the view or `RET` |
-| The view has the keyboard | Filled `success` green, soft halo | Click to return to Emacs · ⌘⎋ | Return to Emacs, same as Command-Escape |
+| The view has the keyboard | Filled `success` green, soft halo | Click to return to Emacs | Return to Emacs, same as the configured escape |
 | Handoff pending | Filled accent (`link`) | Emacs is reading a command | None; the minibuffer owns the prompt |
 
 Dot clicks reuse existing paths: entering acts like a view click; returning acts
-like Command-Escape, sending `escape` to make Elisp run `portal-input-unfocus`.
+like the configured escape (Command-period by default), sending `escape` to
+make Elisp run `portal-input-unfocus`. Content is subtly grayed out while Emacs
+owns the keyboard, including command handoffs and views without a toolbar.
 No new message types are added. Hovering uses the button hover background.
 
 ## Buttons

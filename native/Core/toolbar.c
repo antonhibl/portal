@@ -168,11 +168,12 @@ static double largest(const struct portal_toolbar_state *toolbar)
 static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
 {
     portal_toolbar state = {0};
+    /* Ownership also draws the content's inactive cue, without a strip. */
+    state.owner = portal_input_owner(toolbar->target);
     if (toolbars.hidden || toolbar->layout == NONE)
         return state;
     state.visible = true;
     state.colors = toolbars.colors;
-    state.owner = portal_input_owner(toolbar->target);
     state.buttons = bit(PORTAL_BUTTON_OWNER);
     if (state.owner != PORTAL_OWNER_PENDING)
         state.enabled = bit(PORTAL_BUTTON_OWNER);
