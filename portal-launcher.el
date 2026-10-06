@@ -493,8 +493,12 @@ from an existing minibuffer."
                         (add-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
                         (when limits
                           (add-hook 'post-command-hook #'portal-launcher--refit)
+                          ;; The global value, whatever buffer is current here
+                          ;; or at cleanup; `add-function' takes a bare symbol
+                          ;; to mean it too.
                           (when (eq kind 'buffer)
-                            (add-function :after pre-redisplay-function #'portal-launcher--fit-on-redisplay)))
+                            (add-function :after (default-value 'pre-redisplay-function)
+                                          #'portal-launcher--fit-on-redisplay)))
                         (let ((default-minibuffer-frame portal-launcher--frame)
                               (display-buffer-alist nil)
                               (display-buffer-overriding-action
@@ -529,7 +533,7 @@ from an existing minibuffer."
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
             (remove-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
             (remove-hook 'post-command-hook #'portal-launcher--refit)
-            (remove-function pre-redisplay-function #'portal-launcher--fit-on-redisplay)
+            (remove-function (default-value 'pre-redisplay-function) #'portal-launcher--fit-on-redisplay)
             (portal-launcher--forget-blur)
             (pcase-dolist (`(,window . ,value) portal-launcher--mode-line-parameters)
               (when (window-live-p window)

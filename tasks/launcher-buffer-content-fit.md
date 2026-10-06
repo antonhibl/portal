@@ -155,7 +155,7 @@ VM: macOS 27.0.1 guest, same Emacs build, one "Apple Virtual" display, usable
 area `(0, 74, 1326, 742)`, scale 2. No native code changed.
 
 Host checks, all passed: `./build.sh`; `ctest --test-dir build
---output-on-failure`, 34 of 34, including `launcher` (47 tests); `bun run --cwd
+--output-on-failure`, 34 of 34, including `launcher` (48 tests); `bun run --cwd
 host check` and `typecheck`; `python3 -B -m unittest discover -s test -p
 'test_*.py'`; `git diff --check`; byte compilation of `portal-launcher.el` and
 both launcher test files without warnings. Fourteen mutants of
@@ -166,6 +166,14 @@ reset, no redisplay observer, `resize-mini-frames` bound for buffer panels, a
 numeric resize that keeps fitting, `portal-launcher-show` fitting outside a
 presentation, no `post-command-hook` refit for buffer panels, the observer left
 installed) each failed a targeted batch test.
+
+Review round 1: Codex reported that the redisplay observer could be installed
+and removed on a buffer's own `pre-redisplay-function`. `add-function` already
+turns a bare symbol into its default value, as its docstring says, and both
+spellings expand alike; by the user's choice the calls now name
+`(default-value 'pre-redisplay-function)` explicitly, and a batch test starts
+and ends presentations from buffers with their own value. That test and the
+existing ones failed for mutants installing or removing on the local value.
 
 VM checks through the new `bash test/vm.sh sh test/launcher-gui.sh`, the whole
 launcher graphical suite with its daily-use checks in one disposable `emacs -Q

@@ -441,11 +441,11 @@ The selected frame stands in for the panel, and deleting it is a no-op."
                           (lambda ()
                             (list (and (memq #'portal-launcher--refit (default-value 'post-command-hook)) t)
                                   (and (advice-function-member-p #'portal-launcher--fit-on-redisplay
-                                                                 pre-redisplay-function)
+                                                                 (default-value 'pre-redisplay-function))
                                        t)))
                           :kind kind)))))
       (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
-      (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
+      (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay (default-value 'pre-redisplay-function)))
       ;; An automatic presentation keeps the height limits in effect as it
       ;; started, a `let' binding included; a fixed one has none.
       (pcase-dolist (`(,size ,limits ,kept) '((nil (100 nil) (100 nil)) (nil (content 300) (content 300))
@@ -561,6 +561,40 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (should-not asked)))
       (kill-buffer other))))
 
+(ert-deftest portal-launcher-redisplay-observer-uses-the-global-value ()
+  ;; A buffer with its own `pre-redisplay-function', current as the
+  ;; presentation starts or as it ends, neither gets the observer nor keeps
+  ;; it from the global value, which keeps it only during the presentation.
+  (portal-launcher-test--session
+    (let ((portal-launcher-size '(640 auto))
+          (local (generate-new-buffer " *launcher local redisplay*"))
+          (caller (generate-new-buffer " *launcher caller*"))
+          seen)
+      (cl-flet ((installed ()
+                  (and (advice-function-member-p #'portal-launcher--fit-on-redisplay
+                                                 (default-value 'pre-redisplay-function))
+                       t)))
+        (unwind-protect
+            (progn
+              (with-current-buffer local (setq-local pre-redisplay-function #'ignore))
+              ;; Started from the buffer with its own value.
+              (with-current-buffer local
+                (portal-launcher-present
+                 (lambda ()
+                   (push (list (installed) (buffer-local-value 'pre-redisplay-function local)) seen))))
+              ;; Ended in a buffer that got its own value meanwhile.
+              (with-current-buffer caller
+                (portal-launcher-present
+                 (lambda ()
+                   (with-current-buffer caller (setq-local pre-redisplay-function #'ignore))
+                   (push (list (installed) (buffer-local-value 'pre-redisplay-function caller)) seen))))
+              (should (equal seen '((t ignore) (t ignore))))
+              (should-not (installed))
+              (dolist (buffer (list local caller))
+                (should (eq #'ignore (buffer-local-value 'pre-redisplay-function buffer)))))
+          (kill-buffer local)
+          (kill-buffer caller))))))
+
 (ert-deftest portal-launcher-buffer-fit-follows-redisplay ()
   ;; An automatic buffer panel fits as Emacs starts each redisplay, which
   ;; may change only its minibuffer, measuring no further than the maximum.
@@ -605,7 +639,7 @@ The selected frame stands in for the panel, and deleting it is a no-op."
           (should (equal limits (make-list 6 480)))
           ;; Nothing fits after the presentation, or in a fixed one.
           (setq asked nil)
-          (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
+          (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay (default-value 'pre-redisplay-function)))
           (portal-launcher--fit-on-redisplay t)
           (let ((portal-launcher-size '(720 240)))
             (portal-launcher-present (lambda () (portal-launcher--fit-on-redisplay t))))
@@ -1115,7 +1149,7 @@ Return its buffer, as setup functions may."
   (should (= depth (recursion-depth)))
   (should-not (memq #'portal-launcher--dismiss-if-blurred (default-value 'post-command-hook)))
   (should-not (memq #'portal-launcher--refit (default-value 'post-command-hook)))
-  (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay pre-redisplay-function))
+  (should-not (advice-function-member-p #'portal-launcher--fit-on-redisplay (default-value 'pre-redisplay-function)))
   (should-not (memq #'portal-launcher--hide-mode-lines window-buffer-change-functions)))
 
 (ert-deftest portal-launcher-keep-open-runs-commands-until-dismissed ()
@@ -1495,7 +1529,7 @@ was logged since loading."
              (lambda ()
                (push (list (portal-launcher--session-limits portal-launcher--session)
                            (and (advice-function-member-p #'portal-launcher--fit-on-redisplay
-                                                          pre-redisplay-function)
+                                                          (default-value 'pre-redisplay-function))
                                 t))
                      seen))))
         (execute-kbd-macro (kbd "M-x my/hello-fitted RET n Ada RET <f14> <escape>")))
