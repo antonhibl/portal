@@ -216,6 +216,47 @@
       (should (equal (car sent) '("." 8)))
       (should (eq (keymap-lookup portal-input-mode-map "s-.") #'portal-input-unfocus)))))
 
+(ert-deftest portal-input-stale-module-refuses-escape-remapping-and-connection ()
+  ;; Updated Lisp in an Emacs still running the old module must not replace
+  ;; its working wrapper escape with a key the native side cannot reserve.
+  (let* ((portal-input-mode-map (make-sparse-keymap))
+         (portal-input--escape-installed "s-<escape>")
+         (before portal-input-escape-key))
+    (keymap-set portal-input-mode-map "s-<escape>" #'portal-input-unfocus)
+    (cl-letf (((symbol-value 'features) (cons 'portal-native-module features))
+              ((symbol-function 'portal--input) #'ignore)
+              ((symbol-function 'portal--input-escape-key) nil)
+              ((symbol-function 'portal-view--load) #'ignore))
+      (dolist (action (list #'portal-input--initialize
+                            (lambda () (setq portal-input-escape-key "C-s-g"))
+                            (lambda () (customize-set-variable 'portal-input-escape-key "C-s-g"))
+                            #'portal-input--connect))
+        (should (string-match-p "Restart Emacs"
+                                (error-message-string (should-error (funcall action) :type 'user-error))))
+        (should (equal portal-input-escape-key before))
+        (should (equal portal-input--escape-installed "s-<escape>"))
+        (should (eq (keymap-lookup portal-input-mode-map "s-<escape>") #'portal-input-unfocus))
+        (should-not (keymap-lookup portal-input-mode-map "s-."))
+        (should-not (keymap-lookup portal-input-mode-map "C-s-g"))))))
+
+(ert-deftest portal-input-escape-can-be-configured-before-module-load ()
+  ;; No module is different from an incompatible loaded one: startup
+  ;; configuration remains possible, then reaches the module when it loads.
+  (let (sent)
+    (cl-letf (((symbol-value 'features) (remq 'portal-native-module features))
+              ((symbol-function 'portal--input) nil)
+              ((symbol-function 'portal--input-escape-key) nil))
+      (let ((portal-input-escape-key "C-s-g"))
+        (should (eq (keymap-lookup portal-input-mode-map "C-s-g") #'portal-input-unfocus))
+        (cl-letf (((symbol-value 'features) (cons 'portal-native-module features))
+                  ((symbol-function 'portal--input) #'ignore)
+                  ((symbol-function 'portal--input-escape-key)
+                   (lambda (&rest chord) (push chord sent)))
+                  ((symbol-function 'portal-view--load) #'ignore))
+          (portal-input--initialize)
+          (portal-input--connect)
+          (should (equal sent '(("g" 10)))))))))
+
 (ert-deftest portal-input-wrapper-controls-work-with-evil ()
   (skip-unless (locate-library "evil"))
   (require 'evil)

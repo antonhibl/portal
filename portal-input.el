@@ -72,8 +72,15 @@ reads it: a character and a sum of `portal-input--modifiers' values."
 (defvar portal-input--escape-installed "s-."
   "Escape key currently installed in the wrapper keymap.")
 
+(defun portal-input--check-module ()
+  "Reject a native module that cannot implement the current input contract."
+  (unless (and (fboundp 'portal--input) (fboundp 'portal--input-escape-key))
+    (user-error "Restart Emacs to load the rebuilt Portal input bridge")))
+
 (defun portal-input--configure-escape (value)
   "Apply escape key VALUE to the module and the wrapper keymap."
+  (when (featurep 'portal-native-module)
+    (portal-input--check-module))
   (let ((chord (portal-input--escape-chord value)))
     (when (fboundp 'portal--input-escape-key)
       (apply #'portal--input-escape-key chord))
@@ -191,8 +198,7 @@ The click already gave the view the keyboard; this makes Emacs agree."
 (defun portal-input--connect ()
   "Load the module, which has the input bridge."
   (portal-view--load)
-  (unless (fboundp 'portal--input)
-    (user-error "Restart Emacs to load the rebuilt Portal input bridge")))
+  (portal-input--check-module))
 
 (defun portal-input--read (binding trigger target serial)
   "Read BINDING, a native binding's prefix map, after TRIGGER, from TARGET's

@@ -169,6 +169,9 @@ Then send its `terminal' record, as the native module does for a change."
       ("unfocus"
        (when view (puthash target (plist-put view :focused nil) portal-fake-native--views))
        t))))
+(defun portal--input-escape-key (character modifiers)
+  (portal-fake-native--call 'portal--input-escape-key character modifiers)
+  t)
 (defun portal--terminal-bindings (_json) t)
 (defun portal--terminal-theme (_theme) t)
 (defun portal--web-appearance (appearance)
