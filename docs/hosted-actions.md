@@ -137,9 +137,9 @@ requires same origin, bounded body, registered context and root. It runs request
 serially, returning `{}` after Emacs finishes or `{error}` for display. An
 already-current status succeeds without asking Emacs; repeated or duplicate
 requests never toggle back. After saving, Emacs requests a root-view refresh
-over the [bridge](editor-bridge.md). See the
-[task browser specification](task-browser-spec.md#task-operations) for patch
-rules and refresh behavior.
+over the [bridge](editor-bridge.md). See
+[completing and editing tasks](tasks.md#completing-and-editing-tasks) for the
+user-facing behavior.
 
 ## Verification
 

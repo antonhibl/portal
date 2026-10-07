@@ -122,9 +122,7 @@ The [launcher guide](launcher.md) documents setup and customization; the
 [testing guide](testing.md#combined-graphical-suite) documents test invocation.
 Plain buffer presentation refuses to hide an active launcher minibuffer; command sessions unwind it as described below.
 Outbound system drag-and-drop is cancelled. These geometry checks did not
-establish full IME, VoiceOver or normal-configuration behavior; the later
-[daily-use record](launcher-daily-use.md#manual-acceptance-on-2026-10-04)
-contains the user's manual acceptance.
+establish IME, VoiceOver or normal-configuration behavior.
 
 ## User-configured launchers
 
@@ -233,19 +231,6 @@ pre-existing ones (such as an explicitly shown panel's split) and restores
 recorded parameters. With mode lines, or in `portal-launcher-show`, window
 parameters remain untouched.
 
-Graphical tests captured Emacs's drawing surface, excluding panel corners and
-shadow; the text is test output. Vertico in a 720×420 minibuffer panel after
-`al` and Down:
-
-![Vertico in a minibuffer panel](evidence/launcher-minibuffer-vertico.png)
-
-A buffer panel split during the call, with each window's mode line, then with
-`:mode-line nil`:
-
-![A split buffer panel with mode lines](evidence/launcher-buffer-mode-lines.png)
-
-![The same split with :mode-line nil](evidence/launcher-buffer-no-mode-lines.png)
-
 ## Content-fitted minibuffer panels
 
 `portal-launcher-size` resolves per presentation, before anything is shown or
@@ -340,11 +325,11 @@ a physical input method and display disconnection were not tested.
 Vertico in a fitted panel with five rows, then after typing `alp`, then with no
 matches at the minimum:
 
-![Five Vertico rows with group titles](evidence/launcher-minibuffer-fitted-rows.png)
+![Five Vertico rows with group titles](images/launcher-minibuffer-fitted-rows.png)
 
-![Two candidates under one group title](evidence/launcher-minibuffer-fitted-filtered.png)
+![Two candidates under one group title](images/launcher-minibuffer-fitted-filtered.png)
 
-![No matches at the minimum height](evidence/launcher-minibuffer-fitted-minimum.png)
+![No matches at the minimum height](images/launcher-minibuffer-fitted-minimum.png)
 
 ### Height limits and legal frame heights
 
@@ -468,18 +453,9 @@ changes, and rejecting zero and negative heights.
 A minibuffer panel at `(content 144)`, five rows capped at 144 points, then at
 its 60-point legal height with no matches:
 
-![Five rows capped at the maximum](evidence/launcher-minibuffer-limited-maximum.png)
+![Five rows capped at the maximum](images/launcher-minibuffer-limited-maximum.png)
 
-![The legal minimum: the prompt alone](evidence/launcher-minibuffer-legal-minimum.png)
-
-A buffer panel at its legal height, reading a name in its minibuffer: with the
-default `window-min-height`, then at 1 with and without the mode line:
-
-![A buffer panel at its default legal height](evidence/launcher-buffer-legal-default.png)
-
-![The same with window-min-height 1](evidence/launcher-buffer-legal-minimum.png)
-
-![The same without the mode line](evidence/launcher-buffer-legal-minimum-no-mode-line.png)
+![The legal minimum: the prompt alone](images/launcher-minibuffer-legal-minimum.png)
 
 ## Content-fitted buffer panels
 
@@ -593,20 +569,6 @@ After the prompt the panel returned to 137 (95). With eight lines of content, a
 six-line echo-area message took a second minibuffer line over the buffer's last
 line, and the panel stayed at 242.
 
-The panel with five lines, forty capped at 400 points, scrolled to the end, and
-shrunk to two lines; then Vertico's three rows in the minibuffer of a compact
-panel:
-
-![Five lines](evidence/launcher-buffer-fitted-short.png)
-
-![Forty lines at the maximum](evidence/launcher-buffer-fitted-capped.png)
-
-![Scrolled to the end at the same height](evidence/launcher-buffer-fitted-scrolled.png)
-
-![Two lines at the window's least height](evidence/launcher-buffer-fitted-shrunk.png)
-
-![Vertico's rows in a buffer panel's minibuffer](evidence/launcher-buffer-fitted-vertico.png)
-
 ## Persistent buffer panels
 
 With `:keep-open t`, `portal-launcher-present` enters a recursive edit inside
@@ -631,8 +593,3 @@ While a persistent panel is open, `%[` in the default `mode-line-modes` brackets
 the mode name in every frame, reflecting the recursive edit. Ending a keyboard
 macro also ends a recursive edit; batch tests rely on this to avoid waiting for
 input.
-
-A persistent hello-world panel with `:mode-line nil`, after its local `n`
-command read a name from the panel's minibuffer:
-
-![A persistent hello-world panel](evidence/launcher-persistent-hello.png)

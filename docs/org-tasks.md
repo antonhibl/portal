@@ -10,7 +10,7 @@ tested with org-ql 0.8.10 and MELPA's 20250421.133. Other Portal features work
 without it.
 
 This Org view is separate from the [Markdown task browser](tasks.md#task-browser),
-which reads this repository's authoritative `tasks/` directory.
+which reads a project's `tasks/` directory.
 
 Tasks are headings with their own `:task:` tag. A task is actionable when its
 keyword is `TODO`, every `DEPENDS_ON` prerequisite named by `CUSTOM_ID` is `DONE`,

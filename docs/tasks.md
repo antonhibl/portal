@@ -10,11 +10,8 @@ immediately, starting the host if needed, and loads on host readiness. Click a
 task to read it in the same view; **Tasks** returns to the list. Pages show saved files; Emacs
 saves every edit. Nothing moves or deletes task files.
 
-This repository maintains tasks in the default root, `tasks/`: `<name>.md` or
-`<name>/content.md` with adjacent assets. `project.org` and `project.org_archive`
-are historical references, not a parallel task store. See
-[Writing tasks](#writing-tasks) for the format; agents use the
-[author-tasks skill](../.agents/skills/author-tasks/SKILL.md).
+The default task root is `tasks/`: `<name>.md` or `<name>/content.md` with
+adjacent assets. See [Writing tasks](#writing-tasks) for the format.
 
 ### Completing and editing tasks
 

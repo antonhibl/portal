@@ -10,11 +10,6 @@ the main checkout on the user's branch. Commit the changes on that branch once
 the project's checks pass, push it, and open a PR against `main` with
 `gh pr create`. Describe the behavior changed and the checks actually run.
 
-Project tasks live in `tasks/`, as [Markdown tasks](docs/tasks.md#writing-tasks).
-`project.org` and its archive are historical references, not a second task store.
-Agents creating, updating or completing tasks must use the
-[author-tasks skill](.agents/skills/author-tasks/SKILL.md).
-
 ## Build and editor setup
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,
@@ -136,5 +131,4 @@ for the batch suite; use `ctest --test-dir build -N` to list them.
   and lexical binding modes.
 - Keep user instructions in `docs/`, contributor commands here and detailed
   test procedures in [Testing Portal](docs/testing.md). Link from the README
-  rather than expanding it into a manual again. Preserve old README anchors
-  when moving existing entry points.
+  rather than expanding it into a manual again.

@@ -5,7 +5,6 @@
 - [Global shortcuts](#global-shortcuts): register functions without showing a panel
 - [Native launcher panel](#native-launcher-panel-opt-in): examples and setup
 - [Set up safely](#set-up-safely): compatibility and fresh-session requirements
-- [Migrate from the built-in launcher](#migrate-from-the-built-in-launcher)
 - [Presentation options and lifecycle](#presentation-options-and-lifecycle)
 
 ## Global shortcuts
@@ -78,11 +77,6 @@ register no global shortcut. Your configuration composes launchers: a command
 calls `portal-launcher-present` with options, then runs via M-x, an Emacs key or
 a [global shortcut](#global-shortcuts) from any application. Examples below need
 no other package and work with or without `lexical-binding`.
-
-The panel passed the user's daily-use checklist on 2026-10-04 with Portal's
-then-built-in picker. The [setup and validation guide](launcher-daily-use.md)
-records tested versions, fresh-session procedure and manual input/accessibility
-results.
 
 First [Set up safely](#set-up-safely): internal Emacs NS interfaces require the
 pinned build and native subroutine trampolines. Use fresh disposable graphical
@@ -165,7 +159,7 @@ stops at 480 points, where its window scrolls as usual. Text that timers and
 processes insert fits too, without a key press. See
 [buffer panels that fit](#buffer-panels-that-fit) for what counts.
 
-![The fitted hello panel after five greetings](evidence/launcher-buffer-fitted-hello.png)
+![The fitted hello panel after five greetings](images/launcher-buffer-fitted-hello.png)
 
 ### Global shortcuts for launchers
 
@@ -260,8 +254,8 @@ returning focus to the previous app. Clicking another app hides the panel and
 keeps that app frontmost. Discovery/launch errors close the panel; retry is
 possible. Once launcher.el handles all three input rules, present `#'launcher`
 directly and remove `my/launcher-read` and its variable. The
-[application notes](launcher-applications.md) record upstream follow-ups,
-optional integration smoke test and historical evidence.
+[application notes](launcher-applications.md) record upstream follow-ups and
+an optional integration smoke test.
 
 ### Set up safely
 
@@ -284,58 +278,9 @@ Portal views and global shortcuts remain usable; the next presentation recreates
 the panel. The shared native module stays loaded for other features. Restart
 Emacs to replace it; rebuilding or unloading Lisp cannot replace a loaded module.
 
-For M-x.app migration, start with a different Portal chord. Record the old row's
-trigger/expression, remove only that row in M-x Settings, then assign its chord
-to Portal. Keep M-x running for other shortcuts, `emacs://` and `org-protocol://`
-bindings; modifier double-taps remain M-x features. Follow the guide's migration
-and rollback checks; restore the saved row on rollback.
-
-### Migrate from the built-in launcher
-
-Until 2026-10-05, Portal ran its built-in picker by default and registered its
-chord on `portal-launcher-mode` enablement. Removed names have no aliases; old
-settings alone cannot claim chords or run pickers:
-
-| Before | Now |
-| --- | --- |
-| `portal-launcher-applications`, the default command | Removed; use the launcher.el recipe above |
-| `portal-launcher-command` | Removed; pass the function to `portal-launcher-present`, which now requires it |
-| `portal-launcher-shortcut`, which the mode set as the global shortcut `portal-launcher` | Removed; call `portal-global-shortcut-set` with your command |
-| `portal-launcher-toggle` | Removed; a second invocation of your command dismisses its panel, and `portal-launcher-show` and `portal-launcher-hide` show and hide a plain buffer |
-| `M-x portal-launcher-present`, with `C-u` to refresh | No longer a command; use `M-x my/app-launcher`, with `C-u` to refresh |
-| `portal-launcher-mode` | Retained; it registers no chord, presenting enables it, and disabling it still deletes the panel and removes its guards |
-| `portal-launcher-present`, `portal-launcher-show`, `portal-launcher-hide`, `portal-launcher-cancel`, `portal-launcher-resize` and the appearance options | Retained; `portal-launcher-present`'s function is required |
-
-An init file like this:
-
-```elisp
-(require 'portal-launcher)
-(setopt portal-launcher-shortcut "Control-Option-Command-P"
-        portal-launcher-command #'portal-launcher-applications
-        portal-launcher-size '(720 420)
-        portal-launcher-offset '(0 0))
-(portal-launcher-mode 1)
-```
-
-becomes the `use-package` form and the recipe above, after the `require`,
-with any appearance settings kept:
-
-```elisp
-(setopt portal-launcher-size '(720 420)
-        portal-launcher-offset '(0 0))
-```
-
-A numeric size keeps both kinds of panel fixed, as before. Drop it for
-[minibuffer panels that fit their content](#panel-size), or use `'(720 auto)`
-for buffer panels that fit too.
-
-Free the old chord with `(portal-launcher-mode -1)` before loading the new
-version, `(portal-global-shortcut-remove 'portal-launcher)` afterward, or an
-Emacs restart. Removed options do nothing and vanish on restart. For built-in
-launcher rollback, check out its last commit, `bc99e90`, rebuild, restart Emacs
-and restore the old init. To remove your configured launcher, delete its init
-setup and run `(portal-global-shortcut-remove 'app-launcher)` and
-`(portal-launcher-mode -1)`. Other Portal features and shortcuts keep working.
+To remove a configured launcher, delete its init setup and run
+`(portal-global-shortcut-remove 'app-launcher)` and `(portal-launcher-mode -1)`.
+Other Portal features and shortcuts keep working.
 
 ### Presentation options and lifecycle
 
@@ -414,8 +359,7 @@ changing its buffer.
 
 For plain buffer presentation outside a command session, finish or cancel an
 active launcher minibuffer before hiding it. Outbound native drag-and-drop is
-cancelled. The [daily-use guide](launcher-daily-use.md) records the user's
-IME and VoiceOver validation.
+cancelled.
 See [implementation and measured geometry](launcher-native-panel.md).
 
 #### Panel size
@@ -473,11 +417,11 @@ its presentation; it refuses to run during a minibuffer presentation, whose
 panel cannot become a buffer panel. Interactively it offers the current
 numbers, or 720 × 420.
 
-![A fitted panel with five Vertico rows and group titles](evidence/launcher-minibuffer-fitted-rows.png)
+![A fitted panel with five Vertico rows and group titles](images/launcher-minibuffer-fitted-rows.png)
 
-![The same panel after typing "alp"](evidence/launcher-minibuffer-fitted-filtered.png)
+![The same panel after typing "alp"](images/launcher-minibuffer-fitted-filtered.png)
 
-![No matches: the 100-point minimum](evidence/launcher-minibuffer-fitted-minimum.png)
+![No matches: the 100-point minimum](images/launcher-minibuffer-fitted-minimum.png)
 
 #### Buffer panels that fit
 
@@ -582,6 +526,6 @@ the option once, including a `let` binding of it; fitting never changes it.
 With `'(content 144)`, Menlo 24 and the default borders, five rows stop at 144
 points, then no matches shrink the panel to its 60-point legal height:
 
-![Five rows capped at 144 points](evidence/launcher-minibuffer-limited-maximum.png)
+![Five rows capped at 144 points](images/launcher-minibuffer-limited-maximum.png)
 
-![The 60-point legal height: the prompt alone](evidence/launcher-minibuffer-legal-minimum.png)
+![The 60-point legal height: the prompt alone](images/launcher-minibuffer-legal-minimum.png)

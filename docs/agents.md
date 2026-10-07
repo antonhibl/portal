@@ -121,5 +121,4 @@ Minimized/invisible frames stop collection at the next tick.
 
 With 100 tracked terminals, a refresh with nothing changed took under 1 ms in
 graphical Emacs and redrew nothing. When every title changed, it took about
-7 ms plus the redisplay. See the
-[measurements](emacs-agent-dashboard-research.md#measurements).
+7 ms plus the redisplay.
