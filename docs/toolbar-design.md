@@ -1,9 +1,7 @@
 # Native toolbar design
 
-Design date: 23 September 2026. Open [toolbar-mockup.html](toolbar-mockup.html)
-in a browser; its prefix and passthrough states predate their removal on
-30 September 2026. The look and controls below are implemented. State ownership
-changed later: [Ownership](#ownership) and the
+Design date: 23 September 2026. The look and controls below are implemented.
+State ownership changed later: [Ownership](#ownership) and the
 [implementation notes](architecture.md#toolbar-state) describe today's code.
 [Changes to existing code](#changes-to-existing-code) and
 [Rejected alternatives](#rejected-alternatives) are historical.

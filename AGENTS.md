@@ -15,10 +15,3 @@ Before changing view ownership or platform interfaces, read
 [the native boundaries](docs/architecture.md) and its linked ADRs. When editing
 launcher examples, preserve the markers in [the launcher guide](docs/launcher.md):
 tests execute those blocks directly.
-
-## Project tasks
-
-Keep project tasks in `tasks/`, one Markdown document per task: either
-`tasks/<name>.md` or `tasks/<name>/content.md` with assets beside it.
-When creating, updating, or completing tasks, use the
-[author-tasks skill](.agents/skills/author-tasks/SKILL.md).

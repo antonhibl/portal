@@ -17,10 +17,6 @@ Run shell examples from the repository root, not `docs/`.
 | Use the separate `project.org` integration | [Org task view](org-tasks.md) |
 | Diagnose a blank hosted app or restart its process | [App host lifecycle and diagnostics](app-host.md) |
 
-This repository stores tasks in `tasks/`; `project.org` and its archive are
-historical references. Org integration remains available for projects using it,
-not as a parallel task store here.
-
 ## Build and change Portal
 
 - [Contributing](../CONTRIBUTING.md): build/editor setup, distribution, worktrees
@@ -37,18 +33,15 @@ not as a parallel task store here.
   protocol version 3.
 - [Launcher native panel](launcher-native-panel.md): Emacs NS compatibility,
   frame guards, geometry and command sessions.
-- [Launcher daily-use validation](launcher-daily-use.md): fresh-session setup,
-  M-x.app migration/rollback, automated checks and dated manual acceptance.
 - [Application launcher integration](launcher-applications.md): launcher.el
-  follow-ups, optional smoke test and the removed built-in adapter's evidence.
+  follow-ups and an optional smoke test.
 - [Terminal benchmarks](terminal-benchmark.md): latency/frame timing measurement
   and interpretation, not guaranteed parity with standalone Ghostty.
 
-## Decisions, proposals and research
+## Decisions and design records
 
-These records preserve rationale and evidence. Proposals and historical
-measurements do not claim every described feature ships today; see the user
-guides for current behavior.
+These records preserve rationale. Design records do not claim every described
+feature ships today; see the user guides for current behavior.
 
 ### Architectural decisions
 
@@ -56,25 +49,9 @@ guides for current behavior.
 2. [Shared view/native interface](adr/0002-portal-view-native-seam.md)
 3. [Platform interface primitives](adr/0003-platform-interface-primitives.md)
 
-### Design and research records
+### Design records
 
-- [Initial native-view research](../RESEARCH.md): original feasibility and
-  proposed architecture, not current setup instructions.
-- [Input design proposal](input-design.md): research on the superseded
-  prefix/passthrough model.
 - [Toolbar design](toolbar-design.md): implemented controls and later ownership
-  updates, with historical alternatives and a dated [mockup](toolbar-mockup.html).
-- [Markdown task browser specification](task-browser-spec.md): design contract
-  and acceptance criteria; [the task guide](tasks.md) describes shipped usage.
-- [Task dependency display research](task-dependency-display-research.md):
-  alternatives and source comparisons.
-- [Terminal session management research](terminal-session-management-research.md):
-  package integration options and the original navigation proposal.
-- [Agent discovery research](agent-discovery-research.md): recorded agent
-  lifecycles, status-source limitations, fixtures and prototype artifacts.
-- [Agent dashboard refresh research](emacs-agent-dashboard-research.md):
-  Emacs precedents, refresh policy and measurements.
-- [Launcher content sizing research](launcher-content-sizing-research.md):
-  content-driven sizing investigation.
+  updates, with historical alternatives.
 - [Bun distribution options](bun-distribution.md): current packaging, size
   measurements and alternatives to revisit.
