@@ -138,8 +138,11 @@ final class NativeInput: NativeInputHandler {
 
     // The primitives of native/Core/include/portal.h.
 
+    /// Keys go to the key window's first responder: the view's window must
+    /// take the keyboard too, from another window of Emacs's, such as a child
+    /// frame's, that may hold it.
     func focus() {
-        _ = focusView()
+        if focusView(), let window = view?.window, !window.isKeyWindow { window.makeKey() }
         host.refreshOwnership()
     }
 

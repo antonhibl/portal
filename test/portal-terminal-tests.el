@@ -377,6 +377,27 @@
       (should (equal keys (vconcat (kbd "C-x b"))))
       (should (eq (key-binding keys) #'switch-to-buffer)))))
 
+(ert-deftest portal-terminal-focus-takes-the-key-window ()
+  (skip-unless (fboundp 'portal-test-native-key))
+  (portal-terminal-test--session
+    (let ((frame (selected-frame))
+          (other (make-frame)))
+      (unwind-protect
+          (progn
+            ;; Another Emacs window holds the keyboard while Emacs selects the
+            ;; terminal's frame, as a child frame redirecting its focus does.
+            (select-frame-set-input-focus other)
+            (sit-for 0.1)
+            (select-frame frame 'norecord)
+            (portal-terminal-focus)
+            (should (plist-get (portal-terminal-test--state) :focused))
+            ;; The injector types into the key window, as the keyboard does.
+            (should (portal-test-native-key 0 0 "printf '\\nPORTAL_KEY_WINDOW_OK\\n'"))
+            (should (portal-test-native-key 36 0 "\r"))
+            (portal-terminal-test--wait
+             (lambda () (string-match-p "^PORTAL_KEY_WINDOW_OK" (portal-terminal-test--text)))))
+        (delete-frame other)))))
+
 (ert-deftest portal-terminal-unfocus-command-returns-focus ()
   (portal-terminal-test--session
     (should (plist-get (portal-terminal-test--state) :focused))
