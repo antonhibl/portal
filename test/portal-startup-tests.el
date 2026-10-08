@@ -19,11 +19,12 @@
     (load portal-startup-test--entry nil t)
     (dolist (feature '(portal portal-web portal-terminal portal-agents
                       portal-agent-discovery portal-agent-process
-                      portal-excalidraw portal-tasks portal-global-shortcut))
+                      portal-excalidraw portal-tasks portal-global-shortcut portal-system))
       (should (featurep feature)))
     (dolist (command '(portal-hello portal-terminal portal-agents portal-tasks))
       (should (commandp command)))
     (should (fboundp 'portal-global-shortcut-set))
+    (should (fboundp 'portal-post-key))
     ;; Loading registers no shortcut and loads no native code.
     (should-not portal-global-shortcut--registrations)
     (should-not (featurep 'portal-native-module))

@@ -1111,22 +1111,57 @@ size_t portal_fake_hotkey_restarts(void)
     return hotkey_restarts;
 }
 
+/* KEY, as the hot key and key post primitives take it, in NAME. */
+static void key_name(uint32_t key, char name[8])
+{
+    if (key > PORTAL_FUNCTION_KEY)
+        snprintf(name, 8, "F%u", (unsigned) (key - PORTAL_FUNCTION_KEY));
+    else
+        snprintf(name, 8, "%s", key == ' ' ? "Space" : (char[]) {(char) key, 0});
+}
+
 const char *portal_fake_hotkeys(void)
 {
     static char text[MAX_HOTKEYS * 24];
     size_t length = 0;
     text[0] = '\0';
     for (size_t i = 0; i < hotkey_count; i++) {
-        uint32_t key = hotkeys[i].key;
         char name[8];
-        if (key > PORTAL_FUNCTION_KEY)
-            snprintf(name, sizeof name, "F%u", (unsigned) (key - PORTAL_FUNCTION_KEY));
-        else
-            snprintf(name, sizeof name, "%s", key == ' ' ? "Space" : (char[]) {(char) key, 0});
+        key_name(hotkeys[i].key, name);
         length += (size_t) snprintf(text + length, sizeof text - length, "%s%llu:%s+%u",
                                     i ? " " : "", (unsigned long long) hotkeys[i].hotkey, name,
                                     (unsigned) hotkeys[i].modifiers);
     }
+    return text;
+}
+
+/* Posted keys.  The fake posts any chord but one with F19, which it says
+   it has no permission to post, naming the key and modifiers it was asked
+   for, and logs the rest for portal_fake_posted.  Real posting is manual
+   (docs/testing.md). */
+static char chords[1024];
+static size_t chords_length;
+
+bool portal_key_post(uint32_t key, uint32_t modifiers, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    char name[8];
+    key_name(key, name);
+    if (key == PORTAL_FUNCTION_KEY + 19)
+        return fail(error, "The fake may not post %s+%u", name, (unsigned) modifiers);
+    chords_length += (size_t) snprintf(chords + chords_length, sizeof chords - chords_length,
+                                       "%s%s+%u", chords_length ? " " : "", name,
+                                       (unsigned) modifiers);
+    return true;
+}
+
+const char *portal_fake_posted(void)
+{
+    static char text[sizeof chords];
+    memcpy(text, chords, sizeof text);
+    chords[0] = '\0';
+    chords_length = 0;
     return text;
 }
 

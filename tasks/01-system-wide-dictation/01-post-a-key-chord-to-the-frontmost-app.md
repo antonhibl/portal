@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Post a key chord to the frontmost app
 
@@ -27,10 +27,13 @@ Let Lisp post a key chord, such as Command-V, to the frontmost application.
 - Register `portal--key-post` in `native/Core/emacs.c`, and implement the
   primitive in `test/portal-fake-backend.c`, recording what it was asked to
   post.
-- Add a public `portal-post-key` to `portal-system.el`, created by
-  [the Accessibility check task](01-accessibility-permission-check.md) if it
-  lands first. The docstring says the chord goes to whatever app is
-  frontmost, possibly Emacs itself.
+- Add a public `portal-post-key` in a new `portal-system.el`, for
+  system-wide actions outside Portal's views. Follow
+  `portal-global-shortcut.el` for style. The docstring says the chord goes to
+  whatever app is frontmost, possibly Emacs itself, and that posting needs
+  Accessibility permission for Emacs.app: granted once in System Settings ▸
+  Privacy & Security ▸ Accessibility, tied to Emacs's code signature, and
+  seen only after an Emacs restart.
 - Document the primitive with the other platform primitives in
   `docs/architecture.md`.
 

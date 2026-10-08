@@ -61,6 +61,12 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-global-shortcut-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(global-shortcut PROPERTIES TIMEOUT 30)
+    add_test(NAME system
+        COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
+            "${EMACS}" --batch -Q --module-assertions -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-system-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(system PROPERTIES TIMEOUT 30)
     # Exercise the documented absolute-path entry point in a fresh Emacs.
     # Do not add the package directory with -L: Portal must load its own siblings.
     add_test(NAME startup

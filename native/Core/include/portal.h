@@ -420,6 +420,19 @@ bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
                             portal_text *error);
 bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
 
+/* Press and release KEY with exactly MODIFIERS, the portal_modifier bits, in
+   whatever application is frontmost, which may be Emacs: keys or modifiers
+   the user still holds do not join the chord.  KEY is as for
+   portal_hotkey_register, but a letter or digit names a character, not a
+   position on a US keyboard: the key that types it, ignoring case, in the
+   current keyboard layout, with Command held when MODIFIERS include Super,
+   as an application matching the chord to its shortcuts reads it.  Finding
+   that key is the platform's job.  Fails, posting nothing, when no key
+   types the character, or when the system would drop the events, as macOS
+   does without Accessibility permission.  The events are only posted: the
+   application handles them after this returns, or ignores them. */
+bool portal_key_post(uint32_t key, uint32_t modifiers, portal_text *error);
+
 /* Calls into the core, implemented by the core for the platform. */
 
 /* Send Emacs the record "TYPE TARGET FIELD...", one line of COUNT + 2 words
