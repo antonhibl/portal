@@ -222,15 +222,19 @@ focus-out event while Emacs reads input, not here, in Lisp, so the frame
 would stay recorded as focused; see `frame-focus-state'. This handles
 that event as Emacs would have. Handling either event runs the user's
 `after-focus-change-function'; an error there is reported, as the
-command loop reports it, and the panel hides either way."
-  (unwind-protect
-      (with-demoted-errors "Launcher focus event: %S"
-        (portal-launcher--read-focus-events))
-    (portal--launcher-hide restore-focus)
-    (make-frame-invisible portal-launcher--frame t))
-  (when (eq (frame-focus-state portal-launcher--frame) t)
-    (with-demoted-errors "Launcher focus event: %S"
-      (handle-focus-out (list 'focus-out portal-launcher--frame)))))
+command loop reports it, and whatever exits the handling, the panel
+hides and the frame's focus is recorded gone. C-g while reading is
+input for the command loop, queued again like the rest, not a quit of
+this cleanup."
+  (let ((inhibit-quit t))
+    (unwind-protect
+        (with-demoted-errors "Launcher focus event: %S"
+          (portal-launcher--read-focus-events))
+      (portal--launcher-hide restore-focus)
+      (make-frame-invisible portal-launcher--frame t)
+      (when (eq (frame-focus-state portal-launcher--frame) t)
+        (with-demoted-errors "Launcher focus event: %S"
+          (handle-focus-out (list 'focus-out portal-launcher--frame)))))))
 
 (defun portal-launcher--before-delete (frame)
   "Restore FRAME's original EmacsWindow before Emacs releases its NS view."
@@ -577,8 +581,9 @@ from an existing minibuffer."
         (let ((inhibit-quit t) (portal-launcher--session nil))
           (unwind-protect
               (when (frame-live-p portal-launcher--frame)
-                (portal-launcher--hide-frame (not (or (consp outcome) (eq outcome 'blur))))
-                (portal-launcher--restore-windows windows))
+                (unwind-protect
+                    (portal-launcher--hide-frame (not (or (consp outcome) (eq outcome 'blur))))
+                  (portal-launcher--restore-windows windows)))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
             (remove-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
             (remove-hook 'post-command-hook #'portal-launcher--refit)
@@ -1023,8 +1028,8 @@ An active command session is cancelled before hiding its minibuffers."
     (when (and (active-minibuffer-window)
                (eq (window-frame (active-minibuffer-window)) portal-launcher--frame))
       (user-error "Finish or cancel the launcher's minibuffer before hiding it"))
-    (portal-launcher--hide-frame nil)
-    (portal-launcher--restore-selection)))
+    (unwind-protect (portal-launcher--hide-frame nil)
+      (portal-launcher--restore-selection))))
 
 (defun portal-launcher--check-resize ()
   "Refuse to resize during a minibuffer presentation."

@@ -2363,6 +2363,20 @@ hidden frame."
       (should (with-current-buffer "*Messages*"
                 (save-excursion (goto-char messages)
                                 (search-forward "Launcher focus event: (error \"Focus hook failed\")" nil t))))
+      (portal-launcher-gui--check-focus-left ordinary)
+      ;; A quit from the function is not reported but passes through, after
+      ;; the panel hid and the frame's focus is gone: from a presentation,
+      ;; and from an explicit hide, which still restores the selection.
+      (let ((after-focus-change-function (lambda () (signal 'quit nil))))
+        ;; `should-error' catches only errors.
+        (should (eq 'quit (condition-case nil (portal-launcher-present (lambda () 'done)) (quit 'quit))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame))
+        (portal-launcher-gui--check-focus-left ordinary)
+        (portal-launcher-show content)
+        (should (eq 'quit (condition-case nil (portal-launcher-hide) (quit 'quit))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame)))
       (portal-launcher-gui--check-focus-left ordinary))))
 
 (provide 'portal-launcher-gui-tests)
