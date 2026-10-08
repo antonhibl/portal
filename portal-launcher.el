@@ -184,6 +184,47 @@ A minibuffer launcher's frame is minibuffer-only instead.")
     (select-window portal-launcher--return-window 'norecord))
   (setq portal-launcher--return-window nil))
 
+(defun portal-launcher--read-focus-events ()
+  "Let Emacs handle the focus-in event it has queued for the launcher frame.
+As the native panel becomes key, Emacs's view queues a focus-in event
+for the frame, which Emacs handles when it next reads input. Handled
+while the frame is selected, it only records the frame as focused.
+Handled after the presentation selected another window again, Emacs
+takes it for the user moving to the frame and switches to it, selecting
+the hidden frame; see `internal-handle-focus-in'. A presentation whose
+function reads no input leaves the event queued, so this reads input
+while the frame is still selected, until Emacs records it focused, for
+as long as the panel is key, which is what queued the event. Other
+input read along the way goes back to the front of the queue, in order,
+for the command loop. Each read waits for a few milliseconds: Emacs
+gives up a read whose deadline passed before it looks at its queue.
+Only a graphical frame has focus events."
+  (when (display-graphic-p portal-launcher--frame)
+    (let ((inhibit--record-char t)
+          (deadline (time-add nil 0.2))
+          events)
+      (while (and (not (eq (frame-focus-state portal-launcher--frame) t))
+                  (plist-get (portal--launcher-inspect) :key)
+                  (time-less-p nil deadline))
+        (when-let* ((event (read-event nil nil 0.01)))
+          (push event events)))
+      (when events
+        (setq unread-command-events (nconc (nreverse events) unread-command-events))))))
+
+(defun portal-launcher--hide-frame (restore-focus)
+  "Hide the panel and the dedicated frame, which loses Emacs's focus.
+RESTORE-FOCUS asks the native panel to activate the previous
+application again, as `portal--launcher-hide' takes it. The panel gives
+up key status as this orders it out, but Emacs's view only queues a
+focus-out event while Emacs reads input, not here, in Lisp, so the frame
+would stay recorded as focused; see `frame-focus-state'. This handles
+that event as Emacs would have."
+  (portal-launcher--read-focus-events)
+  (portal--launcher-hide restore-focus)
+  (make-frame-invisible portal-launcher--frame t)
+  (when (eq (frame-focus-state portal-launcher--frame) t)
+    (handle-focus-out (list 'focus-out portal-launcher--frame))))
+
 (defun portal-launcher--before-delete (frame)
   "Restore FRAME's original EmacsWindow before Emacs releases its NS view."
   (when (eq frame portal-launcher--frame)
@@ -529,8 +570,7 @@ from an existing minibuffer."
         (let ((inhibit-quit t) (portal-launcher--session nil))
           (unwind-protect
               (when (frame-live-p portal-launcher--frame)
-                (portal--launcher-hide (not (or (consp outcome) (eq outcome 'blur))))
-                (make-frame-invisible portal-launcher--frame t)
+                (portal-launcher--hide-frame (not (or (consp outcome) (eq outcome 'blur))))
                 (portal-launcher--restore-windows windows))
             (remove-hook 'window-buffer-change-functions #'portal-launcher--hide-mode-lines)
             (remove-hook 'post-command-hook #'portal-launcher--dismiss-if-blurred)
@@ -976,8 +1016,7 @@ An active command session is cancelled before hiding its minibuffers."
     (when (and (active-minibuffer-window)
                (eq (window-frame (active-minibuffer-window)) portal-launcher--frame))
       (user-error "Finish or cancel the launcher's minibuffer before hiding it"))
-    (portal--launcher-hide)
-    (make-frame-invisible portal-launcher--frame t)
+    (portal-launcher--hide-frame nil)
     (portal-launcher--restore-selection)))
 
 (defun portal-launcher--check-resize ()
