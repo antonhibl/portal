@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Hidden launcher frame keeps focus and selection
 

@@ -157,6 +157,27 @@ application activation; if the launcher was selected, this means its originating
 window. Minibuffer ownership, display rules and the emulation keymap are
 dynamically bound; completion package settings are untouched.
 
+Emacs's own record of the frame's focus needs help on both ends. As the
+panel becomes key, Emacs's view stores a focus-in event for the launcher
+frame, which Emacs handles when it next reads input. Handled while the frame
+is selected, it records the frame as focused; handled after cleanup selected
+the original window again, `internal-handle-focus-in` treats it as the user
+moving to the frame and switches to it, so a function that read no input
+left the hidden frame selected and reported focused. Hiding does the
+reverse: the view stores a focus-out event only while Emacs reads input, not
+while Lisp orders the panel out, so the hidden frame kept reporting focus.
+Before hiding, with the launcher frame still selected, Portal reads input
+with `read-event`, ten milliseconds at a time, until Emacs records the frame
+focused, for as long as the panel is key and at most 200 ms, so Emacs handles
+the focus-in then; other input read along the way goes back to the front of
+the queue, in order. A one-millisecond read was not enough: Emacs gives up a
+read whose deadline passed before it looks at its queue, which the first
+presentation in a process can take longer than that. After the frame is
+invisible, Portal handles the focus-out event Emacs dropped through
+`handle-focus-out`, which runs `after-focus-change-function` as the event
+would. A dismissed panel then leaves the original window, or the one the
+user moved to, selected, and `frame-focus-state` of the hidden frame nil.
+
 Deletion advice catches requests before Emacs's active-minibuffer validation.
 Delete and disable run once, after command unwind and ownership clearance.
 Normal deletion still restores the donor window in `delete-frame-functions`.

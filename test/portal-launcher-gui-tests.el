@@ -2267,7 +2267,8 @@ The local command n reads a name in the minibuffer and greets it."
         (sit-for 0.1)
         (message "Launcher %S cancellation frontmost: %S (previous %S)"
                  options (portal-test-frontmost) previous)
-        (should (eql previous (portal-test-frontmost)))))
+        (should (eql previous (portal-test-frontmost)))
+        (portal-launcher-gui--check-focus-left ordinary)))
     ;; A persistent panel's command that activates another app leaves that
     ;; app in front, as the panel hides on losing focus.
     (dolist (app (list (portal-test-frontmost -1) "com.apple.finder"))
@@ -2283,7 +2284,7 @@ The local command n reads a name in the minibuffer and greets it."
         (message "Launcher persistent activation frontmost: %S (expected %S)"
                  (portal-test-frontmost) activated)
         (should (eql activated (portal-test-frontmost)))
-        (should (eq ordinary (selected-window)))
+        (portal-launcher-gui--check-focus-left ordinary)
         ;; AppKit can report the activation once the next session watches.
         (portal-launcher-gui--settle-focus)))
     (kill-buffer "*Hello*")
@@ -2293,7 +2294,8 @@ The local command n reads a name in the minibuffer and greets it."
        (lambda () (interactive) (read-string "Activate another app: ") (setq continued t))
        '((30 262144 "\C-]")) (lambda () (portal-test-frontmost destination)))
       (should-not continued)
-      (should (eql destination (portal-test-frontmost))))
+      (should (eql destination (portal-test-frontmost)))
+      (portal-launcher-gui--check-focus-left ordinary))
     (let (finder)
       (portal-launcher-present
        (lambda () (interactive) (setq finder (portal-test-frontmost "com.apple.finder"))))
@@ -2301,6 +2303,92 @@ The local command n reads a name in the minibuffer and greets it."
         (while (not (eql finder (portal-test-frontmost))) (sit-for 0.05)))
       (message "Launcher success frontmost: %S (expected Finder %S)" (portal-test-frontmost) finder)
       (should (eql finder (portal-test-frontmost)))
-      (should (eq ordinary (selected-window))))))
+      (portal-launcher-gui--check-focus-left ordinary))))
+
+(defun portal-launcher-gui--check-focus-left (ordinary)
+  "Check that a dismissed panel left ORDINARY selected and its frame unfocused.
+The real command loop first reads the events the presentation queued,
+such as the focus-in that AppKit gave the panel: a recursive edit that
+ends once Emacs waits for input. A presentation that read no input left
+that event queued, and Emacs's `handle-focus-in' then switched to the
+hidden frame."
+  (let* ((depth (1+ (recursion-depth)))
+         (timer (run-with-timer 0.3 0.1 (lambda () (when (= (recursion-depth) depth) (exit-recursive-edit))))))
+    (unwind-protect (recursive-edit) (cancel-timer timer)))
+  (should (eq ordinary (selected-window)))
+  (should-not (frame-focus-state portal-launcher--frame)))
+
+(ert-deftest portal-launcher-gui-dismissal-leaves-focus ()
+  (portal-launcher-gui--with-panel
+    (portal-launcher-gui--dismiss-shortcut)
+    (dolist (kind '(buffer minibuffer))
+      (dolist (reason '(no-input success escape quit second shortcut hide blur-emacs))
+        (message "Launcher dismissal focus: %S %S" kind reason)
+        (portal-launcher-gui--present
+         (if (eq reason 'no-input) (lambda () 'done)
+           (lambda () (interactive) (read-string "Focus: ")))
+         (pcase reason
+           ('no-input nil)
+           ('success '((36 0 "\r")))
+           ('escape '((53 0 "\e")))
+           ('quit '(quit))
+           (_ '((30 262144 "\C-]"))))
+         (lambda ()
+           (pcase reason
+             ('second (portal-launcher-present #'ignore))
+             ('shortcut (portal-launcher-gui--press 'portal-launcher-gui))
+             ('hide (portal-launcher-hide))
+             ('blur-emacs
+              (portal-view--with-frame-title (window-frame ordinary) #'portal-test-native-target-frame)
+              (portal-test-native-focus-target))))
+         (list :kind kind))
+        (portal-launcher-gui--check-focus-left ordinary)))
+    ;; An explicitly shown panel, hidden again.
+    (portal-launcher-show content)
+    (portal-launcher-hide)
+    (portal-launcher-gui--check-focus-left ordinary)))
+
+(ert-deftest portal-launcher-gui-dismissal-survives-focus-hook-errors ()
+  ;; Handling the frame's focus events runs the user's function; its errors
+  ;; are reported, the panel still hides, and input read before the focus
+  ;; event is queued again.
+  (portal-launcher-gui--with-panel
+    (let ((messages (with-current-buffer "*Messages*" (point-max-marker))))
+      (let ((after-focus-change-function (lambda () (error "Focus hook failed")))
+            (unread-command-events (list 'portal-launcher-gui-queued)))
+        (should (eq 'done (portal-launcher-present (lambda () 'done))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame))
+        (should (equal unread-command-events '(portal-launcher-gui-queued))))
+      (should (with-current-buffer "*Messages*"
+                (save-excursion (goto-char messages)
+                                (search-forward "Launcher focus event: (error \"Focus hook failed\")" nil t))))
+      (portal-launcher-gui--check-focus-left ordinary)
+      ;; A quit from the function is not reported but passes through, after
+      ;; the panel hid and the frame's focus is gone: from a presentation,
+      ;; and from an explicit hide, which still restores the selection.
+      (let ((after-focus-change-function (lambda () (signal 'quit nil))))
+        ;; `should-error' catches only errors.
+        (should (eq 'quit (condition-case nil (portal-launcher-present (lambda () 'done)) (quit 'quit))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame))
+        (portal-launcher-gui--check-focus-left ordinary)
+        (portal-launcher-show content)
+        (should (eq 'quit (condition-case nil (portal-launcher-hide) (quit 'quit))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame)))
+      (portal-launcher-gui--check-focus-left ordinary)
+      ;; A function that deletes the launcher frame leaves the other frames
+      ;; alone, and the next presentation makes a new one.
+      (let ((after-focus-change-function
+             (lambda () (when (frame-live-p portal-launcher--frame)
+                          (delete-frame portal-launcher--frame t)))))
+        (should (eq 'done (portal-launcher-present (lambda () 'done))))
+        (should-not portal-launcher--frame)
+        (should-not (plist-get (portal--launcher-inspect) :attached))
+        (should (frame-visible-p (window-frame ordinary)))
+        (should (eq ordinary (selected-window))))
+      (should (eq 'again (portal-launcher-present (lambda () 'again))))
+      (portal-launcher-gui--check-focus-left ordinary))))
 
 (provide 'portal-launcher-gui-tests)
