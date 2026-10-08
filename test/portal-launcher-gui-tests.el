@@ -2348,4 +2348,18 @@ hidden frame."
     (portal-launcher-hide)
     (portal-launcher-gui--check-focus-left ordinary)))
 
+(ert-deftest portal-launcher-gui-dismissal-survives-focus-hook-errors ()
+  ;; Handling the frame's focus events runs the user's function; its errors
+  ;; are reported, and the panel still hides.
+  (portal-launcher-gui--with-panel
+    (let ((messages (with-current-buffer "*Messages*" (point-max-marker))))
+      (let ((after-focus-change-function (lambda () (error "Focus hook failed"))))
+        (should (eq 'done (portal-launcher-present (lambda () 'done))))
+        (should-not (plist-get (portal--launcher-inspect) :visible))
+        (should-not (frame-visible-p portal-launcher--frame)))
+      (should (with-current-buffer "*Messages*"
+                (save-excursion (goto-char messages)
+                                (search-forward "Launcher focus event: (error \"Focus hook failed\")" nil t))))
+      (portal-launcher-gui--check-focus-left ordinary))))
+
 (provide 'portal-launcher-gui-tests)

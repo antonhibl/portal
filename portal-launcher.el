@@ -218,12 +218,17 @@ application again, as `portal--launcher-hide' takes it. The panel gives
 up key status as this orders it out, but Emacs's view only queues a
 focus-out event while Emacs reads input, not here, in Lisp, so the frame
 would stay recorded as focused; see `frame-focus-state'. This handles
-that event as Emacs would have."
-  (portal-launcher--read-focus-events)
-  (portal--launcher-hide restore-focus)
-  (make-frame-invisible portal-launcher--frame t)
+that event as Emacs would have. Handling either event runs the user's
+`after-focus-change-function'; an error there is reported, as the
+command loop reports it, and the panel hides either way."
+  (unwind-protect
+      (with-demoted-errors "Launcher focus event: %S"
+        (portal-launcher--read-focus-events))
+    (portal--launcher-hide restore-focus)
+    (make-frame-invisible portal-launcher--frame t))
   (when (eq (frame-focus-state portal-launcher--frame) t)
-    (handle-focus-out (list 'focus-out portal-launcher--frame))))
+    (with-demoted-errors "Launcher focus event: %S"
+      (handle-focus-out (list 'focus-out portal-launcher--frame)))))
 
 (defun portal-launcher--before-delete (frame)
   "Restore FRAME's original EmacsWindow before Emacs releases its NS view."
