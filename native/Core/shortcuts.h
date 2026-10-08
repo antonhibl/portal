@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* System-wide shortcuts, as the Emacs bindings use them.  shortcuts.c
-   implements these with the hot key primitives of portal.h.  Only the core,
+/* System-wide shortcuts, as the Emacs bindings use them, and chords posted
+   to the frontmost application.  shortcuts.c implements these with the hot
+   key and key post primitives of portal.h.  Only the core,
    tests and the standalone checks include this header.
 
    A chord is written as hyphen-separated modifiers, Control, Option, Command
@@ -37,5 +38,12 @@ bool portal_shortcuts_remove(uint64_t id, portal_text *error);
    members "id", "chord", as portal_shortcuts_chord writes it, "hotkey", the
    platform's name for it, and "held". */
 bool portal_shortcuts_describe(portal_text *json, portal_text *error);
+
+/* Press and release CHORD, written as above, in the frontmost application,
+   with portal_key_post: its letters and digits name the characters the
+   current keyboard layout types, not US key positions.  Fails, posting
+   nothing, for a chord that is not written as above, or when the platform
+   cannot post it. */
+bool portal_shortcuts_post(portal_string chord, portal_text *error);
 
 #endif

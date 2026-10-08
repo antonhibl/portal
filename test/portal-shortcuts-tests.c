@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* The core's system-wide shortcuts, native/Core/shortcuts.c, with the fake
-   platform's hot keys and a real pipe standing in for Emacs's.  The test
-   plays the platform, reporting presses and releases to the core. */
+/* The core's system-wide shortcuts and posted chords, native/Core/shortcuts.c,
+   with the fake platform's hot keys and key posts and a real pipe standing in
+   for Emacs's.  The test plays the platform, reporting presses and releases
+   to the core. */
 #define _POSIX_C_SOURCE 200809L
 
 #include <fcntl.h>
@@ -262,11 +263,54 @@ static void test_presses(void)
     close(records);
 }
 
+static bool posts(const char *chord)
+{
+    portal_text error = {0};
+    bool done = portal_shortcuts_post(text(chord), &error);
+    free(error.data);
+    return done;
+}
+
+static void test_posting(void)
+{
+    char registered[4096], hotkeys[1024];
+    snprintf(registered, sizeof registered, "%s", described());
+    snprintf(hotkeys, sizeof hotkeys, "%s", portal_fake_hotkeys());
+    /* The parsed key and modifiers reach the platform, letters uppercase. */
+    CHECK(posts("command-v"));
+    CHECK(posts("Shift-Command-V"));
+    CHECK(posts("Option-Command-7"));
+    CHECK(posts("Control-Option-Shift-Command-Space"));
+    CHECK(posts("control-f12"));
+    CHECK(is_text(portal_fake_posted(), "V+8 V+9 7+12 Space+15 F12+2"));
+    /* An invalid chord never does, and fails as it does for a shortcut. */
+    const char *invalid[] = {"", "V", "Shift-V", "Command-!", "Command-V Q", "Command-F21"};
+    for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++)
+        CHECK(!posts(invalid[i]));
+    portal_text error = {0};
+    CHECK(!portal_shortcuts_post(text("Hyper-V"), &error));
+    CHECK(says(&error, "A shortcut's modifiers are Control, Option, Command and Shift, each at "
+                       "most once, not: Hyper"));
+    CHECK(is_text(portal_fake_posted(), ""));
+    /* The platform's refusal names the chord. */
+    CHECK(!portal_shortcuts_post(text("shift-control-f19"), &error));
+    CHECK(says(&error, "Cannot post Control-Shift-F19: The fake may not post F19+3"));
+    portal_fake_refuse(true);
+    CHECK(!portal_shortcuts_post(text("Command-V"), &error));
+    CHECK(says(&error, "Cannot post Command-V: The fake refuses to run view primitives"));
+    portal_fake_refuse(false);
+    CHECK(is_text(portal_fake_posted(), ""));
+    /* Posting changes no shortcut. */
+    CHECK(is_text(described(), registered));
+    CHECK(is_text(portal_fake_hotkeys(), hotkeys));
+}
+
 int main(void)
 {
     test_chords();
     test_registration();
     test_presses();
+    test_posting();
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

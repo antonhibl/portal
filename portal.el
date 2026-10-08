@@ -52,6 +52,14 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
+;; Posts nothing until `portal-post-key' is called.
+(require 'portal-system
+         (expand-file-name "portal-system"
+                           (file-name-directory
+                            (or load-file-name
+                                (bound-and-true-p byte-compile-current-file)
+                                buffer-file-name))))
+
 (defcustom portal-terminal-consult-auto-enable t
   "Whether loading Portal and Consult enables their terminal integration.
 Set this to nil before loading either package to opt out.  The integration

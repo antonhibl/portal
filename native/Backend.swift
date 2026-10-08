@@ -106,6 +106,11 @@ public func portalHotkeyUnregister(_ hotkey: UInt64, _ error: UnsafeMutablePoint
     perform(error) { try Hotkeys.unregister(hotkey) } != nil
 }
 
+@_cdecl("portal_key_post")
+public func portalKeyPost(_ key: UInt32, _ modifiers: UInt32, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { try KeyPost.post(key: key, modifiers: modifiers) } != nil
+}
+
 /// The `NativeView` the core holds as VIEW.
 private func native(_ view: OpaquePointer) -> NativeView {
     Unmanaged<NativeView>.fromOpaque(UnsafeRawPointer(view)).takeUnretainedValue()

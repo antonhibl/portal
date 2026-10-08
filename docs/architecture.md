@@ -168,6 +168,26 @@ another view. The platform draws AppKit buttons and the search field, handles
 layout, SF Symbols, tooltips, accessibility, tracking areas and appearance changes,
 and converts face colors to `NSColor`s.
 
+## System-wide keys
+
+The core's `native/Core/shortcuts.c` parses chord notation such as
+`Control-Option-Command-P` and owns global shortcuts' IDs and held state. The
+platform supplies three primitives: register a hot key, unregister it, and post
+a chord. Registering takes a key by its position on a US keyboard and reports
+presses and releases through `portal_hotkey_pressed` and
+`portal_hotkey_released`; the core turns each press into one `shortcut ID`
+record.
+
+`portal_key_post`, behind `portal-post-key` in `portal-system.el`, presses and
+releases a chord in the frontmost application, which may be Emacs. It takes the
+same parsed key, except that a letter or digit names a character: the platform
+finds the key that types it in the current layout, with Command held when the
+chord has Command, and fails without posting when none does. On macOS, that is
+`UCKeyTranslate` over the current layout, or the current ASCII-capable one for
+input sources without layout data. It posts exactly the chord's modifiers, never
+ones the user holds. Without Accessibility permission, macOS silently drops posted
+events, so the primitive fails first when `AXIsProcessTrusted()` is false.
+
 ## Geometry, attachment and lifetime
 
 Rectangles use Emacs frame pixels from the content area's top left, as reported

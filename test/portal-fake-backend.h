@@ -38,8 +38,8 @@ struct portal_fake_request {
 /* Take the oldest request not taken yet into *REQUEST; false for none. */
 bool portal_fake_request(struct portal_fake_request *request);
 
-/* While REFUSE, every view, web, terminal and hot key primitive fails
-   without doing anything, as a platform does when called on the wrong
+/* While REFUSE, every view, web, terminal, hot key and key post primitive
+   fails without doing anything, as a platform does when called on the wrong
    thread. */
 void portal_fake_refuse(bool refuse);
 
@@ -56,6 +56,10 @@ void portal_fake_report(portal_view *terminal, const char *title, const char *di
 const char *portal_fake_hotkeys(void);
 /* How many times a hot key was registered again with its own chord. */
 size_t portal_fake_hotkey_restarts(void);
+/* The chords posted to the frontmost application since the last call,
+   oldest first, such as "V+8 F12+3": each one's key and its
+   portal_modifier bits.  Valid until the next call. */
+const char *portal_fake_posted(void);
 
 /* How many timers portal_timer_start started that have not fired. */
 size_t portal_fake_timers(void);

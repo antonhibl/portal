@@ -3,7 +3,8 @@
    primitives.  Lisp names each shortcut and keeps the function it calls; the
    core keeps each registration's chord and ID, and turns a press into one
    record for Emacs.  The platform registers chords with the system and
-   reports what the user presses, in any application. */
+   reports what the user presses, in any application.  The same notation
+   names a chord that Lisp posts to the frontmost application. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,13 +152,13 @@ bool portal_shortcuts_chord(portal_string chord, portal_text *normalized, portal
     return true;
 }
 
-/* Put the chord in the platform's ERROR, which says why it refused KEY with
-   BITS, and return false. */
-static bool refused(portal_text *error, uint32_t key, uint32_t bits)
+/* Put ACTION and the chord in the platform's ERROR, which says why it
+   refused KEY with BITS, and return false. */
+static bool refused(portal_text *error, const char *action, uint32_t key, uint32_t bits)
 {
     char chord[64], message[96];
     write_chord(key, bits, chord);
-    snprintf(message, sizeof message, "Cannot register shortcut %s: ", chord);
+    snprintf(message, sizeof message, "Cannot %s %s: ", action, chord);
     portal_text reason = *error;
     *error = (portal_text) {0};
     fail(error, message, (portal_string) {reason.data ? reason.data : "", reason.length});
@@ -187,7 +188,7 @@ bool portal_shortcuts_set(uint64_t replacing, portal_string chord, uint64_t *id,
            press from before this set stale there, even one still in the
            system's queue, as the new ID makes one stale here. */
         if (!portal_hotkey_register(old->hotkey, key, bits, error))
-            return refused(error, key, bits);
+            return refused(error, "register shortcut", key, bits);
         *id = old->id = ++shortcuts.last;
         return true;
     }
@@ -202,7 +203,7 @@ bool portal_shortcuts_set(uint64_t replacing, portal_string chord, uint64_t *id,
        leaves the old one registered. */
     uint64_t hotkey = ++shortcuts.last;
     if (!portal_hotkey_register(hotkey, key, bits, error))
-        return refused(error, key, bits);
+        return refused(error, "register shortcut", key, bits);
     if (old && !portal_hotkey_unregister(old->hotkey, error)) {
         portal_text ignored = {0};
         portal_hotkey_unregister(hotkey, &ignored);
@@ -255,6 +256,14 @@ bool portal_shortcuts_describe(portal_text *result, portal_text *error)
     }
     *result = (portal_text) {json.data, json.length};
     return true;
+}
+
+bool portal_shortcuts_post(portal_string chord, portal_text *error)
+{
+    uint32_t key, bits;
+    if (!parse(chord, &key, &bits, error))
+        return false;
+    return portal_key_post(key, bits, error) || refused(error, "post", key, bits);
 }
 
 /* A press sends one record, however long the chord is held: the platform
