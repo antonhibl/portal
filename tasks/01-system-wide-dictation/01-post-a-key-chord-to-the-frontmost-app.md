@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Post a key chord to the frontmost app
 
