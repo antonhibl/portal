@@ -429,7 +429,8 @@ bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
    as an application matching the chord to its shortcuts reads it.  Finding
    that key is the platform's job.  Fails, posting nothing, when no key
    types the character, or when the system would drop the events, as macOS
-   does without Accessibility permission.  The events are only posted: the
+   does without Accessibility permission; asking the user for a permission
+   then is the platform's business too.  The events are only posted: the
    application handles them after this returns, or ignores them. */
 bool portal_key_post(uint32_t key, uint32_t modifiers, portal_text *error);
 

@@ -10,9 +10,10 @@ import PortalCore
 enum KeyPost {
     static func post(key: UInt32, modifiers: UInt32) throws {
         // Without permission macOS drops posted events without a word.
-        guard AXIsProcessTrusted() else {
-            throw NativeError.message("Emacs has no Accessibility permission; allow it in System Settings "
-                                      + "> Privacy & Security > Accessibility, then restart Emacs")
+        guard trusted() else {
+            throw NativeError.message("Emacs has no Accessibility permission; switch it on in System Settings "
+                                      + "> Privacy & Security > Device Control and Data Access "
+                                      + "(Accessibility before macOS 27)")
         }
         let command = modifiers & PORTAL_SUPER.rawValue != 0
         let code: CGKeyCode
@@ -38,6 +39,29 @@ enum KeyPost {
         up.flags = flags
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+    }
+
+    /// Whether this process has asked for the permission. macOS shows its
+    /// alert again on every request once the last alert is gone (macOS
+    /// 27.0.1), so only the first failed post asks; later ones only fail.
+    private static var asked = false
+
+    /// Whether macOS lets Emacs post events, asking the user once when it does
+    /// not: the system alert "Emacs would like to control this Mac and access
+    /// your data" offers Open System Settings, and adds Emacs to that list,
+    /// switched off, so the user only flips the switch.
+    /// Only a post asks, never loading Portal or setting a global shortcut:
+    /// Apple's guidance is to ask for a permission when the feature needing it
+    /// is used.
+    private static func trusted() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        if !asked {
+            asked = true
+            // kAXTrustedCheckOptionPrompt's value, spelled out: Swift 6 rejects
+            // the global as not concurrency-safe.
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        }
+        return false
     }
 
     /// The first key that types CHARACTER, an ASCII letter or digit, ignoring

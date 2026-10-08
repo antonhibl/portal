@@ -34,7 +34,8 @@ Portal worktree or PR; do not commit the dotfiles repo unless asked.
     inserting there.
   - If posting fails: say the text is on the clipboard, and when the error is
     missing Accessibility, say to enable Emacs in System Settings ▸ Privacy &
-    Security ▸ Accessibility and restart Emacs.
+    Security ▸ Device Control and Data Access (Accessibility before macOS 27;
+    macOS has asked, and listed Emacs there) and to dictate again.
 - Play a short system sound on start and stop
   (`afplay /System/Library/Sounds/Tink.aiff`), since the mode line is not
   visible from other apps.

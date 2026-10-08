@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Ask for Accessibility permission when a post needs it
 

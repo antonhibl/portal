@@ -14,8 +14,9 @@ pasted into the frontmost app with a posted Command-V.
   decides where the text goes. Portal's native module supplies one primitive
   that knows nothing about dictation: posting a key chord to the frontmost
   app ([ADR 0003](../../docs/adr/0003-platform-interface-primitives.md)).
-  Accessibility permission is granted once by hand; a failed post says when
-  it is missing.
+  macOS asks for Accessibility permission on the first post that needs it,
+  once per Emacs session; that post fails, saying so, and the next one works
+  once it is granted.
 - **Always paste through the clipboard.** The transcript replaces the
   clipboard and stays there; nothing is restored. If the paste lands nowhere
   or fails, the text is still on the clipboard and in clipboard history.
@@ -42,7 +43,9 @@ Superwhisper's default replaces the clipboard. Facts that shape the tasks:
   fixed key code fires another shortcut.
 - Accessibility belongs to Emacs.app, since the module runs in its process.
   Grants follow the code signature: reinstalling emacs-plus can break one
-  until Emacs is removed and re-added, and a running process does not see a
-  new grant until it restarts.
+  until Emacs is removed and re-added. A running process sees a new grant
+  without restarting: Rectangle polls `AXIsProcessTrusted()` until it is
+  true and carries on, and macOS asks for a relaunch only for Screen
+  Recording and Input Monitoring, not for this permission.
 - Portal's global shortcuts use Carbon hot keys, which need no Input
   Monitoring permission and keep working under Secure Event Input.

@@ -186,7 +186,14 @@ chord has Command, and fails without posting when none does. On macOS, that is
 `UCKeyTranslate` over the current layout, or the current ASCII-capable one for
 input sources without layout data. It posts exactly the chord's modifiers, never
 ones the user holds. Without Accessibility permission, macOS silently drops posted
-events, so the primitive fails first when `AXIsProcessTrusted()` is false.
+events, so the primitive fails first when `AXIsProcessTrusted()` is false, and
+asks for the permission then, through `AXIsProcessTrustedWithOptions`: macOS
+shows its own alert and adds Emacs to the Device Control and Data Access list
+(Accessibility before macOS 27) switched off, so the user only flips the
+switch. macOS shows the alert again on every request once the last one is
+gone, so the platform asks once per process; later failed posts only fail.
+Only a post asks; loading Portal or setting a global shortcut never does. A
+grant applies to the running Emacs: the next post works without a restart.
 
 ## Geometry, attachment and lifetime
 

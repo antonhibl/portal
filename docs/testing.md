@@ -44,6 +44,14 @@ Fake-backend tests cannot prove native window behavior. Injected AppKit or Carbo
 events cannot prove physical-key delivery, Accessibility, Spaces or fullscreen
 behavior. Verify those manually.
 
+The VM's Emacs has no Accessibility grant, and nothing can grant one from a
+shell, so a posted chord there only fails. The Accessibility alert can be
+checked: TCC attributes an Emacs started from the runner's shell to sshd, a
+platform binary it never prompts for, so start Emacs with `open -n -W -a` in
+the runner's command, reset with `tccutil reset Accessibility org.gnu.Emacs`,
+and read the alert's lifetime from `log show` (`universalAccessAuthWarn`
+launches and WindowServer's `AppVisible` assertion on it).
+
 Run GUI checks in disposable graphical Emacs or standalone processes inside the
 VM; they can steal focus or crash. Keep launcher subroutine trampolines enabled.
 Report skips and manual checks separately from passes. Record the native acceptance
