@@ -11,10 +11,11 @@ pasted into the frontmost app with a posted Command-V.
 ## Decisions
 
 - **Split of responsibilities.** whisper.el records and transcribes. Lisp
-  decides where the text goes. Portal's native module supplies two primitives
-  that know nothing about dictation: whether Emacs has Accessibility
-  permission, and posting a key chord to the frontmost app
-  ([ADR 0003](../../docs/adr/0003-platform-interface-primitives.md)).
+  decides where the text goes. Portal's native module supplies one primitive
+  that knows nothing about dictation: posting a key chord to the frontmost
+  app ([ADR 0003](../../docs/adr/0003-platform-interface-primitives.md)).
+  Accessibility permission is granted once by hand; a failed post says when
+  it is missing.
 - **Always paste through the clipboard.** The transcript replaces the
   clipboard and stays there; nothing is restored. If the paste lands nowhere
   or fails, the text is still on the clipboard and in clipboard history.
@@ -22,7 +23,7 @@ pasted into the frontmost app with a posted Command-V.
   A Command-V with no target does nothing.
 - **Not in scope:** clipboard restore, typing keystrokes instead of pasting,
   and refusing to paste when the frontmost app changed during transcription
-  (that guard would need a third primitive, the frontmost app's identity).
+  (that guard would need another primitive, the frontmost app's identity).
 
 ## Prior art
 

@@ -1,6 +1,6 @@
 ---
 status: todo
-blocked-by: [01-system-wide-dictation/01-accessibility-permission-check, 01-system-wide-dictation/02-post-a-key-chord-to-the-frontmost-app]
+blocked-by: [01-system-wide-dictation/01-post-a-key-chord-to-the-frontmost-app]
 ---
 # Dictation command in the Emacs config
 
@@ -33,7 +33,8 @@ Portal worktree or PR; do not commit the dotfiles repo unless asked.
     keyboard handles the posted Command-V, and pick the better of pasting and
     inserting there.
   - If posting fails: say the text is on the clipboard, and when the error is
-    missing Accessibility, offer `(portal-accessibility-trusted-p t)`.
+    missing Accessibility, say to enable Emacs in System Settings ▸ Privacy &
+    Security ▸ Accessibility and restart Emacs.
 - Play a short system sound on start and stop
   (`afplay /System/Library/Sounds/Tink.aiff`), since the mode line is not
   visible from other apps.
