@@ -2377,6 +2377,18 @@ hidden frame."
         (should (eq 'quit (condition-case nil (portal-launcher-hide) (quit 'quit))))
         (should-not (plist-get (portal--launcher-inspect) :visible))
         (should-not (frame-visible-p portal-launcher--frame)))
+      (portal-launcher-gui--check-focus-left ordinary)
+      ;; A function that deletes the launcher frame leaves the other frames
+      ;; alone, and the next presentation makes a new one.
+      (let ((after-focus-change-function
+             (lambda () (when (frame-live-p portal-launcher--frame)
+                          (delete-frame portal-launcher--frame t)))))
+        (should (eq 'done (portal-launcher-present (lambda () 'done))))
+        (should-not portal-launcher--frame)
+        (should-not (plist-get (portal--launcher-inspect) :attached))
+        (should (frame-visible-p (window-frame ordinary)))
+        (should (eq ordinary (selected-window))))
+      (should (eq 'again (portal-launcher-present (lambda () 'again))))
       (portal-launcher-gui--check-focus-left ordinary))))
 
 (provide 'portal-launcher-gui-tests)

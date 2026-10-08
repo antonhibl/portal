@@ -184,8 +184,8 @@ A minibuffer launcher's frame is minibuffer-only instead.")
     (select-window portal-launcher--return-window 'norecord))
   (setq portal-launcher--return-window nil))
 
-(defun portal-launcher--read-focus-events ()
-  "Let Emacs handle the focus-in event it has queued for the launcher frame.
+(defun portal-launcher--read-focus-events (frame)
+  "Let Emacs handle the focus-in event it has queued for launcher FRAME.
 As the native panel becomes key, Emacs's view queues a focus-in event
 for the frame, which Emacs handles when it next reads input. Handled
 while the frame is selected, it only records the frame as focused.
@@ -199,13 +199,14 @@ input read along the way goes back to the front of the queue, in order,
 for the command loop, even if handling a focus event signals. Each read
 waits for a few milliseconds: Emacs gives up a read whose deadline
 passed before it looks at its queue. Only a graphical frame has focus
-events."
-  (when (display-graphic-p portal-launcher--frame)
+events, and handling one can delete FRAME."
+  (when (display-graphic-p frame)
     (let ((inhibit--record-char t)
           (deadline (time-add nil 0.2))
           events)
       (unwind-protect
-          (while (and (not (eq (frame-focus-state portal-launcher--frame) t))
+          (while (and (frame-live-p frame)
+                      (not (eq (frame-focus-state frame) t))
                       (plist-get (portal--launcher-inspect) :key)
                       (time-less-p nil deadline))
             (when-let* ((event (read-event nil nil 0.01)))
@@ -225,16 +226,19 @@ that event as Emacs would have. Handling either event runs the user's
 command loop reports it, and whatever exits the handling, the panel
 hides and the frame's focus is recorded gone. C-g while reading is
 input for the command loop, queued again like the rest, not a quit of
-this cleanup."
-  (let ((inhibit-quit t))
+this cleanup. A function that deletes the frame leaves nothing to hide:
+deletion detaches the panel."
+  (let ((frame portal-launcher--frame)
+        (inhibit-quit t))
     (unwind-protect
         (with-demoted-errors "Launcher focus event: %S"
-          (portal-launcher--read-focus-events))
-      (portal--launcher-hide restore-focus)
-      (make-frame-invisible portal-launcher--frame t)
-      (when (eq (frame-focus-state portal-launcher--frame) t)
-        (with-demoted-errors "Launcher focus event: %S"
-          (handle-focus-out (list 'focus-out portal-launcher--frame)))))))
+          (portal-launcher--read-focus-events frame))
+      (when (frame-live-p frame)
+        (portal--launcher-hide restore-focus)
+        (make-frame-invisible frame t)
+        (when (eq (frame-focus-state frame) t)
+          (with-demoted-errors "Launcher focus event: %S"
+            (handle-focus-out (list 'focus-out frame))))))))
 
 (defun portal-launcher--before-delete (frame)
   "Restore FRAME's original EmacsWindow before Emacs releases its NS view."
