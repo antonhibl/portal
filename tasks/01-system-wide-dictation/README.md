@@ -43,7 +43,9 @@ Superwhisper's default replaces the clipboard. Facts that shape the tasks:
   fixed key code fires another shortcut.
 - Accessibility belongs to Emacs.app, since the module runs in its process.
   Grants follow the code signature: reinstalling emacs-plus can break one
-  until Emacs is removed and re-added, and a running process does not see a
-  new grant until it restarts.
+  until Emacs is removed and re-added. A running process sees a new grant
+  without restarting: Rectangle polls `AXIsProcessTrusted()` until it is
+  true and carries on, and macOS asks for a relaunch only for Screen
+  Recording and Input Monitoring, not for this permission.
 - Portal's global shortcuts use Carbon hot keys, which need no Input
   Monitoring permission and keep working under Secure Event Input.
