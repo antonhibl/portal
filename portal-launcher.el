@@ -196,20 +196,22 @@ function reads no input leaves the event queued, so this reads input
 while the frame is still selected, until Emacs records it focused, for
 as long as the panel is key, which is what queued the event. Other
 input read along the way goes back to the front of the queue, in order,
-for the command loop. Each read waits for a few milliseconds: Emacs
-gives up a read whose deadline passed before it looks at its queue.
-Only a graphical frame has focus events."
+for the command loop, even if handling a focus event signals. Each read
+waits for a few milliseconds: Emacs gives up a read whose deadline
+passed before it looks at its queue. Only a graphical frame has focus
+events."
   (when (display-graphic-p portal-launcher--frame)
     (let ((inhibit--record-char t)
           (deadline (time-add nil 0.2))
           events)
-      (while (and (not (eq (frame-focus-state portal-launcher--frame) t))
-                  (plist-get (portal--launcher-inspect) :key)
-                  (time-less-p nil deadline))
-        (when-let* ((event (read-event nil nil 0.01)))
-          (push event events)))
-      (when events
-        (setq unread-command-events (nconc (nreverse events) unread-command-events))))))
+      (unwind-protect
+          (while (and (not (eq (frame-focus-state portal-launcher--frame) t))
+                      (plist-get (portal--launcher-inspect) :key)
+                      (time-less-p nil deadline))
+            (when-let* ((event (read-event nil nil 0.01)))
+              (push event events)))
+        (when events
+          (setq unread-command-events (nconc (nreverse events) unread-command-events)))))))
 
 (defun portal-launcher--hide-frame (restore-focus)
   "Hide the panel and the dedicated frame, which loses Emacs's focus.
