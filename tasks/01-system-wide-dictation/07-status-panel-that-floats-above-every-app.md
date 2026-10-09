@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Status panel that floats above every app
 
