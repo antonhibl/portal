@@ -22,7 +22,7 @@ enum Hotkeys {
 
     /// Carbon's virtual key code for each key portal.h names: positions on
     /// a US keyboard, independent of the input source. Posted keys share
-    /// its Space and function keys, whose codes no layout changes.
+    /// its Space, Escape and function keys, whose codes no layout changes.
     static let codes: [UInt32: UInt32] = {
         let keys: [(Character, UInt32)] = [
             ("A", 0), ("S", 1), ("D", 2), ("F", 3), ("H", 4), ("G", 5), ("Z", 6), ("X", 7),
@@ -30,7 +30,7 @@ enum Hotkeys {
             ("Y", 16), ("T", 17), ("1", 18), ("2", 19), ("3", 20), ("4", 21), ("6", 22),
             ("5", 23), ("9", 25), ("7", 26), ("8", 28), ("0", 29), ("O", 31), ("U", 32),
             ("I", 34), ("P", 35), ("L", 37), ("J", 38), ("K", 40), ("N", 45), ("M", 46),
-            (" ", 49)
+            (" ", 49), ("\u{1b}", 53)
         ]
         let functionKeys: [UInt32] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
                                       105, 107, 113, 106, 64, 79, 80, 90]

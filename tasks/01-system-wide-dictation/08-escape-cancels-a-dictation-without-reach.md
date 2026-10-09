@@ -36,8 +36,8 @@ Notes: `.cache/research/dictation-escape-cancel.md` (local, ignored).
 
 ## Acceptance
 
-- [ ] `Escape` registers as a global shortcut, and `Shift-A`/`A` are still refused.
-- [ ] In the VM, with Escape registered and another app frontmost, a
+- [x] `Escape` registers as a global shortcut, and `Shift-A`/`A` are still refused.
+- [x] In the VM, with Escape registered and another app frontmost, a
       posted Escape runs the shortcut and the app gets no Escape; once it is
       removed, the app gets the next Escape.
-- [ ] CTest covers the chord rules.
+- [x] CTest covers the chord rules.

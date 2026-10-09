@@ -17,7 +17,8 @@ enum KeyPost {
         }
         let command = modifiers & PORTAL_SUPER.rawValue != 0
         let code: CGKeyCode
-        if key == UInt32(Character(" ").asciiValue!) || key > UInt32(PORTAL_FUNCTION_KEY) {
+        if key == UInt32(Character(" ").asciiValue!) || key == UInt32(PORTAL_ESCAPE_KEY)
+            || key > UInt32(PORTAL_FUNCTION_KEY) {
             guard let fixed = Hotkeys.codes[key] else { throw NativeError.message("No such key: \(key)") }
             code = CGKeyCode(fixed)
         } else {

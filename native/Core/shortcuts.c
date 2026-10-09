@@ -65,6 +65,8 @@ static uint32_t key_named(const char *word, size_t length)
     }
     if (named(word, length, "Space"))
         return ' ';
+    if (named(word, length, "Escape"))
+        return PORTAL_ESCAPE_KEY;
     if ((length == 2 || length == 3) && upper(word[0]) == 'F' && word[1] != '0') {
         uint32_t number = 0;
         for (size_t i = 1; i < length; i++) {
@@ -97,10 +99,12 @@ static bool parse(portal_string chord, uint32_t *key, uint32_t *bits, portal_tex
         word = hyphen + 1;
     }
     *key = key_named(word, (size_t) (end - word));
-    if (!*key || !(*bits & (PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER)))
+    /* Escape is the one key that needs no modifier. */
+    if (!*key
+        || (*key != PORTAL_ESCAPE_KEY && !(*bits & (PORTAL_CONTROL | PORTAL_META | PORTAL_SUPER))))
         return fail(error,
                     "A shortcut is Control, Option or Command, then A-Z, 0-9, Space or F1-F20, "
-                    "as in Control-Option-Command-P, not: ",
+                    "or Escape with any modifiers or none, as in Control-Option-Command-P, not: ",
                     chord);
     return true;
 }
@@ -114,6 +118,8 @@ static void write_chord(uint32_t key, uint32_t bits, char text[64])
             length += (size_t) snprintf(text + length, 64 - length, "%s-", modifiers[i].name);
     if (key == ' ')
         snprintf(text + length, 64 - length, "Space");
+    else if (key == PORTAL_ESCAPE_KEY)
+        snprintf(text + length, 64 - length, "Escape");
     else if (key > PORTAL_FUNCTION_KEY)
         snprintf(text + length, 64 - length, "F%u", (unsigned) (key - PORTAL_FUNCTION_KEY));
     else

@@ -406,18 +406,18 @@ void portal_timer_start(uint64_t token, uint64_t milliseconds);
 
 /* System-wide hot keys, for the core's shortcuts (shortcuts.h).  KEY is a
    physical key, by its position on a US keyboard whatever the input source:
-   an uppercase letter 'A' to 'Z', a digit '0' to '9', ' ' for Space, or
-   PORTAL_FUNCTION_KEY + N for function key FN, N from 1 to 20.  MODIFIERS
-   are the portal_modifier bits held with it, exactly, and include Control,
-   Meta or Super.  Register fails, saying why, when the system or another
-   application has the chord; the core never registers one chord under two
+   an uppercase letter 'A' to 'Z', a digit '0' to '9', ' ' for Space,
+   PORTAL_ESCAPE_KEY, or PORTAL_FUNCTION_KEY + N for function key FN, N from
+   1 to 20.  MODIFIERS are the portal_modifier bits held with it, exactly,
+   and include Control, Meta or Super unless KEY is Escape.  Register fails,
+   saying why, when the system or another application has the chord; the core never registers one chord under two
    hot keys.  HOTKEY is the core's name for the registration, never 0 and
    never given to another one, which the platform reports presses and
    releases with.  Registering HOTKEY again with its own chord restarts it:
    the platform keeps the chord, and reports nothing that happened before,
    such as a press still waiting in the system's queue.  Once unregister
    returns, the platform reports nothing more for HOTKEY. */
-enum { PORTAL_FUNCTION_KEY = 0x100 };
+enum { PORTAL_ESCAPE_KEY = 0x1b, PORTAL_FUNCTION_KEY = 0x100 };
 bool portal_hotkey_register(uint64_t hotkey, uint32_t key, uint32_t modifiers,
                             portal_text *error);
 bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
