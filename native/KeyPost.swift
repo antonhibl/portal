@@ -41,27 +41,20 @@ enum KeyPost {
         up.post(tap: .cghidEventTap)
     }
 
-    /// Whether this process has asked for the permission. macOS shows its
-    /// alert again on every request once the last alert is gone (macOS
-    /// 27.0.1), so only the first failed post asks; later ones only fail.
-    private static var asked = false
-
-    /// Whether macOS lets Emacs post events, asking the user once when it does
+    /// Whether macOS lets Emacs post events, asking the user when it does
     /// not: the system alert "Emacs would like to control this Mac and access
     /// your data" offers Open System Settings, and adds Emacs to that list,
-    /// switched off, so the user only flips the switch.
+    /// switched off, so the user only flips the switch. Every failed post
+    /// asks, since each is the user's own request and a missed alert is gone
+    /// when Emacs exits; macOS shows one alert at a time (macOS 27.0.1).
     /// Only a post asks, never loading Portal or setting a global shortcut:
     /// Apple's guidance is to ask for a permission when the feature needing it
     /// is used.
     private static func trusted() -> Bool {
         if AXIsProcessTrusted() { return true }
-        if !asked {
-            asked = true
-            // kAXTrustedCheckOptionPrompt's value, spelled out: Swift 6 rejects
-            // the global as not concurrency-safe.
-            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-        }
-        return false
+        // kAXTrustedCheckOptionPrompt's value, spelled out: Swift 6 rejects the
+        // global as not concurrency-safe.
+        return AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
     /// The first key that types CHARACTER, an ASCII letter or digit, ignoring
