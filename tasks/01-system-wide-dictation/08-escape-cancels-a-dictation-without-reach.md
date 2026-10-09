@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Escape cancels a dictation without reaching the app
 
