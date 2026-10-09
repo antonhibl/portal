@@ -90,10 +90,15 @@ static void test_chords(void)
     CHECK(normalizes("option-space", "Option-Space"));
     CHECK(normalizes("Command-f1", "Command-F1"));
     CHECK(normalizes("Control-F20", "Control-F20"));
+    /* Escape is the one key that needs no modifier. */
+    CHECK(normalizes("escape", "Escape"));
+    CHECK(normalizes("Shift-ESCAPE", "Shift-Escape"));
+    CHECK(normalizes("command-option-escape", "Option-Command-Escape"));
     const char *invalid[] = {
         "", "P", "Shift-P", "Hyper-P", "Control-Control-P", "Control-", "-P", "Control--P",
         "Control-F21", "Control-F0", "Control-F01", "Control-!", "Control-P Q", "Control-PP",
-        "Control-Option", "Ctrl-P", "Control-É", "Control- P",
+        "Control-Option", "Ctrl-P", "Control-É", "Control- P", "Space", "F1", "Shift-Space",
+        "Esc", "Escape-P", "Escape-Escape", "Escape ",
     };
     for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
         char *normalized = chord(invalid[i]);
@@ -111,7 +116,8 @@ static void test_chords(void)
                        "most once, not: Hyper"));
     CHECK(!portal_shortcuts_chord(text("Control-F21"), &normalized, &error));
     CHECK(says(&error, "A shortcut is Control, Option or Command, then A-Z, 0-9, Space or "
-                       "F1-F20, as in Control-Option-Command-P, not: Control-F21"));
+                       "F1-F20, or Escape with any modifiers or none, as in "
+                       "Control-Option-Command-P, not: Control-F21"));
 }
 
 static void test_registration(void)
@@ -185,6 +191,16 @@ static void test_registration(void)
     uint64_t again = set(0, "Control-Option-Command-P", &error);
     CHECK(again > stuck + 1);
     CHECK(removed(again) && removed(moved));
+    CHECK(is_text(portal_fake_hotkeys(), "6:F18+2"));
+
+    /* A bare Escape reaches the platform with no modifiers. */
+    uint64_t escape = set(0, "escape", &error);
+    char hotkeys[64]; /* A new chord's ID is its hot key. */
+    snprintf(hotkeys, sizeof hotkeys, "6:F18+2 %llu:Escape+0", (unsigned long long) escape);
+    CHECK(escape);
+    CHECK(is_text(portal_fake_hotkeys(), hotkeys));
+    CHECK(strstr(described(), "\"chord\":\"Escape\""));
+    CHECK(removed(escape));
     CHECK(is_text(portal_fake_hotkeys(), "6:F18+2"));
 }
 
@@ -282,7 +298,8 @@ static void test_posting(void)
     CHECK(posts("Option-Command-7"));
     CHECK(posts("Control-Option-Shift-Command-Space"));
     CHECK(posts("control-f12"));
-    CHECK(is_text(portal_fake_posted(), "V+8 V+9 7+12 Space+15 F12+2"));
+    CHECK(posts("escape"));
+    CHECK(is_text(portal_fake_posted(), "V+8 V+9 7+12 Space+15 F12+2 Escape+0"));
     /* An invalid chord never does, and fails as it does for a shortcut. */
     const char *invalid[] = {"", "V", "Shift-V", "Command-!", "Command-V Q", "Command-F21"};
     for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++)

@@ -1117,7 +1117,10 @@ static void key_name(uint32_t key, char name[8])
     if (key > PORTAL_FUNCTION_KEY)
         snprintf(name, 8, "F%u", (unsigned) (key - PORTAL_FUNCTION_KEY));
     else
-        snprintf(name, 8, "%s", key == ' ' ? "Space" : (char[]) {(char) key, 0});
+        snprintf(name, 8, "%s",
+                 key == ' '                 ? "Space"
+                 : key == PORTAL_ESCAPE_KEY ? "Escape"
+                                            : (char[]) {(char) key, 0});
 }
 
 const char *portal_fake_hotkeys(void)
