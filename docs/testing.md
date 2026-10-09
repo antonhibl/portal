@@ -189,7 +189,7 @@ done
 xcrun swiftc -swift-version 6 -warnings-as-errors \
   -I native/Core/include -import-objc-header test/native-core.h \
   native/Backend.swift native/CoreCalls.swift native/NativeHost.swift native/NativeInput.swift \
-  native/Launcher.swift native/Hotkeys.swift native/KeyPost.swift \
+  native/Launcher.swift native/Hotkeys.swift native/KeyPost.swift native/StatusPanel.swift \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
@@ -199,9 +199,10 @@ build/check-focus
 '
 ```
 
-Swap `test/native-toolbar.swift`, `test/native-launcher.swift` or
-`test/native-shortcuts.swift` for `test/native-focus.swift`. Rename the output to
-match. These checks open real windows or register real hot keys.
+Swap `test/native-toolbar.swift`, `test/native-launcher.swift`,
+`test/native-shortcuts.swift` or `test/native-status.swift` for
+`test/native-focus.swift`. Rename the output to match. These checks open real
+windows or register real hot keys.
 
 ## C core checks
 

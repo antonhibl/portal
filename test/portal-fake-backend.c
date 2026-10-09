@@ -1165,6 +1165,24 @@ const char *portal_fake_posted(void)
     return text;
 }
 
+/* The status panel.  The fake shows any text but one starting with "Refuse",
+   which it says it may not show, quoting the text it was given, so tests
+   see what reached the platform.  Real panels are checked by
+   test/native-status.swift. */
+bool portal_status_show(portal_string text, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    if (strncmp(text.data, "Refuse", 6) == 0)
+        return fail(error, "The fake may not show \"%s\"", text.data);
+    return true;
+}
+
+bool portal_status_hide(portal_text *error)
+{
+    return !refused(error);
+}
+
 /* No processes in the fake platform. Process classification is tested in Lisp. */
 bool portal_process_snapshot(portal_string variable, portal_text *result, portal_text *error)
 {

@@ -315,6 +315,8 @@ STRINGS(launcher_describe, portal_launcher_describe(result, error))
 STRINGS(shortcut_chord, portal_shortcuts_chord(a[0], result, error))
 STRINGS(shortcuts_describe, portal_shortcuts_describe(result, error))
 STRINGS(key_post, portal_shortcuts_post(a[0], error))
+STRINGS(status_show, portal_status_show(a[0], error))
+STRINGS(status_hide, portal_status_hide(error))
 
 LISP_FUNCTION(Flauncher_hide)
 {
@@ -786,6 +788,10 @@ static const struct export {
      "Return the system-wide shortcuts as plists of :id, :chord, :hotkey and :held."},
     {"portal--key-post", 1, 1, STRINGS_FUNCTION(key_post, RESULT_T),
      "Press and release CHORD, such as \"Command-V\", in the frontmost application."},
+    {"portal--status-show", 1, 1, STRINGS_FUNCTION(status_show, RESULT_T),
+     "Show TEXT in the status panel above every application, replacing what it showed."},
+    {"portal--status-hide", 0, 0, STRINGS_FUNCTION(status_hide, RESULT_T),
+     "Hide the status panel; do nothing when it is hidden."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
     {"portal--toolbar-theme", 1, 1, Ftoolbar_theme, NULL,
      "Apply toolbar face colors from JSON RGB arrays."},

@@ -195,6 +195,20 @@ one alert at a time, and an alert closes with the Emacs that asked. Only a
 post asks; loading Portal or setting a global shortcut never does. A
 grant applies to the running Emacs: the next post works without a restart.
 
+## Status panel
+
+`portal-status-show` and `portal-status-hide` in `portal-system.el` show a
+line of text above every application, such as what a command bound to a
+global shortcut is doing while another application is frontmost. Lisp
+decides what the text says and when to hide it. The platform supplies two
+primitives: show text, replacing what the panel showed, and hide it; the
+bindings call them directly. On macOS, `native/StatusPanel.swift` makes one
+borderless nonactivating `NSPanel` at status-bar level, on every Space and
+over fullscreen apps, that never becomes key or main and ignores the mouse,
+so showing it neither activates Emacs nor moves the keyboard. It draws a
+capsule at the bottom center of the usable area of the screen under the
+pointer; new text while it is shown keeps its screen.
+
 ## Geometry, attachment and lifetime
 
 Rectangles use Emacs frame pixels from the content area's top left, as reported

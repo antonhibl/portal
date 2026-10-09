@@ -434,6 +434,16 @@ bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
    application handles them after this returns, or ignores them. */
 bool portal_key_post(uint32_t key, uint32_t modifiers, portal_text *error);
 
+/* The status panel: one small panel, above every application's windows and
+   wherever the user looks, that shows a line of TEXT, such as what a
+   command running in the background is doing.  Show displays TEXT in it,
+   replacing what it showed, and shows the panel if hidden; hide hides it,
+   and does nothing when it is hidden.  The panel never takes the keyboard
+   or the mouse: showing it changes neither the frontmost application nor
+   where keys go.  Where it appears and how it looks are the platform's. */
+bool portal_status_show(portal_string text, portal_text *error);
+bool portal_status_hide(portal_text *error);
+
 /* Calls into the core, implemented by the core for the platform. */
 
 /* Send Emacs the record "TYPE TARGET FIELD...", one line of COUNT + 2 words

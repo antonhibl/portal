@@ -4,8 +4,10 @@
 ;; Runs the real Lisp module on the real C core: PORTAL_TEST_MODULE names
 ;; the module built with test/portal-fake-backend.c, which posts any chord
 ;; but one with F19, refusing it with a message that names the key and
-;; modifiers it was asked to post.  test/portal-shortcuts-tests.c covers
-;; what reaches the platform for each chord.
+;; modifiers it was asked to post, and shows any status but one starting
+;; with "Refuse", quoting the text it was given.
+;; test/portal-shortcuts-tests.c covers what reaches the platform for each
+;; chord, and test/native-status.swift the real status panel.
 
 (require 'ert)
 
@@ -49,6 +51,24 @@
     ;; Shift.
     (should (equal (should-error (portal-post-key "shift-control-f19"))
                    '(error "Cannot post Control-Shift-F19: The fake may not post F19+3")))))
+
+(ert-deftest portal-system-status-shows-and-hides ()
+  (portal-system-tests--with
+    (should-not (portal-status-show "Recording"))
+    (should-not (portal-status-show "Transcribing…"))
+    (should-not (portal-status-hide))
+    (should-not (portal-status-hide))))
+
+(ert-deftest portal-system-status-rejects-what-is-no-text ()
+  (portal-system-tests--with
+    (dolist (text '(nil "" 42 Recording))
+      (should-error (portal-status-show text) :type 'user-error))))
+
+(ert-deftest portal-system-status-signals-the-platform-error ()
+  (portal-system-tests--with
+    ;; The platform received the text as given.
+    (should (equal (should-error (portal-status-show "Refuse «dictée»"))
+                   '(error "The fake may not show \"Refuse «dictée»\"")))))
 
 (provide 'portal-system-tests)
 ;;; portal-system-tests.el ends here

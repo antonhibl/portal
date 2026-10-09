@@ -111,6 +111,17 @@ public func portalKeyPost(_ key: UInt32, _ modifiers: UInt32, _ error: UnsafeMut
     perform(error) { try KeyPost.post(key: key, modifiers: modifiers) } != nil
 }
 
+@_cdecl("portal_status_show")
+public func portalStatusShow(_ text: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let text = String(copying: text)
+    return perform(error) { StatusPanel.show(text) } != nil
+}
+
+@_cdecl("portal_status_hide")
+public func portalStatusHide(_ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    perform(error) { StatusPanel.hide() } != nil
+}
+
 /// The `NativeView` the core holds as VIEW.
 private func native(_ view: OpaquePointer) -> NativeView {
     Unmanaged<NativeView>.fromOpaque(UnsafeRawPointer(view)).takeUnretainedValue()

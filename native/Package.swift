@@ -35,7 +35,8 @@ let package = Package(
         ], path: ".", exclude: ["Core", "Processes", "Info.plist"],
            sources: ["Backend.swift", "CoreCalls.swift", "NativeHost.swift", "NativeInput.swift",
                      "Views.swift", "WebView.swift", "Terminal.swift", "Toolbar.swift",
-                     "WebToolbar.swift", "Launcher.swift", "Hotkeys.swift", "KeyPost.swift"],
+                     "WebToolbar.swift", "Launcher.swift", "Hotkeys.swift", "KeyPost.swift",
+                     "StatusPanel.swift"],
            swiftSettings: [.unsafeFlags(["-warnings-as-errors"])])
     ]
 )
