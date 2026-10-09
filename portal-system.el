@@ -21,14 +21,14 @@ The chord goes to whatever application is frontmost, which may be Emacs
 itself.  It is only posted: the application handles it after this
 returns, or ignores it, as when no text field has focus.
 
-Posting needs Accessibility permission for Emacs.app.  The first post
-without it makes macOS ask, once per Emacs session: its alert offers to
-open System Settings > Privacy & Security > Device Control and Data
-Access (Accessibility before macOS 27), where Emacs is now listed,
-switched off; that post still fails.  Once the switch is on, the next
-post works without restarting Emacs.  The grant belongs to Emacs's code
-signature, so reinstalling Emacs can break it until Emacs is removed
-from that list and added again.
+Posting needs Accessibility permission for Emacs.app.  A post without
+it makes macOS ask: its alert offers to open System Settings > Privacy
+& Security > Device Control and Data Access (Accessibility before macOS
+27), where Emacs is now listed, switched off; that post still fails.
+Once the switch is on, the next post works without restarting Emacs.
+The grant belongs to Emacs's code signature, so a rebuilt Emacs no
+longer matches its entry: the switch shows on, yet posts fail and macOS
+asks again.  Remove Emacs from that list and add it again.
 
 Return nil.  Signal an error and post nothing if CHORD is invalid, if
 no key types its character in the current layout, or if Emacs lacks
