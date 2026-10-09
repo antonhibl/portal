@@ -87,4 +87,19 @@ bool portal_fake_click(const char *target);
    held s-x".  Valid until the next call. */
 const char *portal_fake_keys(void);
 
+/* Give portal_screens these COUNT screens, at most 4, primary first. */
+void portal_fake_screens(const portal_screen *screens, size_t count);
+
+/* The status panel as the platform last showed it, and how many times the
+   core measured one. */
+struct portal_fake_status {
+    bool shown;
+    char text[256];
+    portal_status_tone tone;
+    portal_rect rect;
+    int64_t lines;
+    size_t measured;
+};
+struct portal_fake_status portal_fake_status(void);
+
 #endif

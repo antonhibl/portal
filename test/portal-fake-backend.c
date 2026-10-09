@@ -1165,6 +1165,79 @@ const char *portal_fake_posted(void)
     return text;
 }
 
+/* Screens and the status panel.  The fake has the screens a test gives it,
+   by default one usable area of 1440 by 875 points under a menu bar, with
+   the pointer.  Its panel is 16 points of padding on each side of 8-point
+   characters on 16-point lines, with 14 points between the lines and the
+   top and bottom, and a 20-point mark for every tone but neutral.  It shows
+   any text but one starting with "Refuse", which it says it may not show,
+   quoting the text it was given.  Real panels are checked by
+   test/native-status.swift. */
+static portal_screen screens[4] = {{{0, 25, 1440, 875}, true}};
+static size_t screen_count = 1;
+static struct portal_fake_status status;
+
+void portal_fake_screens(const portal_screen *given, size_t count)
+{
+    screen_count = count < 4 ? count : 4;
+    memcpy(screens, given, screen_count * sizeof *screens);
+}
+
+bool portal_screens(portal_screen **result, size_t *count, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    *result = malloc((screen_count ? screen_count : 1) * sizeof **result);
+    if (!*result)
+        return fail(error, "The fake is out of memory");
+    memcpy(*result, screens, screen_count * sizeof **result);
+    *count = screen_count;
+    return true;
+}
+
+bool portal_status_measure(portal_string text, portal_status_tone tone, int64_t width,
+                           int64_t lines, int64_t *fitted_width, int64_t *height,
+                           portal_text *error)
+{
+    if (refused(error))
+        return false;
+    int64_t chrome = 32 + (tone == PORTAL_STATUS_NEUTRAL ? 0 : 20);
+    int64_t per_line = (width - chrome) / 8 > 0 ? (width - chrome) / 8 : 1;
+    int64_t length = (int64_t) text.length, needed = (length + per_line - 1) / per_line;
+    *fitted_width = needed > 1 ? width : length * 8 + chrome;
+    *height = (needed < lines ? needed : lines) * 16 + 14;
+    status.measured++;
+    return true;
+}
+
+bool portal_status_show(portal_string text, portal_status_tone tone, portal_rect rect,
+                        int64_t lines, portal_text *error)
+{
+    if (refused(error))
+        return false;
+    if (strncmp(text.data, "Refuse", 6) == 0)
+        return fail(error, "The fake may not show \"%s\"", text.data);
+    status.shown = true;
+    snprintf(status.text, sizeof status.text, "%s", text.data);
+    status.tone = tone;
+    status.rect = rect;
+    status.lines = lines;
+    return true;
+}
+
+bool portal_status_hide(portal_text *error)
+{
+    if (refused(error))
+        return false;
+    status.shown = false;
+    return true;
+}
+
+struct portal_fake_status portal_fake_status(void)
+{
+    return status;
+}
+
 /* No processes in the fake platform. Process classification is tested in Lisp. */
 bool portal_process_snapshot(portal_string variable, portal_text *result, portal_text *error)
 {

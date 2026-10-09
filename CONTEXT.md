@@ -50,6 +50,10 @@ _Avoid_: treating inferred activity as reported fact, inferring activity from pr
 A chord, named by a symbol, that calls a Lisp function when pressed in any application, from Emacs's command loop and without activating Emacs. Setting the name again replaces its chord and function; a press from before that, or from before its removal, is ignored. Portal sets none itself; a user's configuration sets one for each launcher command that should open from any application.
 _Avoid_: hotkey (the platform's primitive that registers a chord), launcher shortcut
 
+**Status panel**:
+The one small panel, floating above every application, that shows a line of text set from Lisp, such as what dictation is doing. It never takes the keyboard or the mouse.
+_Avoid_: HUD, toast, notification, overlay
+
 ## Web content
 
 **Hosted app**:

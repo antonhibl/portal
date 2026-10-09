@@ -195,6 +195,33 @@ one alert at a time, and an alert closes with the Emacs that asked. Only a
 post asks; loading Portal or setting a global shortcut never does. A
 grant applies to the running Emacs: the next post works without a restart.
 
+## Status panel
+
+`portal-status-show` and `portal-status-hide` in `portal-system.el` show a
+line of text above every application, such as what a command bound to a
+global shortcut is doing while another application is frontmost. Lisp
+decides what the text says, validates the options, turns the default offset
+into points and runs the `:timeout` timer.
+
+The core's `native/Core/status.c` decides where the panel goes and how big it
+is. It picks a screen: the one asked for, else the one under the pointer,
+which stays the panel's screen while it is shown and still exists. It sizes
+the panel: a fixed width, or the platform's measurement at the widest
+allowed, then the minimum width, all within the screen's usable area. It
+anchors the panel to one of nine positions, moves it by the offset, inward
+from anchored edges, and keeps it inside that area.
+
+The platform supplies four primitives: list the screens' usable areas on one
+plane, with the primary first and which one has the pointer; measure a panel
+for text, tone and line limit at a maximum width; show text with a tone in a
+rectangle; and hide. On macOS, `native/StatusPanel.swift` makes one
+borderless nonactivating `NSPanel` at status-bar level, on every Space and
+over fullscreen apps, that never becomes key or main and ignores the mouse,
+so showing it neither activates Emacs nor moves the keyboard. It draws the
+HUD material with a hairline edge, rounded to at most 18 points, a spinner
+or an SF Symbol for the tone, and wrapped text; it fades in and out and asks
+VoiceOver to announce new text.
+
 ## Geometry, attachment and lifetime
 
 Rectangles use Emacs frame pixels from the content area's top left, as reported
