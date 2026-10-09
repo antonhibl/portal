@@ -82,6 +82,13 @@ struct StatusChecks {
             check(panel.dot.frame.width == StatusPanel.dotSize && panel.label.frame.minX >= panel.dot.frame.maxX)
             let breathes = panel.dot.layer?.animation(forKey: StatusPanel.breathing) != nil
             check(breathes != NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            // A change to the accessibility display options applies to the
+            // shown dot: here the setting stays, so its animation comes back.
+            panel.dot.layer?.removeAnimation(forKey: StatusPanel.breathing)
+            NSWorkspace.shared.notificationCenter.post(
+                name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: NSWorkspace.shared)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            check((panel.dot.layer?.animation(forKey: StatusPanel.breathing) != nil) == breathes)
             show("Recording", "neutral")
             check(panel.dot.isHidden && panel.dot.layer?.animation(forKey: StatusPanel.breathing) == nil)
 

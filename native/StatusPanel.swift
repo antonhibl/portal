@@ -22,6 +22,8 @@ enum StatusPanel {
     private(set) static var panel: Panel?
     /// Counts shows and hides, so a fade-out that a show interrupted leaves the panel up.
     private static var generation = 0
+    /// Observes Reduce Motion for the shown recording dot, once there is a panel.
+    private static var motionObserver: NSObjectProtocol?
 
     final class Panel: NSPanel {
         let background = NSVisualEffectView()
@@ -119,6 +121,15 @@ enum StatusPanel {
 
     static func show(_ text: String, tone: portal_status_tone, rect: portal_rect, lines: Int64) {
         let panel = panel ?? Panel()
+        if self.panel == nil {
+            motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    if let panel = StatusPanel.panel, panel.isVisible, !panel.hiding { breathe(panel) }
+                }
+            }
+        }
         self.panel = panel
         generation += 1
         let frame = NSRect(x: CGFloat(rect.x), y: top - CGFloat(rect.y + rect.height),
@@ -213,7 +224,14 @@ enum StatusPanel {
         panel.background.effectiveAppearance.performAsCurrentDrawingAppearance {
             layer.backgroundColor = NSColor.systemRed.cgColor
         }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        breathe(panel)
+    }
+
+    /// Start the recording dot breathing, or stop it for another tone or when
+    /// the user asks to reduce motion, which can change while it shows.
+    static func breathe(_ panel: Panel) {
+        guard let layer = panel.dot.layer else { return }
+        if panel.tone != PORTAL_STATUS_RECORDING || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             layer.removeAnimation(forKey: breathing)
         } else if layer.animation(forKey: breathing) == nil {
             let animation = CABasicAnimation(keyPath: "opacity")
