@@ -6,8 +6,9 @@
    results, and signals errors.  views.c owns every Portal view's identity
    and lifecycle, input.c decides who gets each key press, terminals.c keeps
    the rules of terminal views, web.c those of web views and the bridge,
-   toolbar.c each view's toolbar, shortcuts.c the system-wide shortcuts, and
-   channel.c owns the pipe that carries records to Emacs.
+   toolbar.c each view's toolbar, shortcuts.c the system-wide shortcuts,
+   status.c where the status panel goes, and channel.c owns the pipe that
+   carries records to Emacs.
    The platform implements the operations below: the production module links
    the macOS backend, native/Backend.swift, and the core's tests link
    test/portal-fake-backend.c.  Nothing here knows about Emacs values or a UI
@@ -85,7 +86,8 @@ typedef struct portal_option {
    the frame's native content area, and y grows downward.  WIDTH and HEIGHT
    are positive, and every value fits in 32 bits.  The platform converts it
    to its own coordinates and scale; on macOS, Emacs's pixels are AppKit
-   points, so only the y axis flips. */
+   points, so only the y axis flips.  Screens and the status panel use the
+   same type on another plane; see portal_screens. */
 typedef struct portal_rect {
     int64_t x, y, width, height;
 } portal_rect;
@@ -434,14 +436,48 @@ bool portal_hotkey_unregister(uint64_t hotkey, portal_text *error);
    application handles them after this returns, or ignores them. */
 bool portal_key_post(uint32_t key, uint32_t modifiers, portal_text *error);
 
+/* The screens, for the core's status panel (status.h).  Each screen's AREA
+   is the part windows may use, without menu bars or docks, in logical points
+   on one plane for all screens: the origin is the top left of the primary
+   screen, the one with the menu bar, and y grows downward.  The primary
+   screen comes first, and exactly one screen, the one under the pointer, has
+   POINTER set.  *SCREENS was allocated with malloc and the core frees it;
+   *COUNT is at least 1. */
+typedef struct portal_screen {
+    portal_rect area;
+    bool pointer;
+} portal_screen;
+bool portal_screens(portal_screen **screens, size_t *count, portal_text *error);
+
+/* What a status means, which decides how the platform marks it: an icon or a
+   color, and for PROGRESS an animation, such as a spinner.  NEUTRAL has no
+   mark. */
+typedef enum portal_status_tone {
+    PORTAL_STATUS_NEUTRAL,
+    PORTAL_STATUS_PROGRESS,
+    PORTAL_STATUS_SUCCESS,
+    PORTAL_STATUS_WARNING,
+    PORTAL_STATUS_ERROR
+} portal_status_tone;
+
 /* The status panel: one small panel, above every application's windows and
-   wherever the user looks, that shows a line of TEXT, such as what a
-   command running in the background is doing.  Show displays TEXT in it,
-   replacing what it showed, and shows the panel if hidden; hide hides it,
-   and does nothing when it is hidden.  The panel never takes the keyboard
-   or the mouse: showing it changes neither the frontmost application nor
-   where keys go.  Where it appears and how it looks are the platform's. */
-bool portal_status_show(portal_string text, portal_text *error);
+   on every Space, that shows TEXT, such as what a command running in the
+   background is doing.  The core decides its rectangle; how it looks inside
+   it is the platform's.  The panel never takes the keyboard or the mouse:
+   showing it changes neither the frontmost application nor where keys go.
+
+   Measure sets *WIDTH and *HEIGHT to the size of a panel at most WIDTH wide,
+   both positive, showing TEXT with TONE: as narrow as fits the text, wrapped
+   to at most LINES lines, the last cut short if needed.  WIDTH and LINES are
+   positive.  Show displays TEXT with TONE in RECT, a rectangle on the plane
+   of portal_screens, wrapped to at most LINES lines and centered vertically,
+   replacing what the panel showed, and shows the panel if hidden.  Hide hides
+   it, and does nothing when it is hidden. */
+bool portal_status_measure(portal_string text, portal_status_tone tone, int64_t width,
+                           int64_t lines, int64_t *fitted_width, int64_t *height,
+                           portal_text *error);
+bool portal_status_show(portal_string text, portal_status_tone tone, portal_rect rect,
+                        int64_t lines, portal_text *error);
 bool portal_status_hide(portal_text *error);
 
 /* Calls into the core, implemented by the core for the platform. */

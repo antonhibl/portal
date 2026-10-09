@@ -111,10 +111,39 @@ public func portalKeyPost(_ key: UInt32, _ modifiers: UInt32, _ error: UnsafeMut
     perform(error) { try KeyPost.post(key: key, modifiers: modifiers) } != nil
 }
 
-@_cdecl("portal_status_show")
-public func portalStatusShow(_ text: portal_string, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+@_cdecl("portal_screens")
+public func portalScreens(_ screens: UnsafeMutablePointer<UnsafeMutablePointer<portal_screen>?>,
+                          _ count: UnsafeMutablePointer<Int>, _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    guard let found = perform(error, { StatusPanel.screens() }) else { return false }
+    guard !found.isEmpty else {
+        error.pointee = owned("macOS reports no screen")
+        return false
+    }
+    let copy = allocate(portal_screen.self, found.count)
+    copy.initialize(from: found, count: found.count)
+    screens.pointee = copy
+    count.pointee = found.count
+    return true
+}
+
+@_cdecl("portal_status_measure")
+public func portalStatusMeasure(_ text: portal_string, _ tone: portal_status_tone, _ width: Int64, _ lines: Int64,
+                                _ fittedWidth: UnsafeMutablePointer<Int64>, _ height: UnsafeMutablePointer<Int64>,
+                                _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let text = String(copying: text)
-    return perform(error) { StatusPanel.show(text) } != nil
+    guard let size = perform(error, { StatusPanel.measure(text, tone: tone, width: width, lines: lines) }) else {
+        return false
+    }
+    fittedWidth.pointee = size.0
+    height.pointee = size.1
+    return true
+}
+
+@_cdecl("portal_status_show")
+public func portalStatusShow(_ text: portal_string, _ tone: portal_status_tone, _ rect: portal_rect, _ lines: Int64,
+                             _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let text = String(copying: text)
+    return perform(error) { StatusPanel.show(text, tone: tone, rect: rect, lines: lines) } != nil
 }
 
 @_cdecl("portal_status_hide")

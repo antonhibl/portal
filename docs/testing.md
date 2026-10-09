@@ -182,7 +182,7 @@ and run these commands in the guest:
 ```sh
 bash test/vm.sh sh -c '
 set -eu
-for core in channel views input terminals web toolbar shortcuts; do
+for core in channel views input terminals web toolbar shortcuts status; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
     -c native/Core/$core.c -o build/$core.o
 done
@@ -193,7 +193,7 @@ xcrun swiftc -swift-version 6 -warnings-as-errors \
   native/Views.swift native/Toolbar.swift native/WebToolbar.swift native/WebView.swift \
   test/native-checks.swift test/native-terminal-stub.swift test/native-views.swift \
   test/native-focus.swift build/channel.o build/views.o build/input.o build/terminals.o \
-  build/web.o build/toolbar.o build/shortcuts.o \
+  build/web.o build/toolbar.o build/shortcuts.o build/status.o \
   -framework AppKit -framework WebKit -framework Carbon -o build/check-focus
 build/check-focus
 '

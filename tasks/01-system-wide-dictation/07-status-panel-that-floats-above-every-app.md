@@ -15,17 +15,26 @@ line of text in it and hides it. Which statuses exist, their wording, and
 when to hide an outcome belong to the user's configuration. A waveform is
 deferred.
 
+## Options
+
+Added after trying the first version, following Hammerspoon's `hs.alert`,
+dunst, posframe and Raycast's HUD and toasts: nine positions, an offset, the
+screen, a fixed or bounded size, wrapping to several lines, a tone (neutral,
+progress with a spinner, success, warning, error) and a timeout. Icons
+chosen by the caller, colors, several panels at once and click actions are
+deferred.
+
 ## Plan
 
-- Two platform primitives in `native/Core/include/portal.h`: show TEXT in
-  the status panel, replacing what it showed, and hide it. The bindings call
-  them directly, as for the launcher.
-- `portal-status-show TEXT` and `portal-status-hide` in `portal-system.el`.
+- Platform primitives in `native/Core/include/portal.h`: list the screens,
+  measure a panel, show text with a tone in a rectangle, and hide. The core's
+  `status.c` picks the screen, the size and the rectangle.
+- `portal-status-show TEXT &key ...` and `portal-status-hide` in
+  `portal-system.el`; the timeout is a Lisp timer.
 - macOS: a borderless nonactivating `NSPanel` that can never become key or
   main and ignores the mouse, at status-bar level, on every Space and over
   fullscreen apps. Showing it never activates Emacs or changes the frontmost
-  app or its keyboard focus. A capsule with the text, at the bottom center
-  of the screen under the pointer.
+  app or its keyboard focus.
 - The fake backend records the shown text, for the batch tests.
 
 ## Acceptance
@@ -35,4 +44,6 @@ deferred.
 - [ ] The panel shows on another Space and over a fullscreen app.
 - [ ] Showing new text while shown replaces it; hiding a hidden panel does
       nothing.
-- [ ] CTest covers the Lisp functions through the fake backend.
+- [ ] Each position, offset, size and tone looks right on a real screen.
+- [ ] CTest covers the placement rules and the Lisp options through the
+      fake backend.

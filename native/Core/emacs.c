@@ -5,7 +5,7 @@
    returns.  The lifecycle functions call views.h, portal--channel
    channel.h, the input functions input.h, the terminal functions
    terminals.h, the web functions web.h, the toolbar functions toolbar.h,
-   and the shortcut functions shortcuts.h.  No Emacs environment or value
+   the shortcut functions shortcuts.h, and the status panel's status.h.  No Emacs environment or value
    outlives the module call that received it. */
 #include <emacs-module.h>
 #include <errno.h>
@@ -18,6 +18,7 @@
 #include "input.h"
 #include "portal.h"
 #include "shortcuts.h"
+#include "status.h"
 #include "terminals.h"
 #include "toolbar.h"
 #include "views.h"
@@ -315,8 +316,7 @@ STRINGS(launcher_describe, portal_launcher_describe(result, error))
 STRINGS(shortcut_chord, portal_shortcuts_chord(a[0], result, error))
 STRINGS(shortcuts_describe, portal_shortcuts_describe(result, error))
 STRINGS(key_post, portal_shortcuts_post(a[0], error))
-STRINGS(status_show, portal_status_show(a[0], error))
-STRINGS(status_hide, portal_status_hide(error))
+STRINGS(status_hide, portal_status_dismiss(error))
 
 LISP_FUNCTION(Flauncher_hide)
 {
@@ -406,6 +406,40 @@ LISP_FUNCTION(Flauncher_show)
     return done(env, portal_launcher_show(values[0], values[1], values[2], values[3],
                                           values[4], env->is_not_nil(env, args[5]), values[5],
                                           &error), &error);
+}
+
+/* TEXT TONE POSITION, strings, then the layout's integers in the order of
+   portal_status_layout. */
+LISP_FUNCTION(Fstatus_show)
+{
+    int64_t values[8];
+    for (size_t i = 0; i < 8; i++) {
+        values[i] = env->extract_integer(env, args[3 + i]);
+        if (!returning(env))
+            return NULL;
+    }
+    portal_text text = {0}, tone = {0}, position = {0}, error = {0};
+    emacs_value result = NULL;
+    if (read_text(env, args[0], &text) && read_text(env, args[1], &tone)
+        && read_text(env, args[2], &position)) {
+        portal_status_layout layout = {
+            .position = borrow(position),
+            .screen = values[0],
+            .dx = values[1],
+            .dy = values[2],
+            .width = values[3],
+            .height = values[4],
+            .min_width = values[5],
+            .max_width = values[6],
+            .lines = values[7],
+        };
+        result = done(env, portal_status_present(borrow(text), borrow(tone), &layout, &error),
+                      &error);
+    }
+    free(text.data);
+    free(tone.data);
+    free(position.data);
+    return result;
 }
 
 LISP_FUNCTION(Flauncher_fit)
@@ -788,8 +822,9 @@ static const struct export {
      "Return the system-wide shortcuts as plists of :id, :chord, :hotkey and :held."},
     {"portal--key-post", 1, 1, STRINGS_FUNCTION(key_post, RESULT_T),
      "Press and release CHORD, such as \"Command-V\", in the frontmost application."},
-    {"portal--status-show", 1, 1, STRINGS_FUNCTION(status_show, RESULT_T),
-     "Show TEXT in the status panel above every application, replacing what it showed."},
+    {"portal--status-show", 11, 11, Fstatus_show, NULL,
+     "Show TEXT with TONE in the status panel at POSITION on SCREEN, moved by DX DY, WIDTH "
+     "HEIGHT MIN-WIDTH MAX-WIDTH LINES."},
     {"portal--status-hide", 0, 0, STRINGS_FUNCTION(status_hide, RESULT_T),
      "Hide the status panel; do nothing when it is hidden."},
     {"portal--toolbar", 1, 1, Ftoolbar, NULL, "Show or hide native toolbars live."},
