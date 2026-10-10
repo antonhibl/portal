@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise benchmark I/O using a PTY peer; these are NOT performance scores."""
 import errno
 import fcntl
