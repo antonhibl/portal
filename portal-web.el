@@ -18,7 +18,6 @@
 (require 'portal-view)
 (require 'portal-input)
 (require 'portal-server)
-(require 'portal-actions)
 
 (declare-function portal--web-load "portal-web" (target url))
 (declare-function portal--web-send "portal-web" (target json))
@@ -320,7 +319,7 @@ come first, and ALIST keeps them free to use the selected window."
 
 (defun portal-web--hand-off (file &optional line)
   "Visit FILE in a pane other than this hosted page's, at LINE if non-nil.
-The page is a Markdown preview or the task browser.  Select that pane with
+The page is a Markdown preview.  Select that pane with
 Emacs owning the keyboard, and remember this page's buffer for
 `portal-preview-return' in both frames involved."
   (let ((preview (current-buffer))
@@ -377,7 +376,7 @@ Emacs gets the keyboard, and `portal-preview-return' comes back here."
 
 ;;;###autoload
 (defun portal-preview-return ()
-  "Return to the Markdown preview or task page this frame last opened a file from.
+  "Return to the Markdown preview this frame last opened a file from.
 Select a pane showing it, in this frame or any other, or show it again
 if it is hidden, and give its view the keyboard.  The page stays as it was."
   (interactive)
@@ -432,13 +431,6 @@ Hosted apps that have already loaded keep their page."
   (dolist (buffer (portal-view-buffers 'web))
     (with-current-buffer buffer
       (when (and portal-web--hosted-path (not portal-web--url))
-        (when-let* ((context (portal-actions-register)))
-          ;; The same native incarnation keeps its context across host restarts.
-          (unless (string-match-p "[?&]context=" portal-web--hosted-path)
-            (setq portal-web--hosted-path
-                  (concat portal-web--hosted-path
-                          (if (string-search "?" portal-web--hosted-path) "&" "?")
-                          "context=" (url-hexify-string context)))))
         (setq portal-web--url (concat (portal-server-url) portal-web--hosted-path))
         (portal--web-load portal-web--target portal-web--url)))))
 

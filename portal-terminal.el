@@ -308,16 +308,6 @@ A missing program is reported by the shell inside the terminal."
              (portal-view-sync)
              (signal (car err) (cdr err))))))
 
-(defun portal-terminal-open-action (arguments)
-  "Handle a hosted app's terminal.open operation with JSON ARGUMENTS.
-The originating view gives up the keyboard, which the new terminal takes."
-  (portal-input--action "unfocus" portal-view--target)
-  (setq portal-input--resume nil)
-  (let ((buffer (portal-terminal-start
-                 (plist-get arguments :directory) (plist-get arguments :program)
-                 (plist-get arguments :args) (plist-get arguments :name))))
-    (list :target (buffer-local-value 'portal-view--target buffer))))
-
 ;;;###autoload
 (defun portal-terminal-focus ()
   "Give this buffer's native terminal keyboard focus."

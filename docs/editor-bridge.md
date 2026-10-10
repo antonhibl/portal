@@ -59,10 +59,6 @@ The platform consults the core as for any hosted-page navigation: stay on the
 app host's origin, open other sites in the default browser, or hand local files
 to Emacs.
 
-The task browser uses the bridge only for in-place refresh: after saving a file
-in a task root, Emacs sends `{"type": "refresh"}` to that root's view. Operations
-use [hosted actions](hosted-actions.md#task-operations) to await Emacs's reply.
-
 Hosted pages retain no cookies or storage between sessions and never leave the
 app host. Excalidraw's CSP allows local scripts, fonts and embedded images but
 blocks external requests. File inputs, including image insertion, use the native

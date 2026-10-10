@@ -13,8 +13,6 @@ Run shell examples from the repository root, not `docs/`.
 | Run shells, switch terminals or use a quick terminal | [Terminals and optional Consult/Embark adapters](terminals.md) |
 | Find running agents and understand their activity | [Agent dashboard](agents.md) |
 | Present a command in a panel or set a global shortcut | [Launchers and global shortcuts](launcher.md) |
-| Browse, author or complete Markdown tasks | [Markdown task browser and format](tasks.md) |
-| Use the separate `project.org` integration | [Org task view](org-tasks.md) |
 | Diagnose a blank hosted app or restart its process | [App host lifecycle and diagnostics](app-host.md) |
 
 ## Build and change Portal
@@ -23,14 +21,11 @@ Run shell examples from the repository root, not `docs/`.
   and checks before a PR.
 - [Testing Portal](testing.md): batch coverage, graphical procedures, standalone
   native checks and opt-in smoke tests. Recorded results are not a new test run.
-- [Domain vocabulary](../CONTEXT.md): view, terminal, hosted-app and Org task terms.
-  See the [task format](tasks.md#writing-tasks) for Markdown identity and readiness.
+- [Domain vocabulary](../CONTEXT.md): view, terminal and hosted-app terms.
 - [Implementation and native boundaries](architecture.md): state ownership,
   lifetimes, platform interfaces and failure invariants.
 - [Input bridge](terminal-input-bridge.md): key routing and the notification pipe.
 - [Hosted-app bridge](editor-bridge.md): message transport and Excalidraw persistence.
-- [Hosted app actions](hosted-actions.md): instances, task operations and process
-  protocol version 3.
 - [Launcher native panel](launcher-native-panel.md): Emacs NS compatibility,
   frame guards, geometry and command sessions.
 - [Application launcher integration](launcher-applications.md): launcher.el

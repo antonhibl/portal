@@ -5,8 +5,8 @@ For Emacs users who want a real terminal or a local document preview alongside
 editing, each buffer has one native view that follows it across splits, resizing
 and frames. Hidden pages and terminal sessions keep running.
 
-The bundled app host provides Markdown previews, a Markdown task browser and an
-offline Excalidraw editor. Optional launchers present your own Emacs commands in
+The bundled app host provides Markdown previews and an offline Excalidraw
+editor. Optional launchers present your own Emacs commands in
 a native panel, invoked by global shortcuts you configure.
 
 ## Scope
@@ -49,8 +49,7 @@ Command-period (`⌘.`) to return to Emacs. Inactive content is subtly grayed ou
 `q` hides the view; killing its buffer closes it.
 
 Try `M-x portal-terminal` for a shell, `M-x portal-preview-markdown` for a saved
-Markdown file, `M-x portal-tasks-browser` for the project's Markdown tasks, or
-`M-x portal-excalidraw` for a local drawing. Loading Portal registers no global
+Markdown file, or `M-x portal-excalidraw` for a local drawing. Loading Portal registers no global
 shortcuts. Runtime use needs neither Bun nor Node nor adjacent web assets; see
 [distribution layout](CONTRIBUTING.md#build-outputs-and-distribution).
 

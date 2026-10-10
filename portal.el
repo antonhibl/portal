@@ -37,13 +37,6 @@
                                 (bound-and-true-p byte-compile-current-file)
                                 buffer-file-name))))
 
-(require 'portal-tasks
-         (expand-file-name "portal-tasks"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-
 ;; Registers nothing until `portal-global-shortcut-set' is called.
 (require 'portal-global-shortcut
          (expand-file-name "portal-global-shortcut"

@@ -1,10 +1,10 @@
 ;;; portal-project.el --- The project being edited -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Quick terminals and the task browser act on the project being edited, even
-;; when run from a terminal, a web view or another auxiliary buffer.  Each
-;; frame remembers the directory of the file or Dired buffer selected last.
-;; Terminals record the project they belong to by its canonical root.
+;; Quick terminals act on the project being edited, even when run from a
+;; terminal, a web view or another auxiliary buffer.  Each frame remembers the
+;; directory of the file or Dired buffer selected last.  Terminals record the
+;; project they belong to by its canonical root.
 
 (require 'project)
 
