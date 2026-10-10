@@ -163,6 +163,18 @@ returns `:name`, `:project`, `:directory`, `:title`, `:exited` and `:quick`, cac
 from native change reports even while hidden. These are only facts: titles are
 program-set, not process names; live shells may be busy or idle.
 
+`(portal-terminal-start DIRECTORY PROGRAM ARGUMENTS NAME)` runs PROGRAM with
+literal ARGUMENTS in a new terminal, optionally named NAME, and shows it with
+`pop-to-buffer` under Emacs display rules. The native adapter starts the
+user's interactive login shell, lets it load startup files, restores DIRECTORY,
+then runs the program with `exec`. The shell's PATH resolves programs; Emacs
+need not find them. Arguments are quoted literally, including spaces, quotes,
+Unicode and shell metacharacters. Launches support POSIX-compatible shells
+(`sh`, `bash`, `zsh`, `dash`, `ksh`) and fish. The shell owns its environment:
+Lisp-side `setenv`, buffer-local `process-environment` and `exec-path` cannot
+affect launched programs. The shell reports missing programs inside the
+terminal.
+
 ### Choosing terminals
 
 `M-x portal-terminal-choose` lists all terminals;

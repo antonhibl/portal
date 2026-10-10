@@ -17,9 +17,8 @@ macOS backend. Navigate by boundaries, not separate feature libraries:
 - [`native/Backend.swift`](../native/Backend.swift) implements those primitives;
   [`native/Package.swift`](../native/Package.swift) defines the native library and
   pinned Ghostty dependency.
-- The [input bridge](terminal-input-bridge.md), [hosted-app bridge](editor-bridge.md),
-  [hosted actions](hosted-actions.md) and [launcher panel](launcher-native-panel.md)
-  explain their protocols and platform-specific hazards.
+- The [input bridge](terminal-input-bridge.md), [hosted-app bridge](editor-bridge.md)
+  and [launcher panel](launcher-native-panel.md) explain their protocols and platform-specific hazards.
 
 ## Shared native host
 

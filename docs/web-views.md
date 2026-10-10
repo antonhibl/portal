@@ -42,7 +42,7 @@ title-bar appearance with `ns-appearance`. To fix preview appearance, set
 (setopt portal-web-appearance 'light) ; or 'dark; nil follows the system
 ```
 
-This affects every web view, including the task browser and Excalidraw;
+This affects every web view, including Excalidraw;
 open previews change immediately without reloading.
 
 Previews support headings, lists, fenced code, tables, strikethrough, task lists

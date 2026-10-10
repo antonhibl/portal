@@ -25,7 +25,7 @@ private func terminalCommand(_ options: ViewOptions, directory: String) throws -
     guard ["sh", "bash", "zsh", "dash", "ksh", "fish"].contains(name) else {
         throw NativeError.message("Program launches need a POSIX-compatible shell or fish; found \(shell)")
     }
-    // Startup files may cd elsewhere; hosted actions still target this project.
+    // Startup files may cd elsewhere; the program still starts in this directory.
     let script = "cd " + terminalQuote(directory) + " && exec " + argv.map(terminalQuote).joined(separator: " ")
     return [shell, "-l", "-i", "-c", script].map(terminalQuote).joined(separator: " ")
 }

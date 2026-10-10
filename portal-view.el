@@ -48,8 +48,6 @@ work for the command loop. Feature record types take precedence over views.")
 (defvar-local portal-view--target nil
   "This buffer's native target.
 It is non-nil exactly while the buffer is in `portal-view--buffers'.")
-(defvar-local portal-view-close-hook nil
-  "Hook run before this buffer's live view closes, while its target is valid.")
 (defvar-local portal-view--window nil "The window showing this buffer's view, or nil.")
 (defvar-local portal-view--geometry nil
   "The placement last sent to the native view, or nil while it is hidden.
@@ -158,8 +156,6 @@ changes major mode."
 (defun portal-view-close ()
   "End the current buffer's Portal view, if it has one."
   (when-let* ((target portal-view--target))
-    (with-demoted-errors "Portal view close hook: %S"
-      (run-hooks 'portal-view-close-hook))
     (setq portal-view--buffers (delq (current-buffer) portal-view--buffers)
           portal-view--target nil
           portal-view--window nil
