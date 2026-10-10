@@ -307,7 +307,6 @@ STRINGS(web_load, portal_web_views_load(a[0], a[1], error))
 STRINGS(web_send, portal_web_views_send(a[0], a[1], error))
 STRINGS(web_receive, portal_web_views_receive(a[0], result, error))
 STRINGS(terminal_themes, portal_terminals_themes(result, error))
-STRINGS(process_snapshot, portal_process_snapshot(a[0], result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
 STRINGS(launcher_detach, portal_launcher_detach(error))
@@ -790,8 +789,6 @@ static const struct export {
     {"portal--terminal-text", 1, 1, STRINGS_FUNCTION(terminal_text, RESULT_STRING),
      "Select all of TARGET's scrollback and return its text. Leaves the native selection "
      "active."},
-    {"portal--process-snapshot", 1, 1, STRINGS_FUNCTION(process_snapshot, RESULT_JSON),
-     "Return foreground process facts carrying environment VARIABLE; no agent classification."},
     {"portal--terminal-bindings", 1, 1, Fterminal_bindings, NULL,
      "Atomically replace runtime binding profiles from JSON."},
     {"portal--input-escape-key", 2, 2, Finput_escape_key, NULL,

@@ -9,7 +9,6 @@
 - [Consult and Embark](#consult-and-embark)
 - [Appearance and native bindings](#appearance-and-native-bindings)
 
-For coding agents running in these terminals, see the [agent dashboard](agents.md).
 For native test procedures, see [Testing Portal](testing.md#terminal-graphical-checks).
 
 ## Quick project terminal

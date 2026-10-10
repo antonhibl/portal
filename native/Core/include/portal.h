@@ -64,14 +64,6 @@ typedef struct portal_text {
     size_t length;
 } portal_text;
 
-/* Snapshot this user's live foreground TTY processes carrying VARIABLE.
-   JSON array of {pid, start (seconds.microseconds), tty (device number),
-   tty-parent (first ancestor outside that TTY, or 0 if ancestry is incomplete), executable, argv,
-   environment (only VARIABLE's value), ancestors (PIDs, nearest first)}.
-   Unreadable/exited processes are omitted; failure to collect signals an error.
-   The platform reports facts; Lisp decides which processes are agents. */
-bool portal_process_snapshot(portal_string variable, portal_text *result, portal_text *error);
-
 /* One entry of portal--open's options plist, such as :directory "~/" or
    :quick t.  Entries keep the plist's order; a later duplicate name wins. */
 typedef struct portal_option {
