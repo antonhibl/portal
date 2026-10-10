@@ -17,11 +17,10 @@
   (let ((default-directory temporary-file-directory))
     (should-not (featurep 'portal))
     (load portal-startup-test--entry nil t)
-    (dolist (feature '(portal portal-web portal-terminal portal-agents
-                      portal-agent-discovery portal-agent-process
+    (dolist (feature '(portal portal-web portal-terminal
                       portal-excalidraw portal-global-shortcut portal-system))
       (should (featurep feature)))
-    (dolist (command '(portal-hello portal-terminal portal-agents))
+    (dolist (command '(portal-hello portal-terminal))
       (should (commandp command)))
     (should (fboundp 'portal-global-shortcut-set))
     (should (fboundp 'portal-post-key))

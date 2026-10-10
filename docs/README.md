@@ -11,7 +11,6 @@ Run shell examples from the repository root, not `docs/`.
 | Open HTML, URLs or a saved Markdown preview | [Web views and previews](web-views.md) |
 | Draw and save offline | [Local Excalidraw drawings](excalidraw.md) |
 | Run shells, switch terminals or use a quick terminal | [Terminals and optional Consult/Embark adapters](terminals.md) |
-| Find running agents and understand their activity | [Agent dashboard](agents.md) |
 | Present a command in a panel or set a global shortcut | [Launchers and global shortcuts](launcher.md) |
 | Diagnose a blank hosted app or restart its process | [App host lifecycle and diagnostics](app-host.md) |
 

@@ -39,11 +39,6 @@ never by the shell changing directory.")
   "The terminal's working directory: the last its shell reported, or its start.")
 (defvar-local portal-terminal--title nil "The title its program set last, or nil.")
 (defvar-local portal-terminal--progress nil "The last OSC 9;4 progress state, or nil.")
-(defvar-local portal-terminal--progress-time nil
-  "Native receipt time of the last progress report, in Unix microseconds.
-Unlike metadata delivery time, this does not advance for title changes.")
-(defvar portal-terminal-metadata-change-hook nil
-  "Hook run in a terminal buffer after its cached native metadata changes.")
 (defvar-local portal-terminal--exited nil "Whether its program has exited.")
 (defvar portal-terminal--native-maps)
 (declare-function portal-terminal-refresh-bindings "portal-terminal-bindings" ())
@@ -150,10 +145,7 @@ ordinary file commands, and `list-buffers-directory', for buffer lists."
           (progress (plist-get state :progress))
           (directory (portal-terminal--local-directory (plist-get state :pwd))))
       (setq portal-terminal--title (and (stringp title) (not (string-empty-p title)) title)
-            portal-terminal--progress (and (stringp progress) (not (string-empty-p progress)) progress)
-            portal-terminal--progress-time
-            (let ((time (plist-get state :progress-time)))
-              (and (integerp time) (> time 0) time)))
+            portal-terminal--progress (and (stringp progress) (not (string-empty-p progress)) progress))
       (when directory
         (setq portal-terminal--directory directory
               default-directory directory
@@ -161,8 +153,7 @@ ordinary file commands, and `list-buffers-directory', for buffer lists."
       (unless (eq portal-terminal--exited (plist-get state :exited))
         (setq portal-terminal--exited (plist-get state :exited)
               mode-line-process (and portal-terminal--exited ":exited"))
-        (force-mode-line-update))
-      (run-hooks 'portal-terminal-metadata-change-hook))))
+        (force-mode-line-update)))))
 
 (setf (alist-get "terminal" portal-view-record-handlers nil nil #'equal)
       #'portal-terminal--changed)

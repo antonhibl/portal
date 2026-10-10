@@ -59,14 +59,13 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
     /// The process has ended. The view stays, showing its last output.
     var exited = false
     var progress = ""
-    var progressTime = 0
 
-    init(directory: String, command: String?, theme: TerminalTheme, marker: String) {
+    init(directory: String, command: String?, theme: TerminalTheme) {
         super.init(frame: .zero)
         delegate = self
         configuration = TerminalSurfaceOptions(
             workingDirectory: directory,
-            envVars: ["INSIDE_EMACS": "portal-ghostty", "PORTAL_TERMINAL": marker],
+            envVars: ["INSIDE_EMACS": "portal-ghostty"],
             command: command,
             // Ghostty then reports the exit at once, as a close request,
             // which leaves the view and its last output.
@@ -84,10 +83,6 @@ private final class HostedTerminal: TerminalView, TerminalSurfaceTitleDelegate,
 
     func terminalDidReportProgress(state: TerminalProgressState, percent: Int?) {
         progress = "\(state)"
-        // Repeated states are still fresh evidence (startup, reload, new run).
-        // Stamp receipt here so delayed metadata cannot masquerade as a report
-        // from a newly discovered process. No timestamp-driven redraws in Lisp.
-        progressTime = Int(Date().timeIntervalSince1970 * 1_000_000)
         session?.changed()
     }
     func terminalDidChangeTitle(_ title: String) {
@@ -140,8 +135,7 @@ final class TerminalSession: PortalView {
         }
         self.target = target
         let terminal = HostedTerminal(directory: directory, command: try terminalCommand(options, directory: directory),
-                                      theme: try Terminals.theme(named: options.string("theme")),
-                                      marker: "\(getpid())/\(target)")
+                                      theme: try Terminals.theme(named: options.string("theme")))
         if let issue = terminal.controller?.lastConfigurationIssue { throw NativeError.message(issue) }
         self.terminal = terminal
         input = NativeInput(target: target, view: terminal, host: NativeView.parking) { [weak terminal] in
@@ -173,7 +167,6 @@ final class TerminalSession: PortalView {
          ("pwd", .string(terminal.workingDirectory)),
          ("exited", .flag(terminal.exited)),
          ("progress", .string(terminal.progress)),
-         ("progress-time", .integer(terminal.progressTime)),
          ("columns", .integer(Int(terminal.grid?.columns ?? 0))),
          ("rows", .integer(Int(terminal.grid?.rows ?? 0))),
          ("layer", .string(terminal.layer.map { NSStringFromClass(type(of: $0)) } ?? ""))]

@@ -22,9 +22,8 @@ cmake --build --preset dev
 ```
 
 CMake locates Emacs, builds the Bun host, and invokes the native Swift package.
-`native/Package.swift` links three targets into one module: `PortalCore`,
-the portable C core; `PortalProcesses`, Darwin process collection in C; and
-`Portal`, the Swift backend containing the host, web, terminal, input and toolbar code. There are no separate feature libraries
+`native/Package.swift` links two targets into one module: `PortalCore`,
+the portable C core, and `Portal`, the Swift backend containing the host, web, terminal, input and toolbar code. There are no separate feature libraries
 or plugin builds. Ghostty dependency versions and the binary checksum are pinned
 through `native/Package.swift` and `native/Package.resolved`. Configuration writes
 the discovered header path to `build/emacs-include.txt`, which the package also
@@ -110,8 +109,7 @@ backend, Lisp behavior, and the compiled app host; it does not validate native
 windows. For native view, keyboard, toolbar or launcher changes, also run the
 relevant [graphical and standalone checks](docs/testing.md) in the VM through
 `bash test/vm.sh <command>`. Use disposable processes; windows can take guest focus.
-Credential-dependent agent smoke tests and physical-key/manual checks are opt-in;
-report any not run.
+Physical-key and manual checks are opt-in; report any not run.
 
 For a focused change to the C core, the [standalone core build](docs/testing.md#c-core-checks)
 avoids Swift, Bun and Ghostty. CMake's registered tests are the source of truth

@@ -57,13 +57,6 @@ VM; they can steal focus or crash. Keep launcher subroutine trampolines enabled.
 Report skips and manual checks separately from passes. Record the native acceptance
 environment; old results are not current evidence.
 
-Live-agent checks are opt-in and use trusted projects, credentials and real
-requests.
-See [prerequisites](../test/portal-agent-discovery-gui-tests.el).
-Mixed Pi check: use a disposable agent directory with `portal-pi.ts`. Disable
-terminal progress. Define `/portal-test-prompt` to call
-`ctx.ui.input("Portal smoke test", "Type PORTAL_OK")`. Leave user settings untouched.
-
 ## GUI checks in a macOS VM
 
 Use a logged-in macOS desktop VM for GUI checks only. GUI windows stay in the

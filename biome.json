@@ -7,13 +7,7 @@
 	},
 	"files": {
 		"ignoreUnknown": true,
-		"includes": [
-			"host/**",
-			"biome.json",
-			"extensions/**",
-			"test/portal-pi.test.ts",
-			"test/vm.test.ts"
-		]
+		"includes": ["host/**", "biome.json", "test/vm.test.ts"]
 	},
 	"formatter": {
 		"enabled": true,
