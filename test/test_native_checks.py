@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Native test failures must exit with status 1, never terminate by signal."""
 from pathlib import Path
 import subprocess
