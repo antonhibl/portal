@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Use Companion Buffer artwork for project branding
 
