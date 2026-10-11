@@ -25,7 +25,7 @@ explain where to obtain it.
 [Contributing](../../CONTRIBUTING.md), [AGENTS.md](../../AGENTS.md),
 [ignore rules](../../.gitignore), [testing guide](../../docs/testing.md),
 [launcher guide](../../docs/launcher.md), and
-[personal dictation task](../01-system-wide-dictation/02-dictation-command-in-the-emacs-config.md).
+the personal dictation task, `01-system-wide-dictation/02-dictation-command-in-the-emacs-config` (removed by this task).
 Review the rest of `tasks/` for personal-only instructions and dependencies.
 
 ## Work

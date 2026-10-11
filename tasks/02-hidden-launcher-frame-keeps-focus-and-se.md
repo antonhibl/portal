@@ -5,10 +5,8 @@ status: done
 
 After a launcher session ends, Emacs can still treat the hidden launcher
 frame as selected and focused, so code that asks Emacs where focus is gets
-the wrong answer. Found while building dictation, whose Emacs config now
-works around it by counting only visible frames
-(`~/.local/share/obento/macos/.config/emacs/lisp/ai.el`,
-`my/dictation-deliver`).
+the wrong answer. Found while building a dictation command in a user's
+Emacs configuration, which works around it by counting only visible frames.
 
 ## Observed
 
