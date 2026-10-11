@@ -20,9 +20,11 @@
   "Report FORMAT with ARGUMENTS on standard error."
   (princ (concat (apply #'format-message format arguments) "\n") #'external-debugging-output))
 
-(defun portal-package-gui--check (description value)
-  "Report DESCRIPTION and VALUE; fail unless VALUE is non-nil."
-  (portal-package-gui--log "%s %s: %S" (if value "ok  " "FAIL") description value)
+(defun portal-package-gui--check (description value &optional state)
+  "Report DESCRIPTION and VALUE; fail unless VALUE is non-nil.
+STATE, if given, is reported too, to explain a failure."
+  (portal-package-gui--log "%s %s: %S%s" (if value "ok  " "FAIL") description value
+                           (if state (format " %S" state) ""))
   (unless value
     (when-let* ((buffer (get-buffer "*portal-build*")))
       (with-current-buffer buffer
@@ -86,7 +88,8 @@
                (string-prefix-p "http://127.0.0.1:" (plist-get state :url))
                (string-suffix-p "/hello" (plist-get state :url))
                (not (plist-get state :loading)) (not (plist-get state :error)))))
-      20))))
+      20)
+     (portal--inspect target))))
 
 (condition-case err
     (progn
