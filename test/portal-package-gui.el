@@ -84,7 +84,7 @@ STATE, if given, is reported too, to explain a failure."
      (portal-package-gui--wait
       (lambda ()
         (let ((state (portal--inspect target)))
-          (and (plist-get state :visible) (equal (plist-get state :title) "Portal")
+          (and (plist-get state :visible) (equal (plist-get state :title) "Hello, world!")
                (string-prefix-p "http://127.0.0.1:" (plist-get state :url))
                (string-suffix-p "/hello" (plist-get state :url))
                (not (plist-get state :loading)) (not (plist-get state :error)))))
