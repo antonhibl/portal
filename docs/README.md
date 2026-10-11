@@ -49,3 +49,5 @@ feature ships today; see the user guides for current behavior.
   updates, with historical alternatives.
 - [Bun distribution options](bun-distribution.md): current packaging, size
   measurements and alternatives to revisit.
+- [Native package installation research](native-package-installation.md): upstream
+  build conventions and proposed Portal setup and upgrade behavior.
