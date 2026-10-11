@@ -353,7 +353,8 @@
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 			}
 
-			new ResizeObserver(() => {
+			// Measure the stage before anything draws; the observer reports later.
+			function resize() {
 				const dpr = Math.min(devicePixelRatio || 1, 2);
 				width = stage.clientWidth;
 				height = stage.clientHeight;
@@ -364,7 +365,9 @@
 				gl.viewport(0, 0, glCanvas.width, glCanvas.height);
 				fx.setTransform(dpr, 0, 0, dpr, 0, 0);
 				if (still) draw();
-			}).observe(stage);
+			}
+			resize();
+			new ResizeObserver(resize).observe(stage);
 
 			function spark(x, y, vx, vy, life, hot) {
 				sparks.push({ x, y, vx, vy, life, hot, age: 0 });
@@ -494,7 +497,6 @@
 
 		// Types the credits out line by line; rules print at once.
 		function type() {
-			for (const line of lines) line.style.width = "0ch";
 			let i = 0;
 			let c = 0;
 			(function step() {
@@ -530,7 +532,11 @@
 			document.documentElement.dataset.renderer = "image";
 		}
 		if (still) lines.at(-1).classList.add("cursor");
-		else setTimeout(type, 450);
+		else {
+			// Hidden from the start, so the text never shows before it types.
+			for (const line of lines) line.style.width = "0ch";
+			setTimeout(type, 450);
+		}
 		</script>
 	</body>
 </html>
