@@ -513,6 +513,17 @@
 			"embeds": ["js-yaml@4.3.0"]
 		},
 		{
+			"id": "babel-helpers",
+			"name": "Babel helpers, including regenerator-runtime",
+			"version": "unrecorded; compiled into dompurify 3.4.16",
+			"source": "https://github.com/babel/babel/blob/b8bcd42f43759c5eec8516a85a82eabee8750f68/packages/babel-helpers/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into dompurify)",
+			"when": ["npm:dompurify@3.4.16"],
+			"texts": ["embedded/babel-helpers/LICENSE"],
+			"note": "dompurify's bundle retains a regenerator-runtime banner naming this license; the text is from Babel's main branch, which the banner links"
+		},
+		{
 			"id": "font-assistant",
 			"name": "Assistant font",
 			"version": "3.000",

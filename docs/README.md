@@ -31,6 +31,8 @@ Run shell examples from the repository root, not `docs/`.
   frame guards, geometry and command sessions.
 - [Application launcher integration](launcher-applications.md): launcher.el
   follow-ups and an optional smoke test.
+- [Dependency security findings](dependency-security.md): audit dispositions,
+  overrides and accepted exceptions with review triggers.
 - [Terminal benchmarks](terminal-benchmark.md): latency/frame timing measurement
   and interpretation, not guaranteed parity with standalone Ghostty.
 

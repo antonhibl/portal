@@ -103,6 +103,26 @@ JavaScript's false and null are nil."
     (should-not (string-match-p "Unsaved text" (buffer-string)))
     (should-not (buffer-modified-p))))
 
+(ert-deftest portal-excalidraw-gui-pasted-mermaid-becomes-drawing ()
+  ;; Excalidraw converts pasted Mermaid text with mermaid-to-excalidraw, which
+  ;; groups a sequence box under nanoid IDs; see docs/dependency-security.md.
+  (portal-excalidraw-gui--document
+    (portal-view-focus)
+    (portal-excalidraw-gui--js
+     "const container = document.querySelector('.excalidraw'); container.focus();
+      const data = new DataTransfer();
+      data.setData('text/plain', 'sequenceDiagram\\n  box PortalMermaidBox\\n    participant Alice\\n    participant Bob\\n  end\\n  Alice->>Bob: PortalMermaidHello');
+      container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
+    (portal-terminal-test--wait (lambda () (string-match-p "PortalMermaidBox" (buffer-string))))
+    (portal-excalidraw-save)
+    (let ((elements (plist-get (json-parse-string (buffer-string) :object-type 'plist)
+                               :elements)))
+      (should (string-match-p "PortalMermaidHello" (buffer-string)))
+      (should (seq-some (lambda (element)
+                          (and (equal (plist-get element :text) "PortalMermaidBox")
+                               (> (length (plist-get element :groupIds)) 0)))
+                        elements)))))
+
 (ert-deftest portal-excalidraw-gui-image-roundtrip-and-document-isolation ()
   (portal-excalidraw-gui--document
     (portal-view-focus)
