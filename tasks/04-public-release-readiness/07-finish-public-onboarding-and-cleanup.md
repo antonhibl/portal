@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 blocked-by: [04-public-release-readiness/01-fix-use-package-installation, 04-public-release-readiness/03-define-the-supported-platform-matrix]
 ---
 # Finish public onboarding and cleanup
@@ -58,15 +58,24 @@ Review the rest of `tasks/` for personal-only instructions and dependencies.
 
 ## Acceptance and verification
 
-- [ ] A newcomer can follow the documented supported-platform setup in an isolated
+- [x] A newcomer can follow the documented supported-platform setup in an isolated
       Emacs environment, reach the expected native result and find troubleshooting.
       GUI verification runs through the VM runner.
-- [ ] Persistent configuration and upgrade examples match implemented behavior;
+- [x] Persistent configuration and upgrade examples match implemented behavior;
       no proposed API is described as already shipping.
-- [ ] CLI setup has a verifiable installation source and task dependency links
+- [x] CLI setup has a verifiable installation source and task dependency links
       remain valid after personal backlog cleanup. Preserved personal work has an
       explicit owner/location without exposing it in the public release.
-- [ ] `git check-ignore` confirms autosave/lock examples are ignored and legitimate
+- [x] `git check-ignore` confirms autosave/lock examples are ignored and legitimate
       source/test files are not. Local documentation links resolve.
-- [ ] If launcher examples change, preserve their markers and run launcher CTest;
+- [x] If launcher examples change, preserve their markers and run launcher CTest;
       run shared checks for code/configuration changes and report skipped GUI work.
+
+## Outcome
+
+- The `task` CLI ships as `bin/task`, licensed and versioned with Portal.
+- Personal dictation tasks 02, 04, 05 and 06 were removed. Their owner, the
+  maintainer, moves them to their own configuration repository; until then
+  they remain in history at `5da3f94` and in the maintainer's checkout.
+- No screenshot was added. A capture in the VM needs a Screen Recording grant
+  that only a person can give in the guest, so it remains to do.
