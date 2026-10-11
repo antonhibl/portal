@@ -9,6 +9,7 @@
 ;; notification to Emacs, as records of the form "TYPE TARGET FIELD...".
 
 (require 'cl-lib)
+(require 'portal-build)
 
 (declare-function portal--open "portal-view" (kind options))
 (declare-function portal--place "portal-view" (target edges title))
@@ -16,14 +17,6 @@
 (declare-function portal--close "portal-view" (target))
 (declare-function portal--channel "portal-view" (process))
 (declare-function portal--input "portal-input" (target action &optional serial))
-
-(defconst portal-view--module-file
-  (expand-file-name "build/portal.bundle/Contents/MacOS/portal.dylib"
-                    (file-name-directory
-                     (or load-file-name
-                         (bound-and-true-p byte-compile-current-file)
-                         buffer-file-name)))
-  "The single native module used by all Portal features.")
 
 (defvar portal-view-load-hook nil "Hook run after the native module loads.")
 
@@ -60,8 +53,10 @@ The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
       (user-error "Portal needs graphical macOS Emacs with module support"))
     (when (fboundp 'portal--bind)
       (user-error "Restart Emacs to replace the old Portal native modules"))
-    (module-load portal-view--module-file)
+    (portal-build-load-module)
     (run-hooks 'portal-view-load-hook))
+  ;; After a package upgrade reloads Portal's Lisp, check the loaded module.
+  (when portal-build--loaded (portal-build-ensure))
   (unless (fboundp 'portal--web-load)
     (user-error "Restart Emacs to load the rebuilt Portal native module"))
   (unless (process-live-p portal-view--channel)

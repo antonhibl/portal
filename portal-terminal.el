@@ -9,18 +9,8 @@
   "Native Ghostty terminals in Emacs panes."
   :group 'terminals)
 
-(require 'portal-input
-         (expand-file-name "portal-input"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-(require 'portal-project
-         (expand-file-name "portal-project"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
+(require 'portal-input)
+(require 'portal-project)
 
 (declare-function portal--terminal-theme "portal-terminal" (theme))
 (declare-function portal--terminal-themes "portal-terminal" ())
@@ -84,7 +74,8 @@ process.  A terminal whose program has exited is killed without asking."
   "A real native Ghostty surface occupies this buffer's displayed pane.
 RET focuses Ghostty.  The shell gets typing and Control and Meta chords; a
 Super chord reaches Emacs, which runs it in this buffer.
-`portal-input-escape-key' always returns focus to Emacs.  Scrollback belongs to Ghostty."
+`portal-input-escape-key' always returns focus to Emacs.  Scrollback
+belongs to Ghostty."
   (setq-local cursor-type nil)
   (add-hook 'kill-buffer-hook #'portal-terminal--dismiss-quick nil t)
   (add-hook 'kill-buffer-query-functions #'portal-terminal--kill-query nil t)
@@ -422,22 +413,7 @@ Whether to ask first follows `portal-terminal-confirm-kill'."
       (delete-other-windows))))
 
 (provide 'portal-terminal)
-(require 'portal-terminal-bindings
-         (expand-file-name "portal-terminal-bindings"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-(require 'portal-terminal-quick
-         (expand-file-name "portal-terminal-quick"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-(require 'portal-terminal-choose
-         (expand-file-name "portal-terminal-choose"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
+(require 'portal-terminal-bindings)
+(require 'portal-terminal-quick)
+(require 'portal-terminal-choose)
 ;;; portal-terminal.el ends here

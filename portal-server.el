@@ -3,18 +3,18 @@
 
 (require 'json)
 (require 'subr-x)
+(require 'portal-build)
 
-(defgroup portal nil "Native views and hosted UIs in Emacs." :group 'applications)
-
-(defcustom portal-server-program
-  (expand-file-name "build/portal-host"
-                    (file-name-directory (or load-file-name buffer-file-name)))
-  "Standalone UI host executable, including its Bun runtime."
-  :type 'file)
+(defcustom portal-server-program nil
+  "Standalone UI host executable, including its Bun runtime.
+nil means the host in Portal's build: see `portal-build-directory'."
+  :type '(choice (const :tag "Portal's build" nil) file)
+  :group 'portal)
 
 (defcustom portal-server-start-timeout 5
   "Seconds to wait asynchronously for the UI host to become ready."
-  :type 'number)
+  :type 'number
+  :group 'portal)
 
 (defvar portal-server-ready-hook nil
   "Hook run when the shared UI host is ready, including after a restart.")
@@ -90,10 +90,12 @@
 The ready hook runs after the server has bound its HTTP listener."
   (interactive)
   (unless (and portal--server-process (process-live-p portal--server-process))
-    (let* ((program (expand-file-name portal-server-program))
+    (let* ((program (expand-file-name (or portal-server-program
+                                          (portal-build-file "portal-host"))))
            (default-directory (file-name-directory program)))
       (unless (file-executable-p program)
-        (user-error "Build the Portal UI host with ./build.sh: %s" program))
+        (unless portal-server-program (portal-build-ensure))
+        (user-error "Build the Portal UI host with M-x portal-build: %s" program))
       (setq portal--server-process
             (make-process :name "portal-server" :command (list program)
                           :connection-type 'pipe :coding 'utf-8-unix :noquery t

@@ -1,15 +1,25 @@
 ;;; portal-terminal-embark.el --- Embark actions for Portal terminals -*- lexical-binding: t; -*-
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; Optional; load it after Embark and enable `portal-terminal-embark-mode'.
+;; Optional; enable `portal-terminal-embark-mode', which loads Embark.
 ;; Terminal candidates stay buffer candidates, so Embark's buffer actions and
 ;; its export to Ibuffer keep working.  A target finder turns a buffer that
 ;; is a live terminal into a `portal-terminal' target, whose map adds terminal
 ;; actions to the buffer ones; other buffers are untouched.  Tested with
 ;; Embark 1.2, whose `embark--targets' the finder uses.
 
-(require 'embark)
 (require 'portal-terminal)
+
+;; Embark is optional for Portal, so this file compiles and loads without it;
+;; enabling the mode requires it.
+(defvar embark-buffer-map)
+(defvar embark-target-finders)
+(defvar embark-keymap-alist)
+(defvar embark-transformer-alist)
+(defvar embark-exporters-alist)
+(defvar embark-default-action-overrides)
+(declare-function embark--targets "embark" ())
+(declare-function embark-export-ibuffer "embark" (buffers))
 
 (defun portal-terminal-embark--buffer (name)
   "Return the live terminal buffer named NAME, or signal that it closed."
@@ -60,8 +70,8 @@ way of killing it."
   (kill-buffer (portal-terminal-embark--buffer name)))
 
 (defvar-keymap portal-terminal-embark-map
-  :doc "Embark actions for Portal terminals, added to the buffer actions."
-  :parent embark-buffer-map
+  :doc "Embark actions for Portal terminals, added to the buffer actions.
+Enabling `portal-terminal-embark-mode' makes Embark's buffer map its parent."
   "RET" #'portal-terminal-embark-select
   "r" #'portal-terminal-embark-rename
   "d" #'portal-terminal-embark-dired
@@ -109,6 +119,8 @@ Embark's buffer map.  Terminal candidates still export to Ibuffer."
   :group 'portal-terminal
   (if portal-terminal-embark-mode
       (progn
+        (require 'embark)
+        (set-keymap-parent portal-terminal-embark-map embark-buffer-map)
         (add-hook 'embark-target-finders #'portal-terminal-embark-target -90)
         (setf (alist-get 'portal-terminal embark-keymap-alist) '(portal-terminal-embark-map)
               (alist-get 'portal-terminal embark-transformer-alist) #'portal-terminal-embark--refine
@@ -116,10 +128,11 @@ Embark's buffer map.  Terminal candidates still export to Ibuffer."
               (alist-get 'portal-terminal embark-default-action-overrides)
               #'portal-terminal-embark-select))
     (remove-hook 'embark-target-finders #'portal-terminal-embark-target)
-    (setf (alist-get 'portal-terminal embark-keymap-alist nil 'remove) nil
-          (alist-get 'portal-terminal embark-transformer-alist nil 'remove) nil
-          (alist-get 'portal-terminal embark-exporters-alist nil 'remove) nil
-          (alist-get 'portal-terminal embark-default-action-overrides nil 'remove) nil)))
+    (when (featurep 'embark)
+      (setf (alist-get 'portal-terminal embark-keymap-alist nil 'remove) nil
+            (alist-get 'portal-terminal embark-transformer-alist nil 'remove) nil
+            (alist-get 'portal-terminal embark-exporters-alist nil 'remove) nil
+            (alist-get 'portal-terminal embark-default-action-overrides nil 'remove) nil))))
 
 (provide 'portal-terminal-embark)
 ;;; portal-terminal-embark.el ends here
