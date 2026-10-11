@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Unblock native GUI acceptance
 
@@ -50,14 +50,14 @@ causes before changing native behavior.
 
 ## Acceptance and verification
 
-- [ ] `bash test/vm.sh sh test/input-gui.sh` completes with the intended cases
+- [x] `bash test/vm.sh sh test/input-gui.sh` completes with the intended cases
       passing and no unexpected skips in a fresh VM Emacs process; repeat in a
       second fresh process to check cleanup and reproducibility.
-- [ ] A controlled deliberately stalled case exits nonzero within the documented
+- [x] A controlled deliberately stalled case exits nonzero within the documented
       per-case budget, identifies its test, preserves logs, and leaves no process
       or desktop lock that blocks a subsequent run. Remove the temporary fault.
-- [ ] Progress is visible before suite completion, including on failure.
-- [ ] If a native fix affects launcher, toolbar or ownership, read the architecture
+- [x] Progress is visible before suite completion, including on failure.
+- [x] If a native fix affects launcher, toolbar or ownership, read the architecture
       ADRs and run the corresponding extra GUI suites through the VM runner.
-- [ ] Run shared host checks. Record commands, environment, counts and skips;
+- [x] Run shared host checks. Record commands, environment, counts and skips;
       unavailable VM access is a remaining verification gap, never a pass.

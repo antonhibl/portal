@@ -3,11 +3,14 @@
 ;; Load both graphical test suites and the test-only event injector first.
 
 (require 'portal-terminal-tests)
-(declare-function portal-test-native-focus-web "test-terminal-input" ())
+(require 'portal-excalidraw-gui-tests)
+(declare-function portal-test-responder "test-terminal-input" ())
 (declare-function portal--inspect "portal-view" (target))
 
+;; Without spell checking, so that macOS's correction panel, whose event
+;; loop waits for a key, never holds the thread the next injected key needs.
 (defconst portal-integration-test--page
-  (concat "data:text/html,<title>Ready</title><input autofocus>"
+  (concat "data:text/html,<title>Ready</title><input autofocus spellcheck=false>"
           "<script>let down=0,up=0;"
           "document.onkeydown=()=>down++;"
           "document.onkeyup=()=>{up++;document.title="
@@ -17,12 +20,24 @@
   "Verify the real editor receives a complete Emacs key sequence."
   (portal-test-native-post-key 7 (ash 1 18) "\C-x")
   (portal-test-native-post-key 11 0 "b")
-  (should (equal (with-timeout (3 (ert-fail "Emacs did not regain keyboard input"))
+  (should (equal (with-timeout (3 (ert-fail (format "Emacs did not regain keyboard input: %s"
+                                                    (portal-test-responder))))
                    (read-key-sequence-vector nil))
                  (vconcat (kbd "C-x b")))))
 
+(defun portal-integration-test--focus-web (window target)
+  "Give web view TARGET, in WINDOW, the keyboard, as RET in its buffer does.
+WebKit tells the page later: until it does, a key reaches the page but not
+its field.  Wait for that, as a person's next key would."
+  (select-window window)
+  (portal-input-focus)
+  (should (portal-input--action "focused" target))
+  (portal-terminal-test--wait
+   (lambda () (portal-excalidraw-gui--js
+               "return document.hasFocus() && document.activeElement === document.querySelector('input');"))))
+
 (ert-deftest portal-integration-focus-and-cleanup-in-either-startup-order ()
-  (skip-unless (fboundp 'portal-test-native-focus-web))
+  (skip-unless (fboundp 'portal-test-native-key))
   (dolist (terminal-first '(t nil))
     (portal-test--with-web
       (unwind-protect
@@ -43,7 +58,7 @@
               (setq web-window (selected-window)
                     web-id (portal-view-target))
               (portal-test--wait-for-page "Ready" web-id)
-              (should (portal-test-native-focus-web))
+              (portal-integration-test--focus-web web-window web-id)
               (select-window (split-window-right))
               (portal-terminal)
               (setq terminal-window (selected-window)
@@ -60,8 +75,7 @@
             (portal-terminal-focus)
             (portal-test-native-key 47 (ash 1 20) ".")
             (portal-integration-test--emacs-input)
-            (select-window web-window)
-            (should (portal-test-native-focus-web))
+            (portal-integration-test--focus-web web-window web-id)
             (portal-test-native-key 0 0 "a")
             ;; A terminal must not swallow WebKit's key-up events.
             (portal-test--wait-for-page "a:1:1" web-id)
@@ -78,7 +92,7 @@
                   (portal-integration-test--emacs-input))
               (portal-terminal-close-all)
               (should-not (portal-terminal-test--state terminal-id))
-              (should (portal-test-native-focus-web))
+              (portal-integration-test--focus-web web-window web-id)
               (portal-test-native-key 11 0 "b")
               (portal-test--wait-for-page "ab:2:2" web-id)
               (portal-test-native-key 47 (ash 1 20) ".")

@@ -30,6 +30,12 @@ export LIBRARY_PATH="$(/usr/libexec/PlistBuddy -c Print:LSEnvironment:LIBRARY_PA
   Platform contracts include resource ownership and ordering.
 - Drive input and focus tests through the event loop. Direct handler calls do
   not prove keyboard access.
+- Mark web fixture fields that tests type into `spellcheck=false`. Otherwise
+  macOS may show its correction panel, whose nested event loop holds Emacs's
+  main thread until a key arrives, so the next injected key never comes.
+- After giving a web view the keyboard, wait until its page has focus before
+  typing. WebKit tells the page asynchronously; an earlier key reaches the page
+  but not its field.
 - Isolate fixtures. Clean up buffers, processes, files and registrations, even
   after failure. Leave user configuration and existing sessions untouched.
 - Keep default checks headless and credential-free. Register them in the
@@ -90,7 +96,8 @@ Keep commands in the foreground. The runner terminates their process group on
 completion or timeout. SSH disconnects can leave runs active until timeout.
 Reconnect to inspect saved logs.
 
-Remote output goes to `build.log` and `test.log` beside the repo. Logs and
+Remote output goes to `build.log` and `test.log` beside the repo. Commands can
+save more `*.log` files in `PORTAL_TEST_LOGS`, the run directory. Logs and
 `exit-status` copy back to `.cache/vm/<run>/`. Command failure status reaches the
 caller.
 Successful runs delete the source/build tree and keep logs. Failed runs keep
@@ -125,10 +132,11 @@ Pass other graphical Emacs or standalone AppKit checks as needed.
 
 ## Terminal graphical checks
 
-Use [launcher-daily-use.sh](../test/launcher-daily-use.sh) to compile/load the
-test-only event injector in the VM and add `build/elpa` to Emacs's load path.
-The injector needs no Accessibility permission. Reuse this setup for other GUI
-suites; keep dependency versions there.
+Graphical ERT suites run through [gui-ert.sh](../test/gui-ert.sh). It compiles
+and loads the test-only event injector, adds `build/elpa` to Emacs's load path,
+and runs the suite in one fresh Emacs. The injector needs no Accessibility
+permission. Reuse it for other GUI suites, as
+[input-gui.sh](../test/input-gui.sh) does; keep dependency versions in CMake.
 
 For the shared input, terminal, toolbar and coexistence checks in a fresh
 Emacs process:
@@ -136,6 +144,44 @@ Emacs process:
 ```sh
 bash test/vm.sh sh test/input-gui.sh
 ```
+
+It passes only with every selected test as expected and none skipped. Give
+`input-gui.sh` an ERT selector regexp to run part of it.
+
+### Diagnosing a stalled GUI run
+
+`gui-ert.sh` prints each test's start, result and duration to `test.log` as it
+happens, and appends a start and end record to `gui-progress.log`. Watch a run
+from the host with the path `bash test/vm.sh` prints:
+
+```sh
+ssh portal-vm tail -f '~/portal-test-runs/run.XXXXXXXX/test.log'
+```
+
+A stuck native call can stop every Lisp timer, including `with-timeout`, so a
+shell watchdog bounds each test. When no test starts or ends for
+`PORTAL_GUI_TEST_TIMEOUT` seconds (default: 60), it samples Emacs into
+`emacs-sample.log`, kills Emacs and its subprocesses, reports which test did
+not finish, and exits 124. Emacs gives each subprocess its own process group,
+so the runner's cleanup alone would leave them holding the desktop lock. Both logs copy back with `test.log`. The runner's stage timeout still
+bounds the whole command. To rerun only the stalled test:
+
+```sh
+bash test/vm.sh sh test/input-gui.sh '^portal-integration-focus-'
+```
+
+In the sample, read the main thread below the test's Lisp frames. A nested
+AppKit event loop there, such as `NSCorrectionPanel _interceptEvents`, waits
+for an event that the blocked test would have injected. Failed runs keep their
+`repo/`; delete it once you have the logs.
+
+On 2026-10-11, all 39 selected cases passed in each of two fresh Emacs
+processes, with none skipped. The guest ran macOS 27.0.1 (26A434) arm64, with
+macOS's default text correction on, and the `emacs-plus-app` cask's Emacs 31.1,
+build `31.1-349`. A deliberately stalled test, blocked in a synchronous
+`call-process`, exited 124 after 66 seconds and named itself; the next suite
+then ran. These cases inject AppKit events into Emacs; they do not prove
+physical-key delivery.
 
 The standalone focus check below also verifies live escape rebinding and the
 inactive content cue, including rendering and click-through without a toolbar.

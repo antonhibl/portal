@@ -7,10 +7,12 @@
 (declare-function portal-test-native-target-frame "test-terminal-input" (title))
 
 (defun portal-excalidraw-gui--js (script)
-  "Run SCRIPT in the actual webview, returning its result."
+  "Run SCRIPT in the actual webview, returning its result.
+JavaScript's false and null are nil."
   (should (portal-test-web-eval script))
   (portal-terminal-test--wait (lambda () (portal-test-web-eval nil)))
-  (let ((result (json-parse-string (portal-test-web-eval nil) :object-type 'plist)))
+  (let ((result (json-parse-string (portal-test-web-eval nil) :object-type 'plist
+                                   :false-object nil :null-object nil)))
     (should-not (plist-get result :error))
     (plist-get result :value)))
 

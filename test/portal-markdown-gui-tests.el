@@ -295,7 +295,7 @@ The folder is `portal-markdown-gui--directory'."
               (portal-excalidraw-gui--js "window.portalStayed = true; return true;")
               (setopt portal-web-appearance 'light)
               (should-not (plist-get (portal--inspect target) :dark))
-              (should (eq (portal-excalidraw-gui--js (format "return %s;" dark)) :false))
+              (should-not (portal-excalidraw-gui--js (format "return %s;" dark)))
               (should (equal (portal-excalidraw-gui--js (format "return %s;" background))
                              "rgb(255, 255, 255)"))
               (setopt portal-web-appearance 'dark)

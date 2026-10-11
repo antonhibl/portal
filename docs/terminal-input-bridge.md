@@ -110,7 +110,10 @@ completions never affect other handoffs or views. Hiding, closing or Emacs's
 view click first sends `escape`. So do hosted local-link handoffs and toolbar
 Open in Emacs: the web core (`native/Core/web.c`) calls `portal_input_escape`
 before sending `bridge`. Emacs-initiated focus changes, such as opening find,
-never end handoffs. The platform checks `portal_input_is_escape` before holding
+never end handoffs. Pages never take the keyboard themselves: a page focusing
+an element, as autofocus does, makes WebKit ask the window for it, and the
+platform refuses unless the view has the keyboard or Emacs, the core or a click
+is giving it. The platform checks `portal_input_is_escape` before holding
 or offering a key, then returns focus immediately without Lisp or JavaScript
 round trips. `portal--input-escape-key` validates and replaces the core's reserved
 chord; the same setting updates the Portal buffer's Emacs keymap.
