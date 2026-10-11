@@ -1,0 +1,546 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>About Portal</title>
+		<link rel="icon" type="image/png" sizes="32x32" href="assets/portal-32.png">
+		<link rel="icon" type="image/png" sizes="64x64" href="assets/portal-64.png">
+		<style>
+		:root {
+			--bg: #0c0f12;
+			--amber: #f2b14a;
+			--amber-dim: rgb(242 177 74 / 0.45);
+			color-scheme: dark;
+		}
+		body {
+			margin: 0;
+			min-height: 100vh;
+			display: grid;
+			place-items: center;
+			background:
+				radial-gradient(70vmin 50vmin at 50% 35%, #0f1c27, transparent 70%),
+				var(--bg);
+			font-family: ui-monospace, "SF Mono", Menlo, monospace;
+			overflow-x: hidden;
+		}
+		main {
+			display: grid;
+			justify-items: center;
+			gap: 1rem;
+			padding: 1rem 1rem 2rem;
+		}
+		.stage {
+			position: relative;
+			display: grid;
+			place-items: center;
+			width: min(100vw, 640px);
+			height: min(58vh, 540px);
+			cursor: crosshair;
+		}
+		.stage canvas {
+			position: absolute;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+		}
+		.stage img {
+			width: 50%;
+			max-height: 60%;
+			object-fit: contain;
+		}
+		/* The terminal from the end credits. */
+		.term {
+			position: relative;
+			width: 44ch;
+			max-width: calc(100vw - 2rem);
+			padding: 1rem 1.5rem;
+			border: 1px dashed var(--amber-dim);
+			color: var(--amber);
+			font-size: 13px;
+			line-height: 1.55;
+			text-shadow: 0 0 6px rgb(242 177 74 / 0.55);
+		}
+		.term::after {
+			content: "";
+			position: absolute;
+			inset: 0;
+			pointer-events: none;
+			background: repeating-linear-gradient(
+				transparent 0 2px,
+				rgb(0 0 0 / 0.22) 2px 3px
+			);
+		}
+		.line {
+			display: block;
+			height: 1.55em;
+			white-space: pre;
+			overflow: hidden;
+		}
+		.line.typing,
+		.line.cursor {
+			border-right: 0.6em solid var(--amber);
+		}
+		.line.cursor {
+			animation: blink 1s steps(1) infinite;
+		}
+		.term a {
+			color: inherit;
+			text-decoration: none;
+		}
+		.term a:hover {
+			text-decoration: underline;
+		}
+		.dim {
+			opacity: 0.55;
+		}
+		.hint {
+			margin: 0;
+			font-size: 11px;
+			color: #56606a;
+		}
+		@keyframes blink {
+			50% {
+				border-color: transparent;
+			}
+		}
+		@media (prefers-reduced-motion: reduce) {
+			.line.cursor {
+				animation: none;
+			}
+		}
+		</style>
+	</head>
+	<body>
+		<main>
+			<div class="stage" id="stage">
+				<canvas id="gl" aria-hidden="true"></canvas>
+				<canvas id="fx" aria-hidden="true"></canvas>
+				<img
+					id="still"
+					src="assets/portal-256.png"
+					alt="Portal Companion Buffer"
+					hidden
+				>
+			</div>
+			<div class="term" id="term">
+				<span class="line">PORTAL // web views and terminals in Emacs</span>
+				<span class="line dim rule"
+					>--------------------------------------</span
+				>
+				<span class="line">portal ............... {{portal}}</span>
+				<span class="line">emacs ................ {{emacs}}</span>
+				<span class="line">bun .................. {{bun}}</span>
+				<span class="line dim rule"
+					>--------------------------------------</span
+				>
+				<span class="line"
+					><a href="https://github.com/xiaoxinghu/portal"
+						>github.com/xiaoxinghu/portal</a
+					></span
+				>
+				<span class="line"
+					><a href="mailto:hi@xiaoxing.dev">hi@xiaoxing.dev</a></span
+				>
+				<span class="line"></span>
+				<span class="line dim">Thank you for testing with Portal.</span>
+				<span class="line"></span>
+			</div>
+			<p class="hint" id="hint">
+				left click: blue portal · right click: orange portal · move to look
+				through
+			</p>
+		</main>
+
+		<script type="x-shader/x-fragment" id="shader">
+		precision highp float;
+		uniform vec2 uRes;
+		uniform float uTime, uOpen;
+		uniform vec3 uColor, uOther;
+		uniform vec2 uMouse;
+
+		const vec2 R = vec2(0.19, 0.31); // portal semi-axes, in canvas heights
+		const vec2 W = vec2(0.9, 1.5);   // the same portal, in world units
+
+		float hash(vec2 p) {
+			p = fract(p * vec2(123.34, 456.21));
+			p += dot(p, p + 45.32);
+			return fract(p.x * p.y);
+		}
+		float noise(vec2 p) {
+			vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
+			return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x),
+			           mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+		}
+		float fbm(vec2 p) {
+			float v = 0., a = .5;
+			for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= .5; }
+			return v;
+		}
+		float easeOutBack(float x) {
+			x -= 1.;
+			return 1. + 2.70158 * x * x * x + 1.70158 * x * x;
+		}
+
+		// The rim's turbulent radius, in ellipse units, in the direction of e.
+		float edgeOf(vec2 e, float t, float seed) {
+			vec2 c = normalize(e + 1e-6);
+			return 1. + (fbm(c * 2.3 + vec2(t * .31 + seed, -t * .47)) - .5) * .06
+			          + (noise(c * 11. + t * 3. + seed) - .5) * .012;
+		}
+
+		// A rim's light: a white-hot core, flames licking outward, haze inward.
+		vec3 rim(vec2 e, float t, float seed, vec3 col, float edge) {
+			float r = length(e), d = r - edge;
+			vec2 c = e / max(r, 1e-4);
+			float core = exp(-d * d / (.03 * .03));
+			float band = exp(-d * d / (.09 * .09));
+			float flame = fbm(c * (4. + 10. * max(d, 0.)) + vec2(-t * .9, t * .6) + seed);
+			float outer = d > 0. ? smoothstep(.35, .85, flame) * exp(-d / .07) : 0.;
+			float haze = d < 0. ? exp(d / .09) * .5 : 0.;
+			float flick = .9 + .1 * noise(vec2(t * 17., seed));
+			return (col * (core * 1.6 + band * .45 + outer * 1.5 + haze) + pow(core, 4.) * 1.1) * flick;
+		}
+
+		// Test chamber panels: kind 0 is a wall, 1 the floor, 2 the ceiling.
+		vec3 panels(vec2 uv, float kind) {
+			vec2 g = abs(fract(uv) - .5);
+			float seam = smoothstep(.465, .49, max(g.x, g.y));
+			vec3 base = kind == 1. ? vec3(.30, .31, .33) : kind == 2. ? vec3(.15, .16, .17) : vec3(.80, .81, .83);
+			base *= .86 + .14 * hash(floor(uv));
+			return mix(base, base * .3, seam);
+		}
+
+		// The chamber on the far side, lit by the other portal on its back wall.
+		vec3 chamber(vec2 e, float t) {
+			vec3 eye = vec3(uMouse * vec2(.7, .4), -2.4);
+			vec3 ro = vec3(e * W, 0.);
+			vec3 rd = normalize(ro - eye);
+			vec3 lo = vec3(-3.4, -1.6, 0.), hi = vec3(3.4, 3.2, 5.5);
+			vec3 tv = (mix(lo, hi, step(0., rd)) - ro) / rd;
+			float tt = min(tv.x, min(tv.y, tv.z));
+			vec3 h = ro + rd * tt, n;
+			vec2 uv;
+			float kind = 0.;
+			if (tt == tv.x) { uv = h.zy; n = vec3(-sign(rd.x), 0, 0); }
+			else if (tt == tv.y) { uv = h.xz; n = vec3(0, -sign(rd.y), 0); kind = rd.y < 0. ? 1. : 2.; }
+			else { uv = h.xy; n = vec3(0, 0, -1); }
+			vec3 pc = vec3(0., -.25, hi.z);
+			vec3 L = pc - vec3(0, 0, .3) - h;
+			float dl = length(L);
+			vec3 light = vec3(.66, .69, .74) * (.6 + .4 * max(n.y, 0.) + .2 * max(-n.z, 0.))
+			           + uOther * max(dot(n, L / dl), 0.) * 2. / (1. + dl * dl * .45);
+			vec3 col = panels(uv * .9, kind) * light;
+			if (tt == tv.z) {
+				vec2 pe = (h.xy - pc.xy) / vec2(.8, 1.3);
+				float ed = edgeOf(pe, t, 5.);
+				col = mix(col, uOther * .12 + .02, smoothstep(ed + .01, ed - .02, length(pe)));
+				col += rim(pe, t, 5., uOther, ed);
+			}
+			return mix(col, vec3(.05, .06, .07), 1. - exp(-tt * .05));
+		}
+
+		void main() {
+			vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
+			float t = uTime;
+			float s = easeOutBack(clamp(uOpen / .55, 0., 1.));
+			vec3 col = vec3(0);
+			float a = 0.;
+			if (s > .002) {
+				vec2 e = p / (R * s);
+				float ed = edgeOf(e, t, 0.);
+				float inside = smoothstep(ed + .015, ed - .015, length(e));
+				if (inside > 0.) {
+					// The far side resolves out of the portal's colour as it opens.
+					vec3 view = mix(uColor * .6, chamber(e, t), smoothstep(.15, .8, uOpen));
+					col = view * inside;
+					a = inside;
+				}
+				col += rim(e, t, 0., uColor, ed);
+				// Light spilling onto the floor.
+				col += uColor * .35 * s * exp(-pow((p.y + R.y * s * 1.08) / .012, 2.))
+				     * exp(-p.x * p.x / (.05 * s * s + 1e-4));
+			}
+			// The flash of the shot that opens the portal.
+			col += (vec3(1) + uColor) * exp(-uOpen * 10.) * exp(-dot(p, p) * 220.) * 1.5;
+			gl_FragColor = vec4(col, a);
+		}
+		</script>
+
+		<script>
+		const BLUE = [0.16, 0.6, 1.0];
+		const ORANGE = [1.0, 0.48, 0.07];
+		// The rim's semi-axes, in canvas heights, as in the shader.
+		const RX = 0.19;
+		const RY = 0.31;
+		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const stage = document.getElementById("stage");
+		const glCanvas = document.getElementById("gl");
+		const fxCanvas = document.getElementById("fx");
+		const lines = [...document.querySelectorAll("#term .line")];
+
+		function portal() {
+			const gl = glCanvas.getContext("webgl", { premultipliedAlpha: true });
+			if (!gl) throw new Error("WebGL is unavailable");
+			const compile = (type, source) => {
+				const shader = gl.createShader(type);
+				gl.shaderSource(shader, source);
+				gl.compileShader(shader);
+				if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+					throw new Error(gl.getShaderInfoLog(shader));
+				}
+				return shader;
+			};
+			const program = gl.createProgram();
+			gl.attachShader(
+				program,
+				compile(
+					gl.VERTEX_SHADER,
+					"attribute vec2 p; void main() { gl_Position = vec4(p, 0, 1); }",
+				),
+			);
+			gl.attachShader(
+				program,
+				compile(
+					gl.FRAGMENT_SHADER,
+					document.getElementById("shader").textContent,
+				),
+			);
+			// The vertex data below feeds attribute 0.
+			gl.bindAttribLocation(program, 0, "p");
+			gl.linkProgram(program);
+			if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+				throw new Error(gl.getProgramInfoLog(program));
+			}
+			// biome-ignore lint/correctness/useHookAtTopLevel: WebGL's, not a React hook.
+			gl.useProgram(program);
+			gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+			// One triangle that covers the canvas.
+			gl.bufferData(
+				gl.ARRAY_BUFFER,
+				new Float32Array([-1, -1, 3, -1, -1, 3]),
+				gl.STATIC_DRAW,
+			);
+			gl.enableVertexAttribArray(0);
+			gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+			const u = {};
+			for (const name of [
+				"uRes",
+				"uTime",
+				"uOpen",
+				"uColor",
+				"uOther",
+				"uMouse",
+			]) {
+				u[name] = gl.getUniformLocation(program, name);
+			}
+
+			const fx = fxCanvas.getContext("2d");
+			const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+			const sparks = [];
+			let width = 0;
+			let height = 0;
+			let clock = still ? 2 : 0;
+			let openedAt = still ? -10 : 0;
+			let color = BLUE;
+
+			function draw() {
+				gl.uniform2f(u.uRes, glCanvas.width, glCanvas.height);
+				gl.uniform1f(u.uTime, clock);
+				gl.uniform1f(u.uOpen, clock - openedAt);
+				gl.uniform3fv(u.uColor, color);
+				gl.uniform3fv(u.uOther, color === BLUE ? ORANGE : BLUE);
+				gl.uniform2f(u.uMouse, mouse.x, mouse.y);
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+			}
+
+			// Measure the stage before anything draws; the observer reports later.
+			function resize() {
+				const dpr = Math.min(devicePixelRatio || 1, 2);
+				width = stage.clientWidth;
+				height = stage.clientHeight;
+				for (const canvas of [glCanvas, fxCanvas]) {
+					canvas.width = Math.round(width * dpr);
+					canvas.height = Math.round(height * dpr);
+				}
+				gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+				fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+				if (still) draw();
+			}
+			resize();
+			new ResizeObserver(resize).observe(stage);
+
+			function spark(x, y, vx, vy, life, hot) {
+				sparks.push({ x, y, vx, vy, life, hot, age: 0 });
+			}
+			function burst() {
+				for (let i = 0; i < 110; i++) {
+					const a = Math.random() * Math.PI * 2;
+					const v = 120 + Math.random() * 520;
+					spark(
+						width / 2,
+						height / 2,
+						Math.cos(a) * v,
+						Math.sin(a) * v,
+						0.3 + Math.random() * 0.6,
+						Math.random() < 0.4,
+					);
+				}
+			}
+			// With reduced motion the clock stands still, so a new portal is drawn
+			// already open: only its colour changes.
+			function open(next) {
+				color = next;
+				if (still) return draw();
+				openedAt = clock;
+				burst();
+			}
+
+			// The rim sheds sparks that fall away under gravity.
+			function updateSparks(dt) {
+				const s = Math.min(1, (clock - openedAt) / 0.55);
+				if (s > 0.5) {
+					for (let i = 0; i < 4; i++) {
+						const a = Math.random() * Math.PI * 2;
+						const nx = Math.cos(a) / RX;
+						const ny = Math.sin(a) / RY;
+						const v = (15 + Math.random() * 60) / Math.hypot(nx, ny);
+						spark(
+							width / 2 + Math.cos(a) * RX * height * s,
+							height / 2 + Math.sin(a) * RY * height * s,
+							nx * v,
+							ny * v - 20,
+							0.4 + Math.random() * 0.8,
+							Math.random() < 0.25,
+						);
+					}
+				}
+				fx.clearRect(0, 0, width, height);
+				fx.globalCompositeOperation = "lighter";
+				fx.lineCap = "round";
+				const [r, g, b] = color.map((c) => Math.round(c * 255));
+				for (let i = sparks.length - 1; i >= 0; i--) {
+					const p = sparks[i];
+					p.age += dt;
+					if (p.age > p.life) {
+						sparks.splice(i, 1);
+						continue;
+					}
+					p.vx *= 1 - 1.8 * dt;
+					p.vy = p.vy * (1 - 1.8 * dt) + 260 * dt;
+					p.x += p.vx * dt;
+					p.y += p.vy * dt;
+					const k = 1 - p.age / p.life;
+					fx.strokeStyle = p.hot
+						? `rgba(255, 255, 255, ${k})`
+						: `rgba(${r}, ${g}, ${b}, ${k})`;
+					fx.lineWidth = p.hot ? 1.2 : 1.8;
+					fx.beginPath();
+					fx.moveTo(p.x, p.y);
+					fx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025);
+					fx.stroke();
+				}
+			}
+
+			// The whole page steers the view, on a logarithmic scale: near the
+			// portal the view follows the pointer closely; further out each pixel
+			// moves it less, and the farthest corner of the page turns it fully.
+			document.addEventListener("pointermove", (event) => {
+				const box = stage.getBoundingClientRect();
+				const cx = box.left + box.width / 2;
+				const cy = box.top + box.height / 2;
+				const dx = event.clientX - cx;
+				const dy = event.clientY - cy;
+				const r = Math.hypot(dx, dy);
+				if (r < 1) {
+					mouse.tx = 0;
+					mouse.ty = 0;
+					return;
+				}
+				const far = Math.hypot(
+					Math.max(cx, innerWidth - cx),
+					Math.max(cy, innerHeight - cy),
+				);
+				const k = RY * height;
+				const reach = Math.log1p(Math.min(r, far) / k) / Math.log1p(far / k);
+				mouse.tx = (dx / r) * reach;
+				mouse.ty = (-dy / r) * reach;
+			});
+			document.documentElement.addEventListener("pointerleave", () => {
+				mouse.tx = 0;
+				mouse.ty = 0;
+			});
+			stage.addEventListener("pointerdown", (event) =>
+				open(event.button === 2 ? ORANGE : BLUE),
+			);
+			stage.addEventListener("contextmenu", (event) => event.preventDefault());
+
+			if (still) return;
+			let last = 0;
+			let frame = 0;
+			function tick(now) {
+				const dt = last ? Math.min(now - last, 50) / 1000 : 0;
+				last = now;
+				clock += dt;
+				mouse.x += (mouse.tx - mouse.x) * Math.min(1, dt * 4);
+				mouse.y += (mouse.ty - mouse.y) * Math.min(1, dt * 4);
+				draw();
+				updateSparks(dt);
+				frame = requestAnimationFrame(tick);
+			}
+			// A hidden page uses no GPU time; the clock resumes where it stopped.
+			document.addEventListener("visibilitychange", () => {
+				cancelAnimationFrame(frame);
+				last = 0;
+				if (!document.hidden) frame = requestAnimationFrame(tick);
+			});
+			burst();
+			frame = requestAnimationFrame(tick);
+		}
+
+		// Types the credits out line by line; rules print at once.
+		function type() {
+			let i = 0;
+			let c = 0;
+			(function step() {
+				const line = lines[i];
+				if (i === lines.length - 1) {
+					line.classList.add("cursor");
+					return;
+				}
+				const length = line.textContent.length;
+				line.classList.add("typing");
+				c = line.classList.contains("rule") ? length : Math.min(length, c + 2);
+				line.style.width = `${c}ch`;
+				if (c < length) {
+					setTimeout(step, 8 + Math.random() * 14);
+					return;
+				}
+				line.classList.remove("typing");
+				line.style.width = "";
+				i++;
+				c = 0;
+				setTimeout(step, 45);
+			})();
+		}
+
+		try {
+			portal();
+			document.documentElement.dataset.renderer = "webgl";
+		} catch (error) {
+			console.warn(error);
+			glCanvas.hidden = fxCanvas.hidden = true;
+			document.getElementById("still").hidden = false;
+			document.getElementById("hint").hidden = true;
+			document.documentElement.dataset.renderer = "image";
+		}
+		if (still) lines.at(-1).classList.add("cursor");
+		else {
+			// Hidden from the start, so the text never shows before it types.
+			for (const line of lines) line.style.width = "0ch";
+			setTimeout(type, 450);
+		}
+		</script>
+	</body>
+</html>

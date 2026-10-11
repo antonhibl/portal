@@ -286,6 +286,24 @@
                 (should (= (length (portal-fake-native-targets)) 2)))))
         (delete-file file)))))
 
+(ert-deftest portal-web-about-passes-the-portal-and-emacs-versions ()
+  (portal-web-test--environment
+    (cl-letf (((symbol-function 'portal-start-server) #'ignore)
+              ((symbol-function 'portal-server-url) (lambda () "http://127.0.0.1:1/token"))
+              ((symbol-function 'portal-build-version) (lambda () "1.2.3"))
+              (emacs-version "31.1 (test)"))
+      (portal-about)
+      (let ((about (current-buffer)) (target (portal-view-target)))
+        (should (equal (buffer-name) "*portal: about*"))
+        (should (equal (portal-web-test--toolbar) "none"))
+        (should (equal (plist-get (portal-web-test--state target) :url)
+                       "http://127.0.0.1:1/token/about?portal=1.2.3&emacs=31.1%20%28test%29"))
+        ;; Asking again shows the same page.
+        (switch-to-buffer "*scratch*")
+        (portal-about)
+        (should (eq (current-buffer) about))
+        (should (= (length (portal-fake-native-targets)) 1))))))
+
 (ert-deftest portal-web-hosted-app-stays-when-the-app-host-cannot-start ()
   (portal-web-test--environment
     (let ((host nil))

@@ -42,7 +42,8 @@ add_custom_command(
     # The license notices read both bundler records; rebuild if either is gone.
     BYPRODUCTS "${CMAKE_BINARY_DIR}/portal-host.meta.json"
         "${CMAKE_SOURCE_DIR}/host/.generated/editor-inputs.json"
-    DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
+    DEPENDS host/server.ts host/hello.html host/about.ts host/about.html
+        host/markdown.ts host/markdown.css
         host/icons/portal-32.png host/icons/portal-64.png host/icons/portal-256.png
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
         host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"

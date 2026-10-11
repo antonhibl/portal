@@ -211,6 +211,26 @@
                                     (portal-server-test--get "/markdown")))))
       (delete-directory directory t))))
 
+(ert-deftest portal-server-about-names-versions-as-text ()
+  (portal-server-test--with-host
+    (portal-start-server)
+    (portal-server-test--wait #'portal-server-url)
+    (let ((page (portal-server-test--get
+                 (concat "/about?portal=1.2.3&emacs="
+                         (url-hexify-string "31.1<script>alert(1)</script>")))))
+      (should (string-match-p "HTTP/1.1 200" page))
+      (should (string-match-p "text/html; charset=utf-8" page))
+      (should (string-match-p "[Cc]ontent-[Ss]ecurity-[Pp]olicy: default-src 'none'" page))
+      (should (string-match-p "portal \\.+ 1\\.2\\.3<" page))
+      ;; Emacs supplies the versions; the page shows them, never runs them.
+      (should (string-match-p "emacs \\.+ 31\\.1&lt;script&gt;" page))
+      (should-not (string-match-p "<script>alert" page))
+      (should (string-match-p "bun \\.+ [0-9]+\\.[0-9]+\\.[0-9]+<" page))
+      (should-not (string-match-p "{{" page)))
+    (let ((page (portal-server-test--get "/about")))
+      (should (string-match-p "portal \\.+ unknown<" page))
+      (should (string-match-p "emacs \\.+ unknown<" page)))))
+
 (ert-deftest portal-server-startup-timeout-cleans-up ()
   (let ((portal-server-program "/bin/cat")
         (portal-server-start-timeout 0.05))

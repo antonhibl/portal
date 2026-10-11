@@ -242,6 +242,16 @@ Previewing the same file or URL again reuses its buffer and reloads it."
   (portal-web--visit-hosted "/hello" "hello" "navigation"))
 
 ;;;###autoload
+(defun portal-about ()
+  "Show Portal's versions and contact details, starting the app host if needed."
+  (interactive)
+  (portal-web--visit-hosted
+   (format "/about?portal=%s&emacs=%s"
+           (url-hexify-string (or (portal-build-version) "unknown"))
+           (url-hexify-string emacs-version))
+   "about" "none"))
+
+;;;###autoload
 (defun portal-preview-markdown (file)
   "Preview the saved contents of local Markdown FILE using the app host.
 Use the current buffer's file when it has a Markdown mode or extension;

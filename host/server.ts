@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { assets } from "./.generated/assets";
+import { about } from "./about";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
 import { markdown } from "./markdown";
@@ -27,6 +28,7 @@ async function respond(request: Request): Promise<Response> {
 	const asset = assets.get(route);
 	if (
 		route !== "/hello" &&
+		route !== "/about" &&
 		route !== "/markdown" &&
 		route !== "/excalidraw/" &&
 		!asset
@@ -40,6 +42,7 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
+	if (route === "/about") return about(url.searchParams);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
 			headers: { "Content-Type": asset.type },
