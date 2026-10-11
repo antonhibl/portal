@@ -69,8 +69,11 @@ Excalidraw calls `nanoid()` and `nanoid(40)`; mermaid-to-excalidraw calls
 
 Both pins are exact, so no in-range upgrade exists. One top-level override
 serves both instead of separate scoped ones. `nanoid` 3.3.20 is the maintained 3.x
-release. Its browser `nanoid` function is identical to 3.3.3's and 4.0.2's, and
-it exports the same names. The 4.0 major dropped CommonJS and old Node.js, which
+release. Its `index.browser.js` exports the same names as 3.3.3's and 4.0.2's.
+Apart from whitespace, `nanoid` is unchanged. Only `customRandom`, which
+`customAlphabet` uses, changed: it returns `''` for a size of 0 or less and
+truncates its byte count with `step | 0`. Portal's callers use `nanoid()` and
+`nanoid(40)` only, so their behavior is unchanged. The 4.0 major dropped CommonJS and old Node.js, which
 this browser bundle does not use. The `portal-excalidraw-gui-pasted-mermaid-becomes-drawing`
 GUI test converts a pasted sequence diagram whose `box` group IDs come from
 mermaid-to-excalidraw's `nanoid`.
