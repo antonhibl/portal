@@ -8,6 +8,8 @@
 
 (declare-function portal--inspect "portal-view" (target))
 (declare-function portal--web-load "portal-web" (target url))
+(declare-function portal-excalidraw-gui--js "portal-excalidraw-gui-tests" (script))
+(declare-function portal-test-native-target-frame "test-terminal-input" (title))
 
 (defmacro portal-test--with-web (&rest body)
   "Run BODY in one window, then kill the web buffers it opened."
@@ -62,6 +64,40 @@ TARGET defaults to the selected pane's view.  Return its state."
       (portal-test--wait-for-page "JS works")
       (kill-buffer buffer)
       (should-not (portal--inspect target)))))
+
+(ert-deftest portal-web-about-draws-with-webgl-and-learns-when-it-is-hidden ()
+  (portal-test--with-web
+    (skip-unless (file-executable-p (portal-server-program-file)))
+    (select-frame-set-input-focus (selected-frame))
+    (sit-for 0.1)
+    ;; Page scripts run in this frame's visible web view.
+    (should (portal-view--with-frame-title (selected-frame)
+                                           #'portal-test-native-target-frame))
+    (unwind-protect
+        (let ((buffer (progn (portal-about) (current-buffer)))
+              (target (portal-view-target)))
+          (portal-test--wait-for-page "About Portal")
+          (should (equal (portal-excalidraw-gui--js
+                          "return document.documentElement.dataset.renderer;")
+                         "webgl"))
+          (should (string-search emacs-version
+                                 (portal-excalidraw-gui--js
+                                  "return document.getElementById('term').textContent;")))
+          ;; The page stops animating when told it is hidden.
+          (portal-excalidraw-gui--js
+           "window.hiddenSeen = false;
+            document.addEventListener('visibilitychange', () => {
+              if (document.hidden) window.hiddenSeen = true;
+            });
+            return true;")
+          (quit-window)
+          (redisplay t)
+          (sleep-for 0.5)
+          (switch-to-buffer buffer)
+          (portal-test--wait-for-page "About Portal" target)
+          (should (portal-test--shown target (selected-window)))
+          (should (portal-excalidraw-gui--js "return window.hiddenSeen;")))
+      (portal-test-native-target-frame nil))))
 
 (ert-deftest portal-web-loads-local-file-with-relative-javascript ()
   (portal-test--with-web

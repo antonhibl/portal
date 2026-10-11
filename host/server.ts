@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { assets } from "./.generated/assets";
+import { about } from "./about";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
 import { markdown } from "./markdown";
@@ -11,6 +12,9 @@ const editorPolicy =
 	"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; " +
 	"connect-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'";
+
+// The version of the readiness record that Emacs checks.
+const protocol = 3;
 
 // A private URL capability, passed only through the parent's readiness pipe.
 const token = crypto.randomUUID().replaceAll("-", "");
@@ -27,6 +31,7 @@ async function respond(request: Request): Promise<Response> {
 	const asset = assets.get(route);
 	if (
 		route !== "/hello" &&
+		route !== "/about" &&
 		route !== "/markdown" &&
 		route !== "/excalidraw/" &&
 		!asset
@@ -40,6 +45,7 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
+	if (route === "/about") return about(url.searchParams, protocol);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
 			headers: { "Content-Type": asset.type },
@@ -94,6 +100,5 @@ process.stdout.on("error", shutdown);
 
 // stdout is a protocol channel. Send diagnostics to stderr instead.
 process.stdout.write(
-	JSON.stringify({ type: "ready", protocol: 3, port: server.port, token }) +
-		"\n",
+	`${JSON.stringify({ type: "ready", protocol, port: server.port, token })}\n`,
 );
