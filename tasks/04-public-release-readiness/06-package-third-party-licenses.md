@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Package third-party licenses
 

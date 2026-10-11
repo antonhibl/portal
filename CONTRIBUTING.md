@@ -74,8 +74,8 @@ does not hot-reload that library.
 
 ## Build outputs and distribution
 
-The single build command produces `build/portal.bundle` and
-`build/portal-host`. The bundle contains the one native Emacs module at
+The single build command produces `build/portal.bundle`,
+`build/portal-host` and `build/licenses`. The bundle contains the one native Emacs module at
 `Contents/MacOS/portal.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
 or HTML changes. CMake records the path of the `bun` found on `PATH` and
 searches again if that file disappears. Set `-DBUN=/absolute/path/to/bun`
@@ -83,11 +83,16 @@ through `./build.sh` or CMake to select another Bun, or run
 `cmake --fresh --preset dev` to rediscover every tool. Both binaries are built
 for the current Mac.
 
-To distribute this layout, include all `portal*.el` files at the package root,
-`build/portal-host`, and the complete `build/portal.bundle`;
-the host needs no adjacent web assets. Keep the bundle intact, including its terminfo
-and shell integration resources. Restart Emacs when upgrading from the former
-separate web and terminal modules, or after rebuilding a loaded native module.
+To distribute this layout, include `LICENSE` and all `portal*.el` files at the
+package root, `build/portal-host`, the complete `build/portal.bundle` and
+`build/licenses`; the host needs no adjacent web assets. Keep the bundle intact,
+including its terminfo and shell integration resources. `build/licenses` holds
+Portal's license and the third-party notices for both outputs, generated from
+`licenses/inventory.json` and the build's own records. A binary release also
+needs the corresponding source and has open license questions; see
+[Licenses and third-party notices](docs/licenses.md). Restart Emacs when upgrading
+from the former separate web and terminal modules, or after rebuilding a loaded
+native module.
 
 For distribution alternatives and size measurements, see
 [Bun distribution notes](docs/bun-distribution.md).
@@ -104,7 +109,10 @@ git diff --check
 ```
 
 The build installs the locked host dependencies and CMake downloads hash-checked
-Emacs packages for integration tests. CTest exercises the real C core with a fake
+Emacs packages for integration tests. The `licenses` suite fails when a
+dependency change leaves a staged notice missing or the license inventory out of
+date; [Licenses and third-party notices](docs/licenses.md#when-dependencies-change)
+says what to update. CTest exercises the real C core with a fake
 backend, Lisp behavior, and the compiled app host; it does not validate native
 windows. For native view, keyboard, toolbar or launcher changes, also run the
 relevant [graphical and standalone checks](docs/testing.md) in the VM through
@@ -123,6 +131,8 @@ for the batch suite; use `ctest --test-dir build -N` to list them.
 - Edit shared browser scripts in `native/Core/scripts/`; the C core embeds them.
   `build/` outputs, SwiftPM checkouts and bundled editor assets are generated.
   Keep dependency versions in their manifests and lockfiles.
+- Record third-party code that ships in `licenses/inventory.json`. Files in
+  `licenses/texts/` are verbatim upstream license texts; do not reformat them.
 - Launcher examples in [the launcher guide](docs/launcher.md) are executable test
   fixtures. Preserve their `<!-- example: NAME -->` markers and run the `launcher`
   CTest suite after editing them; tests load the actual blocks in both dynamic

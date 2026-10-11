@@ -8,4 +8,4 @@ if [ -n "${EMACS:-}" ]; then set -- "$@" "-DEMACS=$EMACS"; fi
 if [ -n "${EMACS_INCLUDE:-}" ]; then set -- "$@" "-DEMACS_INCLUDE=$EMACS_INCLUDE"; fi
 cmake --preset dev "$@"
 cmake --build --preset dev
-echo "Built build/portal.bundle and build/portal-host"
+echo "Built build/portal.bundle, build/portal-host and build/licenses"

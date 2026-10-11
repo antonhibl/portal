@@ -1,0 +1,619 @@
+{
+	"components": [
+		{
+			"id": "libghostty-spm",
+			"name": "libghostty-spm (GhosttyKit Swift wrapper, terminfo and shell integration)",
+			"version": "2.2.2026100303",
+			"source": "https://github.com/Lakr233/libghostty-spm/tree/f320873965a57d8f138a922853f255a77da6c9c0",
+			"license": "MIT",
+			"shipped": "portal.dylib; portal.bundle resources",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["swift:libghostty-spm/LICENSE"],
+			"note": "The bash and zsh integration it ships is the wrapper's own MIT rewrite, not Ghostty's GPL-3.0 originals"
+		},
+		{
+			"id": "bash-preexec",
+			"name": "bash-preexec",
+			"version": "as vendored by libghostty-spm 2.2.2026100303",
+			"source": "https://github.com/rcaloras/bash-preexec",
+			"license": "MIT",
+			"shipped": "portal.bundle resources (bash shell integration)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": [
+				"swift:libghostty-spm/Sources/GhosttyTerminal/Resources/Ghostty/shell-integration/bash/LICENSE-bash-preexec.md"
+			],
+			"retain": [
+				"portal.bundle/Contents/Resources/GhosttyKit_GhosttyTerminal.bundle/Contents/Resources/Ghostty/shell-integration/bash/LICENSE-bash-preexec.md"
+			]
+		},
+		{
+			"id": "iterm2-color-schemes",
+			"name": "iTerm2-Color-Schemes theme data (GhosttyTheme)",
+			"version": "as generated in libghostty-spm 2.2.2026100303",
+			"source": "https://github.com/mbadolato/iTerm2-Color-Schemes",
+			"license": "MIT",
+			"shipped": "portal.dylib",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["swift:libghostty-spm/Sources/GhosttyTheme/LICENSE"],
+			"note": "SwiftPM excludes this license from the build products"
+		},
+		{
+			"id": "displaylink",
+			"name": "DisplayLink",
+			"version": "3.0.1",
+			"source": "https://github.com/Lakr233/DisplayLink/tree/41bea2661e04bebcb1c4f15fc0b6197850100fdd",
+			"license": "MIT",
+			"shipped": "portal.dylib",
+			"when": ["swift:displaylink@3.0.1"],
+			"texts": ["swift:DisplayLink/LICENSE"]
+		},
+		{
+			"id": "ghostty",
+			"name": "Ghostty",
+			"version": "0538f7535be0cbca6bbe54e6fde654d5c628f1f2 (1.3.2-dev), with libghostty-spm's patches",
+			"source": "https://github.com/ghostty-org/ghostty/tree/0538f7535be0cbca6bbe54e6fde654d5c628f1f2",
+			"license": "MIT",
+			"shipped": "portal.dylib (libghostty.a from libghostty-spm's upstream.0538f7535be0-2 GhosttyKit.xcframework)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["ghostty/LICENSE"]
+		},
+		{
+			"id": "freetype",
+			"name": "FreeType",
+			"version": "2.13.2",
+			"source": "https://deps.files.ghostty.org/freetype-1220b81f6ecfb3fd222f76cf9106fecfa6554ab07ec7fdc4124b9bb063ae2adf969d.tar.gz",
+			"license": "FTL (FreeType is FTL or GPL-2.0-or-later); BDF and PCF drivers under X11-style terms; gzip module under Zlib",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": [
+				"freetype/LICENSE.TXT",
+				"freetype/FTL.TXT",
+				"freetype/bdf-README",
+				"freetype/pcf-README"
+			],
+			"credit": "Portions of this software are copyright © 2023 The FreeType Project (www.freetype.org). All rights reserved."
+		},
+		{
+			"id": "libpng",
+			"name": "libpng",
+			"version": "1.6.43",
+			"source": "https://deps.files.ghostty.org/libpng-1220aa013f0c83da3fb64ea6d327f9173fa008d10e28bc9349eac3463457723b1c66.tar.gz",
+			"license": "libpng-2.0",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["libpng/LICENSE"]
+		},
+		{
+			"id": "zlib",
+			"name": "zlib",
+			"version": "1.3.1",
+			"source": "https://deps.files.ghostty.org/zlib-1220fed0c74e1019b3ee29edae2051788b080cd96e90d56836eea857b0b966742efb.tar.gz",
+			"license": "Zlib",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["zlib/LICENSE"]
+		},
+		{
+			"id": "oniguruma",
+			"name": "Oniguruma",
+			"version": "6.9.9",
+			"source": "https://deps.files.ghostty.org/oniguruma-1220c15e72eadd0d9085a8af134904d9a0f5dfcbed5f606ad60edc60ebeccd9706bb.tar.gz",
+			"license": "BSD-2-Clause",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["oniguruma/COPYING"]
+		},
+		{
+			"id": "libintl",
+			"name": "GNU gettext libintl (with gnulib)",
+			"version": "0.24",
+			"source": "https://deps.files.ghostty.org/gettext-0.24.tar.gz",
+			"license": "LGPL-2.1-or-later",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["gettext/COPYING.LIB"],
+			"blocker": "statically linked LGPL code: a binary release must provide this source and let users relink the module with a modified libintl (docs/licenses.md)"
+		},
+		{
+			"id": "wuffs",
+			"name": "Wuffs",
+			"version": "7411f488fe2e2c205c3d3b3d28638b7356522930",
+			"source": "https://deps.files.ghostty.org/wuffs-7411f488fe2e2c205c3d3b3d28638b7356522930.tar.gz",
+			"license": "Apache-2.0 OR MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["wuffs/LICENSE", "wuffs/LICENSE-APACHE", "wuffs/LICENSE-MIT"]
+		},
+		{
+			"id": "highway",
+			"name": "Highway",
+			"version": "66486a10623fa0d72fe91260f96c892e41aceb06",
+			"source": "https://deps.files.ghostty.org/highway-66486a10623fa0d72fe91260f96c892e41aceb06.tar.gz",
+			"license": "Apache-2.0 OR BSD-3-Clause",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["highway/LICENSE", "highway/LICENSE-BSD3"]
+		},
+		{
+			"id": "simdutf",
+			"name": "simdutf",
+			"version": "9.0.0",
+			"source": "https://github.com/ghostty-org/ghostty/tree/0538f7535be0cbca6bbe54e6fde654d5c628f1f2/pkg/simdutf/vendor",
+			"license": "Apache-2.0 OR MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["simdutf/LICENSE-APACHE", "simdutf/LICENSE-MIT"],
+			"note": "License files from simdutf v9.0.0; Ghostty vendors the amalgamated source"
+		},
+		{
+			"id": "stb",
+			"name": "stb_image",
+			"version": "2.28",
+			"source": "https://github.com/ghostty-org/ghostty/blob/0538f7535be0cbca6bbe54e6fde654d5c628f1f2/src/stb/stb_image.h",
+			"license": "MIT OR Unlicense",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["stb/LICENSE"],
+			"note": "The license block at the end of stb_image.h"
+		},
+		{
+			"id": "libxev",
+			"name": "libxev",
+			"version": "9ce8e8e6ff89e583258a7f8e7adeeeaeae8611bf",
+			"source": "https://deps.files.ghostty.org/libxev-9ce8e8e6ff89e583258a7f8e7adeeeaeae8611bf.tar.gz",
+			"license": "MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["libxev/LICENSE"]
+		},
+		{
+			"id": "vaxis",
+			"name": "libvaxis",
+			"version": "1dbbe575dff4586fe51e3217aa5c3fecdcbb6089 (0.6.0)",
+			"source": "https://deps.files.ghostty.org/vaxis-1dbbe575dff4586fe51e3217aa5c3fecdcbb6089.tar.gz",
+			"license": "MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["vaxis/LICENSE"]
+		},
+		{
+			"id": "z2d",
+			"name": "z2d",
+			"version": "7dbae85c81784dba9988320bf9543ed9a81350c8 (0.12.1)",
+			"source": "https://deps.files.ghostty.org/z2d-7dbae85c81784dba9988320bf9543ed9a81350c8.tar.gz",
+			"license": "MPL-2.0 (with code adapted from Cairo under MPL-1.1, redistributed under MPL-2.0)",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["z2d/LICENSE", "z2d/COPYING"],
+			"blocker": "MPL-2.0 code in executable form: a binary release must tell recipients how to obtain this source (docs/licenses.md)"
+		},
+		{
+			"id": "zig-objc",
+			"name": "zig-objc",
+			"version": "c8de82ff80281215ad92900866dab7103a8efa8b",
+			"source": "https://deps.files.ghostty.org/zig_objc-c8de82ff80281215ad92900866dab7103a8efa8b.tar.gz",
+			"license": "MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["zig-objc/LICENSE"]
+		},
+		{
+			"id": "uucode",
+			"name": "uucode",
+			"version": "9d55524551411b493cca41ca06363625d90aff1e (0.2.0)",
+			"source": "https://github.com/jacobsandlund/uucode/tree/9d55524551411b493cca41ca06363625d90aff1e",
+			"license": "MIT; Unicode-3.0 data; MIT UTF-8 decoder by Bjoern Hoehrmann",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": [
+				"uucode/LICENSE.md",
+				"uucode/LICENSE_unicode",
+				"uucode/LICENSE_Bjoern_Hoehrmann"
+			]
+		},
+		{
+			"id": "zig",
+			"name": "Zig standard library and compiler-rt",
+			"version": "0.16.0",
+			"source": "https://codeberg.org/ziglang/zig/src/tag/0.16.0",
+			"license": "MIT",
+			"shipped": "portal.dylib (in libghostty.a)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["zig/LICENSE"],
+			"note": "The xcframework release does not record its Zig build; Ghostty requires at least 0.16.0"
+		},
+		{
+			"id": "jetbrains-mono",
+			"name": "JetBrains Mono font",
+			"version": "2.304",
+			"source": "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",
+			"license": "OFL-1.1",
+			"shipped": "portal.dylib (Ghostty's embedded fallback font)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": ["jetbrains-mono/OFL.txt"]
+		},
+		{
+			"id": "nerd-fonts",
+			"name": "Symbols Nerd Font",
+			"version": "3.4.0",
+			"source": "https://deps.files.ghostty.org/NerdFontsSymbolsOnly-3.4.0.tar.gz",
+			"license": "MIT; glyphs under CC-BY-4.0, Apache-2.0, OFL-1.1, MIT and others per license-audit.md",
+			"shipped": "portal.dylib (Ghostty's embedded symbol font)",
+			"when": ["swift:libghostty-spm@2.2.2026100303"],
+			"texts": [
+				"nerd-fonts/LICENSE",
+				"nerd-fonts/license-audit.md",
+				"nerd-fonts/glyphs/codicons/LICENSE.txt",
+				"nerd-fonts/glyphs/font-awesome/LICENSE.txt",
+				"nerd-fonts/glyphs/materialdesign/LICENSE",
+				"nerd-fonts/glyphs/octicons/LICENSE",
+				"nerd-fonts/glyphs/pomicons/LICENSE",
+				"nerd-fonts/glyphs/powerline-extra/LICENSE",
+				"nerd-fonts/glyphs/powerline-symbols/LICENSE.txt",
+				"nerd-fonts/glyphs/weather-icons/OFL.txt"
+			],
+			"note": "Glyph licenses from the nerd-fonts v3.4.0 repository; Devicons, IEC Power Symbols, Seti-UI (MIT) and Font Logos (Unlicense) ship no license file there"
+		},
+		{
+			"id": "bun",
+			"name": "Bun runtime",
+			"version": "1.4.2",
+			"source": "https://github.com/oven-sh/bun/tree/bun-v1.4.2",
+			"license": "MIT; statically links LGPL-2.0 JavaScriptCore/WebKit and the libraries its LICENSE.md lists",
+			"shipped": "portal-host",
+			"when": ["bun@1.4.2"],
+			"texts": ["bun/1.4.2/LICENSE.md"],
+			"blocker": "only Bun's LICENSE.md is staged, not the texts of the libraries it links; JavaScriptCore/WebKit and tinycc need an LGPL source and relinking offer; Portal does not pin Bun yet (docs/licenses.md)"
+		},
+		{
+			"id": "bun",
+			"name": "Bun runtime",
+			"version": "1.3.14",
+			"source": "https://github.com/oven-sh/bun/tree/bun-v1.3.14",
+			"license": "MIT; statically links LGPL-2.0 JavaScriptCore/WebKit and the libraries its LICENSE.md lists",
+			"shipped": "portal-host",
+			"when": ["bun@1.3.14"],
+			"texts": ["bun/1.3.14/LICENSE.md"],
+			"blocker": "only Bun's LICENSE.md is staged, not the texts of the libraries it links; JavaScriptCore/WebKit and tinycc need an LGPL source and relinking offer; Portal does not pin Bun yet (docs/licenses.md)"
+		},
+		{
+			"id": "excalidraw",
+			"name": "Excalidraw",
+			"version": "0.18.1",
+			"source": "https://github.com/excalidraw/excalidraw/blob/v0.18.1/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["packages/excalidraw/LICENSE"],
+			"note": "The npm package ships no license file"
+		},
+		{
+			"id": "radix-ui",
+			"name": "Radix UI primitives (33 @radix-ui packages)",
+			"version": "1.0.0 to 2.0.2, as listed in npm-reviewed.txt",
+			"source": "https://github.com/radix-ui/primitives/blob/01259a024d82ab3892d1e5938b1a50bb352c6df5/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host",
+			"when": [
+				"npm:@radix-ui/primitive@1.0.0",
+				"npm:@radix-ui/primitive@1.1.1",
+				"npm:@radix-ui/react-arrow@1.1.2",
+				"npm:@radix-ui/react-collection@1.0.1",
+				"npm:@radix-ui/react-compose-refs@1.0.0",
+				"npm:@radix-ui/react-compose-refs@1.1.1",
+				"npm:@radix-ui/react-context@1.0.0",
+				"npm:@radix-ui/react-context@1.1.1",
+				"npm:@radix-ui/react-direction@1.0.0",
+				"npm:@radix-ui/react-dismissable-layer@1.1.5",
+				"npm:@radix-ui/react-focus-guards@1.1.1",
+				"npm:@radix-ui/react-focus-scope@1.1.2",
+				"npm:@radix-ui/react-id@1.0.0",
+				"npm:@radix-ui/react-id@1.1.0",
+				"npm:@radix-ui/react-popover@1.1.6",
+				"npm:@radix-ui/react-popper@1.2.2",
+				"npm:@radix-ui/react-portal@1.1.4",
+				"npm:@radix-ui/react-presence@1.0.0",
+				"npm:@radix-ui/react-presence@1.1.2",
+				"npm:@radix-ui/react-primitive@1.0.1",
+				"npm:@radix-ui/react-primitive@2.0.2",
+				"npm:@radix-ui/react-roving-focus@1.0.2",
+				"npm:@radix-ui/react-slot@1.0.1",
+				"npm:@radix-ui/react-slot@1.1.2",
+				"npm:@radix-ui/react-tabs@1.0.2",
+				"npm:@radix-ui/react-use-callback-ref@1.0.0",
+				"npm:@radix-ui/react-use-callback-ref@1.1.0",
+				"npm:@radix-ui/react-use-controllable-state@1.0.0",
+				"npm:@radix-ui/react-use-controllable-state@1.1.0",
+				"npm:@radix-ui/react-use-escape-keydown@1.1.0",
+				"npm:@radix-ui/react-use-layout-effect@1.0.0",
+				"npm:@radix-ui/react-use-layout-effect@1.1.0",
+				"npm:@radix-ui/react-use-size@1.1.0"
+			],
+			"texts": ["packages/radix-ui/LICENSE"],
+			"note": "The npm packages ship no license file; the text is the primitives repository's"
+		},
+		{
+			"id": "fastdom",
+			"name": "fastdom",
+			"version": "1.0.12",
+			"source": "https://www.npmjs.com/package/fastdom/v/1.0.12",
+			"license": "MIT",
+			"shipped": "portal-host",
+			"when": ["npm:fastdom@1.0.12"],
+			"texts": ["packages/fastdom/LICENSE"],
+			"note": "The License section of the package's README.md, its only license text"
+		},
+		{
+			"id": "react-remove-scroll-bar",
+			"name": "react-remove-scroll-bar",
+			"version": "2.3.8",
+			"source": "https://github.com/theKashey/react-remove-scroll-bar/blob/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host",
+			"when": ["npm:react-remove-scroll-bar@2.3.8"],
+			"texts": ["packages/react-remove-scroll-bar/LICENSE"],
+			"note": "The npm package ships no license file"
+		},
+		{
+			"id": "fonteditor-core",
+			"name": "fonteditor-core WebAssembly",
+			"version": "2.4.0",
+			"source": "https://github.com/kekee000/fonteditor-core/tree/v2.4.0",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @excalidraw/excalidraw)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["embedded/fonteditor-core/LICENSE"]
+		},
+		{
+			"id": "woff2",
+			"name": "Google woff2",
+			"version": "unrecorded; built into fonteditor-core 2.4.0's woff2.wasm",
+			"source": "https://github.com/google/woff2/blob/fb9c3379f2605b10f3e8f1d9636664ab5576775c/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @excalidraw/excalidraw)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["embedded/woff2/LICENSE"]
+		},
+		{
+			"id": "brotli",
+			"name": "Brotli",
+			"version": "unrecorded; built into fonteditor-core 2.4.0's woff2.wasm",
+			"source": "https://github.com/google/brotli/blob/392b261debb0f478811ddacb98b118da36b06158/LICENSE",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @excalidraw/excalidraw)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["embedded/brotli/LICENSE"]
+		},
+		{
+			"id": "harfbuzzjs",
+			"name": "harfbuzzjs WebAssembly",
+			"version": "0.3.6",
+			"source": "https://github.com/harfbuzz/harfbuzzjs/tree/v0.3.6",
+			"license": "MIT; Apache-2.0 for its Zephyr libc parts; emmalloc from Emscripten",
+			"shipped": "portal-host (compiled into @excalidraw/excalidraw)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["embedded/harfbuzzjs/LICENSE"]
+		},
+		{
+			"id": "harfbuzz",
+			"name": "HarfBuzz",
+			"version": "e079dd20304bacd8d753eee2ceacbaa1a3978a34 (harfbuzzjs 0.3.6 submodule)",
+			"source": "https://github.com/harfbuzz/harfbuzz/tree/e079dd20304bacd8d753eee2ceacbaa1a3978a34",
+			"license": "MIT-Modern-Variant (HarfBuzz \"Old MIT\")",
+			"shipped": "portal-host (compiled into @excalidraw/excalidraw)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["embedded/harfbuzz/COPYING"]
+		},
+		{
+			"id": "thenable",
+			"name": "Thenable (Promises/A+)",
+			"version": "1.1.1",
+			"source": "https://www.npmjs.com/package/cytoscape/v/3.34.3",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into cytoscape)",
+			"when": ["npm:cytoscape@3.34.3"],
+			"texts": ["embedded/thenable/NOTICE"],
+			"note": "The banner cytoscape's bundle retains"
+		},
+		{
+			"id": "langium",
+			"name": "Langium",
+			"version": "4.2.1",
+			"source": "https://www.npmjs.com/package/langium/v/4.2.1",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": ["embedded/langium/LICENSE"],
+			"embeds": ["langium@4.2.1"]
+		},
+		{
+			"id": "chevrotain",
+			"name": "Chevrotain",
+			"version": "11.1.2",
+			"source": "https://www.npmjs.com/package/chevrotain/v/11.1.2",
+			"license": "Apache-2.0",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": [
+				"embedded/chevrotain/LICENSE.txt",
+				"embedded/chevrotain-gast/LICENSE.txt",
+				"embedded/chevrotain-regexp-to-ast/LICENSE.txt",
+				"embedded/chevrotain-utils/LICENSE.txt"
+			],
+			"embeds": [
+				"chevrotain@11.1.2",
+				"@chevrotain/gast@11.1.2",
+				"@chevrotain/regexp-to-ast@11.1.2",
+				"@chevrotain/utils@11.1.2"
+			]
+		},
+		{
+			"id": "chevrotain-allstar",
+			"name": "chevrotain-allstar",
+			"version": "0.3.1",
+			"source": "https://www.npmjs.com/package/chevrotain-allstar/v/0.3.1",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": ["embedded/chevrotain-allstar/LICENSE"],
+			"embeds": ["chevrotain-allstar@0.3.1"]
+		},
+		{
+			"id": "vscode-languageserver",
+			"name": "VS Code language server libraries",
+			"version": "vscode-jsonrpc 8.2.0; -protocol 3.17.5; -textdocument 1.0.12; -types 3.17.5",
+			"source": "https://github.com/microsoft/vscode-languageserver-node",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": [
+				"embedded/vscode-jsonrpc/License.txt",
+				"embedded/vscode-languageserver-protocol/License.txt",
+				"embedded/vscode-languageserver-textdocument/License.txt",
+				"embedded/vscode-languageserver-types/License.txt"
+			],
+			"embeds": [
+				"vscode-jsonrpc@8.2.0",
+				"vscode-languageserver-protocol@3.17.5",
+				"vscode-languageserver-textdocument@1.0.12",
+				"vscode-languageserver-types@3.17.5"
+			]
+		},
+		{
+			"id": "lodash-es",
+			"name": "lodash-es",
+			"version": "4.17.23",
+			"source": "https://www.npmjs.com/package/lodash-es/v/4.17.23",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": ["embedded/lodash-es/LICENSE"],
+			"embeds": ["lodash-es@4.17.23"]
+		},
+		{
+			"id": "path-browserify",
+			"name": "path-browserify",
+			"version": "unrecorded; license text from 1.0.1",
+			"source": "https://www.npmjs.com/package/path-browserify/v/1.0.1",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into @mermaid-js/parser)",
+			"when": ["npm:@mermaid-js/parser@1.2.1"],
+			"texts": ["embedded/path-browserify/LICENSE"],
+			"embeds": ["path-browserify"]
+		},
+		{
+			"id": "js-yaml",
+			"name": "js-yaml",
+			"version": "4.3.0",
+			"source": "https://www.npmjs.com/package/js-yaml/v/4.3.0",
+			"license": "MIT",
+			"shipped": "portal-host (compiled into mermaid)",
+			"when": ["npm:mermaid@11.17.2"],
+			"texts": ["embedded/js-yaml/LICENSE"],
+			"embeds": ["js-yaml@4.3.0"]
+		},
+		{
+			"id": "font-assistant",
+			"name": "Assistant font",
+			"version": "3.000",
+			"source": "https://github.com/google/fonts/blob/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/assistant/OFL.txt",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/assistant/OFL.txt"],
+			"fonts": ["Assistant"]
+		},
+		{
+			"id": "font-cascadia-code",
+			"name": "Cascadia Code font",
+			"version": "2005.150",
+			"source": "https://github.com/microsoft/cascadia-code/blob/v2005.15/LICENSE",
+			"license": "OFL-1.1 (upstream release)",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/cascadia-code/LICENSE"],
+			"fonts": ["Cascadia"],
+			"blocker": "the shipped file's license metadata begins with Microsoft \"supplied font\" terms that prohibit other use before the OFL-based grant; confirm the OFL governs or ship a release with plain OFL metadata"
+		},
+		{
+			"id": "font-comic-shanns",
+			"name": "Comic Shanns font",
+			"version": "1.3.0",
+			"source": "https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/fonts/ComicShanns/index.ts",
+			"license": "MIT",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/comic-shanns/NOTICE"],
+			"fonts": ["ComicShanns"],
+			"note": "The font's name table, as Excalidraw's source records it"
+		},
+		{
+			"id": "font-excalifont",
+			"name": "Excalifont font",
+			"version": "1.000",
+			"source": "https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/fonts/Excalifont/index.ts",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/excalifont/NOTICE"],
+			"fonts": ["Excalifont"],
+			"note": "The font's name table, as Excalidraw's source records it; the shipped subsets carry only the copyright"
+		},
+		{
+			"id": "font-liberation-sans",
+			"name": "Liberation Sans font",
+			"version": "1.05",
+			"source": "https://releases.pagure.org/liberation-fonts/liberation-fonts-1.05.tar.gz",
+			"license": "GPL-2.0 with font exceptions, under Red Hat's Liberation license agreement",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/liberation/License.txt", "fonts/liberation/COPYING"],
+			"fonts": ["Liberation"],
+			"blocker": "Liberation 1.x is GPL-2.0 with exceptions, not OFL; its agreement requires renaming modified versions (this WOFF2 conversion keeps the Liberation name) and GPL-2.0 source; confirm it may ship inside the GPL-3.0 host, or replace it with OFL-1.1 Liberation 2.x or drop it"
+		},
+		{
+			"id": "font-lilita-one",
+			"name": "Lilita One font",
+			"version": "1.002",
+			"source": "https://github.com/google/fonts/blob/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/lilitaone/OFL.txt",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/lilita-one/OFL.txt"],
+			"fonts": ["Lilita"]
+		},
+		{
+			"id": "font-nunito",
+			"name": "Nunito font",
+			"version": "3.602",
+			"source": "https://github.com/google/fonts/blob/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/nunito/OFL.txt",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/nunito/OFL.txt"],
+			"fonts": ["Nunito"]
+		},
+		{
+			"id": "font-virgil",
+			"name": "Virgil font",
+			"version": "001.001",
+			"source": "https://github.com/excalidraw/virgil/blob/3d4c829dc85b455d4646631ac52bc1517df04217/LICENSE.md",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/virgil/LICENSE.md"],
+			"fonts": ["Virgil"]
+		},
+		{
+			"id": "font-xiaolai",
+			"name": "Xiaolai SC font",
+			"version": "3.11",
+			"source": "https://github.com/lxgw/kose-font/blob/a0763c485ac06990e4d855f85c1a40afbd4430e1/OFL.txt",
+			"license": "OFL-1.1",
+			"shipped": "portal-host (Excalidraw fonts)",
+			"when": ["npm:@excalidraw/excalidraw@0.18.1"],
+			"texts": ["fonts/xiaolai/OFL.txt"],
+			"fonts": ["Xiaolai"]
+		}
+	]
+}

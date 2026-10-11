@@ -50,7 +50,10 @@ advisories before choosing fixes; do not rely on an old advisory count.
       Confirmed relevant vulnerabilities are fixed or mitigation and remaining
       release risk are explicitly documented; audit exit status alone is not a
       substitute for the disposition record.
-- [ ] Shared build, CTest, host lint/type checks and Python tests pass.
+- [ ] Shared build, CTest, host lint/type checks and Python tests pass. CTest's
+      `licenses` suite covers task 6's notices: update the license inventory for
+      changed bundled packages as [its guide](../../docs/licenses.md#when-dependencies-change)
+      describes.
 - [ ] If shipped rendering/editor dependencies change, run corresponding real
       editor/Markdown GUI acceptance through `bash test/vm.sh <command>` and
       verify drawing image import/save/reopen and offline operation.

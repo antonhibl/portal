@@ -7,7 +7,13 @@
 	},
 	"files": {
 		"ignoreUnknown": true,
-		"includes": ["host/**", "biome.json", "test/vm.test.ts"]
+		"includes": [
+			"host/**",
+			"biome.json",
+			"licenses/*.ts",
+			"licenses/*.json",
+			"test/*.test.ts"
+		]
 	},
 	"formatter": {
 		"enabled": true,

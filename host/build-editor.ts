@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { mkdir, rm } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const root = import.meta.dir;
 const generated = join(root, ".generated");
@@ -20,9 +20,19 @@ const result = await Bun.build({
 		asset: "[name]-[hash].[ext]",
 	},
 	define: { "process.env.NODE_ENV": JSON.stringify("production") },
+	metafile: true,
 });
 if (!result.success)
 	throw new AggregateError(result.logs, "Editor build failed");
+// The license notices are derived from the files the bundle contains.
+await Bun.write(
+	join(generated, "editor-inputs.json"),
+	JSON.stringify(
+		Object.keys(result.metafile?.inputs ?? {})
+			.map((input) => relative(root, resolve(input)))
+			.sort(),
+	),
+);
 
 // Explicit file imports make Bun embed every lazy chunk and font in the host.
 // The executable remains relocatable and needs no adjacent node_modules/assets.
