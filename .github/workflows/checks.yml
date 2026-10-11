@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Every check before a PR, graphical ones included, in one job on one macOS
-# runner, so the downloads and the build serve them all.
+# Every check, graphical ones included, in one job on one macOS runner, so the
+# downloads and the build serve them all. Runs on main after a merge, not on
+# pull requests: macOS minutes are scarce on this private repository.
 name: Checks
 
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
     inputs:
       cache:
