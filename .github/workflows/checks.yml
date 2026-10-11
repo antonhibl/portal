@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Every check before a PR, graphical ones included, in one job on one macOS
+# runner, so the downloads and the build serve them all.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      cache:
+        description: Restore cached downloads (off proves a cold build)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    # macOS 27 arm64 with Xcode 27: the platform matrix's verified row.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # docs/testing.md's guest setup: the emacs-plus-app cask at this tap commit.
+      EMACS_PLUS_TAP_COMMIT: 2d6afb2ec4869b8dc3098541696d0d9d362cc8f0
+      EMACS: /Applications/Emacs.app/Contents/MacOS/Emacs
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      USE_CACHE: ${{ github.event_name != 'workflow_dispatch' || inputs.cache }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Record the environment
+        id: env
+        run: |
+          # Fixed places, so that test/package-gui.sh's own build, with its
+          # isolated HOME, reuses the Bun and host packages this build fetched.
+          {
+            echo "PORTAL_TEST_LOGS=$RUNNER_TEMP/logs"
+            echo "PORTAL_TOOLS_DIR=$RUNNER_TEMP/portal-tools"
+            echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-cache"
+          } >>"$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/logs"
+          echo "image=$ImageOS-$ImageVersion" >>"$GITHUB_OUTPUT"
+          echo "brew-cache=$(brew --cache)" >>"$GITHUB_OUTPUT"
+          echo "Runner image $ImageOS $ImageVersion"
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+          cmake --version | head -1
+          echo "Ninja $(ninja --version)"
+          brew --version
+
+      - name: Restore Homebrew downloads
+        if: env.USE_CACHE == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.env.outputs.brew-cache }}/downloads
+          key: brew-${{ steps.env.outputs.image }}-${{ env.EMACS_PLUS_TAP_COMMIT }}
+
+      - name: Install Emacs
+        run: |
+          brew tap d12frosted/emacs-plus
+          git -C "$(brew --repository d12frosted/emacs-plus)" checkout -q "$EMACS_PLUS_TAP_COMMIT"
+          brew install --cask emacs-plus-app
+          # Gatekeeper would hold the first graphical launch of a downloaded app.
+          xattr -dr com.apple.quarantine /Applications/Emacs.app
+          # CLI launches miss the app's native compiler environment.
+          echo "LIBRARY_PATH=$(/usr/libexec/PlistBuddy -c Print:LSEnvironment:LIBRARY_PATH \
+              /Applications/Emacs.app/Contents/Info.plist)" >>"$GITHUB_ENV"
+          "$EMACS" --batch -Q --eval '(princ (format "%s %s %s\n" (emacs-version)
+              emacs-repository-version (native-comp-available-p)))'
+
+      - name: Restore Swift packages
+        if: env.USE_CACHE == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ steps.env.outputs.image }}-${{ hashFiles('native/Package.resolved') }}
+
+      - name: Restore Bun, host packages and Emacs packages
+        if: env.USE_CACHE == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/portal-tools
+            ${{ runner.temp }}/bun-cache
+            build/elpa
+          key: build-downloads-${{ hashFiles('tools/bun.manifest', 'host/bun.lock', 'CMakeLists.txt') }}
+
+      - name: Build
+        id: build
+        run: ./build.sh 2>&1 | tee "$PORTAL_TEST_LOGS/build.log"
+
+      - name: CTest
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Biome
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: '"$(sh tools/resolve-bun.sh)" run --cwd host check'
+
+      - name: TypeScript
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: '"$(sh tools/resolve-bun.sh)" run --cwd host typecheck'
+
+      - name: Python
+        if: ${{ !cancelled() }}
+        run: python3 -B -m unittest discover -s test -p 'test_*.py'
+
+      - name: Whitespace
+        if: ${{ !cancelled() }}
+        run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+
+      - name: Views (graphical)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: sh test/views-gui.sh
+
+      - name: Input (graphical)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: sh test/input-gui.sh
+
+      - name: Launcher (graphical)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: sh test/launcher-gui.sh
+
+      - name: Terminal shell startup (graphical)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: sh test/terminal-shell-startup.sh
+
+      - name: Package first use (graphical)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: sh test/package-gui.sh
+
+      - name: Keep logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: logs
+          path: ${{ runner.temp }}/logs
+          retention-days: 14
