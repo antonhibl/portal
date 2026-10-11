@@ -77,8 +77,9 @@ The following names and behavior are a design proposal, not existing functions.
    root. Interactive builds run asynchronously with a visible `*portal-build*`
    compilation buffer. Check tool availability and report actionable failures.
    Use the Emacs executable that will load the module. Document graphical Emacs's
-   potentially different `PATH`, and retain explicit tool overrides. Avoid
-   automatically installing or upgrading Xcode, Homebrew packages, or Bun.
+   potentially different `PATH`, and retain explicit tool overrides. Resolve Bun
+   using the private bootstrap described below. Diagnose missing Xcode and
+   Homebrew-provided tools without installing or upgrading them automatically.
 2. **Check readiness on the first interactive native command.** A normal `require`, autoload
    generation, and byte compilation must remain possible without native outputs.
    If outputs are absent, offer to run the build; explain that the first build
@@ -115,6 +116,61 @@ For Portal, this combines PDF Tools' explicit asynchronous setup with vterm's
 first-use assistance and Rime's version/restart handling. Choosing a prompt for
 Portal is a recommendation based on its Swift/Bun build and downloads, not a
 claim that all Emacs packages prompt.
+
+## Private Bun bootstrap
+
+Use a compatible existing Bun when available, otherwise obtain a private,
+version-pinned executable as part of the requested build. Bun is distributed as a
+single executable, with official archives for both Mac architectures; see its
+[installation documentation](https://bun.com/docs/installation). The
+[1.3.14 release assets](https://github.com/oven-sh/bun/releases/tag/bun-v1.3.14)
+are approximately 22.5 MiB compressed for Apple Silicon and 25.3 MiB for Intel
+(23,586,433 and 26,509,109 bytes respectively, from GitHub release metadata).
+This is a practical one-time build download. Portal's compiled host already
+contains its runtime; users do not need to keep a separate Bun running.
+
+Proposed resolution order:
+
+1. An explicit executable override, exposed through a Lisp customization and the
+   existing CMake `BUN` option. An invalid explicit override produces an error
+   rather than silently choosing something else.
+2. Bun discovered through Emacs's `exec-path` (the command-line build uses its
+   `PATH`). Validate that it runs and meets Portal's supported version/API
+   requirements, including the existing `Bun.markdown.html` check. Record the
+   chosen path and actual version in the build log. Presence alone is insufficient.
+3. A previously cached copy of Portal's pinned Bun version for this platform.
+4. Download and cache that pinned version from the official release assets.
+
+Use a customizable tool cache rooted at
+`(locate-user-emacs-file "portal/tools/")`, for example
+`~/.emacs.d/portal/tools/bun/1.3.14/darwin-aarch64/`. Keep it outside versioned
+ELPA directories so package upgrades and reinstalls can reuse the download.
+The version shown here matches the currently documented tested runtime; the
+implementation should select and test its pin deliberately. Maintain versions,
+platform asset names, and SHA-256 digests together in one checked-in manifest.
+Download to a temporary location, verify the expected digest before extraction
+and execution, validate the executable, then install into the cache atomically.
+Choose architecture and CPU requirements appropriate to the supported build
+target, including translated Emacs processes where applicable.
+
+Pass the selected executable's absolute path through `-DBUN=...`. Keep the
+bootstrap resolver shared with `build.sh` so command-line and package-manager
+builds follow the same selection rules; Emacs can supply its cache directory.
+Use direct release archives, leaving shell configuration and global installations
+untouched. Update the managed version through tested Portal changes rather than
+running `bun upgrade` or following a floating latest-release URL.
+
+The download belongs to explicit `portal-build` or an accepted first-use build,
+with its progress shown in the build buffer. It should not need a separate prompt
+after the user requests setup. Allow downloads to be disabled and a binary to be
+supplied manually; a cached Bun avoids this download on later builds, although
+other build dependencies also need caches for a fully offline build. Graphical
+Emacs may have a different search path from a terminal: document the executable
+override and respect the user's configured `exec-path` without automatically
+sourcing shell startup files.
+
+This refines the earlier [Bun distribution options](bun-distribution.md) by
+preferring an Emacs-owned persistent cache over a per-checkout build directory.
 
 ## Suggested user configuration
 
@@ -177,6 +233,10 @@ separate compatibility gate.
   or compiling developer tests. Optional adapters remain optional.
 - First use diagnoses missing prerequisites and can start one visible build.
   Repeated requests do not launch competing builds.
+- Bun resolution covers a compatible installed executable, an incompatible one,
+  a valid cache, a fresh download, download/checksum failure, and an invalid
+  explicit override. Package upgrades reuse the cache; disabled downloads remain
+  disabled. Concurrent builds cannot expose a partially installed executable.
 - Successful builds verify the module, complete resources and host. Failed builds
   preserve their logs and never report Portal ready.
 - An unchanged installation does not rebuild on every Emacs startup.
