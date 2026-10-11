@@ -3,8 +3,8 @@
 # Run via: sh test/views-gui.sh [SELECTOR]
 # Ordinary terminal and web views in one fresh Emacs, through test/gui-ert.sh:
 # WebKit loading, terminals, their coexistence, Markdown previews and
-# Excalidraw. SELECTOR, an ERT regexp, narrows them. The launcher and the
-# input suite have their own runners.
+# Excalidraw. SELECTOR, an ERT regexp, narrows them. Terminal and integration
+# tests run only here; the launcher and the input suite have their own runners.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$root/test/gui-desktop.sh"

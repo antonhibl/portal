@@ -9,7 +9,7 @@
 - [Consult and Embark](#consult-and-embark)
 - [Appearance and native bindings](#appearance-and-native-bindings)
 
-For native test procedures, see [Testing Portal](testing.md#terminal-graphical-checks).
+For native test procedures, see [Testing Portal](testing.md#view-graphical-checks).
 
 ## Quick project terminal
 

@@ -126,7 +126,7 @@ until received, operation after reload, failed delivery reaching Emacs, and no
 bridge for non-hosted views.
 
 Graphical tests require a disposable graphical Emacs with the
-[test event injector](testing.md#terminal-graphical-checks) loaded.
+[test event injector](testing.md#input-graphical-checks) loaded.
 Load `test/portal-excalidraw-gui-tests.el`; run `M-x ert` with selector
 `^portal-excalidraw-gui-`. Coverage includes real WKWebView, offline fonts, paste,
 image round trips, several drawings, revert, hidden-state retention, and rapid
