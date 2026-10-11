@@ -103,22 +103,21 @@
 
 (ert-deftest portal-excalidraw-gui-pasted-mermaid-becomes-drawing ()
   ;; Excalidraw converts pasted Mermaid text with mermaid-to-excalidraw, which
-  ;; groups ER attributes under nanoid IDs; see docs/dependency-security.md.
+  ;; groups a sequence box under nanoid IDs; see docs/dependency-security.md.
   (portal-excalidraw-gui--document
     (portal-view-focus)
     (portal-excalidraw-gui--js
      "const container = document.querySelector('.excalidraw'); container.focus();
       const data = new DataTransfer();
-      data.setData('text/plain', 'erDiagram\\n  PORTAL_DRAWING {\\n    string portalMermaidField\\n  }');
+      data.setData('text/plain', 'sequenceDiagram\\n  box PortalMermaidBox\\n    participant Alice\\n    participant Bob\\n  end\\n  Alice->>Bob: PortalMermaidHello');
       container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
-    (portal-terminal-test--wait (lambda () (string-match-p "portalMermaidField" (buffer-string))))
+    (portal-terminal-test--wait (lambda () (string-match-p "PortalMermaidBox" (buffer-string))))
     (portal-excalidraw-save)
     (let ((elements (plist-get (json-parse-string (buffer-string) :object-type 'plist)
                                :elements)))
-      (should (string-match-p "PORTAL_DRAWING" (buffer-string)))
+      (should (string-match-p "PortalMermaidHello" (buffer-string)))
       (should (seq-some (lambda (element)
-                          (and (string-match-p "portalMermaidField"
-                                               (or (plist-get element :text) ""))
+                          (and (equal (plist-get element :text) "PortalMermaidBox")
                                (> (length (plist-get element :groupIds)) 0)))
                         elements)))))
 

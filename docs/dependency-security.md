@@ -72,7 +72,7 @@ serves both instead of separate scoped ones. `nanoid` 3.3.20 is the maintained 3
 release. Its browser `nanoid` function is identical to 3.3.3's and 4.0.2's, and
 it exports the same names. The 4.0 major dropped CommonJS and old Node.js, which
 this browser bundle does not use. The `portal-excalidraw-gui-pasted-mermaid-becomes-drawing`
-GUI test converts a pasted ER diagram, whose attribute group IDs come from
+GUI test converts a pasted sequence diagram whose `box` group IDs come from
 mermaid-to-excalidraw's `nanoid`.
 
 Remove the override when Excalidraw and mermaid-to-excalidraw depend on fixed
