@@ -18,6 +18,15 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     /// gets if the page does not use it.
     func handleKeyEvent(_ event: NSEvent) -> Bool { input?.handleKeyEvent(event) == true }
 
+    /// A page focusing an element, as autofocus does, makes WebKit ask the
+    /// window to make the page first responder, even while Emacs or another
+    /// view has the keyboard. The page gets it only from its input: from
+    /// Emacs, the core, or the user's click.
+    override func becomeFirstResponder() -> Bool {
+        guard input?.mayTakeKeyboard == true else { return false }
+        return super.becomeFirstResponder()
+    }
+
     /// The press offered to the page, until it answers, and whether the key
     /// script has seen it reach the page.
     private var offered: NSEvent?

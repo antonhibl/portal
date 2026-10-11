@@ -3,21 +3,26 @@
 (require 'portal-excalidraw-gui-tests)
 (require 'portal-integration-tests)
 
+(declare-function portal-test-responder "test-terminal-input" ())
+
 (defconst portal-input-gui--control (ash 1 18))
 (defconst portal-input-gui--command (ash 1 20))
 
 (defmacro portal-input-gui--page (&rest body)
   "Run BODY with a page that has the keyboard in a text field.
-The page records every key press, and uses Control-K itself."
+The page records every key press, and uses Control-K itself.  Its field
+has no spell checking: macOS's correction panel would hold the main thread
+in a nested event loop until a key arrives, and these tests' next key comes
+from that thread."
   (declare (indent 0))
   `(portal-test--with-web
      (unwind-protect
          (progn
            (select-frame-set-input-focus (selected-frame))
-           (portal-open-url "data:text/html,<title>Input ready</title><input autofocus><script>window.keys=[];window.ups=0;document.addEventListener('keydown',e=>{keys.push([e.key,e.ctrlKey,e.isTrusted]);if(e.ctrlKey&&e.key==='k')e.preventDefault()});document.addEventListener('keyup',e=>window.ups=(window.ups||0)+1)</script>")
+           (portal-open-url "data:text/html,<title>Input ready</title><input autofocus spellcheck=false><script>window.keys=[];window.ups=0;document.addEventListener('keydown',e=>{keys.push([e.key,e.ctrlKey,e.isTrusted]);if(e.ctrlKey&&e.key==='k')e.preventDefault()});document.addEventListener('keyup',e=>window.ups=(window.ups||0)+1)</script>")
            (portal-test--wait-for-page "Input ready")
            (use-local-map (copy-keymap portal-web-mode-map))
-           (portal-input-focus)
+           (portal-integration-test--focus-web (selected-window) (portal-view-target))
            ,@body)
        (setq unread-command-events nil))))
 
@@ -93,6 +98,27 @@ The page records every key press, and uses Control-K itself."
       (should portal-input-gui--ran)
       (should (portal-input--action "focused"))
       (should (= (portal-excalidraw-gui--js "return keys.length") 1)))))
+
+(ert-deftest portal-input-gui-web-page-focusing-a-field-leaves-emacs-the-keyboard ()
+  (portal-test--with-web
+    (select-frame-set-input-focus (selected-frame))
+    ;; Autofocus, then a script, focus the field while Emacs has the keyboard.
+    (portal-open-url "data:text/html,<title>Focusing</title><input autofocus spellcheck=false><script>setTimeout(()=>{document.querySelector('input').blur();document.querySelector('input').focus()},200)</script>")
+    (portal-test--wait-for-page "Focusing")
+    (let ((deadline (+ (float-time) 1)))
+      (while (< (float-time) deadline)
+        (should-not (portal-input--action "focused"))
+        (accept-process-output nil 0.05)))
+    (should (portal-excalidraw-gui--js
+             "return document.activeElement === document.querySelector('input');"))
+    (ert-info ((portal-test-responder) :prefix "Keyboard: ")
+      (portal-integration-test--emacs-input))
+    ;; Given the keyboard, the page types into the field it focused.
+    (portal-integration-test--focus-web (selected-window) (portal-view-target))
+    (portal-test-native-key 0 0 "a")
+    (portal-terminal-test--wait
+     (lambda () (equal (portal-excalidraw-gui--js "return document.querySelector('input').value")
+                       "a")))))
 
 (ert-deftest portal-input-gui-web-command-period-returns-to-emacs ()
   (portal-input-gui--page

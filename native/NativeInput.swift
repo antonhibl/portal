@@ -44,6 +44,14 @@ final class NativeInput: NativeInputHandler {
     private var held: [NSEvent]?
     /// Whether the core was last told the view has the keyboard.
     private var reported = false
+    /// Whether `focus` is giving the view the keyboard.
+    private var focusing = false
+
+    /// Whether the view may take the keyboard: it has it, as far as the core
+    /// knows, or Emacs, the core or the user is giving it to it. Nothing else
+    /// moves it (`portal_input_focus`), so a view refuses other requests,
+    /// such as a page's.
+    var mayTakeKeyboard: Bool { focusing || reported }
 
     init(target: String, view: NSView, host: NativeHost, focus: @escaping () -> Bool) {
         self.target = target
@@ -142,6 +150,8 @@ final class NativeInput: NativeInputHandler {
     /// take the keyboard too, from another window of Emacs's, such as a child
     /// frame's, that may hold it.
     func focus() {
+        focusing = true
+        defer { focusing = false }
         if focusView(), let window = view?.window, !window.isKeyWindow { window.makeKey() }
         host.refreshOwnership()
     }

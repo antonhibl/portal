@@ -7,6 +7,7 @@
 #import <WebKit/WebKit.h>
 #include <emacs-module.h>
 #include <stdlib.h>
+#include <string.h>
 
 int plugin_is_GPL_compatible;
 static __weak NSWindow *explicitWindow;
@@ -59,18 +60,6 @@ static NSArray<NSView *> *descendants(NSView *root)
         [result addObjectsFromArray:descendants(child)];
     }
     return result;
-}
-
-static emacs_value focusWeb(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
-{
-    (void)nargs; (void)args; (void)data;
-    NSWindow *window = activeWindow();
-    for (NSView *view in descendants(window.contentView)) {
-        if ([view isKindOfClass:WKWebView.class] && !view.isHiddenOrHasHiddenAncestor) {
-            return env->intern(env, [window makeFirstResponder:view] ? "t" : "nil");
-        }
-    }
-    return env->intern(env, "nil");
 }
 
 static emacs_value click(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
@@ -325,6 +314,19 @@ static emacs_value marked(emacs_env *env, ptrdiff_t nargs, emacs_value *args, vo
     return env->intern(env, composing ? "t" : "nil");
 }
 
+/* Describe who has the keyboard: the key window's title and the class of its
+   first responder, for failure reports. */
+static emacs_value responder(emacs_env *env, ptrdiff_t nargs, emacs_value *args, void *data)
+{
+    (void)nargs; (void)args; (void)data;
+    NSWindow *window = NSApp.keyWindow;
+    NSString *text = window
+        ? [NSString stringWithFormat:@"%@ in %@ (%@active)",
+              NSStringFromClass([window.firstResponder class]), window.title, NSApp.active ? @"" : @"in"]
+        : [NSString stringWithFormat:@"no key window (%@active)", NSApp.active ? @"" : @"in"];
+    return env->make_string(env, text.UTF8String, (ptrdiff_t)strlen(text.UTF8String));
+}
+
 int emacs_module_init(struct emacs_runtime *runtime)
 {
     emacs_env *env = runtime->get_environment(runtime);
@@ -336,9 +338,6 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-native-post-key");
     args[1] = env->make_function(env, 3, 4, key,
         "Queue an AppKit key event: CODE FLAGS TEXT &optional WINDOWLESS.", (void *)1);
-    env->funcall(env, env->intern(env, "fset"), 2, args);
-    args[0] = env->intern(env, "portal-test-native-focus-web");
-    args[1] = env->make_function(env, 0, 0, focusWeb, "Focus the visible native webview.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-native-click");
     args[1] = env->make_function(env, 2, 2, click,
@@ -375,6 +374,10 @@ int emacs_module_init(struct emacs_runtime *runtime)
     args[0] = env->intern(env, "portal-test-compose");
     args[1] = env->make_function(env, 1, 2, compose,
         "Compose TEXT in the targeted frame as an input method does; COMMIT inserts it.", NULL);
+    env->funcall(env, env->intern(env, "fset"), 2, args);
+    args[0] = env->intern(env, "portal-test-responder");
+    args[1] = env->make_function(env, 0, 0, responder,
+        "Describe the key window and its first responder.", NULL);
     env->funcall(env, env->intern(env, "fset"), 2, args);
     args[0] = env->intern(env, "portal-test-marked-text");
     args[1] = env->make_function(env, 0, 0, marked,
