@@ -290,7 +290,10 @@
                            (file-name-as-directory nested)))
             (should (equal (funcall metadata :project) project))
             ;; Ghostty's bundled integration reports each prompt's directory.
-            (when (member (file-name-nondirectory (or (getenv "SHELL") "")) '("zsh" "bash"))
+            ;; It skips macOS's own /bin/bash, which is too old for it.
+            (when (let ((shell (or (getenv "SHELL") "")))
+                    (and (member (file-name-nondirectory shell) '("zsh" "bash"))
+                         (not (equal shell "/bin/bash"))))
               (portal-terminal-test--paste "cd /usr/share" t)
               (portal-terminal-test--wait
                (lambda () (equal (funcall metadata :directory) "/usr/share/")))
