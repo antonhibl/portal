@@ -169,17 +169,28 @@ jobs:
         if: ${{ !cancelled() }}
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
 
+      # Each suite logs to a directory of its own: the GUI runner starts its
+      # progress log afresh, and a later suite must not erase a failure's.
       - name: Views (graphical)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh test/views-gui.sh
+        run: |
+          export PORTAL_TEST_LOGS=$PORTAL_TEST_LOGS/views
+          mkdir -p "$PORTAL_TEST_LOGS"
+          sh test/views-gui.sh
 
       - name: Input (graphical)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh test/input-gui.sh
+        run: |
+          export PORTAL_TEST_LOGS=$PORTAL_TEST_LOGS/input
+          mkdir -p "$PORTAL_TEST_LOGS"
+          sh test/input-gui.sh
 
       - name: Launcher (graphical)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh test/launcher-gui.sh
+        run: |
+          export PORTAL_TEST_LOGS=$PORTAL_TEST_LOGS/launcher
+          mkdir -p "$PORTAL_TEST_LOGS"
+          sh test/launcher-gui.sh
 
       - name: Terminal shell startup (graphical)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
