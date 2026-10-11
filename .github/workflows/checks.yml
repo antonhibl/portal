@@ -64,10 +64,14 @@ jobs:
           cmake --version | head -1
           echo "Ninja $(ninja --version)"
           brew --version
+          system_profiler SPDisplaysDataType | grep -E 'Resolution|Retina|Main Display'
 
+      # Restore and save separately: a combined cache step saves only when
+      # the whole job succeeds, so failing checks would never fill the cache.
       - name: Restore Homebrew downloads
+        id: brew-cache
         if: env.USE_CACHE == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.env.outputs.brew-cache }}/downloads
           key: brew-${{ steps.env.outputs.image }}-${{ env.EMACS_PLUS_TAP_COMMIT }}
@@ -86,16 +90,25 @@ jobs:
           "$EMACS" --batch -Q --eval '(princ (format "%s %s %s\n" (emacs-version)
               emacs-repository-version (native-comp-available-p)))'
 
+      - name: Save Homebrew downloads
+        if: steps.brew-cache.outcome == 'success' && steps.brew-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.env.outputs.brew-cache }}/downloads
+          key: ${{ steps.brew-cache.outputs.cache-primary-key }}
+
       - name: Restore Swift packages
+        id: swift-cache
         if: env.USE_CACHE == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/org.swift.swiftpm
           key: swiftpm-${{ steps.env.outputs.image }}-${{ hashFiles('native/Package.resolved') }}
 
       - name: Restore Bun, host packages and Emacs packages
+        id: build-cache
         if: env.USE_CACHE == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ runner.temp }}/portal-tools
@@ -105,7 +118,27 @@ jobs:
 
       - name: Build
         id: build
-        run: ./build.sh 2>&1 | tee "$PORTAL_TEST_LOGS/build.log"
+        run: |
+          ./build.sh 2>&1 | tee "$PORTAL_TEST_LOGS/build.log"
+          # Host scripts call bun by name.
+          dirname "$(sh tools/resolve-bun.sh)" >>"$GITHUB_PATH"
+
+      - name: Save Swift packages
+        if: steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
+
+      - name: Save Bun, host packages and Emacs packages
+        if: steps.build-cache.outcome == 'success' && steps.build-cache.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/portal-tools
+            ${{ runner.temp }}/bun-cache
+            build/elpa
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
       - name: CTest
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
