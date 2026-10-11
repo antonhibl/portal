@@ -386,11 +386,13 @@
 					);
 				}
 			}
+			// With reduced motion the clock stands still, so a new portal is drawn
+			// already open: only its colour changes.
 			function open(next) {
 				color = next;
+				if (still) return draw();
 				openedAt = clock;
-				if (still) draw();
-				else burst();
+				burst();
 			}
 
 			// The rim sheds sparks that fall away under gravity.
