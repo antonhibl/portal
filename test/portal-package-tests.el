@@ -74,8 +74,10 @@ Return (STATUS . OUTPUT).  FORMS print their results."
     (make-directory (file-name-directory file) t)
     (with-temp-file file
       (insert ";;; init.el -*- lexical-binding: t; -*-\n"
-              ;; Never contact a package archive.
-              "(setq package-archives nil)\n"
+              ;; Never contact a package archive, so never check one's
+              ;; signatures: importing package.el's keyring into a new
+              ;; HOME took gpg 20 seconds on GitHub's macOS runners.
+              "(setq package-archives nil package-check-signature nil)\n"
               init "\n"))
     (with-temp-buffer
       (let* ((process-environment (append (list (concat "HOME=" home)
