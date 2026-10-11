@@ -238,7 +238,7 @@ the command loop waits with no session.  Return START's value, or nil."
          ;; A delayed timer must not catch up with several strokes at once.
          (timer-max-repeats 1)
          (timer (run-with-timer
-                 0.1 0.1
+                 0.05 0.05
                  (lambda ()
                    (cond
                     ;; Deeper means a prompt, or a persistent panel's buffer.
@@ -2261,55 +2261,74 @@ The local command n reads a name in the minibuffer and greets it."
       (kill-buffer "*Hello*"))))
 
 (ert-deftest portal-launcher-gui-z-session-external-focus ()
-  (portal-launcher-gui--with-panel
-    ;; These are already-running, independent applications. Test both external
-    ;; activation during a prompt and a command that opens an app and returns.
-    (let ((previous (portal-test-frontmost)))
-      (dolist (options '((:kind buffer) (:kind minibuffer) (:kind buffer) (:keep-open t)))
-        (portal-launcher-gui--present
-         (if (plist-get options :keep-open) #'portal-launcher-gui--hello
-           (lambda () (interactive) (read-string "Cancel: ")))
-         '((53 0 "\e")) nil options)
-        (sit-for 0.1)
-        (message "Launcher %S cancellation frontmost: %S (previous %S)"
-                 options (portal-test-frontmost) previous)
-        (should (eql previous (portal-test-frontmost)))
-        (portal-launcher-gui--check-focus-left ordinary)))
-    ;; A persistent panel's command that activates another app leaves that
-    ;; app in front, as the panel hides on losing focus.
-    (dolist (app (list (portal-test-frontmost -1) "com.apple.finder"))
-      (let (activated)
-        (should app)
-        (portal-launcher-gui--present
-         (lambda ()
-           (portal-launcher-gui--hello
-            (cons "o" (lambda () (interactive) (setq activated (portal-test-frontmost app))))))
-         (portal-launcher-gui--text "o") nil '(:keep-open t))
-        (with-timeout (3 (error "The panel's command did not activate %S" app))
-          (while (not (eql activated (portal-test-frontmost))) (sit-for 0.05)))
-        (message "Launcher persistent activation frontmost: %S (expected %S)"
-                 (portal-test-frontmost) activated)
-        (should (eql activated (portal-test-frontmost)))
-        (portal-launcher-gui--check-focus-left ordinary)
-        ;; AppKit can report the activation once the next session watches.
-        (portal-launcher-gui--settle-focus)))
-    (kill-buffer "*Hello*")
-    (let ((destination (portal-test-frontmost -1)) continued)
-      (should destination)
-      (portal-launcher-gui--present
-       (lambda () (interactive) (read-string "Activate another app: ") (setq continued t))
-       '((30 262144 "\C-]")) (lambda () (portal-test-frontmost destination)))
-      (should-not continued)
-      (should (eql destination (portal-test-frontmost)))
-      (portal-launcher-gui--check-focus-left ordinary))
-    (let (finder)
-      (portal-launcher-present
-       (lambda () (interactive) (setq finder (portal-test-frontmost "com.apple.finder"))))
-      (with-timeout (3 (error "Successful app launch did not activate Finder"))
-        (while (not (eql finder (portal-test-frontmost))) (sit-for 0.05)))
-      (message "Launcher success frontmost: %S (expected Finder %S)" (portal-test-frontmost) finder)
-      (should (eql finder (portal-test-frontmost)))
-      (portal-launcher-gui--check-focus-left ordinary))))
+  ;; Two other apps besides Emacs, whatever else runs: a fresh desktop may
+  ;; have only Finder, and asking the already active app to activate changes
+  ;; nothing. Calculator starts in the background, and quits if it started.
+  (let ((started (not (eql 0 (call-process "pgrep" nil nil nil "-x" "Calculator")))))
+    (when started (call-process "open" nil nil nil "-g" "-j" "-a" "Calculator"))
+    (unwind-protect
+        (progn
+          (with-timeout (10 (error "Calculator did not start"))
+            (while (not (eql 0 (call-process "pgrep" nil nil nil "-x" "Calculator")))
+              (sit-for 0.1)))
+          ;; A finishing launch can still take the focus: wait until the
+          ;; frontmost app has held for a second.
+          (with-timeout (10 (error "The frontmost app did not settle"))
+            (let ((front (portal-test-frontmost)) (held 0))
+              (while (< held 10)
+                (sit-for 0.1)
+                (if (eql front (portal-test-frontmost)) (setq held (1+ held))
+                  (setq front (portal-test-frontmost) held 0)))))
+          (portal-launcher-gui--with-panel
+            ;; These are already-running, independent applications. Test both external
+            ;; activation during a prompt and a command that opens an app and returns.
+            (let ((previous (portal-test-frontmost)))
+              (dolist (options '((:kind buffer) (:kind minibuffer) (:kind buffer) (:keep-open t)))
+                (portal-launcher-gui--present
+                 (if (plist-get options :keep-open) #'portal-launcher-gui--hello
+                   (lambda () (interactive) (read-string "Cancel: ")))
+                 '((53 0 "\e")) nil options)
+                (sit-for 0.1)
+                (message "Launcher %S cancellation frontmost: %S (previous %S)"
+                         options (portal-test-frontmost) previous)
+                (should (eql previous (portal-test-frontmost)))
+                (portal-launcher-gui--check-focus-left ordinary)))
+            ;; A persistent panel's command that activates another app leaves that
+            ;; app in front, as the panel hides on losing focus.
+            (dolist (app '("com.apple.calculator" "com.apple.finder"))
+              (let (activated)
+                (should app)
+                (portal-launcher-gui--present
+                 (lambda ()
+                   (portal-launcher-gui--hello
+                    (cons "o" (lambda () (interactive) (setq activated (portal-test-frontmost app))))))
+                 (portal-launcher-gui--text "o") nil '(:keep-open t))
+                (with-timeout (3 (error "The panel's command did not activate %S" app))
+                  (while (not (eql activated (portal-test-frontmost))) (sit-for 0.05)))
+                (message "Launcher persistent activation frontmost: %S (expected %S)"
+                         (portal-test-frontmost) activated)
+                (should (eql activated (portal-test-frontmost)))
+                (portal-launcher-gui--check-focus-left ordinary)
+                ;; AppKit can report the activation once the next session watches.
+                (portal-launcher-gui--settle-focus)))
+            (kill-buffer "*Hello*")
+            (let ((destination (portal-test-frontmost -1)) continued)
+              (should destination)
+              (portal-launcher-gui--present
+               (lambda () (interactive) (read-string "Activate another app: ") (setq continued t))
+               '((30 262144 "\C-]")) (lambda () (portal-test-frontmost destination)))
+              (should-not continued)
+              (should (eql destination (portal-test-frontmost)))
+              (portal-launcher-gui--check-focus-left ordinary))
+            (let (finder)
+              (portal-launcher-present
+               (lambda () (interactive) (setq finder (portal-test-frontmost "com.apple.finder"))))
+              (with-timeout (3 (error "Successful app launch did not activate Finder"))
+                (while (not (eql finder (portal-test-frontmost))) (sit-for 0.05)))
+              (message "Launcher success frontmost: %S (expected Finder %S)" (portal-test-frontmost) finder)
+              (should (eql finder (portal-test-frontmost)))
+              (portal-launcher-gui--check-focus-left ordinary))))
+      (when started (call-process "pkill" nil nil nil "-x" "Calculator")))))
 
 (defun portal-launcher-gui--check-focus-left (ordinary)
   "Check that a dismissed panel left ORDINARY selected and its frame unfocused.
