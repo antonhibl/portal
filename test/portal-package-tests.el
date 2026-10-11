@@ -33,25 +33,39 @@
       (error "git %s failed: %s" (string-join arguments " ") (buffer-string)))
     (buffer-string)))
 
-(defun portal-package-test--source (root)
-  "Copy this checkout's files into a new Git repository in ROOT; return it.
+(defun portal-package-test--copy (source)
+  "Copy this checkout's files into SOURCE, replacing files already there.
 Ignored files, such as build outputs, stay behind."
+  (dolist (file (split-string (portal-package-test--git
+                               portal-package-test--checkout
+                               "ls-files" "-z" "--cached" "--others" "--exclude-standard")
+                              "\0" t))
+    (let ((from (expand-file-name file portal-package-test--checkout))
+          (to (expand-file-name file source)))
+      (when (file-regular-p from)
+        (make-directory (file-name-directory to) t)
+        (copy-file from to t t)))))
+
+(defun portal-package-test--commit (source message)
+  "Commit every file in SOURCE with MESSAGE."
+  (portal-package-test--git source "add" "-A")
+  (portal-package-test--git source "-c" "user.name=Portal tests"
+                            "-c" "user.email=tests@example.invalid"
+                            "commit" "-q" "--no-gpg-sign" "-m" message))
+
+(defun portal-package-test--source (root &optional change)
+  "Copy this checkout's files into a new Git repository in ROOT; return it.
+CHANGE, if non-nil, is called with the copy's directory before the commit."
   (let ((source (expand-file-name "portal source/" root)))
-    (dolist (file (split-string (portal-package-test--git
-                                 portal-package-test--checkout
-                                 "ls-files" "-z" "--cached" "--others" "--exclude-standard")
-                                "\0" t))
-      (let ((from (expand-file-name file portal-package-test--checkout))
-            (to (expand-file-name file source)))
-        (when (file-regular-p from)
-          (make-directory (file-name-directory to) t)
-          (copy-file from to nil t))))
+    (portal-package-test--copy source)
+    (when change (funcall change source))
     (portal-package-test--git source "init" "-q")
-    (portal-package-test--git source "add" "-A")
-    (portal-package-test--git source "-c" "user.name=Portal tests"
-                              "-c" "user.email=tests@example.invalid"
-                              "commit" "-q" "--no-gpg-sign" "-m" "Source")
+    (portal-package-test--commit source "Source")
     source))
+
+(defun portal-package-test--append (source file text)
+  "Append TEXT to FILE in SOURCE."
+  (write-region text nil (expand-file-name file source) t 'silent))
 
 (defun portal-package-test--emacs (home init &rest forms)
   "Run batch Emacs with HOME, loading INIT text first, then evaluating FORMS.
@@ -60,8 +74,10 @@ Return (STATUS . OUTPUT).  FORMS print their results."
     (make-directory (file-name-directory file) t)
     (with-temp-file file
       (insert ";;; init.el -*- lexical-binding: t; -*-\n"
-              ;; Never contact a package archive.
-              "(setq package-archives nil)\n"
+              ;; Never contact a package archive, so never check one's
+              ;; signatures: importing package.el's keyring into a new
+              ;; HOME took gpg 20 seconds on GitHub's macOS runners.
+              "(setq package-archives nil package-check-signature nil)\n"
               init "\n"))
     (with-temp-buffer
       (let* ((process-environment (append (list (concat "HOME=" home)
@@ -90,15 +106,21 @@ Return (STATUS . OUTPUT).  FORMS print their results."
      (unwind-protect (progn (make-directory home) ,@body)
        (delete-directory root t))))
 
-(defun portal-package-test--install (root home init)
-  "Install Portal in HOME through the use-package-vc example after INIT.
-The source is a copy of this checkout in ROOT.  Return the package directory."
-  (let* ((source (portal-package-test--source root))
-         (recipe (string-replace "\"https://github.com/xiaoxinghu/portal\""
-                                 (prin1-to-string (directory-file-name source))
-                                 (portal-package-test--example "use-package-vc")))
-         (install (portal-package-test--emacs home (concat init "\n" recipe)))
-         (package (expand-file-name ".emacs.d/elpa/portal/" home)))
+(defun portal-package-test--install-from (source home init &optional example)
+  "Install Portal from SOURCE in HOME through EXAMPLE after INIT.
+EXAMPLE names docs/install.md's example and defaults to use-package-vc.
+Return (STATUS . OUTPUT)."
+  (portal-package-test--emacs
+   home (concat init "\n"
+                (string-replace "\"https://github.com/xiaoxinghu/portal\""
+                                (prin1-to-string (directory-file-name source))
+                                (portal-package-test--example
+                                 (or example "use-package-vc"))))))
+
+(defun portal-package-test--check-install (install home)
+  "Check INSTALL, a result of `portal-package-test--install-from' in HOME.
+Return the package directory."
+  (let ((package (expand-file-name ".emacs.d/elpa/portal/" home)))
     (unless (zerop (car install))
       (ert-fail (list "Installation failed" (cdr install))))
     ;; package-vc reports success even when files fail to compile.
@@ -113,6 +135,13 @@ The source is a copy of this checkout in ROOT.  Return the package directory."
     ;; Installing started no build.
     (should-not (file-exists-p (expand-file-name "build" package)))
     package))
+
+(defun portal-package-test--install (root home init)
+  "Install Portal in HOME through the use-package-vc example after INIT.
+The source is a copy of this checkout in ROOT.  Return the package directory."
+  (portal-package-test--check-install
+   (portal-package-test--install-from (portal-package-test--source root) home init)
+   home))
 
 (defun portal-package-test--read-result (output)
   "Return the last form printed in OUTPUT."
@@ -159,6 +188,96 @@ The source is a copy of this checkout in ROOT.  Return the package directory."
                                           embark-buffer-map)))))))
           (should (zerop status))
           (should (equal (portal-package-test--read-result output) '(t t))))))))
+
+;; The older Portal that the upgrade test starts from: other Lisp and other
+;; native sources than this checkout's.
+(defun portal-package-test--age (source)
+  "Make the copy of Portal in SOURCE older."
+  (portal-package-test--append source "portal.el" "\n(defvar portal-package-test-old t)\n")
+  (portal-package-test--append source "native/Package.swift" "\n// Older\n"))
+
+(ert-deftest portal-package-upgrades-with-package-vc ()
+  (portal-package-test--with-home
+    (let* ((source (portal-package-test--source root #'portal-package-test--age))
+           (package (portal-package-test--check-install
+                     (portal-package-test--install-from source home "") home)))
+      ;; A complete build of the older sources, as M-x portal-build leaves it.
+      (pcase-let ((`(,status . ,output)
+                   (portal-package-test--emacs
+                    home "(package-initialize)"
+                    '(progn
+                       (require 'portal-build)
+                       (dolist (file portal-build--artifacts)
+                         (make-directory (file-name-directory (portal-build-file file)) t)
+                         (write-region "" nil (portal-build-file file)))
+                       (write-region (prin1-to-string
+                                      (list :identity (portal-build-source-identity)
+                                            :version (portal-build-version)))
+                                     nil (portal-build-file "portal-build.eld"))
+                       (prin1 (portal-build-problem))))))
+        (should (zerop status))
+        (should-not (portal-package-test--read-result output)))
+      (portal-package-test--copy source)
+      (portal-package-test--commit source "Newer")
+      ;; Upgrade from an Emacs that uses the older Portal, as M-x
+      ;; package-vc-upgrade would.  The pull is asynchronous.
+      (pcase-let ((`(,status . ,output)
+                   (portal-package-test--emacs
+                    home "(package-initialize)"
+                    '(progn
+                       (require 'portal)
+                       (package-vc-upgrade (cadr (assq 'portal package-alist)))
+                       (while (seq-some #'process-live-p (process-list))
+                         (accept-process-output nil 0.1))))))
+        (should (zerop status))
+        (should-not (portal-package-test--compile-problems output))
+        (should-not (string-match-p "^Failed to" output)))
+      (should (equal (portal-package-test--git package "rev-parse" "HEAD")
+                     (portal-package-test--git source "rev-parse" "HEAD")))
+      ;; A fresh Emacs runs the newer Lisp and asks for a native rebuild.
+      (pcase-let ((`(,status . ,output)
+                   (portal-package-test--emacs
+                    home "(package-initialize)"
+                    '(progn (require 'portal)
+                            (prin1 (list (boundp 'portal-package-test-old)
+                                         (portal-build-problem)))))))
+        (should (zerop status))
+        (should (equal (portal-package-test--read-result output) '(nil stale)))))))
+
+(ert-deftest portal-package-check-fails-on-compile-errors ()
+  ;; package-vc reports success however Portal compiles: the check must not.
+  (portal-package-test--with-home
+    (let ((install (portal-package-test--install-from
+                    (portal-package-test--source
+                     root (lambda (source)
+                            (portal-package-test--append
+                             source "portal-build.el"
+                             "\n(defun portal-package-test-broken () (let ((1 2)) nil))\n")))
+                    home "")))
+      (should (zerop (car install)))
+      (should (portal-package-test--compile-problems (cdr install)))
+      (should-error (portal-package-test--check-install install home)
+                    :type 'ert-test-failed))))
+
+(ert-deftest portal-package-failed-build-on-install-leaves-portal-unbuilt ()
+  ;; package-vc only warns when the installation's build fails; Portal itself
+  ;; must still report that it has no build.
+  (portal-package-test--with-home
+    (let ((install (portal-package-test--install-from
+                    (portal-package-test--source
+                     root (lambda (source)
+                            (with-temp-file (expand-file-name "build.sh" source)
+                              (insert "#!/bin/sh\nexit 1\n"))))
+                    home "" "use-package-vc-build")))
+      (should (zerop (car install)))
+      ;; The build ran and failed, yet the installation succeeded.
+      (should (string-search "Failed to run ./build.sh" (cdr install)))
+      (pcase-let ((`(,status . ,output)
+                   (portal-package-test--emacs
+                    home "(package-initialize)"
+                    '(progn (require 'portal-build) (prin1 (portal-build-problem))))))
+        (should (zerop status))
+        (should (eq (portal-package-test--read-result output) 'missing))))))
 
 (ert-deftest portal-package-loads-from-a-clone ()
   (portal-package-test--with-home

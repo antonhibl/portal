@@ -3,7 +3,7 @@
 # Run via: sh test/launcher-gui.sh [SELECTOR]
 # The launcher's graphical suite, daily-use checks included, in one fresh
 # Emacs, through test/gui-ert.sh. SELECTOR, an ERT regexp, defaults to every
-# launcher test. Tests that need a second display skip. Set
+# launcher test. Only the test that needs a second display may skip. Set
 # PORTAL_LAUNCHER_SCREENSHOTS to a directory to save the panel's drawing there.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -11,4 +11,5 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export PORTAL_LAUNCHER_SELECTOR="${1:-^portal-launcher-}"
 exec sh "$root/test/gui-ert.sh" \
     -l "$root/test/portal-launcher-daily-use-tests.el" \
-    --eval '(portal-gui-ert-start (getenv "PORTAL_LAUNCHER_SELECTOR") t)'
+    --eval '(portal-gui-ert-start (getenv "PORTAL_LAUNCHER_SELECTOR")
+              (quote (portal-launcher-gui-minibuffer-panel-stays-on-its-display)))'

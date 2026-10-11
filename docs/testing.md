@@ -153,7 +153,7 @@ sh test/views-gui.sh
 Pass an ERT selector regexp to run part of it. It fails on any skip. The
 [platform matrix](platforms.md) uses it as the view acceptance check.
 
-## Terminal graphical checks
+## Input graphical checks
 
 Graphical ERT suites run through [gui-ert.sh](../test/gui-ert.sh). It compiles
 and loads the test-only event injector, adds `build/elpa` to Emacs's load path,
@@ -161,8 +161,8 @@ and runs the suite in one fresh Emacs. The injector needs no Accessibility
 permission. Reuse it for other GUI suites, as
 [input-gui.sh](../test/input-gui.sh) does; keep dependency versions in CMake.
 
-For the shared input, terminal, toolbar and coexistence checks in a fresh
-Emacs process:
+For keyboard input and toolbar checks in a fresh Emacs process (the terminal
+and coexistence tests run in the [view suite](#view-graphical-checks)):
 
 ```sh
 sh test/input-gui.sh
@@ -191,7 +191,7 @@ so the runner's cleanup alone would leave them holding the desktop lock. Both lo
 bounds the whole command. To rerun only the stalled test:
 
 ```sh
-sh test/input-gui.sh '^portal-integration-focus-'
+sh test/views-gui.sh '^portal-integration-focus-'
 ```
 
 In the sample, read the main thread below the test's Lisp frames. A nested
@@ -216,9 +216,12 @@ Physical-key delivery on the affected macOS version still needs a manual check.
 The `package` CTest suite installs a copy of the checkout through
 [the installation guide](install.md)'s use-package examples in empty home
 directories, with and without Consult and Embark. It fails on any compilation
-error or warning, even when package-vc reports success. `test_resolve_bun.py`
-covers Bun selection with stand-in executables and archives. Neither builds
-native code nor downloads anything.
+error or warning, even when package-vc reports success; a copy with a planted
+compilation error proves that. It also upgrades an older copy with
+`package-vc-upgrade` from an Emacs that has loaded it, and installs a copy whose
+build fails as it installs, which package-vc only warns about.
+`test_resolve_bun.py` covers Bun selection with stand-in executables and
+archives. Neither builds native code nor downloads anything.
 
 For first use in graphical Emacs (the offered build, then a terminal and a web
 view in a fresh Emacs), run:

@@ -46,11 +46,20 @@
   "Wrap the listener in ARGS, the arguments of `ert-run-tests'."
   (cons (car args) (cons (portal-gui-ert--listener (cadr args)) (cddr args))))
 
+(defun portal-gui-ert--skipped (stats)
+  "Return the names of the tests that STATS records as skipped."
+  (let (names)
+    (dotimes (i (length (ert--stats-tests stats)))
+      (when (ert-test-skipped-p (aref (ert--stats-test-results stats) i))
+        (push (ert-test-name (aref (ert--stats-tests stats) i)) names)))
+    (nreverse names)))
+
 (defun portal-gui-ert--verdict (stats allow-skips expected)
   "Why STATS fail the run given ALLOW-SKIPS and EXPECTED, or nil."
-  (let ((passed (ert-stats-completed-expected stats)))
+  (let ((passed (ert-stats-completed-expected stats))
+        (skipped (seq-difference (portal-gui-ert--skipped stats) allow-skips)))
     (cond ((> (ert-stats-completed-unexpected stats) 0) "unexpected results")
-          ((and (not allow-skips) (> (ert-stats-skipped stats) 0)) "skipped tests")
+          (skipped (format "skipped %s" (mapconcat #'symbol-name skipped ", ")))
           ((and expected (/= passed expected))
            (format "%d expected results, not %d" passed expected))
           ((= passed 0) "no test ran"))))
@@ -73,8 +82,9 @@
 
 (defun portal-gui-ert-start (selector &optional allow-skips expected)
   "Run the ERT tests SELECTOR once the command loop runs, then exit.
-Exit 0 if every test ran as expected, none skipped unless ALLOW-SKIPS,
-and EXPECTED tests, or at least one, passed."
+Exit 0 if every test ran as expected, none skipped but those that
+ALLOW-SKIPS, a list of test names, permits, and EXPECTED tests, or at
+least one, passed."
   (setq message-log-max t)
   (portal-gui-ert--record "loaded")
   (portal-gui-ert--flush)
