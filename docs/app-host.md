@@ -18,10 +18,10 @@ and load when the host sends its readiness message. External URLs need no server
   `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
   validates the token and Host header; responses suppress outgoing referrers.
 - The About page shows the Portal and Emacs versions that `portal-about`
-  passes, as text, with the host's Bun version and control protocol. Its
-  portal is drawn with WebGL and stops animating while the view is hidden. It
-  draws one still frame when the system reduces motion, and shows the
-  Companion Buffer image when WebGL is unavailable.
+  passes, as text, with the host's Bun version. Its portal is drawn with
+  WebGL and stops animating while the view is hidden. It draws one still
+  frame when the system reduces motion, and shows the Companion Buffer image
+  when WebGL is unavailable.
 - Closing or hiding a view leaves the server running. `M-x portal-start-server`
   prewarms it; `M-x portal-stop-server` stops it;
   `M-x portal-restart-server` replaces it. Loaded hosted apps keep their pages

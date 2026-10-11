@@ -226,7 +226,6 @@
       (should (string-match-p "emacs \\.+ 31\\.1&lt;script&gt;" page))
       (should-not (string-match-p "<script>alert" page))
       (should (string-match-p "bun \\.+ [0-9]+\\.[0-9]+\\.[0-9]+<" page))
-      (should (string-match-p "host protocol \\.+ 3<" page))
       (should-not (string-match-p "{{" page)))
     (let ((page (portal-server-test--get "/about")))
       (should (string-match-p "portal \\.+ unknown<" page))

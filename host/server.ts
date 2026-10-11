@@ -13,9 +13,6 @@ const editorPolicy =
 	"style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; " +
 	"connect-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'";
 
-// The version of the readiness record that Emacs checks.
-const protocol = 3;
-
 // A private URL capability, passed only through the parent's readiness pipe.
 const token = crypto.randomUUID().replaceAll("-", "");
 
@@ -45,7 +42,7 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
-	if (route === "/about") return about(url.searchParams, protocol);
+	if (route === "/about") return about(url.searchParams);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
 			headers: { "Content-Type": asset.type },
@@ -100,5 +97,6 @@ process.stdout.on("error", shutdown);
 
 // stdout is a protocol channel. Send diagnostics to stderr instead.
 process.stdout.write(
-	`${JSON.stringify({ type: "ready", protocol, port: server.port, token })}\n`,
+	JSON.stringify({ type: "ready", protocol: 3, port: server.port, token }) +
+		"\n",
 );
