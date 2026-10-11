@@ -64,7 +64,10 @@ jobs:
           cmake --version | head -1
           echo "Ninja $(ninja --version)"
           brew --version
-          system_profiler SPDisplaysDataType || :
+          # system_profiler lists no displays in the runner's VM; ask AppKit.
+          osascript -l JavaScript -e 'ObjC.import("AppKit");
+            const s = $.NSScreen.mainScreen, f = s.frame, v = s.visibleFrame;
+            `Screen ${f.size.width}x${f.size.height}, visible ${v.size.width}x${v.size.height}, scale ${s.backingScaleFactor}`' || :
 
       # Restore and save separately: a combined cache step saves only when
       # the whole job succeeds, so failing checks would never fill the cache.
