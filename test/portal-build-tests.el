@@ -281,6 +281,10 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
 (ert-deftest portal-build-server-offers-a-build-for-its-own-host ()
   (portal-build-test--with-root
     (let ((portal-server-program nil) checked)
+      ;; Tests and callers find the host to run without reading the option.
+      (should (equal (portal-server-program-file) (portal-build-file "portal-host")))
+      (let ((portal-server-program "/supplied/host"))
+        (should (equal (portal-server-program-file) "/supplied/host")))
       (cl-letf (((symbol-function 'portal-build-ensure) (lambda () (setq checked t))))
         (should-error (portal-start-server) :type 'user-error))
       (should checked)

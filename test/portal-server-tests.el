@@ -46,7 +46,7 @@
          (program (expand-file-name "host" directory)))
     (unwind-protect
         (progn
-          (copy-file portal-server-program program)
+          (copy-file (portal-server-program-file) program)
           (let ((portal-server-program program)
                 (process-environment (cons "PATH=/nonexistent" process-environment)))
             (portal-server-test--with-host

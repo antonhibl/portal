@@ -16,6 +16,10 @@ nil means the host in Portal's build: see `portal-build-directory'."
   :type 'number
   :group 'portal)
 
+(defun portal-server-program-file ()
+  "Return the absolute file name of the UI host that `portal-start-server' runs."
+  (expand-file-name (or portal-server-program (portal-build-file "portal-host"))))
+
 (defvar portal-server-ready-hook nil
   "Hook run when the shared UI host is ready, including after a restart.")
 (defvar portal--server-process nil "The shared UI host process, if started.")
@@ -90,8 +94,7 @@ nil means the host in Portal's build: see `portal-build-directory'."
 The ready hook runs after the server has bound its HTTP listener."
   (interactive)
   (unless (and portal--server-process (process-live-p portal--server-process))
-    (let* ((program (expand-file-name (or portal-server-program
-                                          (portal-build-file "portal-host"))))
+    (let* ((program (portal-server-program-file))
            (default-directory (file-name-directory program)))
       ;; Portal's own host is usable only as part of a complete, current build.
       (unless portal-server-program (portal-build-ensure))
