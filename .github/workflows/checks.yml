@@ -123,6 +123,12 @@ jobs:
         id: build
         run: |
           ./build.sh 2>&1 | tee "$PORTAL_TEST_LOGS/build.log"
+          # The module must build against the header of the Emacs that loads it.
+          header=$(cat build/emacs-include.txt)
+          own=$("$EMACS" --batch -Q --eval '(princ (expand-file-name "../include" data-directory))')
+          echo "emacs-module.h from $header"
+          [ "$(cd "$header" && pwd -P)" = "$(cd "$own" && pwd -P)" ] ||
+              { echo "::error::Built against $header, not $EMACS's $own"; exit 1; }
           # Host scripts call bun by name.
           dirname "$(sh tools/resolve-bun.sh)" >>"$GITHUB_PATH"
 
