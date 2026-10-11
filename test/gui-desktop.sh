@@ -6,6 +6,6 @@
 # setting. The VM's copy has no Git metadata, so there the script runs on the
 # guest's desktop.
 if [ -e "$root/.git" ] && { [ -n "${PORTAL_TEST_VM:-}" ] ||
-    [ -n "$(git -C "$root" config --get portal.testVm || :)" ]; }; then
+    [ -n "$(git -C "$root" config --local --get portal.testVm || :)" ]; }; then
     exec bash "$root/test/vm.sh" sh "test/${0##*/}" "$@"
 fi

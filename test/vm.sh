@@ -84,7 +84,7 @@ main() {
     if [[ ${1:-} == -- ]]; then shift; fi
     if [[ $# == 0 ]]; then set -- sh test/launcher-daily-use.sh; fi
     vm=${PORTAL_TEST_VM:-$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" \
-        config --get portal.testVm || :)}
+        config --local --get portal.testVm || :)}
     [[ -n $vm ]] || {
         echo "Name the VM's SSH alias: git config portal.testVm ALIAS" >&2; exit 2;
     }

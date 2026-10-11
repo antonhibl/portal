@@ -158,6 +158,10 @@ test("graphical checks run in a VM only when one is named", async () => {
 	try {
 		const here = "here a b c\n";
 		expect(runCheck(cwd, { PORTAL_TEST_VM: "" })).toBe(here);
+		// Only this clone's own setting counts, not the user's global one.
+		const global = join(cwd, "gitconfig");
+		await Bun.write(global, "[portal]\n\ttestVm = guest\n");
+		expect(runCheck(cwd, { GIT_CONFIG_GLOBAL: global })).toBe(here);
 		// The variable alone names a VM for one run; the runner picks the alias.
 		expect(runCheck(cwd, { PORTAL_TEST_VM: "other" })).toBe(
 			"vm other: sh test/check.sh a b c\n",
@@ -175,8 +179,6 @@ test("graphical checks run in a VM only when one is named", async () => {
 		// The VM's copy has no Git metadata, so it never delegates again,
 		// even when the guest's own Git configuration names a VM.
 		rmSync(join(cwd, ".git"), { recursive: true });
-		const global = join(cwd, "gitconfig");
-		await Bun.write(global, "[portal]\n\ttestVm = guest\n");
 		expect(runCheck(cwd, { GIT_CONFIG_GLOBAL: global })).toBe(here);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
@@ -195,11 +197,15 @@ test("the runner's alias comes from PORTAL_TEST_VM, then portal.testVm", async (
 		);
 		Bun.spawnSync(["chmod", "+x", join(cwd, "bin", "ssh")]);
 		const log = join(cwd, "ssh.log");
+		const global = join(cwd, "gitconfig");
+		await Bun.write(global, "[portal]\n\ttestVm = everywhere\n");
 		const runner = (vm: string) =>
 			Bun.spawnSync(["/bin/bash", join(cwd, "test", "vm.sh"), "true"], {
 				cwd,
 				env: {
 					...gitEnv,
+					// A global setting does not name this clone's VM.
+					GIT_CONFIG_GLOBAL: global,
 					PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
 					PORTAL_TEST_VM: vm,
 					SSH_LOG: log,
@@ -208,7 +214,7 @@ test("the runner's alias comes from PORTAL_TEST_VM, then portal.testVm", async (
 		const missing = runner("");
 		expect(missing.exitCode).toBe(2);
 		expect(missing.stderr.toString()).toContain("git config portal.testVm");
-		Bun.spawnSync(["git", "config", "portal.testVm", "guest"], {
+		Bun.spawnSync(["git", "config", "--local", "portal.testVm", "guest"], {
 			cwd,
 			env: gitEnv,
 		});
