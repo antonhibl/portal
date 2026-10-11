@@ -8,7 +8,7 @@ Run shell examples from the repository root, not `docs/`.
 
 | I want to… | Guide |
 | --- | --- |
-| Install Portal, build its native part or upgrade it | [Install Portal](install.md) |
+| Install Portal, build its native part, upgrade it or fix installation problems | [Install Portal](install.md) |
 | Move between Emacs and a native view | [Keyboard ownership and toolbars](keyboard.md) |
 | Open HTML, URLs or a saved Markdown preview | [Web views and previews](web-views.md) |
 | Draw and save offline | [Local Excalidraw drawings](excalidraw.md) |

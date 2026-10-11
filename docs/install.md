@@ -41,6 +41,21 @@ To prepare Portal ahead of time, run `M-x portal-build` yourself.
 
 `:rev :newest` follows the newest commit. Portal has no releases yet.
 
+## First build and first run
+
+The first build takes several minutes and needs the network. It downloads the
+app host's locked dependencies, the pinned GhosttyKit binary (about 77 MB) and
+its Swift wrapper, and Portal's pinned Bun if Emacs finds no compatible one
+(see [Bun](#bun)). Bun is cached outside the package; the rest stays in the
+build directory. Emacs stays usable while it builds.
+
+A finished build says "Portal is ready: retry your command". Then
+`M-x portal-hello` shows **Hello World in a native web view**, and
+`M-x portal-terminal` a shell in the selected window. If the build fails,
+Emacs says "Portal's build failed: see \*portal-build\*"; the same log stays in
+`build/portal-build.log` in Portal's source directory, which
+`M-: portal-build-root` prints. See [troubleshooting](#troubleshooting).
+
 ## From a clone
 
 Clone the repository anywhere and load it from there:
@@ -96,6 +111,18 @@ This build blocks Emacs while it runs, and package-vc reports a failed build onl
 as a warning. Portal still checks the result on first use. straight.el's
 `:pre-build` and Elpaca's `:build` steps can run the same command in the cloned
 repository. Do not build from `:init` or `:config`: they run on every startup.
+
+## Upgrade and rebuild
+
+Upgrade Portal the way you installed it: `M-x package-vc-upgrade RET portal`,
+`git pull` in a clone, or `M-x straight-pull-package RET portal`. Then restart
+Emacs. When the upgrade changed the native sources, the first native command
+offers to rebuild, as on first use; Lisp-only changes need no rebuild.
+
+To rebuild at any time, run `M-x portal-build`. Emacs cannot unload a module,
+so after rebuilding a module that this Emacs has already loaded, restart Emacs
+to use the new one; Portal says so rather than using a mismatched module. The
+next section explains how Portal tells.
 
 ## What Portal checks
 
@@ -155,3 +182,66 @@ that cannot succeed.
 | `portal-build-bun` | Use this Bun executable |
 | `portal-build-download-bun` | Allow downloading Portal's pinned Bun |
 | `portal-build-tools-directory` | Where downloaded tools are cached |
+
+## Troubleshooting
+
+Messages below are what Emacs or `*portal-build*` shows. For a failed build,
+read the end of `*portal-build*` or `build/portal-build.log` first.
+
+**"Portal's build needs cmake, ninja on `exec-path`".** Emacs started from the
+Dock or Finder does not read your shell's startup files. The build runs with
+Emacs's `exec-path` as its `PATH`, so add the directory that holds CMake and
+Ninja, for example `(add-to-list 'exec-path "/opt/homebrew/bin")`, or use
+`exec-path-from-shell`. `M-: (executable-find "cmake")` shows what Emacs finds.
+
+**"…needs xcrun", or Swift errors early in the build.** Install Xcode, open it
+once to finish its setup, and select it with
+`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+`xcrun swift --version` must report Swift 6.2 or newer.
+
+**"Portal native views need…" or "Portal needs macOS Emacs with module
+support".** This Emacs cannot run Portal: it is older than 31.1, not built
+for macOS's graphical interface with modules, or the selected frame is a text
+terminal. On Apple Silicon, an Intel Emacs under Rosetta cannot load the
+build either; `M-: system-configuration` names the CPU. See
+[supported platforms](platforms.md).
+
+**"Module initialization failed".** The module was built with the header of a
+newer Emacs than the one loading it, typically by `./build.sh` finding another
+`emacs` on `PATH`. Run `M-x portal-build` from the Emacs that will use Portal:
+it builds with that Emacs and its header. From a shell, set `EMACS` and
+`EMACS_INCLUDE` as in [build and editor setup](../CONTRIBUTING.md#build-and-editor-setup).
+CMake's "Set -DEMACS_INCLUDE=/path/to/include containing emacs-module.h" means
+it found no header for the chosen Emacs.
+
+**A download fails.** `*portal-build*` names the URL. "resolve-bun: could not
+download" and SHA-256 mismatches concern Bun; failures fetching Ghostty or
+packages come from SwiftPM or `bun install`. Check the network or proxy and run
+`M-x portal-build` again. Without network access to Bun's releases, install
+Bun (the version in [tools/bun.manifest](../tools/bun.manifest) or newer) and
+set `portal-build-bun`. The first build still needs the other downloads.
+
+**"Portal cannot build in … it is not writable".** Portal builds beside its
+sources. Install it where you can write, or build it elsewhere and set
+`portal-build-directory`. If the Bun cache cannot be created, set
+`portal-build-tools-directory`.
+
+**"Portal's native build is older than its sources".** Run `M-x portal-build`.
+**"…restart Emacs to use it"** or **"Restart Emacs to replace the old Portal
+native modules"** means this Emacs already loaded another build; restart it.
+"Portal is already building" and "another Portal build is running" mean one
+build is in progress; wait for it. If builds fail after you changed Emacs,
+Xcode or CMake, remove the `build` directory in `portal-build-root`, or run
+`cmake --fresh --preset dev` in a clone, and build again.
+
+**A page stays blank, or a message says "(see \*portal-server\*)".** The app
+host did not start or stopped. `*portal-server*` holds its diagnostics; press
+`g` in the page's buffer to retry, or run `M-x portal-restart-server`. See
+[app host lifecycle and diagnostics](app-host.md).
+
+**The launcher refuses this Emacs.** It accepts only one Emacs build; see
+[launcher setup](launcher.md#set-up-safely).
+
+Still stuck? [Open an issue](https://github.com/xiaoxinghu/portal/issues) with
+your Emacs version and revision, macOS version, Portal commit and the log,
+removing credentials and private content.

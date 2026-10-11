@@ -41,12 +41,25 @@ downloads and verifies Portal's pinned Bun (1.3.14). The first build downloads
 locked host/test dependencies and the pinned GhosttyKit binary (about 77 MB) and
 Swift wrapper. No Zig installation is needed.
 
-To install Portal in your Emacs with use-package, a clone or straight.el, see
-[Install Portal](docs/install.md): the first native command offers to build, or
-run `M-x portal-build`.
+Graphical Emacs started from the Dock may not see your shell's `PATH`; make sure
+its `exec-path` includes CMake and Ninja.
 
-To try it from a clone, use the graphical Emacs executable that matches the
-build's header. For a non-default installation, select it using
+To install Portal, add it to your Emacs configuration:
+
+```elisp
+(use-package portal
+  :vc (:url "https://github.com/xiaoxinghu/portal" :rev :newest))
+```
+
+Then run `M-x portal-hello`. Portal offers to build its native part and shows
+the build in `*portal-build*`. When Emacs says "Portal is ready: retry your
+command", run `M-x portal-hello` again. [Install Portal](docs/install.md)
+covers installing from a clone or with straight.el, the first build's downloads,
+upgrades and [troubleshooting](docs/install.md#troubleshooting).
+
+To try Portal without changing your configuration, build a clone with the
+graphical Emacs executable that matches the build's header. For a non-default
+installation, select it using
 [build and editor setup](CONTRIBUTING.md#build-and-editor-setup) before
 building. From a clone of this repository, run:
 
@@ -56,7 +69,7 @@ emacs -Q -l "$PWD/portal.el" --eval '(portal-hello)'
 ```
 
 The build produces `build/portal.bundle` and the standalone `build/portal-host`.
-The new Emacs should show **Hello World in a native web view**; its app host
+Either way, Emacs should then show **Hello World in a native web view**; its app host
 starts automatically. Click the page or press `RET` to enter it, and press
 Command-period (`⌘.`) to return to Emacs. Inactive content is subtly grayed out;
 `RET` re-enters it. Customize `portal-input-escape-key` to change the escape chord.
