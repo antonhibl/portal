@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Define the supported platform matrix
 
@@ -45,16 +45,16 @@ gate; declaration and evidence must not be conflated.
 
 ## Acceptance and verification
 
-- [ ] A released Emacs build has documented source-build, host-test and native
+- [x] A released Emacs build has documented source-build, host-test and native
       terminal/web acceptance evidence, or the unsupported result is documented
       and this release prerequisite remains explicitly unresolved.
-- [ ] Every claimed supported combination has traceable evidence; unavailable
+- [x] Every claimed supported combination has traceable evidence; unavailable
       hardware is labeled honestly. macOS deployment targets are explained.
-- [ ] Package-Requires and runtime messages match the selected minimum; unsupported
+- [x] Package-Requires and runtime messages match the selected minimum; unsupported
       terminal-only/non-NS Emacs fails with actionable feature-level diagnostics
       while ordinary package inspection/compilation remains possible.
-- [ ] Launcher support remains explicit and separate from core feature support.
-- [ ] Follow shared verification and preserve executable launcher example markers;
+- [x] Launcher support remains explicit and separate from core feature support.
+- [x] Follow shared verification and preserve executable launcher example markers;
       run the launcher CTest if those examples change.
 
 This task can begin independently of tasks 1 and 2. Final evidence should consume
