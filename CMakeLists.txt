@@ -93,6 +93,11 @@ if(BUILD_TESTING)
     set_tests_properties(vm-runner PROPERTIES TIMEOUT 30)
     add_test(NAME gui-runner COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/gui-ert.test.ts")
     set_tests_properties(gui-runner PROPERTIES TIMEOUT 30)
+    add_test(NAME gui-verdict
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}/test"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-gui-ert-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(gui-verdict PROPERTIES TIMEOUT 30)
     add_test(NAME ui-host
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
