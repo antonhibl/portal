@@ -307,6 +307,8 @@
 					document.getElementById("shader").textContent,
 				),
 			);
+			// The vertex data below feeds attribute 0.
+			gl.bindAttribLocation(program, 0, "p");
 			gl.linkProgram(program);
 			if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
 				throw new Error(gl.getProgramInfoLog(program));
