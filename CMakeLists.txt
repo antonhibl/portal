@@ -52,29 +52,32 @@ add_custom_command(
 add_custom_target(portal-ui-host ALL DEPENDS "${CMAKE_BINARY_DIR}/portal-host")
 
 if(BUILD_TESTING)
+    # Batch Emacs for tests. -Q skips init files, but Emacs still saves state
+    # such as project.el's list in the user's Emacs directory; keep it here.
+    set(test_emacs "${EMACS}" --batch -Q "--init-directory=${CMAKE_BINARY_DIR}/test-emacs.d")
     # Runs docs/launcher.md's examples; launcher.el is not needed.
     add_test(NAME launcher
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" -L "${CMAKE_SOURCE_DIR}/test"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}" -L "${CMAKE_SOURCE_DIR}/test"
             -l "${CMAKE_SOURCE_DIR}/test/portal-launcher-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(launcher PROPERTIES TIMEOUT 30)
     # The Lisp module on the real C core, with the fake backend's hot keys.
     add_test(NAME global-shortcut
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
-            "${EMACS}" --batch -Q --module-assertions -L "${CMAKE_SOURCE_DIR}"
+            ${test_emacs} --module-assertions -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-global-shortcut-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(global-shortcut PROPERTIES TIMEOUT 30)
     add_test(NAME system
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
-            "${EMACS}" --batch -Q --module-assertions -L "${CMAKE_SOURCE_DIR}"
+            ${test_emacs} --module-assertions -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-system-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(system PROPERTIES TIMEOUT 30)
     # Exercise the documented absolute-path entry point in a fresh Emacs.
     # Do not add the package directory with -L: Portal must load its own siblings.
     add_test(NAME startup
-        COMMAND "${EMACS}" --batch -Q
+        COMMAND ${test_emacs}
             -l "${CMAKE_SOURCE_DIR}/test/portal-startup-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(startup PROPERTIES TIMEOUT 30)
@@ -82,7 +85,7 @@ if(BUILD_TESTING)
     add_test(NAME build
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_BUILD=${CMAKE_BINARY_DIR}"
             "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
-            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-build-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(build PROPERTIES TIMEOUT 60)
@@ -93,22 +96,22 @@ if(BUILD_TESTING)
     add_test(NAME ui-host
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
-            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-server-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(ui-host PROPERTIES TIMEOUT 30)
     add_test(NAME quick-terminal
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-quick-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(quick-terminal PROPERTIES TIMEOUT 30)
     add_test(NAME terminal-metadata
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-metadata-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-metadata PROPERTIES TIMEOUT 30)
     add_test(NAME terminal-choose
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-choose-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-choose PROPERTIES TIMEOUT 30)
@@ -144,46 +147,46 @@ if(BUILD_TESTING)
     list(JOIN elpa_directories ":" elpa_path)
     add_test(NAME package
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_ELPA=${elpa_path}"
-            "${EMACS}" --batch -Q
+            ${test_emacs}
             -l "${CMAKE_SOURCE_DIR}/test/portal-package-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(package PROPERTIES TIMEOUT 300)
     foreach(adapter consult embark)
         add_test(NAME terminal-${adapter}
-            COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
+            COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
                 -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-${adapter}-tests.el"
                 -f ert-run-tests-batch-and-exit)
         set_tests_properties(terminal-${adapter} PROPERTIES TIMEOUT 30)
     endforeach()
     add_test(NAME view
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-view-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(view PROPERTIES TIMEOUT 30)
     add_test(NAME web
         COMMAND "${CMAKE_COMMAND}" -E env
             "PORTAL_TEST_HOST=${CMAKE_BINARY_DIR}/portal-host"
-            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-web-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(web PROPERTIES TIMEOUT 30)
     add_test(NAME toolbar
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-toolbar-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(toolbar PROPERTIES TIMEOUT 30)
     add_test(NAME input
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-input-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(input PROPERTIES TIMEOUT 30)
     add_test(NAME terminal-bindings
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-bindings-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(terminal-bindings PROPERTIES TIMEOUT 30)
     add_test(NAME excalidraw
-        COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-excalidraw-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(excalidraw PROPERTIES TIMEOUT 30)

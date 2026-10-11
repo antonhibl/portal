@@ -10,6 +10,7 @@
 ;; sync views.  The graphical suite checks native focus with real keys.
 
 (require 'ert)
+(require 'project)
 (require 'portal-fake-native
          (expand-file-name "portal-fake-native"
                            (file-name-directory
@@ -33,6 +34,9 @@ made, delete the directory, and turn the modes off afterwards."
           (context (frame-parameter nil 'portal-project-context))
           (initial-buffers (buffer-list))
           (portal-terminal-confirm-kill nil)
+          ;; Projects these tests visit stay out of the user's project list.
+          (project-list-file (portal-completion-test--path "projects.eld"))
+          (project--list 'unset)
           (completion-styles '(orderless basic))
           (completion-category-defaults nil)
           ;; Only buffers, so no test reads recent files or bookmarks.
