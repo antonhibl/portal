@@ -9,7 +9,8 @@ package installation test runs them. Keep their markers when editing them.
 
 ## Prerequisites
 
-- Graphical macOS Emacs 30.1 or newer, built with module support.
+- Graphical macOS Emacs 31.1 or newer, built with module support. See
+  [supported platforms](platforms.md) for what has been verified.
 - Xcode with Swift 6.2 or newer, CMake 3.29 or newer and Ninja. Install CMake
   and Ninja with `brew install cmake ninja` or your tool manager.
 - Bun is optional. A build uses a compatible Bun on `exec-path`; otherwise it
@@ -25,7 +26,7 @@ binary (about 77 MB) and takes several minutes. Later builds are incremental.
 
 ## With use-package and package-vc
 
-Emacs 30 can install Portal straight from its Git repository:
+Emacs can install Portal straight from its Git repository:
 
 <!-- example: use-package-vc -->
 ```elisp
@@ -77,7 +78,7 @@ The equivalent Elpaca recipe, `(elpaca (portal :host github :repo
 
 Building on first use needs no package-manager configuration. A package manager
 can also run the build as it installs or upgrades Portal, for example with
-package-vc in Emacs 30:
+package-vc:
 
 ```elisp
 (require 'package-vc)
