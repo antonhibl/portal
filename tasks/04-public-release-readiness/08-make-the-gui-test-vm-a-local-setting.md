@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Make the GUI test VM a local setting
 
