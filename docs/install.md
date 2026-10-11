@@ -100,14 +100,15 @@ repository. Do not build from `:init` or `:config`: they run on every startup.
 Each successful build loads the new module and starts the new app host in a
 separate batch Emacs. It then records a hash of the native sources it was built
 from in `build/portal-build.eld`. A build removes that record before replacing
-anything, so a failed or interrupted build is never taken as ready.
+anything, and records nothing if its sources changed while it ran, so a failed,
+interrupted or overtaken build is never taken as ready.
 
 Before loading its module, Portal compares the record with its sources once per
 Emacs session. Startup never rebuilds. After an upgrade that changes the native
 sources, the first native command offers to rebuild. Lisp-only changes need no
 rebuild. Emacs cannot unload a module: when the module that Emacs already loaded
-came from another build, Portal asks you to restart Emacs before using the new
-one. Building never touches a module or host that is running.
+came from another build, or from a Portal too old to record its build, Portal
+asks you to restart Emacs before using the new one. Building never touches a module or host that is running.
 
 Only one build of a checkout runs at a time; another one stops immediately.
 `*portal-build*` shows the current build, and `build/portal-build.log` keeps the

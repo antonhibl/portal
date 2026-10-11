@@ -301,6 +301,36 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
                            (file-truename portal-build-root)))))
       (delete-directory linked t))))
 
+(ert-deftest portal-build-records-only-the-identity-it-started-with ()
+  (portal-build-test--with-root
+    (portal-build-test--complete "the last build")
+    (let ((command-line-args-left (list (portal-build-file ""))))
+      (portal-build--start-batch))
+    ;; A running build is never taken as ready.
+    (should (eq (portal-build-problem) 'missing))
+    (portal-build--record-identity)
+    (should-not (portal-build-problem))
+    ;; Sources edited while a build runs may be only partly in its outputs.
+    (let ((command-line-args-left (list (portal-build-file ""))))
+      (portal-build--start-batch))
+    (portal-build-test--write "host/server.ts" "edited during the build")
+    (should-error (portal-build--record-identity))
+    (should (eq (portal-build-problem) 'missing))))
+
+(ert-deftest portal-build-rejects-a-module-of-unknown-build ()
+  ;; A module that Portal Lisp from before build records loaded: the real
+  ;; C core's test module provides the same native functions.
+  (let ((module (getenv "PORTAL_TEST_MODULE")))
+    (skip-unless module)
+    (let ((portal-build--loaded nil))
+      ;; Lisp stand-ins, such as the batch tests' fake backend, are not modules.
+      (cl-letf (((symbol-function 'portal--web-load) #'ignore))
+        (portal-build-check-loaded-module))
+      (module-load module)
+      (should (string-match-p "restart Emacs"
+                              (cadr (should-error (portal-build-check-loaded-module)
+                                                  :type 'user-error)))))))
+
 (ert-deftest portal-build-real-build-is-ready ()
   ;; An unchanged installation must not ask for a rebuild.
   (let ((directory (getenv "PORTAL_TEST_BUILD")))

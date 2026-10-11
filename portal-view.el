@@ -56,7 +56,7 @@ The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
     (portal-build-load-module)
     (run-hooks 'portal-view-load-hook))
   ;; After a package upgrade reloads Portal's Lisp, check the loaded module.
-  (when portal-build--loaded (portal-build-ensure))
+  (portal-build-check-loaded-module)
   (unless (fboundp 'portal--web-load)
     (user-error "Restart Emacs to load the rebuilt Portal native module"))
   (unless (process-live-p portal-view--channel)

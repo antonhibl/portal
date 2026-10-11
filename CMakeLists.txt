@@ -26,14 +26,10 @@ execute_process(COMMAND "${BUN}" -e
 if(NOT bun_markdown_status EQUAL 0)
     message(FATAL_ERROR "Bun must support Bun.markdown.html (tested with Bun 1.3.14)")
 endif()
-# portal-build.el reads this record of a complete build. Remove it before
-# replacing any output, so a failed or partial build never looks ready.
-set(build_record "${CMAKE_BINARY_DIR}/portal-build.eld")
 # The executable includes Bun and all UI assets; Bun is only a build dependency.
 # Publish atomically so a running host can survive a rebuild.
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/portal-host"
-    COMMAND "${CMAKE_COMMAND}" -E rm -f "${build_record}"
     COMMAND "${BUN}" install --cwd "${CMAKE_SOURCE_DIR}/host" --frozen-lockfile
     COMMAND "${BUN}" run "${CMAKE_SOURCE_DIR}/host/build-editor.ts"
     COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
@@ -85,6 +81,7 @@ if(BUILD_TESTING)
     # First-use setup with a stand-in build, and this build's own record.
     add_test(NAME build
         COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_BUILD=${CMAKE_BINARY_DIR}"
+            "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
             "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-build-tests.el"
             -f ert-run-tests-batch-and-exit)
@@ -202,7 +199,6 @@ execute_process(
     OUTPUT_VARIABLE native_bin OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY)
 add_custom_target(portal ALL
-    COMMAND "${CMAKE_COMMAND}" -E rm -f "${build_record}"
     COMMAND "${CMAKE_COMMAND}" -E env "EMACS_INCLUDE=${EMACS_INCLUDE}"
         xcrun swift build --package-path "${native_package}"
         --scratch-path "${native_scratch}" -c release --product portal
@@ -235,8 +231,17 @@ if(BUILD_TESTING)
     set_tests_properties(licenses PROPERTIES TIMEOUT 60)
 endif()
 
-# Check the module and host together, then record the build. The new module
-# loads only in this disposable batch Emacs, never in one that uses Portal.
+# portal-build.el reads the record of a complete build. Before replacing any
+# output, remove it and note the identity of the sources being built.
+add_custom_target(portal-build-start
+    COMMAND "${EMACS}" --batch -Q -l "${CMAKE_SOURCE_DIR}/portal-build.el"
+        -f portal-build--start-batch "${CMAKE_BINARY_DIR}"
+    VERBATIM)
+add_dependencies(portal portal-build-start)
+add_dependencies(portal-ui-host portal-build-start)
+# Check the module and host together, then record the build unless its sources
+# changed meanwhile. The new module loads only in this disposable batch Emacs,
+# never in one that uses Portal.
 add_custom_target(portal-build-record ALL
     COMMAND "${EMACS}" --batch -Q -l "${CMAKE_SOURCE_DIR}/portal-build.el"
         -f portal-build--finish-batch "${CMAKE_BINARY_DIR}"

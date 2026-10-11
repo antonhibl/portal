@@ -8,10 +8,11 @@
 ;; Loading this file, compiling it and generating autoloads need no native
 ;; code and never start a build.
 ;;
-;; Each successful build ends by loading the new module and starting the new
-;; host in a disposable batch Emacs, then records its identity: a hash of the
-;; sources it was built from.  The build removes that record before replacing
-;; anything, so a failed or partial build never looks ready.
+;; Each build starts by removing the record of the last one and noting the
+;; identity of its sources: a hash of the files it reads.  It ends by loading
+;; the new module and starting the new host in a disposable batch Emacs, then
+;; records that identity, unless the sources changed meanwhile.  So a failed,
+;; partial or overtaken build never looks ready.
 
 (require 'cl-lib)
 (require 'seq)
@@ -81,6 +82,9 @@ It is outside the package, so upgrades and reinstalls reuse its contents."
 (defconst portal-build--record "portal-build.eld"
   "The file in which a successful build records its identity.")
 
+(defconst portal-build--start "portal-build-start.eld"
+  "The file in which a running build notes the identity it builds.")
+
 (defvar portal-build--process nil "The running build, or nil.")
 (defvar portal-build--loaded nil
   "Identity of the build whose module this Emacs loaded, or nil.")
@@ -88,6 +92,16 @@ It is outside the package, so upgrades and reinstalls reuse its contents."
   "Non-nil once this Lisp found Portal's build ready.")
 ;; Check again when this file is reloaded, as a package upgrade does.
 (setq portal-build--ready nil)
+
+(defun portal-build-check-loaded-module ()
+  "Signal a `user-error' if Emacs needs a restart to use Portal's module.
+That is when the loaded module comes from another build, or was loaded by
+Portal Lisp from before build records, so its build is unknown."
+  (cond (portal-build--loaded (portal-build-ensure))
+        ((and (fboundp 'portal--web-load)
+              (module-function-p (symbol-function 'portal--web-load)))
+         (user-error "Portal's native module was loaded by an older Portal: \
+restart Emacs to use it"))))
 
 (defun portal-build-file (name)
   "Return the absolute name of NAME in Portal's build directory."
@@ -283,13 +297,39 @@ It must report readiness through the protocol `portal-server' checks."
           (accept-process-output process 0.1))
       (portal-stop-server))))
 
+(defun portal-build--write (name identity)
+  "Write IDENTITY to NAME in the build directory, replacing it atomically."
+  (let ((file (portal-build-file name)))
+    (with-temp-file (concat file ".tmp")
+      (prin1 (list :identity identity) (current-buffer)))
+    (rename-file (concat file ".tmp") file t)))
+
+(defun portal-build--start-batch ()
+  "Begin a build: forget the last one and note the identity of the sources.
+The argument after this function's name on the command line is the build
+directory.  The build runs this, in batch, before replacing any output."
+  (let ((portal-build-directory (file-name-as-directory (pop command-line-args-left))))
+    (make-directory (portal-build-file "") t)
+    (delete-file (portal-build-file portal-build--record))
+    (portal-build--write portal-build--start (portal-build-source-identity))))
+
+(defun portal-build--record-identity ()
+  "Record the identity noted when the build started, now that it succeeded.
+Signal an error, recording nothing, if the sources changed since then: the
+outputs may contain either version."
+  (let ((started (with-temp-buffer
+                   (insert-file-contents (portal-build-file portal-build--start))
+                   (plist-get (read (current-buffer)) :identity))))
+    (unless (equal started (portal-build-source-identity))
+      (error "Portal's sources changed during the build: build again"))
+    (portal-build--write portal-build--record started)))
+
 (defun portal-build--finish-batch ()
   "Check a finished build and record its identity, in a disposable batch Emacs.
 The argument after this function's name on the command line is the build
-directory.  build.sh runs this last: loading the new module anywhere else
+directory.  The build runs this last: loading the new module anywhere else
 could replace one that Emacs already uses."
-  (let* ((portal-build-directory (file-name-as-directory (pop command-line-args-left)))
-         (record (portal-build-file portal-build--record)))
+  (let ((portal-build-directory (file-name-as-directory (pop command-line-args-left))))
     (dolist (file portal-build--artifacts)
       (unless (file-exists-p (portal-build-file file))
         (error "Portal's build lacks %s" (portal-build-file file))))
@@ -297,9 +337,7 @@ could replace one that Emacs already uses."
     (unless (fboundp 'portal--web-load)
       (error "Portal's native module lacks its functions"))
     (portal-build--probe-host (portal-build-file "portal-host"))
-    (with-temp-file (concat record ".tmp")
-      (prin1 (list :identity (portal-build-source-identity)) (current-buffer)))
-    (rename-file (concat record ".tmp") record t)
+    (portal-build--record-identity)
     (message "The Portal build is complete")))
 
 (provide 'portal-build)
