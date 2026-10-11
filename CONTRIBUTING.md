@@ -15,33 +15,6 @@ Besides the [build prerequisites](README.md#build-and-run), the
 (the pinned version in `tools/bun.manifest` or newer) and Python 3, which Xcode
 includes. Opening a PR from the command line uses the GitHub CLI, `gh`.
 
-### Tasks
-
-The backlog is Markdown files in `tasks/`, one per task, read with `bin/task`.
-It is a Bash script that needs only Git and macOS's standard tools, and it is
-versioned with Portal: the copy at your checkout's commit is the one to use.
-Run it from the repository root, or put `bin/` on your `PATH`. `bin/task help`
-is its manual.
-
-```sh
-cd "$(bin/task claim)"     # claim the next ready task and enter its worktree
-bin/task path              # the task file and the README.md files above it
-# ...work, commit, run the checks...
-bin/task done && git commit -am "done: <id>"
-```
-
-Claiming creates the branch `task/<id>` off the main checkout's branch and its
-worktree in a `.worktrees` directory beside the clone, such as
-`portal.worktrees/<id>` for a clone named `portal` (`TASK_WORKTREES` changes
-where). Push that branch and open a PR. Once it is merged, run
-`bin/task finish <id>` outside the worktree to remove both.
-
-By default, `bin/task` reads `tasks/` in the main checkout, even when run in a
-task worktree, so every worktree sees the same state. A task counts as done
-only once main has it, and new tasks must be committed on main before they can
-be claimed. To read or edit the current checkout's own tasks instead, such as
-tasks added on a branch, pass `-d tasks`: `bin/task -d tasks list`.
-
 ## Build and editor setup
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,

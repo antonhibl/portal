@@ -63,7 +63,7 @@ Review the rest of `tasks/` for personal-only instructions and dependencies.
       GUI verification runs through the VM runner.
 - [x] Persistent configuration and upgrade examples match implemented behavior;
       no proposed API is described as already shipping.
-- [x] CLI setup has a verifiable installation source and task dependency links
+- [x] CLI setup has a verifiable installation source (dropped: the CLI is a separate product; see Outcome) and task dependency links
       remain valid after personal backlog cleanup. Preserved personal work has an
       explicit owner/location without exposing it in the public release.
 - [x] `git check-ignore` confirms autosave/lock examples are ignored and legitimate
@@ -73,7 +73,8 @@ Review the rest of `tasks/` for personal-only instructions and dependencies.
 
 ## Outcome
 
-- The `task` CLI ships as `bin/task`, licensed and versioned with Portal.
+- The `task` CLI is a separate product, not part of Portal, so Portal neither
+  ships nor documents it.
 - Personal dictation tasks 02, 04, 05 and 06 were removed. Their owner, the
   maintainer, moves them to their own configuration repository; until then
   they remain in history at `5da3f94` and in the maintainer's checkout.

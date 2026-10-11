@@ -1,6 +1,6 @@
 # Agent workflow
 
-Tasks are tracked with `bin/task` (see [Contributing](CONTRIBUTING.md#tasks)). Run `bin/task help` before picking up, adding or claiming a task.
+Tasks are tracked with the `task` CLI. Run `task help` before picking up, adding or claiming a task.
 
 Any task that changes code runs in its own git worktree, on a new branch off `main`. The main checkout stays on whatever the user has there.
 

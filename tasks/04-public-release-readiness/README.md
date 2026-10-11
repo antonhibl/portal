@@ -28,8 +28,8 @@ not permission to skip acceptance criteria.
 - Read your task and this file, then [AGENTS.md](../../AGENTS.md),
   [Contributing](../../CONTRIBUTING.md) and
   [Testing Portal](../../docs/testing.md#verifying-work).
-- Run `bin/task help` before claiming. The CLI defaults to the main checkout's
-  tasks directory; use `bin/task -d tasks ...` for deliberate checkout-local edits.
+- Run `task help` before claiming. The CLI defaults to the main checkout's
+  tasks directory; use `task -d tasks ...` for deliberate checkout-local edits.
   These tasks become claimable after this planning PR lands on main.
 - Code changes use their own new branch/worktree off main. Follow repository
   workflow for committing, checks, pushing and opening a PR. Mark only the work
