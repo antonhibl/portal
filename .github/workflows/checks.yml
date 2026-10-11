@@ -64,7 +64,7 @@ jobs:
           cmake --version | head -1
           echo "Ninja $(ninja --version)"
           brew --version
-          system_profiler SPDisplaysDataType | grep -E 'Resolution|Retina|Main Display'
+          system_profiler SPDisplaysDataType || :
 
       # Restore and save separately: a combined cache step saves only when
       # the whole job succeeds, so failing checks would never fill the cache.
