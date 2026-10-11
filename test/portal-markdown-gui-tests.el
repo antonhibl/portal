@@ -109,7 +109,10 @@ The folder is `portal-markdown-gui--directory'."
       (should (= (portal-markdown-gui--scroll) 1200))
       (portal-markdown-gui--link "Architecture")
       (portal-test--wait-for-page "arch notes.md")
-      (should (equal (buffer-name preview) "*portal: arch notes.md*"))
+      ;; Emacs renames the buffer once it reads the view's new address,
+      ;; which can come just after the page reports its title.
+      (portal-terminal-test--wait
+       (lambda () (equal (buffer-name preview) "*portal: arch notes.md*")))
       (should (alist-get 'back (portal-markdown-gui--state)))
       (portal-excalidraw-gui--js "window.scrollTo(0, 700); return true;")
       ;; Relative links resolve from the new document's folder.
@@ -117,7 +120,8 @@ The folder is `portal-markdown-gui--directory'."
                "return [...document.links].find(a => a.textContent === 'Up').href.endsWith('README.md');"))
       (call-interactively (key-binding "l"))
       (portal-test--wait-for-page "README.md")
-      (should (equal (buffer-name preview) "*portal: README.md*"))
+      (portal-terminal-test--wait
+       (lambda () (equal (buffer-name preview) "*portal: README.md*")))
       (portal-terminal-test--wait (lambda () (= (portal-markdown-gui--scroll) 1200)))
       (should (alist-get 'forward (portal-markdown-gui--state)))
       (call-interactively (key-binding "r"))
