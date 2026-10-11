@@ -26,6 +26,10 @@ jobs:
     # macOS 27 arm64 with Xcode 27: the platform matrix's verified row.
     runs-on: xcode-27
     timeout-minutes: 60
+    defaults:
+      run:
+        # Named explicitly, bash runs with pipefail.
+        shell: bash
     env:
       # docs/testing.md's guest setup: the emacs-plus-app cask at this tap commit.
       EMACS_PLUS_TAP_COMMIT: 2d6afb2ec4869b8dc3098541696d0d9d362cc8f0
@@ -71,6 +75,7 @@ jobs:
       - name: Install Emacs
         run: |
           brew tap d12frosted/emacs-plus
+          brew trust d12frosted/emacs-plus
           git -C "$(brew --repository d12frosted/emacs-plus)" checkout -q "$EMACS_PLUS_TAP_COMMIT"
           brew install --cask emacs-plus-app
           # Gatekeeper would hold the first graphical launch of a downloaded app.
