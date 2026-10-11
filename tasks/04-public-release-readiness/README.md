@@ -15,6 +15,7 @@ certify release readiness. Commit-history cleanup is outside scope.
 5. [Automate release and installation checks](05-automate-release-and-installation-checks.md)
 6. [Package third-party licenses](06-package-third-party-licenses.md)
 7. [Finish public onboarding and cleanup](07-finish-public-onboarding-and-cleanup.md)
+8. [Make the GUI test VM a local setting](08-make-the-gui-test-vm-a-local-setting.md)
 
 Tasks 2, 3, 4 and 6 can begin independently. Tasks 5 and 7 depend on tasks 1 and 3;
 those dependencies are encoded in their frontmatter. Task 3 consumes task 2's
