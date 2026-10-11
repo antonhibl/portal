@@ -1,8 +1,100 @@
-# Native package installation research
+---
+status: todo
+---
+# Fix use-package installation
 
-Recorded: 2026-10-11. Status: recommendation, not an implemented installation API.
+## Goal and evidence
 
-## Recommendation
+Make a clean Emacs package installation produce usable Portal Lisp and provide
+one reliable route to build its native module and host. Read the [shared release
+context](README.md) first. This task includes the compilation and private Bun
+bootstrap research below; no earlier chat is needed.
+
+The 2026-10-11 audit installed the current source through `use-package :vc` in an
+empty package directory. Installation reported success while both native outputs
+were missing and 22 byte compilations failed. `portal.el` preferred the caller's
+`load-file-name` over `byte-compile-current-file`, resolving siblings relative to
+the installer. Optional Consult/Embark adapters required unavailable packages,
+and package-vc recursively compiled development tests. Version, Package-Requires,
+and maintainer metadata were missing. A manually built clone loaded through
+`use-package :load-path` successfully. Reproduce against current files before
+fixing; the old count is evidence, not a required future failure count.
+
+## Start here
+
+- [portal.el](../../portal.el), [portal-view.el](../../portal-view.el), and
+  [portal-server.el](../../portal-server.el): entry point, lazy module loading,
+  host discovery and compatibility.
+- [Consult adapter](../../portal-terminal-consult.el) and
+  [Embark adapter](../../portal-terminal-embark.el): optional integrations.
+- [build.sh](../../build.sh), [CMakeLists.txt](../../CMakeLists.txt),
+  [CMake presets](../../CMakePresets.json), [native package](../../native/Package.swift),
+  and [startup tests](../../test/portal-startup-tests.el).
+- [Contributing](../../CONTRIBUTING.md), [Bun distribution notes](../../docs/bun-distribution.md),
+  and the upstream sources preserved below.
+
+## Implementation scope
+
+1. Correct package metadata and source-directory resolution for interpreted,
+   byte-compiled, autoloaded and absolute-path loading. Determine a defensible
+   initial minimum Emacs version; task 3 owns the final tested support matrix.
+   Compile shipped Lisp cleanly with optional packages absent and present.
+   Keep adapters optional and exclude development fixtures from consumer package
+   compilation without omitting native sources/resources needed for a build.
+2. Implement `M-x portal-build` as an asynchronous, observable entry point to the
+   shared build script, using the Emacs executable and header that will load the
+   result. User builds use `-DBUILD_TESTING=OFF`. Diagnose missing prerequisites,
+   paths containing spaces, read-only destinations and unsuccessful subprocesses.
+3. Offer setup on first interactive native use. Ordinary `require`, package
+   installation/byte compilation and autoload generation must work without
+   native artifacts and must not trigger a build/download or batch prompt.
+   After success ask the user to retry their command. Prevent concurrent builds
+   of the same outputs and keep failure logs available.
+4. Implement the Bun resolution order agreed below: explicit override, compatible
+   Bun from Emacs's search path, valid private cache, then pinned official download.
+   Use a customizable Emacs-owned cache outside ELPA, shared resolution with CLI
+   builds, checked-in archive digests, verification before execution and atomic
+   cache population. Preserve the explicit `BUN` override and no-download mode.
+   Explain any fallback from an incompatible discovered Bun; reject invalid
+   explicit overrides. Do not modify global Bun or shell configuration.
+5. Validate the full module bundle/resources and host as one usable installation.
+   Record a build identity and compatible interface versions so upgrades detect
+   stale or partially rebuilt artifacts. Preserve running artifacts during build;
+   if an old module is loaded, require Emacs restart before incompatible new Lisp
+   uses it. Perform native load probes only in a separate disposable process.
+6. Document and exercise one small `use-package :vc` recipe plus manual clone and
+   `:load-path` use. Keep package-manager build hooks optional. Retain externally
+   supplied artifact support and resolve package-manager symlink layouts correctly.
+   Prebuilt Portal releases and archive submission are separate future work.
+
+## Acceptance and verification
+
+- [ ] Isolated `user-emacs-directory`, package directory, `HOME` and source copy:
+      install through the documented recipe with no prior build outputs or user
+      configuration. Fail verification on compilation errors even if package-vc
+      reports installation success. Do not mutate the user's real init/packages.
+- [ ] Installation/autoloads/byte compilation work with no native outputs and no
+      Consult/Embark; explicitly test optional integrations when installed.
+- [ ] First interactive use offers setup, one requested build produces the complete
+      artifacts, and a fresh graphical Emacs in the VM opens a terminal and web
+      view. Batch loading never launches a GUI or prompts.
+- [ ] Cover Bun already installed, incompatible/missing, cached, fresh download,
+      offline/no-download, invalid override, checksum/network failure and concurrent
+      requests with controlled fixtures. Exercise one actual official download
+      separately; tests must not repeatedly fetch a compiler.
+- [ ] Unchanged startup does not rebuild. An upgrade detects stale outputs, rebuilds
+      as needed, and requires restart when an old module was already loaded.
+      Failed builds never report Portal ready.
+- [ ] Exercise a manual clone and at least one symlink-based package manager in
+      addition to package-vc. Record actual versions and any unverified recipes.
+- [ ] Add repeatable non-GUI package-installation regression tests for task 5 to
+      invoke in CI. Run the shared host checks and relevant GUI checks in the VM.
+
+## Compilation and Bun research
+
+Recorded: 2026-10-11. The research below motivates this task; none of the proposed installation APIs have been implemented yet.
+
+### Recommendation
 
 Give Portal a package-owned native build command and a first-use readiness check.
 Keep `build.sh` as the underlying build entry point. Offer package-manager build
@@ -15,7 +107,7 @@ Lisp and source files. The exact trigger varies from library loading to mode
 activation or an explicit setup command. This research concerns C/Swift modules
 and helper executables, not Emacs's separate compilation of Lisp into `.eln` files.
 
-## Established packages
+### Established packages
 
 | Package | Native component and trigger | Installation experience |
 | --- | --- | --- |
@@ -40,7 +132,7 @@ explicitly include C sources, headers, or build directories. Portal's future
 recipe needs its CMake files, native sources/resources, host sources and lockfiles,
 as well as Lisp. A Lisp-only archive cannot build Portal.
 
-## What package managers provide
+### What package managers provide
 
 Emacs 30's [`package-vc` implementation](https://github.com/emacs-mirror/emacs/blob/emacs-30/lisp/emacs-lisp/package-vc.el#L370)
 supports `:shell-command` and `:make`. Commands run during installation and the
@@ -69,7 +161,7 @@ build entry point, but recipes must expose the resulting complete bundle and hos
 where Portal looks for them. Test this explicitly instead of assuming the source
 and runtime directories are identical.
 
-## Proposed Portal behavior
+### Proposed Portal behavior
 
 The following names and behavior are a design proposal, not existing functions.
 
@@ -97,13 +189,13 @@ The following names and behavior are a design proposal, not existing functions.
    module, finish the build atomically, then clearly require a restart. Do not
    load a second module into that process or continue new Lisp against an
    incompatible old module. Reuse the existing server protocol checks for the
-   helper side. Portal already documents [atomic replacement and restart](../CONTRIBUTING.md#build-and-editor-setup),
-   and [its view loader](../portal-view.el) loads the module lazily.
+   helper side. Portal already documents [atomic replacement and restart](../../CONTRIBUTING.md#build-and-editor-setup),
+   and [its view loader](../../portal-view.el) loads the module lazily.
 5. **Use one build implementation.** The Lisp command, CI, manual instructions,
    and optional package-manager hooks should all call the same script. A user
    installation can use `./build.sh -DBUILD_TESTING=OFF`, which avoids Portal's
    CTest fixtures and ELPA test downloads; the full contributor build remains
-   unchanged. This follows the [existing CMake testing guard](../CMakeLists.txt).
+   unchanged. This follows the [existing CMake testing guard](../../CMakeLists.txt).
 6. **Support externally built artifacts.** Manual installations and distribution
    packages must be able to supply existing artifacts and disable compilation,
    including from read-only package directories. Diagnose an unwritable build
@@ -117,7 +209,7 @@ first-use assistance and Rime's version/restart handling. Choosing a prompt for
 Portal is a recommendation based on its Swift/Bun build and downloads, not a
 claim that all Emacs packages prompt.
 
-## Private Bun bootstrap
+### Private Bun bootstrap
 
 Use a compatible existing Bun when available, otherwise obtain a private,
 version-pinned executable as part of the requested build. Bun is distributed as a
@@ -169,10 +261,10 @@ Emacs may have a different search path from a terminal: document the executable
 override and respect the user's configured `exec-path` without automatically
 sourcing shell startup files.
 
-This refines the earlier [Bun distribution options](bun-distribution.md) by
+This refines the earlier [Bun distribution options](../../docs/bun-distribution.md) by
 preferring an Emacs-owned persistent cache over a per-checkout build directory.
 
-## Suggested user configuration
+### Suggested user configuration
 
 After implementing the readiness behavior and fixing package compilation, the
 normal configuration can be small:
@@ -211,7 +303,7 @@ artifact validation. Its synchronous build can block installation or startup.
 Keep it optional; avoid unconditional compilation in `:init` or `:config`, which
 are configuration/loading hooks rather than an upgrade-aware native build API.
 
-## Prebuilt artifacts
+### Prebuilt artifacts
 
 Prebuilt downloads are an established alternative. The separate [ELisp
 Tree-sitter package](https://emacs-tree-sitter.github.io/installation/) tries a
@@ -223,11 +315,11 @@ For Portal, prebuilt downloads would reduce the substantial toolchain burden, bu
 add architecture/macOS compatibility, complete bundle packaging, release pairing,
 checksums, and distribution-notice work. Recommend source builds for the initial
 release, then evaluate prebuilt releases using the existing [distribution
-notes](bun-distribution.md). Avoid making a general Emacs installation depend on
+notes](../../docs/bun-distribution.md). Avoid making a general Emacs installation depend on
 the launcher's single validated Emacs revision; that feature should retain its
 separate compatibility gate.
 
-## Acceptance criteria for implementation
+### Acceptance criteria for implementation
 
 - A clean package installation produces usable Lisp without loading native code
   or compiling developer tests. Optional adapters remain optional.
@@ -246,5 +338,5 @@ separate compatibility gate.
   package manager using symlinked build directories. Test missing tools and failed
   native builds as well as success.
 
-This research changes documentation only. It does not implement these behaviors
-or assert that the proposed Portal recipes already pass those acceptance checks.
+These are research findings and acceptance targets, not evidence that Portal
+already implements or passes the proposed installation behavior.

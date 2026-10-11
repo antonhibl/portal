@@ -2,7 +2,7 @@
 
 Recorded: 2026-09-17. Status: decision deferred.
 
-The later [native package installation proposal](native-package-installation.md#private-bun-bootstrap)
+The later [native package installation proposal](../tasks/04-public-release-readiness/01-fix-use-package-installation.md#private-bun-bootstrap)
 refines automatic downloads with existing-Bun discovery and a persistent
 Emacs-owned tool cache. The behavior below remains unimplemented.
 
