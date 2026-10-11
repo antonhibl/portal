@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 blocked-by: [04-public-release-readiness/01-fix-use-package-installation, 04-public-release-readiness/03-define-the-supported-platform-matrix]
 ---
 # Automate release and installation checks
