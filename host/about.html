@@ -437,14 +437,31 @@
 				}
 			}
 
-			stage.addEventListener("pointermove", (event) => {
+			// The whole page steers the view, on a logarithmic scale: near the
+			// portal the view follows the pointer closely; further out each pixel
+			// moves it less, and the farthest corner of the page turns it fully.
+			document.addEventListener("pointermove", (event) => {
 				const box = stage.getBoundingClientRect();
-				const x = ((event.clientX - box.left) / box.width - 0.5) * 2;
-				const y = -((event.clientY - box.top) / box.height - 0.5) * 2;
-				mouse.tx = Math.max(-1, Math.min(1, x));
-				mouse.ty = Math.max(-1, Math.min(1, y));
+				const cx = box.left + box.width / 2;
+				const cy = box.top + box.height / 2;
+				const dx = event.clientX - cx;
+				const dy = event.clientY - cy;
+				const r = Math.hypot(dx, dy);
+				if (r < 1) {
+					mouse.tx = 0;
+					mouse.ty = 0;
+					return;
+				}
+				const far = Math.hypot(
+					Math.max(cx, innerWidth - cx),
+					Math.max(cy, innerHeight - cy),
+				);
+				const k = RY * height;
+				const reach = Math.log1p(Math.min(r, far) / k) / Math.log1p(far / k);
+				mouse.tx = (dx / r) * reach;
+				mouse.ty = (-dy / r) * reach;
 			});
-			stage.addEventListener("pointerleave", () => {
+			document.documentElement.addEventListener("pointerleave", () => {
 				mouse.tx = 0;
 				mouse.ty = 0;
 			});
