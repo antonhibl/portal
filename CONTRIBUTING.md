@@ -77,22 +77,40 @@ does not hot-reload that library.
 The single build command produces `build/portal.bundle`,
 `build/portal-host` and `build/licenses`. The bundle contains the one native Emacs module at
 `Contents/MacOS/portal.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
-or HTML changes. CMake records the path of the `bun` found on `PATH` and
-searches again if that file disappears. Set `-DBUN=/absolute/path/to/bun`
-through `./build.sh` or CMake to select another Bun, or run
-`cmake --fresh --preset dev` to rediscover every tool. Both binaries are built
-for the current Mac.
+or HTML changes. Both binaries are built for the current Mac. The build ends by
+loading the new module and starting the new host in a disposable batch Emacs,
+then writes `build/portal-build.eld`, the record that `portal-build.el` checks
+before Emacs loads the module; see [what Portal checks](docs/install.md#what-portal-checks).
+Only one `./build.sh` runs per checkout at a time.
+
+`./build.sh` chooses Bun with `tools/resolve-bun.sh`: the `BUN` environment
+variable, then a compatible `bun` on `PATH`, then Portal's pinned Bun cached in
+`build/tools/` (or `PORTAL_TOOLS_DIR`), downloaded and verified when missing.
+`PORTAL_BUN_DOWNLOAD=0` disables the download. A `-DBUN=/absolute/path/to/bun`
+argument is an explicit choice, like `BUN`. Plain `cmake` records the `bun` found on `PATH`
+and searches again if that file disappears; run `cmake --fresh --preset dev`
+to rediscover every tool. Update the pinned version, its asset URLs and
+digests together in `tools/bun.manifest`, and test the build with it.
 
 To distribute this layout, include `LICENSE` and all `portal*.el` files at the
-package root, `build/portal-host`, the complete `build/portal.bundle` and
-`build/licenses`; the host needs no adjacent web assets. Keep the bundle intact,
-including its terminfo and shell integration resources. `build/licenses` holds
-Portal's license and the third-party notices for both outputs, generated from
-`licenses/inventory.json` and the build's own records. A binary release also
-needs the corresponding source and has open license questions; see
-[Licenses and third-party notices](docs/licenses.md). Restart Emacs when upgrading
-from the former separate web and terminal modules, or after rebuilding a loaded
-native module.
+package root, `build/portal-host`, the complete `build/portal.bundle`,
+`build/licenses` and `build/portal-build.eld`, or set `portal-build-directory`
+to where the build outputs are; the host needs no adjacent web assets. Without
+`native/`, Portal accepts only a record from the same `Version:` as `portal.el`. Keep the
+bundle intact, including its terminfo and shell integration resources.
+`build/licenses` holds Portal's license and the third-party notices for both
+outputs, generated from `licenses/inventory.json` and the build's own records. A
+binary release also needs the corresponding source and has open license
+questions; see [Licenses and third-party notices](docs/licenses.md). Restart
+Emacs when upgrading from the former separate web and terminal modules, or after
+rebuilding a loaded native module.
+
+Package managers compile every Lisp file at the package root, with or without
+optional packages such as Consult and Embark; `.elpaignore` keeps them away from
+`test/` and `build/`. Keep adapters loadable without their package, requiring
+it only when their mode is enabled. The `package` CTest suite installs this
+checkout through the [installation guide](docs/install.md)'s use-package
+examples and fails on any compilation error or warning.
 
 For distribution alternatives and size measurements, see
 [Bun distribution notes](docs/bun-distribution.md).

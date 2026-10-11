@@ -33,8 +33,9 @@
   "Edit a local Excalidraw drawing in a web view.
 The buffer contains the drawing's JSON for normal Emacs saving and auto-save.
 Command-S or C-x C-s saves; a chord the drawing does not use reaches Emacs.
-`portal-input-escape-key' returns to Emacs; RET returns to the drawing.  The view
-follows this buffer's selected pane, and keeps its undo history while hidden."
+`portal-input-escape-key' returns to Emacs; RET returns to the drawing.
+The view follows this buffer's selected pane, and keeps its undo history
+while hidden."
   (when (and buffer-file-name (file-remote-p buffer-file-name))
     (user-error "Excalidraw currently supports local files only"))
   (when (= (buffer-size) 0)

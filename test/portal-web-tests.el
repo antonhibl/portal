@@ -349,7 +349,7 @@
       (portal-web-test--wait (lambda () (not (process-live-p process)))))))
 
 (ert-deftest portal-web-markdown-preview-with-the-real-app-host ()
-  (skip-unless (file-executable-p portal-server-program))
+  (skip-unless (file-executable-p (portal-server-program-file)))
   (portal-web-test--environment
     (let ((file (make-temp-file "portal-web-" nil ".md" "# Real notes\n"))
           (url-proxy-services nil))

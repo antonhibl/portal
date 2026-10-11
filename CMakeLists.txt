@@ -78,6 +78,14 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-startup-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(startup PROPERTIES TIMEOUT 30)
+    # First-use setup with a stand-in build, and this build's own record.
+    add_test(NAME build
+        COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_BUILD=${CMAKE_BINARY_DIR}"
+            "PORTAL_TEST_MODULE=$<TARGET_FILE:portal-test-module>"
+            "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-build-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(build PROPERTIES TIMEOUT 60)
     add_test(NAME vm-runner COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/vm.test.ts")
     set_tests_properties(vm-runner PROPERTIES TIMEOUT 30)
     add_test(NAME gui-runner COMMAND "${BUN}" test "${CMAKE_SOURCE_DIR}/test/gui-ert.test.ts")
@@ -114,6 +122,7 @@ if(BUILD_TESTING)
         "elpa.gnu.org/packages/orderless-1.8=9b4b1253bab2e1d984ad0a31028716d0eff2cd358144bb9caced3b15088e69aa"
         "elpa.gnu.org/packages/marginalia-2.13=e1b228d1d4aa4648982aa79ebb9a2e1d2824b7cd40e01d39ed541f1b7663edba")
     set(elpa_load_path "")
+    set(elpa_directories "")
     foreach(entry IN LISTS elpa_packages)
         string(REPLACE "=" ";" entry "${entry}")
         list(GET entry 0 path)
@@ -128,7 +137,17 @@ if(BUILD_TESTING)
             file(REMOVE "${CMAKE_BINARY_DIR}/elpa/${package}.tar")
         endif()
         list(APPEND elpa_load_path -L "${directory}")
+        list(APPEND elpa_directories "${directory}")
     endforeach()
+    # Install a copy of this checkout as a package, without and with the
+    # optional Consult and Embark, in isolated Emacs home directories.
+    list(JOIN elpa_directories ":" elpa_path)
+    add_test(NAME package
+        COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_TEST_ELPA=${elpa_path}"
+            "${EMACS}" --batch -Q
+            -l "${CMAKE_SOURCE_DIR}/test/portal-package-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(package PROPERTIES TIMEOUT 300)
     foreach(adapter consult embark)
         add_test(NAME terminal-${adapter}
             COMMAND "${EMACS}" --batch -Q -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
@@ -213,3 +232,21 @@ if(BUILD_TESTING)
             "${BUN}" test "${CMAKE_SOURCE_DIR}/test/licenses.test.ts")
     set_tests_properties(licenses PROPERTIES TIMEOUT 60)
 endif()
+
+# portal-build.el reads the record of a complete build. Before replacing any
+# output, remove it and note the identity of the sources being built.
+add_custom_target(portal-build-start
+    COMMAND "${EMACS}" --batch -Q -l "${CMAKE_SOURCE_DIR}/portal-build.el"
+        -f portal-build--start-batch "${CMAKE_BINARY_DIR}"
+    VERBATIM)
+add_dependencies(portal portal-build-start)
+add_dependencies(portal-ui-host portal-build-start)
+# Check the module and host together, then record the build unless its sources
+# changed meanwhile. The new module loads only in this disposable batch Emacs,
+# never in one that uses Portal.
+add_custom_target(portal-build-record ALL
+    COMMAND "${EMACS}" --batch -Q -l "${CMAKE_SOURCE_DIR}/portal-build.el"
+        -f portal-build--finish-batch "${CMAKE_BINARY_DIR}"
+    COMMENT "Checking the Portal build"
+    VERBATIM)
+add_dependencies(portal-build-record portal portal-ui-host portal-licenses)

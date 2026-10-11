@@ -4,6 +4,7 @@
 (require 'ert)
 (defvar portal-global-shortcut--registrations)
 (defvar portal-view-feature-record-handlers)
+(defvar portal-build-root)
 (declare-function portal-global-shortcut--remove-all "portal-global-shortcut" ())
 
 (defconst portal-startup-test--entry
@@ -17,11 +18,14 @@
   (let ((default-directory temporary-file-directory))
     (should-not (featurep 'portal))
     (load portal-startup-test--entry nil t)
-    (dolist (feature '(portal portal-web portal-terminal
+    (dolist (feature '(portal portal-build portal-web portal-terminal
                       portal-excalidraw portal-global-shortcut portal-system))
       (should (featurep feature)))
-    (dolist (command '(portal-hello portal-terminal))
+    (dolist (command '(portal-hello portal-terminal portal-build))
       (should (commandp command)))
+    ;; The build belongs to this checkout, not the working directory.
+    (should (equal portal-build-root
+                   (file-truename (file-name-directory portal-startup-test--entry))))
     (should (fboundp 'portal-global-shortcut-set))
     (should (fboundp 'portal-post-key))
     ;; Loading registers no shortcut and loads no native code.

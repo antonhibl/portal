@@ -1,17 +1,19 @@
 # Bun build and distribution options
 
-Recorded: 2026-09-17. Status: decision deferred.
-
-The later [native package installation proposal](../tasks/04-public-release-readiness/01-fix-use-package-installation.md#private-bun-bootstrap)
-refines automatic downloads with existing-Bun discovery and a persistent
-Emacs-owned tool cache. The behavior below remains unimplemented.
+Recorded: 2026-09-17. Updated: 2026-10-11. Status: source builds download a
+pinned Bun when needed; prebuilt hosts remain deferred.
 
 ## Current behaviour
 
 `./build.sh` uses CMake to build the native Emacs module and compile the TypeScript
-server into `build/portal-host`. CMake requires installed Bun, records the absolute
-path of `bun` on `PATH`, and searches again if it disappears. Use
-`-DBUN=/absolute/path/to/bun` to select one explicitly.
+server into `build/portal-host`. It selects Bun with `tools/resolve-bun.sh`: an
+explicit `BUN`, a compatible `bun` on `PATH`, a cached copy of the pinned Bun in
+`tools/bun.manifest`, or that Bun downloaded from its official release and
+checked against the manifest's digest. `M-x portal-build` runs the same script
+with Emacs's `exec-path` and a cache under `user-emacs-directory`, so package
+upgrades reuse it. See [Bun in the installation guide](install.md#bun).
+This follows the [native package installation research](../tasks/04-public-release-readiness/01-fix-use-package-installation.md#private-bun-bootstrap),
+which preferred an Emacs-owned persistent cache to a per-checkout directory.
 
 Bun is a **build dependency**, not a runtime installation requirement: the host
 contains the Bun runtime, server code, and Hello World assets. See
@@ -24,16 +26,17 @@ Swift/Clang toolchain, CMake, and Ninja, even without a Bun installation step.
 
 | Approach | User experience | Tradeoffs |
 | --- | --- | --- |
-| Keep the current build requirement | Install Bun, then run `./build.sh`. | Simplest setup; source users manage Bun. |
-| Automatically download Bun during the build | Run `./build.sh`; CMake obtains Bun. | No manual installation; first build needs a download or supplied executable. |
+| Require installed Bun (former behaviour) | Install Bun, then run `./build.sh`. | Simplest setup; source users manage Bun. |
+| Automatically download Bun during the build (current) | Run `./build.sh`; it obtains Bun. | No manual installation; first build needs a download or supplied executable. |
 | Distribute a prebuilt host | Install a release with matching `portal-host`, or download it during build. | No local Bun compiler; requires release artifacts per supported architecture. |
 
 ### Automatically download Bun
 
-Proposed implementation:
+Implemented by `tools/resolve-bun.sh`:
 
 - Pin a Bun version and archive checksum per supported Mac architecture.
-- Download and extract into a private build directory such as `build/tools/`.
+- Download and extract into a private cache: `build/tools/` for `./build.sh`,
+  `~/.emacs.d/portal/tools/` for `M-x portal-build`.
 - Verify the checksum before extraction and execution.
 - Invoke the executable directly; leave `PATH`, shell configuration, and global
   Bun installations unchanged.
@@ -82,5 +85,5 @@ Automatically download pinned Bun for source builds; add prebuilt host artifacts
 when establishing releases. Both can coexist: contributors build from source,
 release users receive compiled hosts.
 
-This remains a proposal, not an accepted decision. Neither automatic download nor
-prebuilt distribution is implemented; builds still require installed Bun.
+Automatic download is implemented for source builds; prebuilt distribution
+remains a proposal.

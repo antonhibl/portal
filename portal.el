@@ -1,51 +1,39 @@
 ;;; portal.el --- Native web views and terminals for macOS -*- lexical-binding: t; -*-
+
+;; Author: Xiaoxing Hu <hi@xiaoxing.dev>
+;; Maintainer: Xiaoxing Hu <hi@xiaoxing.dev>
+;; URL: https://github.com/xiaoxinghu/portal
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
+;; Keywords: terminals, hypermedia
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
+;;; Commentary:
+
 ;; The package root.  Loading it loads every Portal feature; the commands are
-;; autoloaded from the feature files.
+;; autoloaded from the feature files.  Portal's native module and app host are
+;; built from this package's sources: the first native command offers to build
+;; them, and `portal-build' builds them on request.
+
+;;; Code:
 
 ;; Support loading this entry point by absolute path without prior package
-;; setup.  Transitive and deferred sibling requires need the same directory.
-(add-to-list 'load-path
-             (file-name-directory
-              (or load-file-name
-                  (bound-and-true-p byte-compile-current-file)
-                  buffer-file-name)))
+;; setup.  Transitive and deferred sibling requires need the same directory,
+;; while compiling too.  `macroexp-file-name' names this file in both cases,
+;; even when another file's loading compiles it.
+(eval-and-compile
+  (add-to-list 'load-path (file-name-directory (or (macroexp-file-name) buffer-file-name))))
 
-(require 'portal-web
-         (expand-file-name "portal-web"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-(require 'portal-terminal
-         (expand-file-name "portal-terminal"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
-(require 'portal-excalidraw
-         (expand-file-name "portal-excalidraw"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
+(require 'portal-build)
+(require 'portal-web)
+(require 'portal-terminal)
+(require 'portal-excalidraw)
 
 ;; Registers nothing until `portal-global-shortcut-set' is called.
-(require 'portal-global-shortcut
-         (expand-file-name "portal-global-shortcut"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
+(require 'portal-global-shortcut)
 
 ;; Posts nothing until `portal-post-key' is called.
-(require 'portal-system
-         (expand-file-name "portal-system"
-                           (file-name-directory
-                            (or load-file-name
-                                (bound-and-true-p byte-compile-current-file)
-                                buffer-file-name))))
+(require 'portal-system)
 
 (defcustom portal-terminal-consult-auto-enable t
   "Whether loading Portal and Consult enables their terminal integration.
@@ -56,17 +44,10 @@ can still be enabled or disabled with `portal-terminal-consult-mode'."
 
 (declare-function portal-terminal-consult-mode "portal-terminal-consult" (&optional arg))
 
-;; Capture our directory now: Consult may load later from another directory.
-(let ((adapter (expand-file-name
-                "portal-terminal-consult"
-                (file-name-directory
-                 (or load-file-name
-                     (bound-and-true-p byte-compile-current-file)
-                     buffer-file-name)))))
-  (with-eval-after-load 'consult
-    (when portal-terminal-consult-auto-enable
-      (require 'portal-terminal-consult adapter)
-      (portal-terminal-consult-mode 1))))
+(with-eval-after-load 'consult
+  (when portal-terminal-consult-auto-enable
+    (require 'portal-terminal-consult)
+    (portal-terminal-consult-mode 1)))
 
 (provide 'portal)
 ;;; portal.el ends here

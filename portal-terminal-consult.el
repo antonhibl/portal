@@ -8,8 +8,18 @@
 ;; here, such as `consult--multi' and `consult--buffer-preview', are Consult's
 ;; internal API, so they stay in this file.
 
-(require 'consult)
 (require 'portal-terminal)
+
+;; Consult is optional for Portal, so this file compiles and loads without it;
+;; enabling the mode requires it.
+(defvar consult-buffer-sources)
+(defvar consult-project-buffer-sources)
+(defvar consult-project-function)
+(defvar consult--buffer-display)
+(declare-function consult--buffer-preview "consult" ())
+(declare-function consult--buffer-action "consult" (buffer &optional norecord))
+(declare-function consult--project-root "consult" (&optional may-prompt))
+(declare-function consult--multi "consult" (sources &rest options))
 
 (defun portal-terminal-consult--preview ()
   "Return a Consult state function that previews terminal buffers.
@@ -101,13 +111,15 @@ with \\`M-.' by default, and narrowing.  `consult-buffer' and
   :group 'portal-terminal
   (if portal-terminal-consult-mode
       (progn
+        (require 'consult)
         (add-to-list 'consult-buffer-sources 'portal-terminal-consult-source t)
         (add-to-list 'consult-project-buffer-sources 'portal-terminal-consult-project-source t)
         (setq portal-terminal--reader #'portal-terminal-consult--read))
-    (setq consult-buffer-sources (remq 'portal-terminal-consult-source consult-buffer-sources)
-          consult-project-buffer-sources
-          (remq 'portal-terminal-consult-project-source consult-project-buffer-sources)
-          portal-terminal--reader #'portal-terminal--completing-read)))
+    (when (featurep 'consult)
+      (setq consult-buffer-sources (remq 'portal-terminal-consult-source consult-buffer-sources)
+            consult-project-buffer-sources
+            (remq 'portal-terminal-consult-project-source consult-project-buffer-sources)))
+    (setq portal-terminal--reader #'portal-terminal--completing-read)))
 
 (provide 'portal-terminal-consult)
 ;;; portal-terminal-consult.el ends here

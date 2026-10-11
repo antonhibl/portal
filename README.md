@@ -29,16 +29,22 @@ Recorded environments and validation limits are in the
 
 ## Build and run
 
-You need graphical macOS Emacs and its matching `emacs-module.h`, Apple's
-Swift 6.2 or newer and Clang (Xcode), CMake 3.29 or newer, Ninja, and Bun with
-`Bun.markdown.html` (tested with Bun 1.3.14). Install CMake and Ninja with
-`brew install cmake ninja` or your tool manager, and install Bun for building.
-The first build downloads locked host/test dependencies and the pinned
-GhosttyKit binary (about 77 MB) and Swift wrapper. No Zig installation is needed.
+You need graphical macOS Emacs 30.1 or newer with module support and its
+matching `emacs-module.h`, Apple's Swift 6.2 or newer and Clang (Xcode), CMake
+3.29 or newer, and Ninja. Install CMake and Ninja with `brew install cmake ninja`
+or your tool manager. Bun is optional: without a compatible one, the build
+downloads and verifies Portal's pinned Bun (1.3.14). The first build downloads
+locked host/test dependencies and the pinned GhosttyKit binary (about 77 MB) and
+Swift wrapper. No Zig installation is needed.
 
-Use the graphical Emacs executable that matches the build's header. For a
-non-default installation, select it using [build and editor setup](CONTRIBUTING.md#build-and-editor-setup)
-before building. From a clone of this repository, run:
+To install Portal in your Emacs with use-package, a clone or straight.el, see
+[Install Portal](docs/install.md): the first native command offers to build, or
+run `M-x portal-build`.
+
+To try it from a clone, use the graphical Emacs executable that matches the
+build's header. For a non-default installation, select it using
+[build and editor setup](CONTRIBUTING.md#build-and-editor-setup) before
+building. From a clone of this repository, run:
 
 ```sh
 ./build.sh

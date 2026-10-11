@@ -1,12 +1,14 @@
 # Portal documentation
 
-Start with [build and run](../README.md#build-and-run).
+Start with [build and run](../README.md#build-and-run), then
+[install Portal](install.md) in your Emacs.
 Run shell examples from the repository root, not `docs/`.
 
 ## Use Portal
 
 | I want to… | Guide |
 | --- | --- |
+| Install Portal, build its native part or upgrade it | [Install Portal](install.md) |
 | Move between Emacs and a native view | [Keyboard ownership and toolbars](keyboard.md) |
 | Open HTML, URLs or a saved Markdown preview | [Web views and previews](web-views.md) |
 | Draw and save offline | [Local Excalidraw drawings](excalidraw.md) |
@@ -51,7 +53,7 @@ feature ships today; see the user guides for current behavior.
 
 - [Toolbar design](toolbar-design.md): implemented controls and later ownership
   updates, with historical alternatives.
-- [Bun distribution options](bun-distribution.md): current packaging, size
-  measurements and alternatives to revisit.
+- [Bun distribution options](bun-distribution.md): the private Bun bootstrap,
+  size measurements and alternatives to revisit.
 - [Public-release preparation tasks](../tasks/04-public-release-readiness/README.md): seven implementation
   briefs; task 1 includes native compilation and Bun bootstrap research.

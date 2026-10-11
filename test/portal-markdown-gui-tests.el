@@ -13,7 +13,7 @@
 The folder is `portal-markdown-gui--directory'."
   (declare (indent 0))
   `(portal-test--with-web
-     (skip-unless (file-executable-p portal-server-program))
+     (skip-unless (file-executable-p (portal-server-program-file)))
      (let ((portal-markdown-gui--directory (make-temp-file "portal-markdown-gui-" t))
            (display-buffer-alist nil))
        (unwind-protect
