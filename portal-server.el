@@ -93,8 +93,9 @@ The ready hook runs after the server has bound its HTTP listener."
     (let* ((program (expand-file-name (or portal-server-program
                                           (portal-build-file "portal-host"))))
            (default-directory (file-name-directory program)))
+      ;; Portal's own host is usable only as part of a complete, current build.
+      (unless portal-server-program (portal-build-ensure))
       (unless (file-executable-p program)
-        (unless portal-server-program (portal-build-ensure))
         (user-error "Build the Portal UI host with M-x portal-build: %s" program))
       (setq portal--server-process
             (make-process :name "portal-server" :command (list program)

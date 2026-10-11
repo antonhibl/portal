@@ -269,6 +269,13 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
       (cl-letf (((symbol-function 'portal-build-ensure) (lambda () (setq checked t))))
         (should-error (portal-start-server) :type 'user-error))
       (should checked)
+      ;; A host left by a stale or interrupted build is not started.
+      (portal-build-test--complete)
+      (portal-build-test--write "native/Core/emacs.c" "changed")
+      (set-file-modes (portal-build-file "portal-host") #o755)
+      (cl-letf (((symbol-function 'make-process) (lambda (&rest _) (ert-fail "Started"))))
+        (should (string-match-p "older than its sources"
+                                (cadr (should-error (portal-start-server) :type 'user-error)))))
       ;; A host chosen by the user is never built.
       (setq checked nil)
       (let ((portal-server-program "/missing/host"))
