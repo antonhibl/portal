@@ -10,6 +10,11 @@ the main checkout on the user's branch. Commit the changes on that branch once
 the project's checks pass, push it, and open a PR against `main` with
 `gh pr create`. Describe the behavior changed and the checks actually run.
 
+Besides the [build prerequisites](README.md#build-and-run), the
+[checks before a PR](#checks-before-a-pr) need Bun on `PATH` for the host checks
+(the pinned version in `tools/bun.manifest` or newer) and Python 3, which Xcode
+includes. Opening a PR from the command line uses the GitHub CLI, `gh`.
+
 ## Build and editor setup
 
 `./build.sh` runs the `dev` CMake configure and build presets. For development,

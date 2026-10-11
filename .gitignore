@@ -8,3 +8,7 @@ node_modules/
 /.build/
 /native/.build/
 /host/.generated/
+# Emacs autosaves, lock files and backups
+\#*#
+.#*
+*~

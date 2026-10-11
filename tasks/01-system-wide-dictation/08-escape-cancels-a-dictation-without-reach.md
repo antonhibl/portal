@@ -29,7 +29,7 @@ Notes: `.cache/research/dictation-escape-cancel.md` (local, ignored).
   Control, Option or Command. Other bare keys stay refused.
 - macOS: Escape is virtual key 53, for hot keys and posted chords.
 - `portal-global-shortcut-set` documents it.
-- Config (`ai.el`, not in this repo): register Escape when a dictation
+- User configuration (not in this repo): register Escape when a dictation
   starts; release it in one place that every end goes through (delivered,
   cancelled, failed). Escape while recording or transcribing discards it.
   A recording longer than 10 seconds needs a second Escape.

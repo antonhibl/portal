@@ -8,6 +8,10 @@ and stops recording; whisper.el transcribes locally; the text is inserted at
 point when Emacs is frontmost, and otherwise replaces the clipboard and is
 pasted into the frontmost app with a posted Command-V.
 
+The dictation command itself is user configuration, outside Portal. These
+tasks cover only what Portal supplies for it: posting a key chord, asking for
+Accessibility permission, a status panel and a bare Escape shortcut.
+
 ## Decisions
 
 - **Split of responsibilities.** whisper.el records and transcribes. Lisp
