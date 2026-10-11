@@ -12,6 +12,8 @@ function page(title: string, body: string, status = 200): Response {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${Bun.escapeHTML(title)}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/portal-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/portal-64.png">
   <style>${styles}</style>
 </head>
 <body><main>${body}</main></body>

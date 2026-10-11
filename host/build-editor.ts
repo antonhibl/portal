@@ -27,7 +27,7 @@ if (!result.success)
 // Explicit file imports make Bun embed every lazy chunk and font in the host.
 // The executable remains relocatable and needs no adjacent node_modules/assets.
 const paths: [string, string][] = result.outputs.map((output) => [
-	relative(outdir, output.path),
+	`/excalidraw/assets/${relative(outdir, output.path)}`,
 	output.path,
 ]);
 const fonts = join(root, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
@@ -35,7 +35,11 @@ for await (const path of new Bun.Glob("**/*").scan({
 	cwd: fonts,
 	onlyFiles: true,
 })) {
-	paths.push([`fonts/${path}`, join(fonts, path)]);
+	paths.push([`/excalidraw/assets/fonts/${path}`, join(fonts, path)]);
+}
+for (const size of [32, 64, 256]) {
+	const name = `portal-${size}.png`;
+	paths.push([`/assets/${name}`, join(root, "icons", name)]);
 }
 paths.sort(([a], [b]) => a.localeCompare(b));
 const imports = paths.map(
@@ -51,8 +55,10 @@ const entries = paths.map(([path], i) => {
 				? "font/woff2"
 				: path.endsWith(".wasm")
 					? "application/wasm"
-					: "application/octet-stream";
-	return `[${JSON.stringify(`/excalidraw/assets/${path}`)}, {file: asset${i}, type: ${JSON.stringify(type)}}]`;
+					: path.endsWith(".png")
+						? "image/png"
+						: "application/octet-stream";
+	return `[${JSON.stringify(path)}, {file: asset${i}, type: ${JSON.stringify(type)}}]`;
 });
 await Bun.write(
 	join(generated, "assets.ts"),
