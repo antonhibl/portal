@@ -77,7 +77,9 @@ does not hot-reload that library.
 The single build command produces `build/portal.bundle`,
 `build/portal-host` and `build/licenses`. The bundle contains the one native Emacs module at
 `Contents/MacOS/portal.dylib` and Ghostty's resources. CMake recompiles the host when its TypeScript entry point
-or HTML changes. Both binaries are built for the current Mac. The build ends by
+or HTML changes. Both binaries are built for the current Mac's CPU
+architecture and macOS 13 or later; see [supported platforms](docs/platforms.md)
+for what has been verified. The build ends by
 loading the new module and starting the new host in a disposable batch Emacs,
 then writes `build/portal-build.eld`, the record that `portal-build.el` checks
 before Emacs loads the module; see [what Portal checks](docs/install.md#what-portal-checks).

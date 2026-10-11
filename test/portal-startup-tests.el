@@ -6,6 +6,7 @@
 (defvar portal-view-feature-record-handlers)
 (defvar portal-build-root)
 (declare-function portal-global-shortcut--remove-all "portal-global-shortcut" ())
+(declare-function portal-view--load "portal-view" ())
 
 (defconst portal-startup-test--entry
   (expand-file-name "../portal.el" (file-name-directory
@@ -32,7 +33,11 @@
     (should-not portal-global-shortcut--registrations)
     (should-not (featurep 'portal-native-module))
     (should-not (assoc "shortcut" portal-view-feature-record-handlers))
-    (should-not (memq #'portal-global-shortcut--remove-all kill-emacs-hook))))
+    (should-not (memq #'portal-global-shortcut--remove-all kill-emacs-hook))
+    ;; Batch has no graphical frame: native use names the requirement instead.
+    (should (equal (cadr (should-error (portal-view--load) :type 'user-error))
+                   "Portal native views need a graphical Emacs frame; this frame is a text terminal"))
+    (should-not (featurep 'portal-native-module))))
 
 (provide 'portal-startup-tests)
 ;;; portal-startup-tests.el ends here

@@ -15,21 +15,25 @@ a native panel, invoked by global shortcuts you configure.
 
 ## Scope
 
-Portal requires **graphical macOS Emacs with dynamic modules**; it is not a
-cross-platform package or a replacement for Emacs's text rendering. The native
-module runs inside Emacs: a defect can crash that process. Start in a disposable
-`emacs -Q`, and restart Emacs after rebuilding a module it has already loaded.
+Portal requires **GNU Emacs 31.1 or newer, built for macOS's graphical NS
+interface with dynamic modules**; it is not a cross-platform package or a
+replacement for Emacs's text rendering. It is verified on Apple Silicon with
+macOS 27; Intel Macs and older macOS versions are unverified. See
+[supported platforms](docs/platforms.md) for the matrix, its evidence and
+known issues.
+The native module runs inside Emacs: a defect can crash that process. Start in
+a disposable `emacs -Q`, and restart Emacs after rebuilding a module it has
+already loaded.
 
 The opt-in launcher has a stricter compatibility gate: **GNU Emacs NS 31.1,
-revision `a360712c9d272d950d8d8255ef74570f7e90b7d9`**, with native subroutine
-trampolines enabled. Other builds are rejected for this feature. Read
-[launcher safety and setup](docs/launcher.md#set-up-safely) before enabling it.
-Recorded environments and validation limits are in the
-[testing guide](docs/testing.md).
+revision `a360712c9d272d950d8d8255ef74570f7e90b7d9`** (the `emacs-31.1` tag),
+with native subroutine trampolines enabled. Other builds are rejected for this
+feature. Read [launcher safety and setup](docs/launcher.md#set-up-safely) before
+enabling it.
 
 ## Build and run
 
-You need graphical macOS Emacs 30.1 or newer with module support and its
+You need graphical macOS Emacs 31.1 or newer with module support and its
 matching `emacs-module.h`, Apple's Swift 6.2 or newer and Clang (Xcode), CMake
 3.29 or newer, and Ninja. Install CMake and Ninja with `brew install cmake ninja`
 or your tool manager. Bun is optional: without a compatible one, the build

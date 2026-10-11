@@ -61,7 +61,8 @@ launches and WindowServer's `AppVisible` assertion on it).
 Run GUI checks in disposable graphical Emacs or standalone processes inside the
 VM; they can steal focus or crash. Keep launcher subroutine trampolines enabled.
 Report skips and manual checks separately from passes. Record the native acceptance
-environment; old results are not current evidence.
+environment; old results are not current evidence. Support claims follow the
+[platform acceptance checks](platforms.md#acceptance-checks).
 
 ## GUI checks in a macOS VM
 
@@ -129,6 +130,18 @@ Guest preparation:
 
 Default: launcher daily-use acceptance check, not the full GUI suite.
 Pass other graphical Emacs or standalone AppKit checks as needed.
+
+## View graphical checks
+
+For ordinary terminal and web views (WebKit loading, terminals, their
+coexistence, Markdown previews and Excalidraw) in one fresh Emacs:
+
+```sh
+bash test/vm.sh sh test/views-gui.sh
+```
+
+Pass an ERT selector regexp to run part of it. It fails on any skip. The
+[platform matrix](platforms.md) uses it as the view acceptance check.
 
 ## Terminal graphical checks
 

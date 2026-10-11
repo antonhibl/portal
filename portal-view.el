@@ -46,11 +46,27 @@ It is non-nil exactly while the buffer is in `portal-view--buffers'.")
   "The placement last sent to the native view, or nil while it is hidden.
 The form is (FRAME FRAME-PIXEL-HEIGHT EDGES).")
 
+(defun portal-view--unsupported ()
+  "Why this Emacs and its selected frame cannot run native views, or nil.
+Problems that need another Emacs build come before those a frame fixes."
+  (cond
+   ((version< emacs-version "31.1")
+    (format "Portal native views need Emacs 31.1 or newer; this is Emacs %s"
+            emacs-version))
+   ((not (eq system-type 'darwin))
+    (format "Portal native views run only on macOS; this Emacs runs on %s" system-type))
+   ((not (fboundp 'module-load))
+    "Portal native views need an Emacs built with dynamic modules (--with-modules)")
+   ((not (featurep 'ns))
+    "Portal native views need an Emacs built for the macOS graphical interface (--with-ns)")
+   ((not (eq window-system 'ns))
+    "Portal native views need a graphical Emacs frame; this frame is a text terminal")))
+
 (defun portal-view--load ()
   "Load the native module and connect its record pipe, before any native view."
   (unless (featurep 'portal-native-module)
-    (unless (and (eq window-system 'ns) (fboundp 'module-load))
-      (user-error "Portal needs graphical macOS Emacs with module support"))
+    (when-let* ((reason (portal-view--unsupported)))
+      (user-error "%s" reason))
     (when (fboundp 'portal--bind)
       (user-error "Restart Emacs to replace the old Portal native modules"))
     (portal-build-load-module)
