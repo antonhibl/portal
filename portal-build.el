@@ -22,6 +22,7 @@
 (declare-function portal-start-server "portal-server" ())
 (declare-function portal-stop-server "portal-server" ())
 (declare-function portal-server-url "portal-server" ())
+(declare-function lm-header "lisp-mnt" (header))
 
 (defgroup portal nil "Native views and hosted UIs in Emacs." :group 'applications)
 
@@ -141,26 +142,44 @@ Lisp is not among them: changing only Lisp needs no native rebuild."
                 "\n"))
       (secure-hash 'sha256 (current-buffer)))))
 
-(defun portal-build--recorded-identity ()
-  "Return the identity the last successful build recorded, or nil."
-  (let ((file (portal-build-file portal-build--record)))
+(defun portal-build-version ()
+  "Return the version in portal.el's header, or nil without portal.el."
+  (let ((file (expand-file-name "portal.el" portal-build-root)))
+    (when (file-readable-p file)
+      (require 'lisp-mnt)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (lm-header "version")))))
+
+(defun portal-build--read (name)
+  "Return the plist that NAME in the build directory holds, or nil."
+  (let ((file (portal-build-file name)))
     (when (file-readable-p file)
       (with-temp-buffer
         (insert-file-contents file)
-        (ignore-errors (plist-get (read (current-buffer)) :identity))))))
+        (ignore-errors (read (current-buffer)))))))
+
+(defun portal-build--recorded-identity ()
+  "Return the identity the last successful build recorded, or nil."
+  (plist-get (portal-build--read portal-build--record) :identity))
 
 (defun portal-build-problem ()
   "Return why Portal's build cannot be used now, or nil when it can.
 The result is `missing' for an absent or incomplete build, `stale' for one
 built from other sources, or `restart' when this Emacs loaded the module of
-another build."
-  (let ((recorded (portal-build--recorded-identity))
-        (current (portal-build-source-identity)))
+another build.  Without native sources, as for a supplied build, a build
+from another version of Portal is stale."
+  (let* ((record (portal-build--read portal-build--record))
+         (recorded (plist-get record :identity))
+         (current (portal-build-source-identity)))
     (cond ((not (and recorded
                      (cl-every (lambda (file) (file-exists-p (portal-build-file file)))
                                portal-build--artifacts)))
            'missing)
-          ((and current (not (equal current recorded))) 'stale)
+          ((if current
+               (not (equal current recorded))
+             (not (equal (portal-build-version) (plist-get record :version))))
+           'stale)
           ((and portal-build--loaded (not (equal portal-build--loaded recorded))) 'restart))))
 
 (defun portal-build--describe (problem)
@@ -297,11 +316,11 @@ It must report readiness through the protocol `portal-server' checks."
           (accept-process-output process 0.1))
       (portal-stop-server))))
 
-(defun portal-build--write (name identity)
-  "Write IDENTITY to NAME in the build directory, replacing it atomically."
+(defun portal-build--write (name plist)
+  "Write PLIST to NAME in the build directory, replacing it atomically."
   (let ((file (portal-build-file name)))
     (with-temp-file (concat file ".tmp")
-      (prin1 (list :identity identity) (current-buffer)))
+      (prin1 plist (current-buffer)))
     (rename-file (concat file ".tmp") file t)))
 
 (defun portal-build--start-batch ()
@@ -311,18 +330,18 @@ directory.  The build runs this, in batch, before replacing any output."
   (let ((portal-build-directory (file-name-as-directory (pop command-line-args-left))))
     (make-directory (portal-build-file "") t)
     (delete-file (portal-build-file portal-build--record))
-    (portal-build--write portal-build--start (portal-build-source-identity))))
+    (portal-build--write portal-build--start (list :identity (portal-build-source-identity)))))
 
 (defun portal-build--record-identity ()
   "Record the identity noted when the build started, now that it succeeded.
-Signal an error, recording nothing, if the sources changed since then: the
-outputs may contain either version."
-  (let ((started (with-temp-buffer
-                   (insert-file-contents (portal-build-file portal-build--start))
-                   (plist-get (read (current-buffer)) :identity))))
-    (unless (equal started (portal-build-source-identity))
+The record also names Portal's version, which identifies the build where
+the sources do not.  Signal an error, recording nothing, if the sources
+changed since the build started: the outputs may contain either version."
+  (let ((started (plist-get (portal-build--read portal-build--start) :identity)))
+    (unless (and started (equal started (portal-build-source-identity)))
       (error "Portal's sources changed during the build: build again"))
-    (portal-build--write portal-build--record started)))
+    (portal-build--write portal-build--record
+                         (list :identity started :version (portal-build-version)))))
 
 (defun portal-build--finish-batch ()
   "Check a finished build and record its identity, in a disposable batch Emacs.

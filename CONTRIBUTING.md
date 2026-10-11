@@ -95,7 +95,8 @@ digests together in `tools/bun.manifest`, and test the build with it.
 To distribute this layout, include `LICENSE` and all `portal*.el` files at the
 package root, `build/portal-host`, the complete `build/portal.bundle`,
 `build/licenses` and `build/portal-build.eld`, or set `portal-build-directory`
-to where the build outputs are; the host needs no adjacent web assets. Keep the
+to where the build outputs are; the host needs no adjacent web assets. Without
+`native/`, Portal accepts only a record from the same `Version:` as `portal.el`. Keep the
 bundle intact, including its terminfo and shell integration resources.
 `build/licenses` holds Portal's license and the third-party notices for both
 outputs, generated from `licenses/inventory.json` and the build's own records. A

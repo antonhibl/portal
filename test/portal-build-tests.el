@@ -26,8 +26,9 @@ stand-in build.sh, Lisp and a node_modules directory.  No build is running."
          (progn
            (dolist (file '("native/Package.swift" "native/Core/emacs.c" "host/server.ts"
                            "host/node_modules/dependency/index.js" "host/.generated/asset.js"
-                           "tools/bun.manifest" "CMakeLists.txt" "portal.el"))
+                           "tools/bun.manifest" "CMakeLists.txt"))
              (portal-build-test--write file file))
+           (portal-build-test--write "portal.el" ";; Version: 1.0\n")
            (portal-build-test--write "build.sh" "echo built")
            ,@body)
        (when (process-live-p portal-build--process) (delete-process portal-build--process))
@@ -46,7 +47,8 @@ stand-in build.sh, Lisp and a node_modules directory.  No build is running."
     (portal-build-test--write (concat "build/" file) ""))
   (portal-build-test--write "build/portal-build.eld"
                             (prin1-to-string
-                             (list :identity (or identity (portal-build-source-identity))))))
+                             (list :identity (or identity (portal-build-source-identity))
+                                   :version (portal-build-version)))))
 
 (defmacro portal-build-test--interactive (&rest body)
   "Run BODY as if from an interactive command in a graphical session."
@@ -79,7 +81,7 @@ stand-in build.sh, Lisp and a node_modules directory.  No build is running."
                      "native/Package.swift" "tools/bun.manifest")))
     (let ((identity (portal-build-source-identity)))
       ;; Lisp, installed packages and generated files need no rebuild.
-      (portal-build-test--write "portal.el" "changed")
+      (portal-build-test--write "portal.el" ";; Version: 1.0\n;; changed\n")
       (portal-build-test--write "host/node_modules/dependency/index.js" "changed")
       (portal-build-test--write "host/.generated/asset.js" "changed")
       (should (equal (portal-build-source-identity) identity))
@@ -88,6 +90,19 @@ stand-in build.sh, Lisp and a node_modules directory.  No build is running."
     ;; Supplied builds come without native sources: only the record counts.
     (delete-file (expand-file-name "native/Package.swift" portal-build-root))
     (should-not (portal-build-source-identity))))
+
+(ert-deftest portal-build-supplied-builds-match-portal-version ()
+  ;; A build shipped without native sources is identified by Portal's version.
+  (portal-build-test--with-root
+    (portal-build-test--complete)
+    (delete-file (expand-file-name "native/Package.swift" portal-build-root))
+    (should-not (portal-build-problem))
+    ;; Upgrading only the Lisp leaves the supplied build behind.
+    (portal-build-test--write "portal.el" ";; Version: 1.1\n")
+    (should (eq (portal-build-problem) 'stale))
+    ;; A record from before versions were recorded cannot be trusted either.
+    (portal-build-test--write "build/portal-build.eld" (prin1-to-string '(:identity "old")))
+    (should (eq (portal-build-problem) 'stale))))
 
 (ert-deftest portal-build-ensure-never-builds-or-asks-in-batch ()
   (portal-build-test--with-root
@@ -310,6 +325,7 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
     (should (eq (portal-build-problem) 'missing))
     (portal-build--record-identity)
     (should-not (portal-build-problem))
+    (should (equal (plist-get (portal-build--read "portal-build.eld") :version) "1.0"))
     ;; Sources edited while a build runs may be only partly in its outputs.
     (let ((command-line-args-left (list (portal-build-file ""))))
       (portal-build--start-batch))

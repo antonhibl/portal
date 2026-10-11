@@ -139,7 +139,10 @@ download. Portal never changes your shell configuration or installed Bun.
 Portal looks for its native part in `build/` beside its sources. To use one
 built elsewhere, for example by a distribution, set `portal-build-directory` to
 the directory holding `portal.bundle`, `portal-host` and `portal-build.eld`.
-Portal then reports a missing or stale build instead of offering to build. It
+Portal then reports a missing or stale build instead of offering to build.
+Without the native sources beside the Lisp, Portal cannot hash them, so it
+accepts only a build recorded by the same Portal version (the `Version:` in
+`portal.el`): ship the Lisp and the build together. It
 also reports a build directory that is not writable instead of starting a build
 that cannot succeed.
 
