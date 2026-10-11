@@ -4,6 +4,7 @@
 # through test/gui-ert.sh.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
 set --
 # Optional file with only the completion/theme setup to validate. Do not load
 # the normal init into this automated test: it can start services or other UIs.

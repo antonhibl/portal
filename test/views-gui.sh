@@ -1,12 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Run via: bash test/vm.sh sh test/views-gui.sh [SELECTOR]
+# Run via: sh test/views-gui.sh [SELECTOR]
 # Ordinary terminal and web views in one fresh Emacs, through test/gui-ert.sh:
 # WebKit loading, terminals, their coexistence, Markdown previews and
 # Excalidraw. SELECTOR, an ERT regexp, narrows them. The launcher and the
 # input suite have their own runners.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
 export PORTAL_VIEWS_SELECTOR="${1:-}"
 exec sh "$root/test/gui-ert.sh" \
     -l "$root/test/portal-tests.el" \

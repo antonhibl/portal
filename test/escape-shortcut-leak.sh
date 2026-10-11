@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Whether a global shortcut on a bare Escape keeps Escape from the frontmost
 # app, with key events that go through macOS's hot key matching. Run after
-# ./build.sh in the VM, as `bash test/vm.sh sh test/escape-shortcut-leak.sh`.
+# ./build.sh, as `sh test/escape-shortcut-leak.sh`.
 # One Emacs, the target, is frontmost and logs every Escape it reads. Another,
 # the holder, sets Escape as a shortcut and posts Escape: the shortcut must
 # run and the target read nothing. Once the holder removes it, the next posted
@@ -12,6 +12,7 @@
 # rather than sshd, and `open` passes no environment.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
 dir=$(mktemp -d -t portal-escape-leak)
 log=$dir/log
 : >"$log"

@@ -15,6 +15,7 @@ certify release readiness. Commit-history cleanup is outside scope.
 5. [Automate release and installation checks](05-automate-release-and-installation-checks.md)
 6. [Package third-party licenses](06-package-third-party-licenses.md)
 7. [Finish public onboarding and cleanup](07-finish-public-onboarding-and-cleanup.md)
+8. [Make the GUI test VM a local setting](08-make-the-gui-test-vm-a-local-setting.md)
 
 Tasks 2, 3, 4 and 6 can begin independently. Tasks 5 and 7 depend on tasks 1 and 3;
 those dependencies are encoded in their frontmatter. Task 3 consumes task 2's
@@ -36,9 +37,9 @@ not permission to skip acceptance criteria.
 - Read [domain vocabulary](../../CONTEXT.md) and
   [native boundaries](../../docs/architecture.md) before changing native interfaces
   or ownership. Preserve executable launcher example markers.
-- Run all non-GUI checks on the host. GUI checks run only in a logged-in VM through
-  `bash test/vm.sh <command>`. Restart disposable Emacs after rebuilding a loaded
-  module. Missing VM access is an explicit verification gap, not a host fallback.
+- Run every check, graphical ones included, as the testing guide describes.
+  Restart disposable Emacs after rebuilding a loaded module. Report graphical
+  checks you could not run as a verification gap.
 
 ## Audit baseline and verification
 

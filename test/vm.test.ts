@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { expect, test } from "bun:test";
 import {
+	copyFileSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -11,6 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const script = new URL("./vm.sh", import.meta.url).pathname;
+const desktop = new URL("./gui-desktop.sh", import.meta.url).pathname;
+// Only the scratch clone's own configuration counts.
+const gitEnv = {
+	...process.env,
+	GIT_CONFIG_GLOBAL: "/dev/null",
+	GIT_CONFIG_NOSYSTEM: "1",
+};
 
 function shell(cwd: string, command: string, ...args: string[]) {
 	return Bun.spawnSync(
@@ -108,6 +117,110 @@ test("timeout kills the command's process group and releases its desktop lock", 
 		expect(() => process.kill(-pid, 0)).toThrow();
 		expect(shell(cwd, "lockf -k -t 0 desktop.lock true").exitCode).toBe(0);
 		expect(readFileSync(join(cwd, "test.log"), "utf8")).toContain("Timed out");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+// A clone with a graphical test script that sources gui-desktop.sh, and a
+// stand-in test/vm.sh that reports how it was called.
+async function guiClone() {
+	const cwd = mkdtempSync(join(tmpdir(), "vm-desktop-"));
+	mkdirSync(join(cwd, "test"));
+	copyFileSync(desktop, join(cwd, "test", "gui-desktop.sh"));
+	await Bun.write(
+		join(cwd, "test", "vm.sh"),
+		'printf "vm %s:" "$PORTAL_TEST_VM"; printf " %s" "$@"; echo\n',
+	);
+	await Bun.write(
+		join(cwd, "test", "check.sh"),
+		`set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
+echo "here $*"
+`,
+	);
+	Bun.spawnSync(["git", "init", "-q"], { cwd, env: gitEnv });
+	return cwd;
+}
+
+function runCheck(cwd: string, env: Record<string, string | undefined>) {
+	const result = Bun.spawnSync(
+		["/bin/sh", join(cwd, "test", "check.sh"), "a b", "c"],
+		{ cwd: tmpdir(), env: { ...gitEnv, ...env } },
+	);
+	expect(result.exitCode).toBe(0);
+	return result.stdout.toString();
+}
+
+test("graphical checks run in a VM only when one is named", async () => {
+	const cwd = await guiClone();
+	try {
+		const here = "here a b c\n";
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "" })).toBe(here);
+		// Only this clone's own setting counts, not the user's global one.
+		const global = join(cwd, "gitconfig");
+		await Bun.write(global, "[portal]\n\ttestVm = guest\n");
+		expect(runCheck(cwd, { GIT_CONFIG_GLOBAL: global })).toBe(here);
+		// The variable alone names a VM for one run; the runner picks the alias.
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "other" })).toBe(
+			"vm other: sh test/check.sh a b c\n",
+		);
+		Bun.spawnSync(["git", "config", "portal.testVm", "guest"], {
+			cwd,
+			env: gitEnv,
+		});
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "" })).toBe(
+			"vm : sh test/check.sh a b c\n",
+		);
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "other" })).toBe(
+			"vm other: sh test/check.sh a b c\n",
+		);
+		// The VM's copy has no Git metadata, so it never delegates again,
+		// even when the guest's own Git configuration names a VM.
+		rmSync(join(cwd, ".git"), { recursive: true });
+		expect(runCheck(cwd, { GIT_CONFIG_GLOBAL: global })).toBe(here);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("the runner's alias comes from PORTAL_TEST_VM, then portal.testVm", async () => {
+	const cwd = await guiClone();
+	try {
+		copyFileSync(script, join(cwd, "test", "vm.sh"));
+		// A stand-in ssh records the host it was asked for, then fails.
+		mkdirSync(join(cwd, "bin"));
+		await Bun.write(
+			join(cwd, "bin", "ssh"),
+			'#!/bin/sh\nprintf "%s\\n" "$4" >>"$SSH_LOG"; exit 1\n',
+		);
+		Bun.spawnSync(["chmod", "+x", join(cwd, "bin", "ssh")]);
+		const log = join(cwd, "ssh.log");
+		const global = join(cwd, "gitconfig");
+		await Bun.write(global, "[portal]\n\ttestVm = everywhere\n");
+		const runner = (vm: string) =>
+			Bun.spawnSync(["/bin/bash", join(cwd, "test", "vm.sh"), "true"], {
+				cwd,
+				env: {
+					...gitEnv,
+					// A global setting does not name this clone's VM.
+					GIT_CONFIG_GLOBAL: global,
+					PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+					PORTAL_TEST_VM: vm,
+					SSH_LOG: log,
+				},
+			});
+		const missing = runner("");
+		expect(missing.exitCode).toBe(2);
+		expect(missing.stderr.toString()).toContain("git config portal.testVm");
+		Bun.spawnSync(["git", "config", "--local", "portal.testVm", "guest"], {
+			cwd,
+			env: gitEnv,
+		});
+		runner("");
+		runner("other");
+		expect(readFileSync(log, "utf8")).toBe("guest\nother\n");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
