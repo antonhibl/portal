@@ -92,6 +92,8 @@
     (progn
       (portal-package-gui--check "graphical Emacs" (eq window-system 'ns))
       (package-initialize)
+      ;; Only for the checks: the commands themselves are autoloaded.
+      (require 'portal-build)
       (pcase (getenv "PORTAL_PACKAGE_GUI_PHASE")
         ("setup" (portal-package-gui--setup))
         ("use" (portal-package-gui--use))
