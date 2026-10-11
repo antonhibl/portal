@@ -235,12 +235,19 @@ the command loop waits with no session.  Return START's value, or nil."
          (global (current-global-map))
          (depth (recursion-depth))
          (base (if loop (1+ depth) depth))
+         ;; A delayed timer must not catch up with several strokes at once.
+         (timer-max-repeats 1)
          (timer (run-with-timer
                  0.1 0.1
                  (lambda ()
                    (cond
                     ;; Deeper means a prompt, or a persistent panel's buffer.
-                    ((and strokes (> (recursion-depth) base))
+                    ;; Each stroke waits until Emacs is idle with no input
+                    ;; queued, so the last one's command and post-command hook
+                    ;; have finished: Vertico, for one, skips its redraw while
+                    ;; input waits, and an error report discards queued input.
+                    ((and strokes (> (recursion-depth) base)
+                          (current-idle-time) (not (input-pending-p)))
                      (portal-view--with-frame-title portal-launcher--frame #'portal-test-native-target-frame)
                      (let ((stroke (pop strokes)))
                        ;; Synthetic AppKit C-g gets held by this Emacs build
@@ -615,10 +622,7 @@ SETUP runs as its first prompt starts. STEPS are native strokes, and
 functions that C-] calls as commands, such as `portal-launcher-gui--record',
 in order; Return then ends the prompt. Return (INITIAL . LAYOUTS): the
 panel's rectangle before the prompt was displayed, and the descriptions."
-  (let ((portal-launcher-gui--layouts nil) strokes actions initial
-        ;; A delayed stroke timer must not catch up with several strokes at
-        ;; once: Vertico, for one, does not redraw while input is waiting.
-        (timer-max-repeats 1))
+  (let ((portal-launcher-gui--layouts nil) strokes actions initial)
     (dolist (step steps)
       (if (functionp step)
           (progn (push '(30 262144 "\C-]") strokes) (push step actions))
@@ -760,7 +764,10 @@ EXACT, the text must also be that many default lines high."
   (portal-launcher-gui--with-panel
     (let* ((portal-launcher-size nil)
            (portal-launcher-font "Menlo 24")
-           (portal-launcher-offset '(0 200))
+           ;; The 100-point panel opens centred, this far down, leaving 222
+           ;; points below its top on any screen: five rows fit, 300 do not.
+           (portal-launcher-offset
+            (list 0 (- (/ (nth 3 (frame-monitor-workarea)) 2) 172)))
            (portal-launcher-gui--row-limit 5)
            (many (mapcar (lambda (n) (format "al%03d" n)) (number-sequence 1 300)))
            (result (portal-launcher-gui--fit
@@ -1183,8 +1190,7 @@ STEPS are native strokes, and commands that C-] calls, such as
 panel. OPTIONS are more `portal-launcher-present' options. Return
 \(INITIAL . LAYOUTS): the panel's rectangle as SETUP started, before any
 content, and what the steps recorded."
-  (let ((portal-launcher-gui--layouts nil) strokes actions initial
-        (timer-max-repeats 1))
+  (let ((portal-launcher-gui--layouts nil) strokes actions initial)
     (dolist (step steps)
       (if (functionp step)
           (progn (push '(30 262144 "\C-]") strokes) (push step actions))
