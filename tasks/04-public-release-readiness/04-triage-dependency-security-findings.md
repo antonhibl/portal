@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Triage dependency security findings
 
