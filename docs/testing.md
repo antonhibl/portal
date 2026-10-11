@@ -141,6 +141,24 @@ The standalone focus check below also verifies live escape rebinding and the
 inactive content cue, including rendering and click-through without a toolbar.
 Physical-key delivery on the affected macOS version still needs a manual check.
 
+## Package installation checks
+
+The `package` CTest suite installs a copy of the checkout through
+[the installation guide](install.md)'s use-package examples in empty home
+directories, with and without Consult and Embark. It fails on any compilation
+error or warning, even when package-vc reports success. `test_resolve_bun.py`
+covers Bun selection with stand-in executables and archives. Neither builds
+native code nor downloads anything.
+
+For first use in graphical Emacs (the offered build, then a terminal and a web
+view in a fresh Emacs), run in the VM:
+
+```sh
+PORTAL_TEST_TIMEOUT=2400 bash test/vm.sh sh test/package-gui.sh
+```
+
+It builds Portal twice: the runner's build, then the installed package's own.
+
 ## Launcher graphical checks
 
 For the launcher's whole graphical suite, daily-use checks included, in one
