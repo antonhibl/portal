@@ -2,6 +2,10 @@
 
 Recorded: 2026-09-17. Status: decision deferred.
 
+The later [native package installation proposal](../tasks/04-public-release-readiness/01-fix-use-package-installation.md#private-bun-bootstrap)
+refines automatic downloads with existing-Bun discovery and a persistent
+Emacs-owned tool cache. The behavior below remains unimplemented.
+
 ## Current behaviour
 
 `./build.sh` uses CMake to build the native Emacs module and compile the TypeScript
