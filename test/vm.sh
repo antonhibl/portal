@@ -67,6 +67,8 @@ guest() {
         export LIBRARY_PATH
         LIBRARY_PATH=$(/usr/libexec/PlistBuddy -c Print:LSEnvironment:LIBRARY_PATH \
             /Applications/Emacs.app/Contents/Info.plist)
+        # Commands save diagnostics here as *.log files; they copy back.
+        export PORTAL_TEST_LOGS="$run"
         run_stage "$run/test.log" "$@" || status=$?
     fi
     if [[ $status == 0 ]]; then cd -- "$run"; rm -rf -- "$run/repo"; fi
