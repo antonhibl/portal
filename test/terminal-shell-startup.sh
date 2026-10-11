@@ -3,6 +3,7 @@
 # Native regression: the shell supplies PATH and startup values, not Emacs.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
 mkdir -p "$fixture/dotfiles" "$fixture/tools"

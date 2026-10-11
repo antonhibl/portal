@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { expect, test } from "bun:test";
 import {
+	copyFileSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -11,6 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const script = new URL("./vm.sh", import.meta.url).pathname;
+const desktop = new URL("./gui-desktop.sh", import.meta.url).pathname;
+// Only the scratch clone's own configuration counts.
+const gitEnv = {
+	...process.env,
+	GIT_CONFIG_GLOBAL: "/dev/null",
+	GIT_CONFIG_NOSYSTEM: "1",
+};
 
 function shell(cwd: string, command: string, ...args: string[]) {
 	return Bun.spawnSync(
@@ -108,6 +117,75 @@ test("timeout kills the command's process group and releases its desktop lock", 
 		expect(() => process.kill(-pid, 0)).toThrow();
 		expect(shell(cwd, "lockf -k -t 0 desktop.lock true").exitCode).toBe(0);
 		expect(readFileSync(join(cwd, "test.log"), "utf8")).toContain("Timed out");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+// A clone with a graphical test script that sources gui-desktop.sh, and a
+// stand-in test/vm.sh that reports how it was called.
+async function guiClone() {
+	const cwd = mkdtempSync(join(tmpdir(), "vm-desktop-"));
+	mkdirSync(join(cwd, "test"));
+	copyFileSync(desktop, join(cwd, "test", "gui-desktop.sh"));
+	await Bun.write(
+		join(cwd, "test", "vm.sh"),
+		'printf "vm %s:" "$PORTAL_TEST_VM"; printf " %s" "$@"; echo\n',
+	);
+	await Bun.write(
+		join(cwd, "test", "check.sh"),
+		`set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/test/gui-desktop.sh"
+echo "here $*"
+`,
+	);
+	Bun.spawnSync(["git", "init", "-q"], { cwd, env: gitEnv });
+	return cwd;
+}
+
+function runCheck(cwd: string, env = gitEnv) {
+	const result = Bun.spawnSync(
+		["/bin/sh", join(cwd, "test", "check.sh"), "a b", "c"],
+		{ cwd: tmpdir(), env },
+	);
+	expect(result.exitCode).toBe(0);
+	return result.stdout.toString();
+}
+
+test("graphical checks run here unless the clone names a test VM", async () => {
+	const cwd = await guiClone();
+	try {
+		expect(runCheck(cwd)).toBe("here a b c\n");
+		Bun.spawnSync(["git", "config", "portal.testVm", "guest"], {
+			cwd,
+			env: gitEnv,
+		});
+		expect(runCheck(cwd)).toBe("vm guest: sh test/check.sh a b c\n");
+		// The VM's copy has no Git metadata, so it never delegates again,
+		// even when the guest's own Git configuration names a VM.
+		rmSync(join(cwd, ".git"), { recursive: true });
+		const global = join(cwd, "gitconfig");
+		await Bun.write(global, "[portal]\n\ttestVm = guest\n");
+		expect(runCheck(cwd, { ...gitEnv, GIT_CONFIG_GLOBAL: global })).toBe(
+			"here a b c\n",
+		);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("the runner needs a VM alias", async () => {
+	const cwd = await guiClone();
+	try {
+		copyFileSync(script, join(cwd, "test", "vm.sh"));
+		const env = { ...gitEnv, PORTAL_TEST_VM: "" };
+		const result = Bun.spawnSync(
+			["/bin/bash", join(cwd, "test", "vm.sh"), "true"],
+			{ cwd, env },
+		);
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr.toString()).toContain("git config portal.testVm");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}

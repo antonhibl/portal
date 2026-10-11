@@ -128,15 +128,27 @@ python3 -B -m unittest discover -s test -p 'test_*.py'
 git diff --check
 ```
 
+Then the graphical checks, each in a fresh graphical Emacs:
+
+```sh
+sh test/views-gui.sh
+sh test/input-gui.sh
+sh test/launcher-gui.sh
+sh test/terminal-shell-startup.sh
+sh test/package-gui.sh
+```
+
+They open windows and take keyboard focus while they run. To keep working
+meanwhile, [run them in a VM](docs/testing.md#graphical-checks-in-a-vm).
+
 The build installs the locked host dependencies and CMake downloads hash-checked
 Emacs packages for integration tests. The `licenses` suite fails when a
 dependency change leaves a staged notice missing or the license inventory out of
 date; [Licenses and third-party notices](docs/licenses.md#when-dependencies-change)
 says what to update. CTest exercises the real C core with a fake
 backend, Lisp behavior, and the compiled app host; it does not validate native
-windows. For native view, keyboard, toolbar or launcher changes, also run the
-relevant [graphical and standalone checks](docs/testing.md) in the VM through
-`bash test/vm.sh <command>`. Use disposable processes; windows can take guest focus.
+windows; the graphical checks do. For native view, keyboard, toolbar or
+launcher changes, also run the relevant [standalone checks](docs/testing.md#standalone-appkit-checks).
 Physical-key and manual checks are opt-in; report any not run.
 
 For a focused change to the C core, the [standalone core build](docs/testing.md#c-core-checks)

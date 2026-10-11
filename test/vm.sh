@@ -83,7 +83,11 @@ main() {
     if [[ ${1:-} == --guest ]]; then shift; guest "$@"; fi
     if [[ ${1:-} == -- ]]; then shift; fi
     if [[ $# == 0 ]]; then set -- sh test/launcher-daily-use.sh; fi
-    vm=${PORTAL_TEST_VM:-portal-vm}
+    vm=${PORTAL_TEST_VM:-$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" \
+        config --get portal.testVm || :)}
+    [[ -n $vm ]] || {
+        echo "Name the VM's SSH alias: git config portal.testVm ALIAS" >&2; exit 2;
+    }
     [[ $vm != -* && ! $vm =~ [[:space:]] ]] || {
         echo "Use an SSH host alias or user@hostname" >&2; exit 2;
     }

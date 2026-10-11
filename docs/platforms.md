@@ -73,12 +73,12 @@ are built for, not a tested support claim.
 A combination is verified when, at one Portal commit:
 
 1. `./build.sh` and every [check before a PR](../CONTRIBUTING.md#checks-before-a-pr)
-   pass on the host;
-2. `bash test/vm.sh sh test/views-gui.sh` and `bash test/vm.sh sh test/input-gui.sh`
-   pass with no skips in a graphical guest of that combination, for terminal
-   and web views and their keyboard handling;
-3. `bash test/vm.sh sh test/launcher-gui.sh` passes, for the launcher. Only
-   the test that needs a second display may skip.
+   pass;
+2. `sh test/views-gui.sh` and `sh test/input-gui.sh` pass with no skips in a
+   graphical session of that combination, on a Mac or in a VM guest, for
+   terminal and web views and their keyboard handling;
+3. `sh test/launcher-gui.sh` passes, for the launcher. Only the test that
+   needs a second display may skip.
 
 Physical keys, Accessibility and manual checks are outside these claims too.
 Record each run below; older results are not evidence for later changes.

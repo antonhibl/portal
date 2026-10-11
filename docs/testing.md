@@ -4,18 +4,18 @@ Tests define coverage. Do not duplicate their inventory here.
 
 ## Verifying work
 
-1. Run all non-GUI checks on the host: CTest, Bun and Python tests, lint, and
-   type checks. Follow [checks before a PR](../CONTRIBUTING.md#checks-before-a-pr).
-   Do not send these checks to the VM.
-2. Run only GUI checks in the VM through `bash test/vm.sh <command>`.
-   This includes graphical Emacs tests and standalone AppKit checks.
-   For native view, keyboard, toolbar or launcher changes, run the relevant
-   checks below. Never run GUI checks on the host.
-3. Report commands, results and skipped checks. If the VM is unavailable,
-   report GUI checks as not run; do not fall back to the host.
+1. Run every [check before a PR](../CONTRIBUTING.md#checks-before-a-pr): CTest,
+   Bun and Python tests, lint and type checks, then the graphical scripts.
+   For native view, keyboard, toolbar or launcher changes, also run the
+   relevant standalone checks below.
+2. Graphical checks open real windows, take keyboard focus and can crash.
+   Run them in a logged-in desktop session and leave it alone meanwhile, or
+   [in a VM](#graphical-checks-in-a-vm).
+3. Report commands, results and skipped checks. Report graphical checks you
+   could not run as not run.
 
-For this Homebrew Emacs build, set its native compiler library path before host
-CTest runs. CLI launches do not inherit the app's environment:
+For this Homebrew Emacs build, set its native compiler library path before
+running checks from a shell. CLI launches do not inherit the app's environment:
 
 ```sh
 export LIBRARY_PATH="$(/usr/libexec/PlistBuddy -c Print:LSEnvironment:LIBRARY_PATH /Applications/Emacs.app/Contents/Info.plist)"
@@ -50,25 +50,34 @@ Fake-backend tests cannot prove native window behavior. Injected AppKit or Carbo
 events cannot prove physical-key delivery, Accessibility, Spaces or fullscreen
 behavior. Verify those manually.
 
-The VM's Emacs has no Accessibility grant, and nothing can grant one from a
-shell, so a posted chord there only fails. The Accessibility alert can be
-checked: TCC attributes an Emacs started from the runner's shell to sshd, a
+An Emacs without an Accessibility grant cannot post a chord, and nothing can
+grant one from a shell. The Accessibility alert can be checked in the VM: TCC
+attributes an Emacs started from the runner's shell to sshd, a
 platform binary it never prompts for, so start Emacs with `open -n -W -a` in
 the runner's command, reset with `tccutil reset Accessibility org.gnu.Emacs`,
 and read the alert's lifetime from `log show` (`universalAccessAuthWarn`
 launches and WindowServer's `AppVisible` assertion on it).
 
-Run GUI checks in disposable graphical Emacs or standalone processes inside the
-VM; they can steal focus or crash. Keep launcher subroutine trampolines enabled.
+Run GUI checks in disposable graphical Emacs or standalone processes; they
+take focus and can crash. Keep launcher subroutine trampolines enabled.
 Report skips and manual checks separately from passes. Record the native acceptance
 environment; old results are not current evidence. Support claims follow the
 [platform acceptance checks](platforms.md#acceptance-checks).
 
-## GUI checks in a macOS VM
+## Graphical checks in a VM
 
-Use a logged-in macOS desktop VM for GUI checks only. GUI windows stay in the
-guest, preserving host focus. Set up passwordless SSH as `portal-vm`.
-Run from the checkout under test:
+Graphical checks take the desktop's focus. To run them in a logged-in macOS
+VM instead, set up passwordless SSH to it and name its SSH alias once per clone:
+
+```sh
+git config portal.testVm portal-vm
+```
+
+Every worktree of the clone shares the setting. The graphical scripts then
+rerun themselves in the VM through `test/vm.sh`, so `sh test/views-gui.sh`
+builds and runs there. `git config --unset portal.testVm` runs them locally
+again. For other commands, such as standalone checks, call the runner from the
+checkout under test:
 
 ```sh
 bash test/vm.sh
@@ -82,8 +91,8 @@ outputs stay out.
 Pass `sh -c 'command…'` for compound commands.
 
 Commands inherit the installed Emacs app's native compiler library path, which
-direct SSH launches miss. Trampolines stay enabled. Set `PORTAL_TEST_VM` for
-another SSH alias.
+direct SSH launches miss. Trampolines stay enabled. `PORTAL_TEST_VM` overrides
+the alias for one run.
 `PORTAL_TEST_TIMEOUT` sets a positive integer limit in seconds per build/test stage
 (default: 1,200). Timing starts after acquiring the desktop lock.
 Requires Bash, macOS's built-in `lockf`, SSH and rsync. No Python or extra npm
@@ -137,7 +146,7 @@ For ordinary terminal and web views (WebKit loading, terminals, their
 coexistence, Markdown previews and Excalidraw) in one fresh Emacs:
 
 ```sh
-bash test/vm.sh sh test/views-gui.sh
+sh test/views-gui.sh
 ```
 
 Pass an ERT selector regexp to run part of it. It fails on any skip. The
@@ -155,7 +164,7 @@ For the shared input, terminal, toolbar and coexistence checks in a fresh
 Emacs process:
 
 ```sh
-bash test/vm.sh sh test/input-gui.sh
+sh test/input-gui.sh
 ```
 
 It passes only with every selected test as expected and none skipped. Give
@@ -163,12 +172,13 @@ It passes only with every selected test as expected and none skipped. Give
 
 ### Diagnosing a stalled GUI run
 
-`gui-ert.sh` prints each test's start, result and duration to `test.log` as it
-happens, and appends a start and end record to `gui-progress.log`. Watch a run
-from the host with the path `bash test/vm.sh` prints:
+`gui-ert.sh` prints each test's start, result and duration to standard error
+as it happens, and appends a start and end record to `gui-progress.log` in
+`PORTAL_TEST_LOGS`, or `build/` without it. In the VM, standard error goes to
+`test.log`; watch a run with the path `bash test/vm.sh` prints:
 
 ```sh
-ssh portal-vm tail -f '~/portal-test-runs/run.XXXXXXXX/test.log'
+ssh "$(git config portal.testVm)" tail -f '~/portal-test-runs/run.XXXXXXXX/test.log'
 ```
 
 A stuck native call can stop every Lisp timer, including `with-timeout`, so a
@@ -180,13 +190,13 @@ so the runner's cleanup alone would leave them holding the desktop lock. Both lo
 bounds the whole command. To rerun only the stalled test:
 
 ```sh
-bash test/vm.sh sh test/input-gui.sh '^portal-integration-focus-'
+sh test/input-gui.sh '^portal-integration-focus-'
 ```
 
 In the sample, read the main thread below the test's Lisp frames. A nested
 AppKit event loop there, such as `NSCorrectionPanel _interceptEvents`, waits
-for an event that the blocked test would have injected. Failed runs keep their
-`repo/`; delete it once you have the logs.
+for an event that the blocked test would have injected. Failed VM runs keep
+their `repo/`; delete it once you have the logs.
 
 On 2026-10-11, all 39 selected cases passed in each of two fresh Emacs
 processes, with none skipped. The guest ran macOS 27.0.1 (26A434) arm64, with
@@ -210,13 +220,14 @@ covers Bun selection with stand-in executables and archives. Neither builds
 native code nor downloads anything.
 
 For first use in graphical Emacs (the offered build, then a terminal and a web
-view in a fresh Emacs), run in the VM:
+view in a fresh Emacs), run:
 
 ```sh
-PORTAL_TEST_TIMEOUT=2400 bash test/vm.sh sh test/package-gui.sh
+sh test/package-gui.sh
 ```
 
-It builds Portal twice: the runner's build, then the installed package's own.
+It installs and builds its own copy of Portal. In the VM the runner's build
+comes first, so the script raises `PORTAL_TEST_TIMEOUT` to 2,400 seconds.
 
 ## Launcher graphical checks
 
@@ -224,11 +235,12 @@ For the launcher's whole graphical suite, daily-use checks included, in one
 fresh Emacs:
 
 ```sh
-bash test/vm.sh sh test/launcher-gui.sh
+sh test/launcher-gui.sh
 ```
 
 Pass an ERT selector regexp to run part of it. Tests that need a second display
-skip. A successful run deletes `repo/`, so save the panel's drawings beside it,
+skip. Set `PORTAL_LAUNCHER_SCREENSHOTS` to a directory to save the panel's
+drawings there. A successful VM run deletes `repo/`, so save them beside it,
 then copy them back from the printed run directory:
 
 ```sh
@@ -238,7 +250,7 @@ bash test/vm.sh sh -c 'mkdir -p ../screenshots &&
 
 ## Combined graphical suite
 
-Test coexistence in one fresh graphical Emacs inside the VM. Load `portal.el`,
+Test coexistence in one fresh graphical Emacs. Load `portal.el`,
 the injector, `test/portal-tests.el` and `test/portal-terminal-tests.el` before
 `test/portal-integration-tests.el`. Add relevant `test/*-gui-tests.el` files.
 Run `M-x ert` with selector `^portal-`. Batch Emacs cannot test native windows.
@@ -246,11 +258,11 @@ Run `M-x ert` with selector `^portal-`. Batch Emacs cannot test native windows.
 ## Standalone AppKit checks
 
 These checks isolate native integration from Emacs bindings and Ghostty.
-No build target exists. From your checkout, use the VM runner to build Portal
-and run these commands in the guest:
+No build target exists. After `./build.sh`, run these commands. To build and
+run them in the VM, pass the same `sh -c` command to `bash test/vm.sh`:
 
 ```sh
-bash test/vm.sh sh -c '
+sh -c '
 set -eu
 for core in channel views input terminals web toolbar shortcuts status; do
   xcrun clang -std=c11 -Wall -Wextra -Werror -I native/Core/include \
@@ -276,16 +288,16 @@ windows or register real hot keys.
 
 Whether a bare Escape shortcut keeps Escape from the frontmost app takes key
 events that macOS matches against hot keys, which only an Emacs with
-Accessibility permission can post. Once a person has switched it on for the
-guest's Emacs, run:
+Accessibility permission can post. Once a person has switched it on for
+Emacs.app, run:
 
 ```sh
-bash test/vm.sh sh test/escape-shortcut-leak.sh
+sh test/escape-shortcut-leak.sh
 ```
 
 ## C core checks
 
-Run this standalone build on the host for shared rules without the native backend.
+Run this standalone build for shared rules without the native backend.
 It still needs macOS for `F_SETNOSIGPIPE`; a fake platform does not make the pipe
 portable.
 
