@@ -174,6 +174,38 @@ class ResolveBunTests(unittest.TestCase):
                                         text=True).stdout, f"{PINNED}\n")
 
 
+class BuildScriptTests(unittest.TestCase):
+    def test_bun_argument_is_the_explicit_choice(self):
+        with tempfile.TemporaryDirectory(prefix="portal build ") as directory:
+            checkout = Path(directory)
+            shutil.copy(ROOT / "build.sh", checkout / "build.sh")
+            shutil.copytree(ROOT / "tools", checkout / "tools")
+            bin_directory = checkout / "bin"
+            bin_directory.mkdir()
+            # A stand-in cmake records its arguments; no other Bun exists.
+            cmake = bin_directory / "cmake"
+            cmake.write_text('#!/bin/sh\necho "cmake $*" >> "$(dirname "$0")/calls"\n')
+            cmake.chmod(0o755)
+            chosen = fake_bun(checkout / "chosen" / "bun")
+            env = {
+                "HOME": directory,
+                "PATH": f"{bin_directory}:/usr/bin:/bin:/usr/sbin:/sbin",
+                "PORTAL_BUN_DOWNLOAD": "0",
+                "PORTAL_TOOLS_DIR": str(checkout / "no tools"),
+            }
+            result = subprocess.run(["/bin/sh", str(checkout / "build.sh"), f"-DBUN={chosen}"],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("(BUN)", result.stderr)
+            self.assertIn(f"-DBUN={chosen}", (bin_directory / "calls").read_text())
+            # An unusable one fails rather than being replaced.
+            result = subprocess.run(["/bin/sh", str(checkout / "build.sh"),
+                                     f"-DBUN={checkout / 'missing'}"],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("not an executable file", result.stderr)
+
+
 class BuildLockTests(unittest.TestCase):
     def test_second_build_stops_at_once(self):
         with tempfile.TemporaryDirectory(prefix="portal lock ") as directory:

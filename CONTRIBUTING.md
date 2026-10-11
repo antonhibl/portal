@@ -87,7 +87,7 @@ Only one `./build.sh` runs per checkout at a time.
 variable, then a compatible `bun` on `PATH`, then Portal's pinned Bun cached in
 `build/tools/` (or `PORTAL_TOOLS_DIR`), downloaded and verified when missing.
 `PORTAL_BUN_DOWNLOAD=0` disables the download. A `-DBUN=/absolute/path/to/bun`
-argument still takes precedence. Plain `cmake` records the `bun` found on `PATH`
+argument is an explicit choice, like `BUN`. Plain `cmake` records the `bun` found on `PATH`
 and searches again if that file disappears; run `cmake --fresh --preset dev`
 to rediscover every tool. Update the pinned version, its asset URLs and
 digests together in `tools/bun.manifest`, and test the build with it.

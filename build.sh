@@ -17,7 +17,10 @@ if [ -z "${PORTAL_BUILD_LOCKED:-}" ]; then
 fi
 
 # BUN, a compatible bun on PATH, Portal's cached Bun, or a verified download;
-# see tools/resolve-bun.sh.  A -DBUN argument still takes precedence.
+# see tools/resolve-bun.sh.  A -DBUN argument is an explicit choice, like BUN.
+for argument in "$@"; do
+    case $argument in -DBUN=*|-DBUN:*=*) BUN=${argument#*=}; export BUN ;; esac
+done
 bun=$(/bin/sh tools/resolve-bun.sh)
 set -- "-DBUN=$bun" "$@"
 # Preserve the existing environment overrides, including on later builds.
