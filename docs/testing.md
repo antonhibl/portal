@@ -91,8 +91,9 @@ outputs stay out.
 Pass `sh -c 'command…'` for compound commands.
 
 Commands inherit the installed Emacs app's native compiler library path, which
-direct SSH launches miss. Trampolines stay enabled. `PORTAL_TEST_VM` overrides
-the alias for one run.
+direct SSH launches miss. Trampolines stay enabled. `PORTAL_TEST_VM` names the
+VM for one run, ahead of the setting; graphical scripts run there even in a
+clone without it.
 `PORTAL_TEST_TIMEOUT` sets a positive integer limit in seconds per build/test stage
 (default: 1,200). Timing starts after acquiring the desktop lock.
 Requires Bash, macOS's built-in `lockf`, SSH and rsync. No Python or extra npm

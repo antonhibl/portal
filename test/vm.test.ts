@@ -144,48 +144,77 @@ echo "here $*"
 	return cwd;
 }
 
-function runCheck(cwd: string, env = gitEnv) {
+function runCheck(cwd: string, env: Record<string, string | undefined>) {
 	const result = Bun.spawnSync(
 		["/bin/sh", join(cwd, "test", "check.sh"), "a b", "c"],
-		{ cwd: tmpdir(), env },
+		{ cwd: tmpdir(), env: { ...gitEnv, ...env } },
 	);
 	expect(result.exitCode).toBe(0);
 	return result.stdout.toString();
 }
 
-test("graphical checks run here unless the clone names a test VM", async () => {
+test("graphical checks run in a VM only when one is named", async () => {
 	const cwd = await guiClone();
 	try {
-		expect(runCheck(cwd)).toBe("here a b c\n");
+		const here = "here a b c\n";
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "" })).toBe(here);
+		// The variable alone names a VM for one run; the runner picks the alias.
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "other" })).toBe(
+			"vm other: sh test/check.sh a b c\n",
+		);
 		Bun.spawnSync(["git", "config", "portal.testVm", "guest"], {
 			cwd,
 			env: gitEnv,
 		});
-		expect(runCheck(cwd)).toBe("vm guest: sh test/check.sh a b c\n");
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "" })).toBe(
+			"vm : sh test/check.sh a b c\n",
+		);
+		expect(runCheck(cwd, { PORTAL_TEST_VM: "other" })).toBe(
+			"vm other: sh test/check.sh a b c\n",
+		);
 		// The VM's copy has no Git metadata, so it never delegates again,
 		// even when the guest's own Git configuration names a VM.
 		rmSync(join(cwd, ".git"), { recursive: true });
 		const global = join(cwd, "gitconfig");
 		await Bun.write(global, "[portal]\n\ttestVm = guest\n");
-		expect(runCheck(cwd, { ...gitEnv, GIT_CONFIG_GLOBAL: global })).toBe(
-			"here a b c\n",
-		);
+		expect(runCheck(cwd, { GIT_CONFIG_GLOBAL: global })).toBe(here);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });
 
-test("the runner needs a VM alias", async () => {
+test("the runner's alias comes from PORTAL_TEST_VM, then portal.testVm", async () => {
 	const cwd = await guiClone();
 	try {
 		copyFileSync(script, join(cwd, "test", "vm.sh"));
-		const env = { ...gitEnv, PORTAL_TEST_VM: "" };
-		const result = Bun.spawnSync(
-			["/bin/bash", join(cwd, "test", "vm.sh"), "true"],
-			{ cwd, env },
+		// A stand-in ssh records the host it was asked for, then fails.
+		mkdirSync(join(cwd, "bin"));
+		await Bun.write(
+			join(cwd, "bin", "ssh"),
+			'#!/bin/sh\nprintf "%s\\n" "$4" >>"$SSH_LOG"; exit 1\n',
 		);
-		expect(result.exitCode).toBe(2);
-		expect(result.stderr.toString()).toContain("git config portal.testVm");
+		Bun.spawnSync(["chmod", "+x", join(cwd, "bin", "ssh")]);
+		const log = join(cwd, "ssh.log");
+		const runner = (vm: string) =>
+			Bun.spawnSync(["/bin/bash", join(cwd, "test", "vm.sh"), "true"], {
+				cwd,
+				env: {
+					...gitEnv,
+					PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+					PORTAL_TEST_VM: vm,
+					SSH_LOG: log,
+				},
+			});
+		const missing = runner("");
+		expect(missing.exitCode).toBe(2);
+		expect(missing.stderr.toString()).toContain("git config portal.testVm");
+		Bun.spawnSync(["git", "config", "portal.testVm", "guest"], {
+			cwd,
+			env: gitEnv,
+		});
+		runner("");
+		runner("other");
+		expect(readFileSync(log, "utf8")).toBe("guest\nother\n");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
