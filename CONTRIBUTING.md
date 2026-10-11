@@ -130,7 +130,9 @@ for the batch suite; use `ctest --test-dir build -N` to list them.
   links to the architectural decisions and feature-specific design notes.
 - Edit shared browser scripts in `native/Core/scripts/`; the C core embeds them.
   `build/` outputs, SwiftPM checkouts and bundled editor assets are generated.
-  Keep dependency versions in their manifests and lockfiles.
+  Keep dependency versions in their manifests and lockfiles. After changing
+  host dependencies, rerun `bun audit` and update
+  [dependency security findings](docs/dependency-security.md).
 - Record third-party code that ships in `licenses/inventory.json`. Files in
   `licenses/texts/` are verbatim upstream license texts; do not reformat them.
 - Launcher examples in [the launcher guide](docs/launcher.md) are executable test

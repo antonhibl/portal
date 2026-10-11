@@ -101,6 +101,27 @@
     (should-not (string-match-p "Unsaved text" (buffer-string)))
     (should-not (buffer-modified-p))))
 
+(ert-deftest portal-excalidraw-gui-pasted-mermaid-becomes-drawing ()
+  ;; Excalidraw converts pasted Mermaid text with mermaid-to-excalidraw, which
+  ;; groups ER attributes under nanoid IDs; see docs/dependency-security.md.
+  (portal-excalidraw-gui--document
+    (portal-view-focus)
+    (portal-excalidraw-gui--js
+     "const container = document.querySelector('.excalidraw'); container.focus();
+      const data = new DataTransfer();
+      data.setData('text/plain', 'erDiagram\\n  PORTAL_DRAWING {\\n    string portalMermaidField\\n  }');
+      container.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, clipboardData: data})); return true;")
+    (portal-terminal-test--wait (lambda () (string-match-p "portalMermaidField" (buffer-string))))
+    (portal-excalidraw-save)
+    (let ((elements (plist-get (json-parse-string (buffer-string) :object-type 'plist)
+                               :elements)))
+      (should (string-match-p "PORTAL_DRAWING" (buffer-string)))
+      (should (seq-some (lambda (element)
+                          (and (string-match-p "portalMermaidField"
+                                               (or (plist-get element :text) ""))
+                               (> (length (plist-get element :groupIds)) 0)))
+                        elements)))))
+
 (ert-deftest portal-excalidraw-gui-image-roundtrip-and-document-isolation ()
   (portal-excalidraw-gui--document
     (portal-view-focus)
