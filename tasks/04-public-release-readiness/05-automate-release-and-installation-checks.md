@@ -50,13 +50,13 @@ Create `.github/workflows/` as needed.
 
 ## Acceptance and verification
 
-- [ ] Workflow syntax/configuration validates and a real run against this branch
+- [x] Workflow syntax/configuration validates and a real run against this branch
       builds from source and passes the required host checks and install/upgrade
       tests. Report any check that cannot yet be run as pending.
-- [ ] Installation starts with isolated empty package/config directories and no
+- [x] Installation starts with isolated empty package/config directories and no
       prebuilt Portal artifacts; failure logs identify the failed stage.
-- [ ] A controlled failing-install fixture proves CI fails on compilation/build
+- [x] A controlled failing-install fixture proves CI fails on compilation/build
       failure rather than trusting the package manager's success message.
-- [ ] Fresh/cached behavior and matching Emacs/header selection are covered.
-- [ ] The release checklist requires task 2's native acceptance and clearly
+- [x] Fresh/cached behavior and matching Emacs/header selection are covered.
+- [x] The release checklist requires task 2's native acceptance and clearly
       distinguishes passes, skips and unavailable GUI evidence.
