@@ -69,4 +69,6 @@ For help or reproducible bug reports, use the repository's
 [GitHub issues](https://github.com/xiaoxinghu/portal/issues). Include the Emacs
 version/revision, macOS version, Portal commit and relevant diagnostics (for app
 host failures, `*portal-server*`), removing credentials or private content.
-Implementation files are licensed under [GPL-3.0-or-later](LICENSE).
+Implementation files are licensed under [GPL-3.0-or-later](LICENSE). Builds
+include third-party components under their own licenses; see
+[Licenses and third-party notices](docs/licenses.md).

@@ -20,6 +20,8 @@ Run shell examples from the repository root, not `docs/`.
   and checks before a PR.
 - [Testing Portal](testing.md): batch coverage, graphical procedures, standalone
   native checks and opt-in smoke tests. Recorded results are not a new test run.
+- [Licenses and third-party notices](licenses.md): what the outputs ship, the
+  staged notices, open questions before a binary release and inventory upkeep.
 - [Domain vocabulary](../CONTEXT.md): view, terminal and hosted-app terms.
 - [Implementation and native boundaries](architecture.md): state ownership,
   lifetimes, platform interfaces and failure invariants.

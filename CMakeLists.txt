@@ -35,9 +35,11 @@ add_custom_command(
     COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
         --compile --minify --sourcemap
         --no-compile-autoload-dotenv --no-compile-autoload-bunfig
+        --metafile=${CMAKE_BINARY_DIR}/portal-host.meta.json
         --outfile "${CMAKE_BINARY_DIR}/.portal-host"
     COMMAND "${CMAKE_COMMAND}" -E rename
         "${CMAKE_BINARY_DIR}/.portal-host" "${CMAKE_BINARY_DIR}/portal-host"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/portal-host.meta.json"
     DEPENDS host/server.ts host/hello.html host/markdown.ts host/markdown.css
         host/icons/portal-32.png host/icons/portal-64.png host/icons/portal-256.png
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
@@ -193,3 +195,17 @@ add_custom_target(portal ALL
     BYPRODUCTS "${native_bundle}/MacOS/portal.dylib"
     COMMENT "Building the Portal native module"
     VERBATIM)
+
+# Portal's license and the notices for what both outputs contain, derived from
+# the Swift pins, the host's Bun and the bundler records. See docs/licenses.md.
+add_custom_target(portal-licenses ALL
+    COMMAND "${BUN}" "${CMAKE_SOURCE_DIR}/licenses/notices.ts" stage "${CMAKE_BINARY_DIR}"
+    COMMENT "Staging license notices"
+    VERBATIM)
+add_dependencies(portal-licenses portal portal-ui-host)
+if(BUILD_TESTING)
+    add_test(NAME licenses
+        COMMAND "${CMAKE_COMMAND}" -E env "PORTAL_BUILD=${CMAKE_BINARY_DIR}"
+            "${BUN}" test "${CMAKE_SOURCE_DIR}/test/licenses.test.ts")
+    set_tests_properties(licenses PROPERTIES TIMEOUT 60)
+endif()
