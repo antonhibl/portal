@@ -216,9 +216,12 @@ Physical-key delivery on the affected macOS version still needs a manual check.
 The `package` CTest suite installs a copy of the checkout through
 [the installation guide](install.md)'s use-package examples in empty home
 directories, with and without Consult and Embark. It fails on any compilation
-error or warning, even when package-vc reports success. `test_resolve_bun.py`
-covers Bun selection with stand-in executables and archives. Neither builds
-native code nor downloads anything.
+error or warning, even when package-vc reports success; a copy with a planted
+compilation error proves that. It also upgrades an older copy with
+`package-vc-upgrade` from an Emacs that has loaded it, and installs a copy whose
+build fails as it installs, which package-vc only warns about.
+`test_resolve_bun.py` covers Bun selection with stand-in executables and
+archives. Neither builds native code nor downloads anything.
 
 For first use in graphical Emacs (the offered build, then a terminal and a web
 view in a fresh Emacs), run:

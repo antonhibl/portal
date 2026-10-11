@@ -80,6 +80,7 @@ Building on first use needs no package-manager configuration. A package manager
 can also run the build as it installs or upgrades Portal, for example with
 package-vc:
 
+<!-- example: use-package-vc-build -->
 ```elisp
 (require 'package-vc)
 (unless (eq package-vc-allow-build-commands t)
