@@ -104,7 +104,9 @@ The calls still reach the module."
     (let (calls)
       (portal-system-tests--recording-status calls
         (portal-status-show "Pasted" :tone 'success :timeout 0.01)
-        (sleep-for 0.1)
+        ;; Wait for the timer, however late a busy machine runs it.
+        (with-timeout (5 nil)
+          (while (not (equal (car calls) '(hide))) (sleep-for 0.01)))
         (should (equal (car calls) '(hide)))
         ;; Showing again cancels the timeout, and hiding forgets it.
         (setq calls nil)
