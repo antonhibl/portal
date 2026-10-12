@@ -4,10 +4,10 @@
 
 ## HTML files and URLs
 
-Run `M-x portal-preview-html` in a `.html` or `.htm` buffer to preview saved
+Run `M-x portal-render-html` in a `.html` or `.htm` buffer to preview saved
 contents, including relative scripts, styles and images from its directory.
 Other buffers prompt for a local path or URL. Relative paths use the buffer's
-`default-directory`; `C-u M-x portal-preview-html` always prompts. Unsaved edits
+`default-directory`; `C-u M-x portal-render-html` always prompts. Unsaved edits
 are excluded. Repreviewing a file reuses and reloads its buffer, such as
 `*portal: index.html*`.
 
@@ -17,7 +17,7 @@ Both commands accept HTTP, HTTPS, `file:`, `data:`, and `about:` URLs.
 To open a local HTML file programmatically:
 
 ```elisp
-(portal-preview-html "/absolute/path/index.html")
+(portal-render-html "/absolute/path/index.html")
 ```
 
 In a web buffer, `g` reloads and `q` (`quit-window`) hides the still-running
@@ -25,10 +25,10 @@ page. Killing the buffer closes it.
 
 ## Markdown previews
 
-Run `M-x portal-preview-markdown` in a Markdown file buffer to preview it;
+Run `M-x portal-render-markdown` in a Markdown file buffer to preview it;
 Markdown modes and common extensions are recognised. Other buffers prompt for
 a saved local file. `C-u M-x
-portal-preview-markdown` explicitly chooses another file. Each file reuses one
+portal-render-markdown` explicitly chooses another file. Each file reuses one
 preview buffer, such as `*portal: notes.md*`. The Bun server reads and renders
 it with its [built-in Markdown API](https://bun.com/docs/runtime/markdown),
 returning complete HTML with embedded light/dark CSS. Rendering is in memory:
@@ -62,7 +62,7 @@ The preview follows links like a browser:
 
 Relative links resolve from the displayed document's folder; local absolute
 paths and `file:` URLs also work. Following a Markdown link renames the buffer
-after that file: `g` rereads it, and `portal-preview-markdown` on that file finds
+after that file: `g` rereads it, and `portal-render-markdown` on that file finds
 this preview.
 Toolbar Back/Forward, or `l` and `r` in the buffer, navigate previously shown
 documents and restore reading positions. Following a new link after going back
@@ -72,11 +72,11 @@ One click opens a file in Emacs and selects its pane with editing focus. The
 preview keeps its pane and reading position; the file reuses another pane or
 splits the frame. `display-buffer-alist` still decides: if it uses the preview's
 pane, the hidden preview keeps its page. Toolbar **Open in Emacs**, or
-`M-x portal-preview-open-in-emacs`, does the same for the displayed Markdown
+`M-x portal-render-open-in-emacs`, does the same for the displayed Markdown
 file, including after Back/Forward.
 
 To resume reading, click the preview to select and focus it, or select its pane
-and press `RET`. From elsewhere, `M-x portal-preview-return` shows, selects and
+and press `RET`. From elsewhere, `M-x portal-render-return` shows, selects and
 focuses the preview this frame last opened a file from, without reloading.
 It has no global key; bind one if desired.
 

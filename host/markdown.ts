@@ -38,7 +38,7 @@ function errorPage(message: string, status: number): Response {
 	);
 }
 
-// The extensions `portal-preview-markdown' accepts, in any case.
+// The extensions `portal-render-markdown' accepts, in any case.
 const markdownFile = /\.(?:md|markdown|mdown|mkd|mkdn)$/i;
 
 // HTMLRewriter reads attribute values as written, and Bun writes these.
