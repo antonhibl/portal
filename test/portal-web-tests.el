@@ -128,7 +128,7 @@
                      (window-inside-pixel-edges other)))
       (should (= (length (portal-fake-native-calls 'portal--open)) 1)))))
 
-(ert-deftest portal-web-preview-html-reuses-its-buffer-and-g-reloads ()
+(ert-deftest portal-web-render-html-reuses-its-buffer-and-g-reloads ()
   (portal-web-test--environment
     (let* ((directory (make-temp-file "portal-web-" t))
            (file (expand-file-name "Résumé #%?.html" directory))
@@ -140,7 +140,7 @@
             (with-temp-file other (insert "<title>Other</title>"))
             (with-temp-buffer
               (setq buffer-file-name file)
-              (call-interactively #'portal-preview-html))
+              (call-interactively #'portal-render-html))
             (set-buffer (window-buffer))
             (let ((buffer (current-buffer))
                   (target (portal-view-target)))
@@ -149,7 +149,7 @@
               (should (equal (portal-web-test--toolbar) "contents"))
               (switch-to-buffer "*scratch*")
               (let ((default-directory directory))
-                (portal-preview-html "Résumé #%?.html"))
+                (portal-render-html "Résumé #%?.html"))
               (should (eq (current-buffer) buffer))
               (should (equal (portal-view-target) target))
               (should (equal (portal-fake-native-calls 'portal--web-load)
@@ -158,14 +158,14 @@
               (call-interactively (key-binding "g"))
               (should (equal portal-fake-native-log `((portal--web-load ,target ,url))))
               ;; Another file gets its own buffer.
-              (portal-preview-html other)
+              (portal-render-html other)
               (should-not (eq (current-buffer) buffer))
               (should (= (length (portal-fake-native-calls 'portal--open)) 1))))
         (delete-directory directory t)))
     (dolist (input '("" "relative/missing.html" "/ssh:host:/index.html" "javascript:alert(1)"))
-      (should-error (portal-preview-html input) :type 'user-error))))
+      (should-error (portal-render-html input) :type 'user-error))))
 
-(ert-deftest portal-web-preview-html-only-reuses-preview-buffers ()
+(ert-deftest portal-web-render-html-only-reuses-preview-buffers ()
   (portal-web-test--environment
     (let* ((file (make-temp-file "portal-web-" nil ".html" "<title>Page</title>"))
            (url (browse-url-file-url file)))
@@ -176,12 +176,12 @@
               (switch-to-buffer (generate-new-buffer "client"))
               (portal-web-open url "none")
               (let ((client (current-buffer)))
-                (portal-preview-html file)
+                (portal-render-html file)
                 (let ((preview (current-buffer)))
                   (should-not (memq preview (list page client)))
                   (should (equal (portal-web-test--toolbar) "contents"))
                   (switch-to-buffer page)
-                  (portal-preview-html file)
+                  (portal-render-html file)
                   (should (eq (current-buffer) preview))
                   (should (= (length (portal-fake-native-calls 'portal--open)) 3))))))
         (delete-file file)))))
@@ -247,7 +247,7 @@
                   (hello-target (portal-view-target)))
               (should (equal (buffer-name) "*portal: hello*"))
               (should (equal (portal-web-test--toolbar) "navigation"))
-              (portal-preview-markdown file)
+              (portal-render-markdown file)
               (let ((markdown (current-buffer))
                     (markdown-target (portal-view-target))
                     (markdown-url (concat "http://127.0.0.1:1/token/markdown?path="
@@ -268,7 +268,7 @@
                 ;; Previewing the same file again reuses its buffer.
                 (switch-to-buffer hello)
                 (setq portal-fake-native-log nil)
-                (portal-preview-markdown file)
+                (portal-render-markdown file)
                 (should (eq (current-buffer) markdown))
                 (should (equal portal-fake-native-log
                                `((portal--web-load ,markdown-target ,markdown-url))))
@@ -375,7 +375,7 @@
           (progn
             (should-not (portal-server-url))
             ;; The preview opens before the app host is ready.
-            (portal-preview-markdown file)
+            (portal-render-markdown file)
             (let ((target (portal-view-target))
                   (path (concat "/markdown?path=" (url-hexify-string file))))
               (should (equal (plist-get (portal-web-test--state) :url) "about:blank"))
@@ -489,7 +489,7 @@ Markdown FILE gets its preview URL, and any other a file: URL."
 
 (defun portal-web-test--preview (file)
   "Preview Markdown FILE; return its buffer, which the selected pane shows."
-  (portal-preview-markdown file)
+  (portal-render-markdown file)
   (portal-view-sync)
   (current-buffer))
 
@@ -552,7 +552,7 @@ Markdown FILE gets its preview URL, and any other a file: URL."
       (portal-view-sync)
       (should (plist-get (portal-web-test--state target) :visible))
       (should-not (plist-get (portal-web-test--state target) :focused))
-      (should (eq (frame-parameter nil 'portal-preview-return) preview))
+      (should (eq (frame-parameter nil 'portal-render-return) preview))
       ;; The clicked preview's pane need not be selected; its other pane is reused.
       (let ((other (selected-window)))
         (should (= (count-windows) 2))
@@ -613,7 +613,7 @@ Markdown FILE gets its preview URL, and any other a file: URL."
       (should-not (plist-get (portal-web-test--state target) :visible))
       ;; Return shows it again, with the page it had.
       (setq portal-fake-native-log nil)
-      (portal-preview-return)
+      (portal-render-return)
       (should (eq (window-buffer) preview))
       (should (plist-get (portal-web-test--state target) :visible))
       (should (plist-get (portal-web-test--state target) :focused))
@@ -626,8 +626,8 @@ Markdown FILE gets its preview URL, and any other a file: URL."
            (preview (portal-web-test--preview readme))
            (target (portal-view-target))
            (origin (selected-window)))
-      (should-error (with-current-buffer "*scratch*" (portal-preview-open-in-emacs)) :type 'user-error)
-      (should-error (portal-preview-return) :type 'user-error)
+      (should-error (with-current-buffer "*scratch*" (portal-render-open-in-emacs)) :type 'user-error)
+      (should-error (portal-render-return) :type 'user-error)
       ;; The toolbar opens the file on screen, after back or forward too.
       (portal-web-test--record "page" target arch)
       (portal-web-test--record "edit" target)
@@ -637,13 +637,13 @@ Markdown FILE gets its preview URL, and any other a file: URL."
       (should-not (plist-get (portal-web-test--state target) :focused))
       (portal-web-test--record "page" target readme)
       (select-window origin)
-      (portal-preview-open-in-emacs)
+      (portal-render-open-in-emacs)
       (should (equal buffer-file-name readme))
       ;; Return survives switching among source buffers, and does not reload.
       (find-file (portal-web-test--file "src/main file.ts"))
       (find-file arch)
       (setq portal-fake-native-log nil)
-      (portal-preview-return)
+      (portal-render-return)
       (should (eq (selected-window) origin))
       (should (plist-get (portal-web-test--state target) :focused))
       (should-not (portal-fake-native-calls 'portal--web-load))
@@ -651,12 +651,12 @@ Markdown FILE gets its preview URL, and any other a file: URL."
       (switch-to-buffer "*scratch*")
       (let ((second (portal-web-test--preview arch)))
         (should-not (eq second preview))
-        (portal-preview-open-in-emacs)
-        (portal-preview-return)
+        (portal-render-open-in-emacs)
+        (portal-render-return)
         (should (eq (window-buffer) second))
         (kill-buffer second))
       (should (buffer-live-p preview))
-      (should-error (portal-preview-return) :type 'user-error))))
+      (should-error (portal-render-return) :type 'user-error))))
 
 (ert-deftest portal-web-markdown-return-follows-a-handoff-into-another-frame ()
   (portal-web-test--markdown
@@ -669,11 +669,11 @@ Markdown FILE gets its preview URL, and any other a file: URL."
           (portal-web-test--record "follow" (portal-view-target) source)
           (portal-web-test--run-events))
         (should (eq (selected-frame) frame))
-        (should (eq (frame-parameter frame 'portal-preview-return) preview))
-        (should (eq (frame-parameter portal-fake-native--selected 'portal-preview-return) preview))
+        (should (eq (frame-parameter frame 'portal-render-return) preview))
+        (should (eq (frame-parameter portal-fake-native--selected 'portal-render-return) preview))
         ;; Return selects the preview's pane in the first frame, not a copy here.
         (let ((origin (get-buffer-window preview portal-fake-native--selected)))
-          (portal-preview-return)
+          (portal-render-return)
           (should (eq (selected-window) origin))
           (should-not (get-buffer-window preview frame))
           (should (plist-get (portal-web-test--state (portal-view-target)) :focused)))))))

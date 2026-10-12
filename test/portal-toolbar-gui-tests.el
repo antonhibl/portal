@@ -56,7 +56,7 @@
 
 (ert-deftest portal-toolbar-preview-toc-survives-reload ()
   (portal-test--with-web
-    (portal-preview-html "data:text/html,<title>Contents</title><h1>Main</h1><h2>Detail</h2>")
+    (portal-render-html "data:text/html,<title>Contents</title><h1>Main</h1><h2>Detail</h2>")
     (portal-test--wait-for-page "Contents")
     (portal-terminal-test--wait
      (lambda () (alist-get 'headings (portal-toolbar--action "state"))))

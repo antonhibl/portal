@@ -58,7 +58,7 @@ This sets `portal-web-appearance'."
 (defvar-local portal-web--url nil
   "The URL this buffer's web view loaded last.
 It is nil while a hosted app waits for the app host.")
-(defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-preview-html' buffer.")
+(defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-render-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
 (defvar-local portal-web--markdown nil "The Markdown file this preview shows, or nil.")
 (defvar-local portal-web-bridge-function nil
@@ -204,7 +204,7 @@ URLs are supported."
                      (lambda () (portal-web-open url "navigation"))))
 
 ;;;###autoload
-(defun portal-preview-html (file-or-url)
+(defun portal-render-html (file-or-url)
   "Preview local HTML FILE-OR-URL, or a URL, in a web view.
 Use the current buffer's file when its extension is .html or .htm;
 otherwise prompt for a path or URL.  With a prefix argument, always prompt.
@@ -252,7 +252,7 @@ Previewing the same file or URL again reuses its buffer and reloads it."
    "about" "none"))
 
 ;;;###autoload
-(defun portal-preview-markdown (file)
+(defun portal-render-markdown (file)
   "Preview the saved contents of local Markdown FILE using the app host.
 Use the current buffer's file when it has a Markdown mode or extension;
 otherwise prompt for FILE.  With a prefix argument, always prompt.
@@ -260,8 +260,8 @@ Previewing the same file again reuses its buffer.  Press g in the preview
 buffer to reread the file from disk.  Unsaved edits are not included.
 A link to another Markdown file opens it in the same preview, and l and r
 go back and forward.  A link to any other local file opens it in another
-pane, as does `portal-preview-open-in-emacs' for the file on screen;
-`portal-preview-return' comes back."
+pane, as does `portal-render-open-in-emacs' for the file on screen;
+`portal-render-return' comes back."
   (interactive
    (list
     (if (and (not current-prefix-arg) buffer-file-name
@@ -331,7 +331,7 @@ come first, and ALIST keeps them free to use the selected window."
   "Visit FILE in a pane other than this hosted page's, at LINE if non-nil.
 The page is a Markdown preview.  Select that pane with
 Emacs owning the keyboard, and remember this page's buffer for
-`portal-preview-return' in both frames involved."
+`portal-render-return' in both frames involved."
   (let ((preview (current-buffer))
         (origin (selected-window))
         (buffer (find-file-noselect file)))
@@ -342,7 +342,7 @@ Emacs owning the keyboard, and remember this page's buffer for
       (goto-char (point-min))
       (forward-line (1- line)))
     (dolist (frame (list (window-frame origin) (selected-frame)))
-      (set-frame-parameter frame 'portal-preview-return preview))))
+      (set-frame-parameter frame 'portal-render-return preview))))
 
 (defun portal-web--from-view (target function)
   "Call FUNCTION with web view TARGET's buffer current, in the pane showing it.
@@ -371,26 +371,26 @@ A fragment such as #L42 or #L42-L50 moves to line 42."
 (defun portal-web--edit (event)
   "Open the Markdown file on screen in EVENT's preview, from its toolbar."
   (interactive "e")
-  (portal-web--from-view (car (cadr event)) #'portal-preview-open-in-emacs))
+  (portal-web--from-view (car (cadr event)) #'portal-render-open-in-emacs))
 
 (define-key global-map [portal-web-follow] #'portal-web--follow)
 (define-key global-map [portal-web-edit] #'portal-web--edit)
 
 ;;;###autoload
-(defun portal-preview-open-in-emacs ()
+(defun portal-render-open-in-emacs ()
   "Visit the Markdown file this preview shows, in another pane.
-Emacs gets the keyboard, and `portal-preview-return' comes back here."
+Emacs gets the keyboard, and `portal-render-return' comes back here."
   (interactive)
   (unless portal-web--markdown (user-error "This buffer is not a Markdown preview"))
   (portal-web--hand-off portal-web--markdown))
 
 ;;;###autoload
-(defun portal-preview-return ()
+(defun portal-render-return ()
   "Return to the Markdown preview this frame last opened a file from.
 Select a pane showing it, in this frame or any other, or show it again
 if it is hidden, and give its view the keyboard.  The page stays as it was."
   (interactive)
-  (let ((preview (frame-parameter nil 'portal-preview-return)))
+  (let ((preview (frame-parameter nil 'portal-render-return)))
     (unless (memq preview (portal-view-buffers 'web))
       (user-error "No live Markdown preview to return to"))
     ;; A handoff can select another frame, leaving the preview shown in the first.

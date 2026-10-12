@@ -5,7 +5,7 @@
 ## Bun UI host
 
 Loading the Lisp package or native module starts no server. The first
-`portal-hello`, `portal-about`, `portal-preview-markdown`, or drawing buffer
+`portal-hello`, `portal-about`, `portal-render-markdown`, or drawing buffer
 asynchronously starts one shared child process. Hello, About and Markdown
 previews are hosted apps: their web views open immediately at `about:blank`
 and load when the host sends its readiness message. External URLs need no server.

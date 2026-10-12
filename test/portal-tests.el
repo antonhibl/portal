@@ -138,7 +138,7 @@ TARGET defaults to the selected pane's view.  Return its state."
               (insert "document.title = 'Local assets work';"))
             (with-temp-buffer
               (setq buffer-file-name file)
-              (call-interactively #'portal-preview-html))
+              (call-interactively #'portal-render-html))
             (portal-test--wait-for-page "Local assets work"))
         (delete-directory directory t)))))
 

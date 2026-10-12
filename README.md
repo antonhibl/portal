@@ -75,7 +75,7 @@ Command-period (`⌘.`) to return to Emacs. While the page has the keyboard, its
 toolbar replaces the window's mode line; `RET` re-enters it. Customize `portal-input-escape-key` to change the escape chord.
 `q` hides the view; killing its buffer closes it.
 
-Try `M-x portal-terminal` for a shell, `M-x portal-preview-markdown` for a saved
+Try `M-x portal-terminal` for a shell, `M-x portal-render-markdown` for a saved
 Markdown file, or `M-x portal-excalidraw` for a local drawing. Loading Portal registers no global
 shortcuts. Runtime use needs neither Bun nor Node nor adjacent web assets; see
 [distribution layout](CONTRIBUTING.md#build-outputs-and-distribution).
