@@ -76,7 +76,7 @@ The selected frame is kept."
              portal-fake-native--views)
     target))
 
-(defun portal--place (target edges title)
+(defun portal--place (target edges title &optional bar)
   (portal-fake-native--call 'portal--place target edges title)
   (let ((view (portal-fake-native--view target))
         (frame (cl-find title (frame-list)
@@ -84,6 +84,7 @@ The selected frame is kept."
     (unless frame (error "Cannot find the requested native Emacs frame"))
     (setq view (plist-put view :frame frame))
     (setq view (plist-put view :edges (append edges nil)))
+    (setq view (plist-put view :bar (append bar nil)))
     (puthash target (plist-put view :visible t) portal-fake-native--views)
     t))
 

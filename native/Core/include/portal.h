@@ -141,10 +141,12 @@ bool portal_view_destroy(portal_view *view, portal_text *error);
    temporary and unique (docs/adr/0002), so a platform finds the frame again on
    every call and keeps nothing that could go stale.  VIEW may be detached or
    attached to this or another frame; it moves in one step, keeping its page
-   or session.  A failed attach, such as for a frame that is gone, leaves VIEW
+   or session.  BAR, unless NULL, is the pane's mode line, where VIEW's
+   toolbar shows when the core draws one; without it the view has no
+   toolbar.  A failed attach, such as for a frame that is gone, leaves VIEW
    where it was. */
 bool portal_view_attach(portal_view *view, portal_string frame, portal_rect rect,
-                        portal_text *error);
+                        const portal_rect *bar, portal_text *error);
 /* Detach an attached VIEW, keeping its page or session and its last size.
    Where a detached view lives is the platform's business: macOS parks it in
    an offscreen window. */
@@ -304,13 +306,15 @@ bool portal_view_copy(portal_view *view, portal_text *error);
 bool portal_view_paste(portal_view *view, portal_text *error);
 
 /* Toolbars, for a view of any kind.  The core owns each view's toolbar
-   (native/Core/toolbar.c): whether it shows one, which buttons it has and
+   (native/Core/toolbar.c): whether it shows, which buttons it has and
    which of them work, the value it shows, its find field's text and
    matches, and its colors.  The platform draws what the core gives it, and
    reports what the user does with portal_toolbar_clicked and
-   portal_toolbar_typed.  How a toolbar looks is the platform's: on macOS, a
-   strip 28 points high above the view's content, with tooltips and
-   accessibility labels.
+   portal_toolbar_typed.  A toolbar shows only while its view has the
+   keyboard, or its find field is open, and only over the BAR its view was
+   attached with: the pane's mode line, which it covers exactly, so the
+   content never resizes.  How a toolbar looks is the platform's: on macOS,
+   a strip with tooltips and accessibility labels.
 
    A color for a toolbar, in sRGB with components from 0 to 1, if SET;
    otherwise the platform's own default for the color's role. */
@@ -364,7 +368,7 @@ typedef enum portal_unit { PORTAL_PERCENT, PORTAL_POINTS } portal_unit;
 /* One view's toolbar, as the platform draws it.  The masks have the bit
    1 << BUTTON for each portal_button. */
 typedef struct portal_toolbar {
-    bool visible; /* Without it, draw no toolbar: the content fills the view. */
+    bool visible; /* Without it, draw no toolbar: the pane's mode line shows. */
     portal_colors colors;
     portal_owner owner;
     uint32_t buttons;  /* The buttons the toolbar has now. */

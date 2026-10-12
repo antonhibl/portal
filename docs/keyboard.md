@@ -28,13 +28,12 @@ or split keys.
 
 Commands finish minibuffer interaction before returning to the selected native
 view. Explicit unfocus, errors or selecting an ordinary buffer leave Emacs in
-control. `C-g` cancels Emacs key-sequence reading. The toolbar's ownership dot
-is hollow for Emacs, green for the view, and blue while Emacs reads a command.
-Click it to enter or return to Emacs. Content is subtly grayed out whenever
-Emacs owns the keyboard, including during command handoffs. This cue also works
-without a toolbar; it does not block clicks or pause the app. Native content
-returns to full contrast when it regains the keyboard. Ordinary buffers get no
-global physical keybinding.
+control. `C-g` cancels Emacs key-sequence reading. The window's bottom shows
+who has the keyboard: Emacs's mode line while Emacs has it, and the view's
+toolbar, drawn over the mode line with a green line along its top, while the
+view has it. While Emacs reads a command the view handed it, the toolbar stays
+with a blue line and dot. Click the dot to return to Emacs. The content never
+changes color or size. Ordinary buffers get no global physical keybinding.
 
 `portal-input-escape-key` reserves one chord across all native views, before
 an app can claim it. The default is `"s-."` (Command-period). Change it live with
@@ -51,12 +50,13 @@ The previous chord stops being reserved when the setting changes. The escape
 works during pending handoffs too, without waiting for Lisp or the app. macOS
 and system-wide shortcut utilities can still intercept keys before Portal.
 
-The 28 pixel toolbar reserves space above content. Web pages have back,
-forward, find, zoom and reload; Markdown and HTML previews add a table of
-contents, and Markdown adds **Open in Emacs**. Terminals have text size controls;
-Excalidraw and quick terminals have no toolbar. The opening command chooses a
-web view's toolbar. `(setq portal-toolbar nil)` hides toolbars live; `t`
-restores them. Colors follow Emacs faces, including theme changes.
+The toolbar covers the window's mode line exactly, so it takes no room from the
+content. Web pages have back, forward, find, zoom and reload; Markdown and HTML
+previews add a table of contents, and Markdown adds **Open in Emacs**.
+Terminals have text size controls; Excalidraw and quick terminals have no
+toolbar, nor do windows without a mode line. The opening command chooses a web
+view's toolbar. `(setq portal-toolbar nil)` hides toolbars live; `t` restores
+them. Colors follow Emacs faces, including theme changes.
 
 `portal-zoom-in`, `portal-zoom-out`, `portal-zoom-reset`, `portal-toggle-toc`,
 `portal-find`, `portal-web-back` (`l`), and `portal-web-forward` (`r`) use the

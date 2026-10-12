@@ -158,7 +158,7 @@ static char *open_view(const char *kind, bool quick)
                                {.name = text("quick"), .flag = true}};
     portal_text target = {0}, error = {0};
     if (!portal_views_open(text(kind), options, quick ? 2 : 1, &target, &error)
-        || !portal_views_place(text(target.data), (portal_edges) {0, 0, 100, 100}, text("frame"),
+        || !portal_views_place(text(target.data), (portal_edges) {0, 0, 100, 100}, NULL, text("frame"),
                                &error))
         abort();
     CHECK(act(target.data, "focus", 0));
@@ -541,7 +541,7 @@ static void test_hiding_or_closing_ends_a_handoff(void)
     /* A hidden view cannot have the keyboard. */
     CHECK(!act(terminal, "focus", 0));
     CHECK(sent(""));
-    CHECK(portal_views_place(text(terminal), (portal_edges) {0, 0, 100, 100}, text("frame"),
+    CHECK(portal_views_place(text(terminal), (portal_edges) {0, 0, 100, 100}, NULL, text("frame"),
                              &error));
     CHECK(act(terminal, "focus", 0));
 

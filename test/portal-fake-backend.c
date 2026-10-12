@@ -2,9 +2,10 @@
 /* An in-memory backend for the module and core tests.  It implements the
    operations of native/Core/include/portal.h, so the real C core runs without
    AppKit, WebKit or Ghostty.  A view describes what its operations received:
-   its options, the "handle" that tells views apart, the "frame" title and
-   "size" it was last attached with, and whether it is "attached".  Views
-   never move: attaching records where.
+   its options, the "handle" that tells views apart, the "frame" title,
+   "size" and mode line "bar", as x, y, width and height or false, it was
+   last attached with, and whether it is "attached".  Views never move:
+   attaching records where.
 
    A view created with the option :description describes itself with exactly
    that text instead, for tests of how the core reads descriptions.
@@ -318,7 +319,7 @@ bool portal_view_destroy(portal_view *view, portal_text *error)
 }
 
 bool portal_view_attach(portal_view *view, portal_string frame, portal_rect rect,
-                        portal_text *error)
+                        const portal_rect *bar, portal_text *error)
 {
     if (!usable(view, -1, error) || refused(error))
         return false;
@@ -327,6 +328,10 @@ bool portal_view_attach(portal_view *view, portal_string frame, portal_rect rect
         return fail(error, "Cannot find the requested native Emacs frame");
     set_string(view, "frame", frame.data, frame.length);
     set_integers(view, "size", (int64_t[]) {rect.width, rect.height}, 2);
+    if (bar)
+        set_integers(view, "bar", (int64_t[]) {bar->x, bar->y, bar->width, bar->height}, 4);
+    else
+        set_flag(view, "bar", false);
     set_flag(view, "attached", true);
     return true;
 }

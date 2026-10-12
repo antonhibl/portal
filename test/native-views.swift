@@ -29,11 +29,22 @@ enum Views {
         return take(&target)
     }
 
-    static func place(_ target: String, edges: [Int], title: String) throws {
-        let edges = portal_edges(left: Int64(edges[0]), top: Int64(edges[1]),
-                                 right: Int64(edges[2]), bottom: Int64(edges[3]))
+    /// Place TARGET at EDGES in the window titled TITLE, as `portal--place`
+    /// does, with its pane's mode line at BAR, if it has one.
+    static func place(_ target: String, edges: [Int], title: String, bar: [Int]? = nil) throws {
+        func convert(_ edges: [Int]) -> portal_edges {
+            portal_edges(left: Int64(edges[0]), top: Int64(edges[1]),
+                         right: Int64(edges[2]), bottom: Int64(edges[3]))
+        }
+        let edges = convert(edges)
+        var bar = bar.map(convert)
         try with(target) { target in
-            try with(title) { title in try call { portal_views_place(target, edges, title, $0) } }
+            try with(title) { title in
+                try call { error in
+                    if bar == nil { return portal_views_place(target, edges, nil, title, error) }
+                    return portal_views_place(target, edges, &bar!, title, error)
+                }
+            }
         }
     }
 

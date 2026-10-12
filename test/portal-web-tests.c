@@ -384,7 +384,9 @@ static void test_local_links_and_edits_go_to_emacs(void)
     portal_text error = {0};
     bool focused = false;
     char *web = open_app();
-    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 100, 100}, text("frame"), &error));
+    /* With a mode line, where its toolbar shows Open in Emacs. */
+    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 100, 100},
+                             &(portal_edges) {0, 100, 100, 120}, text("frame"), &error));
     CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
     /* Longer than a record could hold. */
     char url[PIPE_BUF + 64] = "file:///tmp/";

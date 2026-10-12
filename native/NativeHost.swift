@@ -114,19 +114,24 @@ final class NativeHost: NSObject {
     }
 
     /// Show SURFACE at RECTANGLE, in Emacs's frame pixels from the top left,
-    /// below TOOLBAR, which a surface new to this frame starts with.
-    /// Callers check that the frame still has its `view` first.
-    func place(_ surface: any NativeSurface, rectangle: CGRect, toolbar: ToolbarState) {
+    /// with TOOLBAR, which a surface new to this frame starts with, over BAR,
+    /// its pane's mode line, if it has one. Callers check that the frame
+    /// still has its `view` first.
+    func place(_ surface: any NativeSurface, rectangle: CGRect, bar: CGRect?, toolbar: ToolbarState) {
         guard let view else { return }
         _ = surface.input // Register shared input before the first focus or key event.
         let key = ObjectIdentifier(surface)
         let child = containers[key] ?? NativeContainer(content: surface.nativeView,
                                                        target: surface.input?.target ?? "", state: toolbar)
         containers[key] = child
-        var frame = rectangle
+        // The container spans the content and the mode line; each keeps its own place.
+        let area = bar.map { rectangle.union($0) } ?? rectangle
+        child.arrange(content: rectangle.offsetBy(dx: -area.minX, dy: -area.minY),
+                      bar: bar?.offsetBy(dx: -area.minX, dy: -area.minY))
+        var frame = area
         frame.origin.x += view.bounds.minX
         frame.origin.y = view.isFlipped
-            ? view.bounds.minY + rectangle.minY : view.bounds.maxY - rectangle.maxY
+            ? view.bounds.minY + area.minY : view.bounds.maxY - area.maxY
         if child.frame != frame { child.frame = frame }
         surfaces[ObjectIdentifier(surface)] = WeakSurface(surface)
         if child.superview !== view { view.addSubview(child) }

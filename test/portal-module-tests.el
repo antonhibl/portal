@@ -16,7 +16,7 @@
   (module-load file))
 
 (defconst portal-module-tests--exports
-  '((portal--open 2 . 2) (portal--place 3 . 3) (portal--hide 1 . 1) (portal--close 1 . 1)
+  '((portal--open 2 . 2) (portal--place 3 . 4) (portal--hide 1 . 1) (portal--close 1 . 1)
     (portal--inspect 1 . 1) (portal--channel 1 . 1)
     (portal--web-load 2 . 2) (portal--web-send 2 . 2) (portal--web-receive 1 . 1)
     (portal--web-appearance 1 . 1)
@@ -165,6 +165,7 @@
     (should (eq (portal--place target [10 20 110 220] "frame ✓") t))
     (let ((state (portal--inspect target)))
       (should (equal (plist-get state :edges) '(10 20 110 220)))
+      (should-not (plist-get state :bar))
       (should (equal (plist-get state :frame) "frame ✓"))
       (should (equal (plist-get state :size) '(100 200)))
       (should (eq (plist-get state :visible) t)))
@@ -316,6 +317,12 @@
     (should (eq (portal--terminal-bindings (format binding "c" 2)) t)))
   (should (eq (portal--terminal-bindings "{\"regular\":[],\"quick\":[]}") t))
   (let ((page (portal--open "web" '(:toolbar "navigation"))))
+    ;; The toolbar covers the pane's mode line, while the view has the keyboard.
+    (should (eq (portal--place page [0 0 100 100] "frame" [0 100 100 120]) t))
+    (should (equal (plist-get (portal--inspect page) :bar) '(0 100 100 20)))
+    (should (eq (plist-get (portal--inspect page) :strip) nil))
+    (should (eq (portal--input page "focus") t))
+    (should (eq (plist-get (portal--inspect page) :strip) t))
     (should (eq (portal--toolbar nil) nil))
     (should (eq (plist-get (portal--inspect page) :strip) nil))
     (should (eq (portal--toolbar 'yes) t))

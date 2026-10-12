@@ -153,10 +153,12 @@ matches. It reads keyboard ownership from the input core and back/forward
 availability from the web core, never copying them. After potential display
 changes, it builds a `portal_toolbar` snapshot including visibility and colors.
 Only changed snapshots reach the platform for drawing; comparison needs no JSON
-serialization. Ownership reaches the platform even without a toolbar strip:
-the shared content container draws a click-through gray overlay while Emacs
-owns the keyboard or a command handoff is pending. Clicks, find text, Lisp commands and shortcuts share code and
-state; `portal--toolbar-action` returns that state as JSON.
+serialization. A toolbar shows only while its view has the keyboard, a command
+handoff is pending, or its find field is open, and only over the pane's mode
+line, whose edges Emacs sends with each placement; otherwise Emacs's mode line
+shows, and the content never resizes. Clicks, find text, Lisp commands and
+shortcuts share code and state; `portal--toolbar-action` returns that state as
+JSON.
 
 Searches run serially: a contents-script count, then a find. Changed text replaces
 waiting searches; load completion discards pre-load results and searches again;

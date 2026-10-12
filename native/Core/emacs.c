@@ -477,12 +477,15 @@ LISP_FUNCTION(Fopen)
 LISP_FUNCTION(Fplace)
 {
     portal_text target = {0}, title = {0}, error = {0};
-    portal_edges edges;
+    portal_edges edges, bar;
+    bool has_bar = nargs > 3 && env->is_not_nil(env, args[3]);
     emacs_value result = NULL;
     if (read_text(env, args[0], &target) && read_edges(env, args[1], &edges)
-        && read_text(env, args[2], &title))
-        result =
-            done(env, portal_views_place(borrow(target), edges, borrow(title), &error), &error);
+        && read_text(env, args[2], &title) && (!has_bar || read_edges(env, args[3], &bar)))
+        result = done(env,
+                      portal_views_place(borrow(target), edges, has_bar ? &bar : NULL,
+                                         borrow(title), &error),
+                      &error);
     free(target.data);
     free(title.data);
     return result;
@@ -761,8 +764,9 @@ static const struct export {
     {"portal--open", 2, 2, Fopen, NULL,
      "Open a view of KIND (\"terminal\" or \"web\") with an OPTIONS plist; return its target, "
      "such as \"web:1\"."},
-    {"portal--place", 3, 3, Fplace, NULL,
-     "Show TARGET at EDGES [LEFT TOP RIGHT BOTTOM] in the frame titled TITLE."},
+    {"portal--place", 3, 4, Fplace, NULL,
+     "Show TARGET at EDGES [LEFT TOP RIGHT BOTTOM] in the frame titled TITLE, with its "
+     "toolbar over BAR, the pane's mode line edges, or none if BAR is nil."},
     {"portal--hide", 1, 1, STRINGS_FUNCTION(hide, RESULT_T),
      "Hide TARGET, keeping its session alive."},
     {"portal--close", 1, 1, STRINGS_FUNCTION(close_view, RESULT_T),

@@ -87,13 +87,23 @@ static char *open_terminal(bool quick)
     return target;
 }
 
+/* The mode line below a 640 by 480 pane, which a toolbar covers. */
+static const portal_edges bar = {0, 480, 640, 506};
+
+/* Attach TARGET above its mode line, as Emacs does, in FRAME. */
+static void place(const char *target, const char *frame)
+{
+    portal_text error = {0};
+    CHECK(portal_views_place(text(target), (portal_edges) {0, 0, 640, 480}, &bar, text(frame),
+                             &error));
+}
+
 /* Attach TARGET and give it the keyboard, as Emacs does. */
 static void enter(const char *target)
 {
     portal_text error = {0};
     bool focused = false;
-    CHECK(portal_views_place(text(target), (portal_edges) {0, 0, 640, 480}, text("frame"),
-                             &error));
+    place(target, "frame");
     CHECK(portal_input_perform(text(target), text("focus"), 0, &focused, &error) && focused);
 }
 
@@ -216,18 +226,31 @@ static void test_each_layout_has_its_buttons(void)
     char *navigation = open_web("navigation", false), *contents = open_web("contents", false);
     char *markdown = open_web("markdown", false), *hosted = open_web("markdown", true);
     char *terminal = open_terminal(false);
+    /* A toolbar shows only while its view has the keyboard. */
+    const char *each[] = {navigation, contents, markdown, hosted, terminal};
+    for (size_t i = 0; i < 5; i++) {
+        place(each[i], "frame");
+        CHECK(!drawn(each[i]).visible && drawn(each[i]).owner == PORTAL_OWNER_EMACS);
+        enter(each[i]);
+        CHECK(drawn(each[i]).visible && drawn(each[i]).owner == PORTAL_OWNER_VIEW);
+    }
+    enter(navigation);
     portal_toolbar toolbar = drawn(navigation);
     CHECK(toolbar.visible && toolbar.buttons == page && !toolbar.finding);
-    CHECK(toolbar.owner == PORTAL_OWNER_EMACS && toolbar.unit == PORTAL_PERCENT);
+    CHECK(toolbar.owner == PORTAL_OWNER_VIEW && toolbar.unit == PORTAL_PERCENT);
     CHECK(toolbar.value == 100 && toolbar.standard == 100);
     /* Nothing to go back or forward to yet. */
     CHECK(toolbar.enabled == bits(6, OWNER, FIND, RELOAD, DECREASE, RESET, INCREASE));
+    enter(contents);
     CHECK(drawn(contents).buttons == (page | bits(1, CONTENTS)));
     /* Headings arrive once the page has them. */
     CHECK(!(drawn(contents).enabled & bits(1, CONTENTS)));
+    enter(markdown);
     CHECK(drawn(markdown).buttons == (page | bits(1, CONTENTS)));
     /* Only a hosted preview can ask Emacs to edit its file. */
+    enter(hosted);
     CHECK(drawn(hosted).buttons == (page | bits(2, CONTENTS, EDIT)));
+    enter(terminal);
     toolbar = drawn(terminal);
     CHECK(toolbar.visible && toolbar.buttons == (bits(1, OWNER) | value));
     CHECK(toolbar.unit == PORTAL_POINTS && toolbar.value == PORTAL_TERMINAL_POINTS
@@ -245,12 +268,13 @@ static void test_each_layout_has_its_buttons(void)
         CHECK(!drawn(bare[i]).visible);
         CHECK(shows(bare[i], "\"strip\":false", NULL));
         CHECK(refuses(bare[i], "state", "No toolbar controls for this native view"));
-        /* Even toolbar-free views draw ownership for their inactive cue. */
+        /* Toolbar-free views still say who has the keyboard. */
         portal_input_focus(text(bare[i]), true);
         CHECK(!drawn(bare[i]).visible && drawn(bare[i]).owner == PORTAL_OWNER_VIEW);
         portal_input_focus(text(bare[i]), false);
         CHECK(!drawn(bare[i]).visible && drawn(bare[i]).owner == PORTAL_OWNER_EMACS);
     }
+    enter(navigation);
     CHECK(shows(navigation, "\"strip\":true", NULL));
     CHECK(refuses("web:0", "state", "No Portal view web:0"));
     CHECK(refuses(navigation, "edit", "Unknown web toolbar action: edit"));
@@ -270,6 +294,7 @@ static void test_each_layout_has_its_buttons(void)
 static void test_zoom_and_text_size_stop_at_their_limits(void)
 {
     char *web = open_web("navigation", false);
+    enter(web);
     const double steps[] = {110, 125, 150, 175, 200, 250, 300};
     for (size_t i = 0; i < sizeof steps / sizeof *steps; i++) {
         CHECK(performs(web, "increase", NULL));
@@ -295,6 +320,7 @@ static void test_zoom_and_text_size_stop_at_their_limits(void)
     CHECK(performs(web, "state", "\"value\":100", NULL));
 
     char *terminal = open_terminal(false);
+    enter(terminal);
     CHECK(performs(terminal, "increase", "\"value\":15", NULL));
     CHECK(shows(terminal, "\"font-size\":15", NULL));
     for (int i = 0; i < 20; i++)
@@ -343,41 +369,59 @@ static void test_zoom_and_text_size_stop_at_their_limits(void)
     close_view(web);
 }
 
-/* The dot shows who has the keyboard, and a click on it moves it. */
-static void test_the_dot_shows_and_moves_the_keyboard(void)
+/* A toolbar covers its pane's mode line while its view has the keyboard,
+   or Emacs reads a command for it; its dot then gives Emacs the keyboard. */
+static void test_the_toolbar_shows_while_the_view_has_the_keyboard(void)
 {
     portal_text error = {0};
     char *web = open_web("navigation", false);
-    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 640, 480}, text("frame"), &error));
-    CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
-    click(web, OWNER);
-    CHECK(drawn(web).owner == PORTAL_OWNER_VIEW);
-    click(web, OWNER);
-    CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
+    place(web, "frame");
+    CHECK(!drawn(web).visible && drawn(web).owner == PORTAL_OWNER_EMACS);
     bool done = false;
     CHECK(portal_input_perform(text(web), text("focus"), 0, &done, &error) && done);
-    CHECK(drawn(web).owner == PORTAL_OWNER_VIEW && (drawn(web).enabled & bits(1, OWNER)));
+    CHECK(drawn(web).visible && drawn(web).owner == PORTAL_OWNER_VIEW);
+    CHECK(drawn(web).enabled & bits(1, OWNER));
+    click(web, OWNER);
+    CHECK(!drawn(web).visible && drawn(web).owner == PORTAL_OWNER_EMACS);
+    /* A hidden toolbar's buttons do nothing. */
+    struct portal_fake_calls before = portal_fake_calls();
+    click(web, OWNER);
+    click(web, RELOAD);
+    CHECK(same_calls(before, portal_fake_calls()) && drawn(web).owner == PORTAL_OWNER_EMACS);
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &done, &error) && done);
     drain();
     /* While the page decides on a chord, the view still has the keyboard. */
     portal_fake_press((portal_chord) {'x', PORTAL_CONTROL}, false);
     CHECK(drawn(web).owner == PORTAL_OWNER_VIEW);
-    /* While Emacs reads a command, the dot says so and does nothing. */
+    /* While Emacs reads a command, the toolbar stays, its dot says so and
+       does nothing. */
     portal_fake_answer(false);
-    CHECK(drawn(web).owner == PORTAL_OWNER_PENDING && !(drawn(web).enabled & bits(1, OWNER)));
-    struct portal_fake_calls before = portal_fake_calls();
+    CHECK(drawn(web).visible && drawn(web).owner == PORTAL_OWNER_PENDING);
+    CHECK(!(drawn(web).enabled & bits(1, OWNER)));
+    before = portal_fake_calls();
     click(web, OWNER);
     CHECK(drawn(web).owner == PORTAL_OWNER_PENDING);
     CHECK(same_calls(before, portal_fake_calls()));
-    /* The user's way back ends the handoff, and the dot follows. */
+    /* The user's way back ends the handoff, and the mode line shows again. */
     portal_fake_escape();
-    CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
+    CHECK(!drawn(web).visible && drawn(web).owner == PORTAL_OWNER_EMACS);
     drain();
     /* Hiding the view returns the keyboard. */
-    click(web, OWNER);
-    CHECK(drawn(web).owner == PORTAL_OWNER_VIEW);
+    enter(web);
     CHECK(portal_views_hide(text(web), &error));
-    CHECK(drawn(web).owner == PORTAL_OWNER_EMACS);
+    CHECK(!drawn(web).visible && drawn(web).owner == PORTAL_OWNER_EMACS);
+    /* A pane without a mode line shows no toolbar, and has no find. */
+    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 640, 480}, NULL, text("frame"),
+                             &error));
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &done, &error) && done);
+    CHECK(!drawn(web).visible && drawn(web).owner == PORTAL_OWNER_VIEW);
+    CHECK(refuses(web, "find", "Find needs a visible web toolbar"));
+    /* Its mode line back, the toolbar shows at once. */
+    place(web, "frame");
+    CHECK(drawn(web).visible);
+    CHECK(shows(web, "\"bar\":[0,480,640,26]", NULL));
     close_view(web);
+    drain();
 }
 
 static void test_find_runs_searches_in_order(void)
@@ -502,6 +546,7 @@ static void test_a_new_page_drops_old_results(void)
 static void test_the_table_of_contents(void)
 {
     char *web = open_web("contents", false), *page = open_web("navigation", false);
+    enter(web);
     CHECK(refuses(page, "toc", "This preview has no headings"));
     CHECK(refuses(web, "toc", "This preview has no headings"));
     portal_web_headings(text(web), 2);
@@ -534,7 +579,6 @@ static void test_the_table_of_contents(void)
    has it. */
 static void test_closing_find_keeps_the_users_focus(void)
 {
-    portal_text error = {0};
     char *web = open_web("navigation", false), *other = open_web("navigation", false);
     enter(web);
     CHECK(performs(web, "find", NULL));
@@ -555,7 +599,7 @@ static void test_closing_find_keeps_the_users_focus(void)
     answer(web, "", false, 0, false);
     /* The user moved to another view. */
     CHECK(performs(web, "find", NULL));
-    CHECK(portal_views_place(text(other), (portal_edges) {0, 0, 10, 10}, text("frame"), &error));
+    place(other, "frame");
     CHECK(portal_fake_click(other));
     click(web, CLOSE);
     CHECK(drawn(other).owner == PORTAL_OWNER_VIEW && drawn(web).owner == PORTAL_OWNER_EMACS);
@@ -654,7 +698,7 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     CHECK(draws(web) == count);
     /* Hidden and shown again, in another frame, the view keeps it all. */
     CHECK(portal_views_hide(text(web), &error));
-    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 9, 9}, text("other"), &error));
+    place(web, "other");
     CHECK(performs(web, "state", "\"find\":true", "\"query\":\"kept\"", "\"matches\":2",
                    "\"toc\":true", "\"value\":110", NULL));
     /* Hiding every toolbar closes find, and shows no toolbar. */
@@ -673,9 +717,13 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     CHECK(performs(web, "state", "\"query\":\"kept\"", NULL));
     /* Colors reach every toolbar, and only a change draws. */
     char *terminal = open_terminal(false);
+    enter(terminal);
+    enter(web);
     portal_colors colors = {.background = {true, 0.1, 0.2, 0.3}, .success = {true, 0, 1, 0}};
     portal_toolbar_paint(&colors);
-    CHECK(drawn(terminal).colors.background.set && drawn(terminal).colors.background.blue == 0.3);
+    CHECK(drawn(web).colors.background.set && drawn(web).colors.background.blue == 0.3);
+    /* A toolbar that does not show draws no colors. */
+    CHECK(!drawn(terminal).visible && !drawn(terminal).colors.background.set);
     CHECK(drawn(web).colors.success.green == 1 && !drawn(web).colors.accent.set);
     count = draws(web);
     portal_toolbar_paint(&colors);
@@ -763,7 +811,7 @@ int main(void)
     CHECK(portal_channel_connect(fds[1]));
     test_each_layout_has_its_buttons();
     test_zoom_and_text_size_stop_at_their_limits();
-    test_the_dot_shows_and_moves_the_keyboard();
+    test_the_toolbar_shows_while_the_view_has_the_keyboard();
     test_find_runs_searches_in_order();
     test_a_new_page_drops_old_results();
     test_the_table_of_contents();
