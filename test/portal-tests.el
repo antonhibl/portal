@@ -65,7 +65,7 @@ TARGET defaults to the selected pane's view.  Return its state."
       (kill-buffer buffer)
       (should-not (portal--inspect target)))))
 
-(ert-deftest portal-web-about-draws-with-webgl-and-learns-when-it-is-hidden ()
+(ert-deftest portal-web-about-draws-with-webgl-even-after-losing-it-and-learns-when-it-is-hidden ()
   (portal-test--with-web
     (skip-unless (file-executable-p (portal-server-program-file)))
     (select-frame-set-input-focus (selected-frame))
@@ -83,6 +83,33 @@ TARGET defaults to the selected pane's view.  Return its state."
           (should (string-search emacs-version
                                  (portal-excalidraw-gui--js
                                   "return document.getElementById('term').textContent;")))
+          ;; WebKit may drop the context; the portal draws again once it is back.
+          (should (equal (portal-excalidraw-gui--js
+                          "const canvas = document.getElementById('gl');
+                           const gl = canvas.getContext('webgl');
+                           const lose = gl.getExtension('WEBGL_lose_context');
+                           const event = (name) => new Promise((done) => {
+                             canvas.addEventListener(name, done, { once: true });
+                             setTimeout(done, 2000);
+                           });
+                           const lost = event('webglcontextlost');
+                           lose.loseContext();
+                           await lost;
+                           // WebKit allows a restore only once the loss event is done.
+                           await new Promise((done) => setTimeout(done));
+                           const restored = event('webglcontextrestored');
+                           lose.restoreContext();
+                           await restored;
+                           // Read the portal's centre after the page's next frame.
+                           const pixel = new Uint8Array(4);
+                           await new Promise((done) => requestAnimationFrame(() => {
+                             gl.readPixels(canvas.width >> 1, canvas.height >> 1, 1, 1,
+                                           gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+                             done();
+                           }));
+                           return !gl.isContextLost() && pixel[3] > 0
+                             && pixel[0] + pixel[1] + pixel[2] > 0;")
+                         t))
           ;; The page stops animating when told it is hidden.
           (portal-excalidraw-gui--js
            "window.hiddenSeen = false;
