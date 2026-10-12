@@ -177,10 +177,10 @@ bool portal_views_place(portal_string target, portal_edges edges, const portal_e
         return false;
     view->attached = true;
     view->edges = edges;
-    bool had = view->bar;
     view->bar = bar;
-    if (had != view->bar)
-        portal_toolbar_refresh(target); /* It shows only where the mode line is. */
+    /* It shows only in an attached pane with a mode line, which may be new:
+       the core draws again only if that changes what it shows. */
+    portal_toolbar_refresh(target);
     return true;
 }
 

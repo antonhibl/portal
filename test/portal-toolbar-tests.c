@@ -419,6 +419,15 @@ static void test_the_toolbar_shows_while_the_view_has_the_keyboard(void)
     /* Its mode line back, the toolbar shows at once. */
     place(web, "frame");
     CHECK(drawn(web).visible);
+    /* Hidden with find open, and placed again in a pane with a mode line,
+       the view shows its find field again. */
+    CHECK(performs(web, "find", NULL));
+    CHECK(portal_views_hide(text(web), &error));
+    CHECK(!drawn(web).visible);
+    place(web, "frame");
+    CHECK(drawn(web).visible && drawn(web).finding);
+    CHECK(performs(web, "close-find", NULL));
+    answer(web, "", false, 0, false);
     CHECK(shows(web, "\"bar\":[0,480,640,26]", NULL));
     close_view(web);
     drain();
