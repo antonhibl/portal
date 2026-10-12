@@ -65,26 +65,19 @@ struct ToolbarState: Sendable {
     }
 }
 
-/// Reduce contrast without making live content transparent to the Emacs
-/// buffer underneath. Never take mouse events or accessibility focus.
-@MainActor
-private final class InactiveOverlay: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.5, alpha: 0.18).setFill()
-        bounds.fill()
-    }
-}
-
-/// A view and, while the core shows one, its toolbar strip above it. The
-/// feature keeps its identity and lifetime; only its available height changes.
+/// A view's content and, while the core shows one, its toolbar strip over
+/// the pane's mode line below it. The feature keeps its identity, lifetime
+/// and size: the strip never takes room from it. Between the two, such as
+/// beside the mode line's fringes, the container lets clicks through to Emacs.
 @MainActor
 final class NativeContainer: NSView {
     let content: NSView
     let target: String
-    private let inactive = InactiveOverlay()
     private(set) var toolbar: ToolbarView?
     private(set) var state: ToolbarState
+    /// Where the content and the mode line are, in this container.
+    private var contentRect = NSRect.zero
+    private var barRect: NSRect?
     override var isFlipped: Bool { true }
 
     init(content: NSView, target: String, state: ToolbarState) {
@@ -93,20 +86,31 @@ final class NativeContainer: NSView {
         self.state = state
         super.init(frame: .zero)
         addSubview(content)
-        inactive.setAccessibilityElement(false)
-        addSubview(inactive)
         apply(state)
     }
     required init?(coder: NSCoder) { nil }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+
+    /// Place the content at CONTENT and the strip, when it shows, over BAR,
+    /// both in this container's coordinates; without BAR no strip shows.
+    func arrange(content: NSRect, bar: NSRect?) {
+        contentRect = content
+        barRect = bar
+        apply(state)
+    }
+
     func apply(_ state: ToolbarState) {
         self.state = state
-        inactive.isHidden = state.owner == .view
-        if state.visible, toolbar == nil {
+        let shows = state.visible && barRect != nil
+        if shows, toolbar == nil {
             let strip = ToolbarView(target: target)
             toolbar = strip
             addSubview(strip)
-        } else if !state.visible, let toolbar {
+        } else if !shows, let toolbar {
             toolbar.removeFromSuperview()
             self.toolbar = nil
         }
@@ -117,10 +121,8 @@ final class NativeContainer: NSView {
 
     override func layout() {
         super.layout()
-        let height = toolbar == nil ? 0.0 : min(28, bounds.height)
-        toolbar?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
-        content.frame = NSRect(x: 0, y: height, width: bounds.width, height: max(0, bounds.height - height))
-        inactive.frame = content.frame
+        content.frame = contentRect == .zero ? bounds : contentRect
+        if let barRect { toolbar?.frame = barRect }
     }
 }
 
@@ -294,9 +296,11 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         separators = []
         field.isHidden = !state.finding
         count.isHidden = !state.finding
+        // The strip is as high as the mode line it covers: center in it.
+        let height = min(22, max(14, bounds.height - 4)), top = ((bounds.height - height) / 2).rounded()
         func place(_ id: portal_button, _ x: CGFloat, width: CGFloat = 24) {
             guard state.has(id), id == PORTAL_BUTTON_OWNER || x >= 31 else { return }
-            button(id)?.frame = NSRect(x: x, y: 3, width: width, height: 22)
+            button(id)?.frame = NSRect(x: x, y: top, width: width, height: height)
             button(id)?.isHidden = false
         }
         place(PORTAL_BUTTON_OWNER, 5, width: 22)
@@ -311,8 +315,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             if bounds.width >= 240 { trailing(PORTAL_BUTTON_NEXT); trailing(PORTAL_BUTTON_PREVIOUS) }
             count.isHidden = bounds.width < 180
             if !count.isHidden { right -= 68 }
-            count.frame = NSRect(x: right, y: 7, width: 66, height: 16)
-            field.frame = NSRect(x: 33, y: 3, width: max(20, right - 38), height: 22)
+            count.frame = NSRect(x: right, y: ((bounds.height - 16) / 2).rounded(), width: 66, height: 16)
+            field.frame = NSRect(x: 33, y: top, width: max(20, right - 38), height: height)
         } else {
             if state.has(PORTAL_BUTTON_RELOAD) { trailing(PORTAL_BUTTON_RELOAD); separator() }
             trailing(PORTAL_BUTTON_INCREASE); trailing(PORTAL_BUTTON_RESET, width: 46); trailing(PORTAL_BUTTON_DECREASE)
@@ -329,8 +333,11 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         state.color("background").setFill(); bounds.fill()
         state.color("border").setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        for x in separators { NSRect(x: x, y: 7, width: 1, height: 14).fill() }
+        for x in separators { NSRect(x: x, y: ((bounds.height - 14) / 2).rounded(), width: 1, height: 14).fill() }
+        // A line along the top in the dot's color says the view has the
+        // keyboard, where the mode line said Emacs had it.
+        state.color(state.owner == .pending ? "accent" : "success").setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 2).fill()
     }
 
     func controlTextDidChange(_ notification: Notification) {

@@ -30,6 +30,7 @@ struct view {
     bool attached;
     bool announced; /* Its portal_views_announce record waits for an inspection. */
     portal_edges edges; /* Where it is attached, while ATTACHED. */
+    bool bar;           /* Whether its pane has a mode line for its toolbar. */
     struct portal_input input;
     size_t length;
     char target[]; /* LENGTH bytes, NUL-terminated, such as "web:3". */
@@ -164,19 +165,29 @@ static bool rectangle(portal_edges edges, portal_rect *rect, portal_text *error)
     return true;
 }
 
-bool portal_views_place(portal_string target, portal_edges edges, portal_string title,
-                        portal_text *error)
+bool portal_views_place(portal_string target, portal_edges edges, const portal_edges *bar,
+                        portal_string title, portal_text *error)
 {
-    portal_rect rect;
+    portal_rect rect, mode_line;
     struct view *view = find(target, PORTAL_ANY_KIND, error);
-    if (!view || !rectangle(edges, &rect, error))
+    if (!view || !rectangle(edges, &rect, error) || (bar && !rectangle(*bar, &mode_line, error)))
         return false;
     /* The frame may differ even when EDGES do not, so every place attaches. */
-    if (!portal_view_attach(view->native, title, rect, error))
+    if (!portal_view_attach(view->native, title, rect, bar ? &mode_line : NULL, error))
         return false;
     view->attached = true;
     view->edges = edges;
+    view->bar = bar;
+    /* It shows only in an attached pane with a mode line, which may be new:
+       the core draws again only if that changes what it shows. */
+    portal_toolbar_refresh(target);
     return true;
+}
+
+bool portal_views_mode_line(portal_string target)
+{
+    struct view *view = find(target, PORTAL_ANY_KIND, NULL);
+    return view && view->attached && view->bar;
 }
 
 bool portal_views_hide(portal_string target, portal_text *error)
@@ -187,6 +198,7 @@ bool portal_views_hide(portal_string target, portal_text *error)
     if (view->attached && !portal_view_detach(view->native, error))
         return false;
     view->attached = false;
+    portal_toolbar_refresh(target);
     return true;
 }
 

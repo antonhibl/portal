@@ -10,9 +10,11 @@
 (defvar portal-input--resume)
 
 (defcustom portal-toolbar t
-  "Whether native Portal views reserve a 28 pixel toolbar at the top.
-Changes apply immediately.  Quick terminals, and web views opened without a
-toolbar, have no strip."
+  "Whether a native Portal view shows its toolbar over its pane's mode line.
+The toolbar covers the mode line while the view has the keyboard, and the
+mode line shows again when Emacs has it.  Changes apply immediately.  Quick
+terminals, web views opened without a toolbar, and panes without a mode line
+have none."
   :type 'boolean :group 'portal-toolbar)
 
 (defun portal-toolbar--changed (_symbol value operation _where)
@@ -32,7 +34,7 @@ toolbar, have no strip."
   "Send current Emacs face colors to native toolbars."
   (when (fboundp 'portal--toolbar-theme)
     (let (colors)
-      (dolist (spec '(("background" header-line :background mode-line-inactive)
+      (dolist (spec '(("background" mode-line-active :background mode-line)
                       ("border" vertical-border :foreground)
                       ("shadow" shadow :foreground)
                       ("foreground" default :foreground)

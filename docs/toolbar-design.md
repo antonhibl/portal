@@ -1,7 +1,9 @@
 # Native toolbar design
 
-Design date: 23 September 2026. The look and controls below are implemented.
-State ownership changed later: [Ownership](#ownership) and the
+Design date: 23 September 2026. Revised 12 October 2026: the strip moved from
+above the content to over the pane's mode line, and shows only while the view
+has the keyboard; see [Placement](#placement). The gray inactive overlay is
+gone. State ownership changed later too: [Ownership](#ownership) and the
 [implementation notes](architecture.md#toolbar-state) describe today's code.
 [Changes to existing code](#changes-to-existing-code) and
 [Rejected alternatives](#rejected-alternatives) are historical.
@@ -13,8 +15,9 @@ act only on that view; Emacs retains Emacs behavior.
 
 - Remove `portal-input-mode`'s header line, currently a **Return to Emacs** button
   and hint string (`portal-input--header`).
-- Swift draws a 28 px strip atop each toolbar-bearing native view. It belongs
-  to the view, never overlays content.
+- Swift draws a strip over the pane's mode line while the view has the
+  keyboard. It belongs to the view, never overlays content, and never takes
+  room from it.
 - The strip holds an ownership dot and view controls, but no file name: the
   mode line already shows it.
 - Buttons call the C core, which asks the platform to act on WebKit, Ghostty or
@@ -51,21 +54,22 @@ see [Ownership dot](#ownership-dot).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ ●                                  ⌕  ☰ │ −  110%  + │ ⟳    │  28 px strip (native)
-├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │                    native view content                      │
 │                                                             │
-├─────────────────────────────────────────────────────────────┤
-│ -:%%-  *portal: README.md*   Top   (Portal)                 │  Emacs mode line
+├━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┤  2 px green line
+│ ●                                  ⌕  ☰ │ −  110%  + │ ⟳    │  strip over the mode line
 ```
+
+While Emacs has the keyboard, Emacs's own mode line shows in the strip's
+place.
 
 | Part | Size |
 | --- | --- |
-| Strip | 28 px high, 1 px bottom border, full width of the view |
+| Strip | The mode line's height and width; a 2 px top line in the dot's color |
 | Padding | 5 px left, 6 px right |
 | Ownership dot | 8 px dot centered in a 22 × 22 px click target, at the left |
-| Buttons | 22 px high, minimum 24 px wide, 5 px corner radius, 2 px apart |
+| Buttons | Up to 22 px high, centered in the strip, minimum 24 px wide, 5 px corner radius, 2 px apart |
 | Icons | 14 px stroke icons, stroke width 1.8 |
 | Group separator | 1 × 14 px rule with 5 px margin on each side |
 | Value readout | JetBrains Mono (or the system monospace font) 11 px, minimum 40 px wide |
@@ -73,16 +77,26 @@ see [Ownership dot](#ownership-dot).
 Controls sit right; navigation (back/forward), if present, sits left after the
 dot, separated by a rule.
 
-### Layout mechanics
+### Placement
 
-- Emacs still sends the rectangle from `window-inside-pixel-edges`; Elisp
-  geometry is unchanged.
-- Swift places a container there: the strip takes the top 28 px, the feature
-  (`WKWebView`, terminal, editor) the rest.
-- Terminals compute their grid from the smaller view, requiring no Elisp changes.
-- Strip height is fixed at runtime. Even without controls it keeps 28 px, so
-  appearing/disappearing controls never resize content. When `portal-toolbar`
-  is nil, no strip is created.
+- Emacs sends the rectangle from `window-inside-pixel-edges` and, when the
+  pane has a mode line, the mode line's edges, from `window-pixel-edges` and
+  `window-mode-line-height`.
+- Swift places a container spanning both: the feature (`WKWebView`, terminal,
+  editor) fills the inside rectangle, and the strip covers the mode line.
+  Clicks elsewhere in the container, such as beside the fringes, reach Emacs.
+- The strip shows while the view has the keyboard, a handoff is pending, or
+  find is open; otherwise Emacs's mode line shows. The C core decides.
+- Covering the mode line rather than removing it means Emacs's layout never
+  changes, so the content never resizes and a terminal's grid stays put.
+- Panes without a mode line, such as the quick terminal's and the launcher's,
+  show no strip. When `portal-toolbar` is nil, no strip is created.
+
+Why: the gray overlay changed the colors of what people read, and many did not
+notice it; the small dot was easy to miss, especially with one window. Moving
+the controls into an Emacs-drawn mode line was tried and rejected: a click on
+it is a click on Emacs, which takes the keyboard from the view before the
+control runs.
 
 ## Ownership dot
 
@@ -92,15 +106,13 @@ include it; changes redraw the strip immediately without polling.
 
 | State | Appearance | Tooltip | Click |
 | --- | --- | --- | --- |
-| Emacs has the keyboard | Hollow ring, `shadow` color | Click to enter | Focus the view, same as clicking the view or `RET` |
 | The view has the keyboard | Filled `success` green, soft halo | Click to return to Emacs | Return to Emacs, same as the configured escape |
 | Handoff pending | Filled accent (`link`) | Emacs is reading a command | None; the minibuffer owns the prompt |
 
 Dot clicks reuse existing paths: entering acts like a view click; returning acts
 like the configured escape (Command-period by default), sending `escape` to
-make Elisp run `portal-input-unfocus`. Content is subtly grayed out while Emacs
-owns the keyboard, including command handoffs and views without a toolbar.
-No new message types are added. Hovering uses the button hover background.
+make Elisp run `portal-input-unfocus`. While Emacs has the keyboard the strip,
+and with it the dot, is hidden. No new message types are added. Hovering uses the button hover background.
 
 ## Buttons
 
@@ -191,17 +203,18 @@ never reclaiming it from Emacs or another view.
 ## Theme
 
 Emacs faces supply theme-matching strip colors, sent at load and each theme
-change (`enable-theme-functions` and `disable-theme-functions`). This is Elisp's
-only toolbar data; nothing is sent back.
+change (`enable-theme-functions` and `disable-theme-functions`). With the mode
+line's edges sent at each placement, this is Elisp's only toolbar data; nothing
+is sent back.
 
 | Toolbar color | Face attribute |
 | --- | --- |
-| Strip background | `header-line` background, falling back to `mode-line-inactive` |
+| Strip background | `mode-line-active` background, falling back to `mode-line` |
 | Border | `vertical-border` foreground |
 | Icons, dimmed values, Emacs dot | `shadow` foreground |
 | Hovered icon, values | `default` foreground |
-| View-has-keyboard dot | `success` foreground |
-| Handoff dot, toggled-on tint | `link` foreground |
+| View-has-keyboard dot and top line | `success` foreground |
+| Handoff dot and top line, toggled-on tint | `link` foreground |
 
 Swift tints hover, pressed and toggled backgrounds translucently from foreground
 and `link` colors. Until colors arrive, built-in dark/light defaults follow

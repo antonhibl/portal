@@ -48,6 +48,9 @@ void portal_toolbar_state_free(struct portal_toolbar_state *toolbar);
 /* For toolbar.c, from views.c: TARGET's toolbar, if TARGET names an open
    view; and each open view's toolbar in turn, oldest first. */
 struct portal_toolbar_state *portal_views_toolbar(portal_string target);
+/* For toolbar.c, from views.c: whether TARGET's view is attached in a pane
+   with a mode line, where its toolbar shows. */
+bool portal_views_mode_line(portal_string target);
 void portal_views_each_toolbar(void (*visit)(struct portal_toolbar_state *toolbar));
 
 /* For input.c and web.c: draw TARGET's toolbar again if anything it shows

@@ -39,11 +39,14 @@ struct CheckToolbar {
                                                 dequeue: true)))
     }
 
+    /// Where the checks put the page and, below it, its pane's mode line.
+    static let edges = [0, 0, 640, 480], bar = [0, 480, 640, 506]
+
     @MainActor
     static func run() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 506),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Portal toolbar check"
         let editor = NSTextView(frame: require(window.contentView).bounds)
@@ -51,14 +54,23 @@ struct CheckToolbar {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editor)
         let target = try Views.open(kind: "web", options: ViewOptions(values: ["toolbar": .string("contents")]))
-        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        try Views.place(target, edges: edges, title: window.title, bar: bar)
         try Views.load(target, "data:text/html,<title>Toolbar test</title><h1>Heading</h1><p>needle one needle two needle three</p>")
         var container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         let web = require(container.content as? WKWebView)
         func state() throws -> [String: Any] { try Views.toolbar(target, "state") }
         func flag(_ name: String) -> Bool { (try? state())?[name] as? Bool ?? false }
         wait("page did not load") { web.title == "Toolbar test" && !web.isLoading && flag("headings") }
-        check(web.frame.height == 452 && require(container.toolbar).frame.height == 28)
+        // While Emacs has the keyboard, its mode line shows: no strip.
+        check(container.toolbar == nil && web.frame.size == NSSize(width: 640, height: 480))
+        // While the page has it, the strip covers the mode line, exactly, and
+        // the page keeps its size.
+        _ = try Views.input(target, action: "focus")
+        let strip = require(container.toolbar, "No strip while the page has the keyboard")
+        check(strip.frame == NSRect(x: 0, y: 480, width: 640, height: 26), "Strip at \(strip.frame)")
+        check(web.frame == NSRect(x: 0, y: 0, width: 640, height: 480), "Page at \(web.frame)")
+        // Clicks beside the page and strip reach Emacs, not the container.
+        check(container.hitTest(NSPoint(x: 10, y: 10)) !== container)
         func button(_ tooltip: String) -> NSButton {
             require(require(container.toolbar).subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == tooltip }, "Missing toolbar button: \(tooltip)")
         }
@@ -66,19 +78,27 @@ struct CheckToolbar {
             require(require(container.toolbar).subviews.compactMap { $0 as? NSButton }.first { $0.frame.minX == 5 && !$0.isHidden },
                     "Missing ownership dot")
         }
-        let field = require(require(container.toolbar).subviews.compactMap { $0 as? NSSearchField }.first)
-        check(field.isHidden && container.state.owner == .emacs)
+        func field() -> NSSearchField {
+            require(require(container.toolbar).subviews.compactMap { $0 as? NSSearchField }.first)
+        }
+        func inPage() -> Bool {
+            window.firstResponder === web || (window.firstResponder as? NSView)?.isDescendant(of: web) == true
+        }
+        // Buttons sit inside the strip, whatever its height.
+        check(button("Reload").frame.maxY <= 26 && button("Reload").frame.minY >= 0)
+        check(field().isHidden && container.state.owner == .view)
         // Previews go back and forward like pages; only Markdown ones open in Emacs.
         check(!button("Back").isHidden && !button("Back").isEnabled && !button("Forward").isEnabled)
         check(button("Open in Emacs").isHidden && button("Table of contents").isEnabled)
         try Views.load(target, "data:text/html,<title>Second page</title>")
         wait("second page did not load") { web.title == "Second page" && button("Back").isEnabled }
         check(!button("Table of contents").isEnabled, "A page without headings offers its contents")
+        // Buttons never take the keyboard: it stays in the page.
         button("Back").performClick(nil)
         wait("back did not return") { web.title == "Toolbar test" && !web.isLoading && flag("headings") }
-        check(button("Forward").isEnabled && !button("Back").isEnabled && window.firstResponder === editor)
+        check(button("Forward").isEnabled && !button("Back").isEnabled && inPage())
         button("Zoom in").performClick(nil)
-        check(web.pageZoom == 1.1 && window.firstResponder === editor && button("Reset to 100%").title == "110%")
+        check(web.pageZoom == 1.1 && inPage() && button("Reset to 100%").title == "110%")
         _ = try Views.toolbar(target, "increase")
         check(web.pageZoom == 1.25)
         for _ in 0..<20 { _ = try Views.toolbar(target, "increase") }
@@ -88,26 +108,25 @@ struct CheckToolbar {
         button("Reset to 100%").performClick(nil)
         check(web.pageZoom == 1 && button("Reset to 100%").title == "100%")
         button("Table of contents").performClick(nil)
-        check(flag("toc") && button("Table of contents").accessibilityValue() as? Int == 1)
+        check(flag("toc") && button("Table of contents").accessibilityValue() as? Int == 1 && inPage())
         var tocVisible = false
         web.evaluateJavaScript("!!document.querySelector('nav[aria-label=\"Table of contents\"]:not([hidden])')") { value, _ in tocVisible = value as? Bool ?? false }
         wait("TOC missing") { tocVisible }
-        // The dot moves the keyboard, and buttons never take it.
-        dot().performClick(nil)
-        check(container.state.owner == .view && Views.owner(target) == PORTAL_OWNER_VIEW)
-        check(dot().toolTip == "Click to return to Emacs")
-        let responder = window.firstResponder
         button("Zoom in").performClick(nil)
-        check(window.firstResponder === responder)
+        check(web.pageZoom == 1.1 && inPage())
+        // The dot returns to Emacs, whose mode line shows again.
+        check(dot().toolTip == "Click to return to Emacs")
         dot().performClick(nil)
-        check(window.firstResponder === editor && container.state.owner == .emacs)
-        // Find: the real field takes the keyboard and edits natively.
+        check(window.firstResponder === editor && container.state.owner == .emacs && container.toolbar == nil)
+        // Find, from Emacs: the strip shows with its real field, which takes
+        // the keyboard and edits natively.
         _ = try Views.toolbar(target, "find")
-        check(!field.isHidden && container.state.owner == .view, "find did not own the keyboard")
-        check(window.firstResponder !== web && field.currentEditor() != nil)
-        require(field.currentEditor()).insertText("needle")
+        check(container.toolbar != nil && !field().isHidden && container.state.owner == .view,
+              "find did not own the keyboard")
+        check(!inPage() && field().currentEditor() != nil)
+        require(field().currentEditor()).insertText("needle")
         wait("find count") { container.state.matches == 3 && container.state.match == 1 }
-        check(container.state.query == "needle" && field.stringValue == "needle")
+        check(container.state.query == "needle" && field().stringValue == "needle")
         press(key(window, "\r", code: 36))
         wait("find next") { container.state.match == 2 }
         press(key(window, "\r", code: 36, flags: .shift))
@@ -118,42 +137,46 @@ struct CheckToolbar {
         button("Next match").performClick(nil)
         wait("find wraps") { container.state.match == 1 }
         press(key(window, "\u{1b}", code: 53))
-        check(!container.state.finding && field.isHidden && container.state.owner == .view)
-        check(window.firstResponder === web || (window.firstResponder as? NSView)?.isDescendant(of: web) == true,
-              "Closing find did not return the keyboard to the page")
+        check(!container.state.finding && container.state.owner == .view && field().isHidden)
+        check(inPage(), "Closing find did not return the keyboard to the page")
         // The page does not use Command-F, so the toolbar's shortcut gets it.
-        let commandF = key(window, "f", code: 3, flags: .command)
-        press(commandF)
-        wait("Command-F did not open find") { container.state.finding && window.firstResponder !== web }
+        press(key(window, "f", code: 3, flags: .command))
+        wait("Command-F did not open find") { container.state.finding && !inPage() }
         wait("find query was not retained") { container.state.matches == 3 }
-        _ = try Views.input(target, action: "unfocus")
-        _ = try Views.toolbar(target, "find")
-        check(container.state.owner == .view, "Repeated find must focus its field")
-        // Closing find after the user moved to Emacs leaves Emacs the keyboard.
+        // Closing find after the user moved to Emacs leaves Emacs the keyboard,
+        // and the mode line shows again.
         window.makeFirstResponder(editor)
         NotificationCenter.default.post(name: NSWindow.didUpdateNotification, object: window)
-        check(container.state.owner == .emacs)
+        check(container.state.owner == .emacs && container.toolbar != nil)
         _ = try Views.toolbar(target, "close-find")
-        check(window.firstResponder === editor && !container.state.finding, "Closing find took the keyboard")
-        // Visibility is live, and the view keeps its state.
+        check(window.firstResponder === editor && !container.state.finding && container.toolbar == nil,
+              "Closing find took the keyboard or left the strip")
+        // Visibility is live, the page never resizes, and it keeps its state.
+        _ = try Views.input(target, action: "focus")
         Views.showToolbars(false)
         check(container.toolbar == nil && web.frame.height == 480)
         Views.showToolbars(true)
-        check(container.toolbar != nil && web.frame.height == 452 && web.pageZoom == 1.1)
+        check(container.toolbar != nil && web.frame.height == 480 && web.pageZoom == 1.1)
+        // A pane without a mode line has no strip.
+        try Views.place(target, edges: edges, title: window.title)
+        check(container.toolbar == nil && web.frame.height == 480 && container.state.owner == .view)
+        try Views.place(target, edges: edges, title: window.title, bar: bar)
+        check(container.toolbar != nil)
         try Views.hide(target)
         check(web.window !== window && web.isHiddenOrHasHiddenAncestor && window.firstResponder === editor)
-        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        try Views.place(target, edges: edges, title: window.title, bar: bar)
         container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         check(container.content === web && !container.isHidden && flag("toc") && web.pageZoom == 1.1)
-        check(button("Reset to 100%").title == "110%" && container.state.query == "needle")
-        button("Reload").performClick(nil)
+        let kept = try state()["query"] as? String
+        check(container.toolbar == nil && kept == "needle")
+        _ = try Views.toolbar(target, "reload")
         wait("reload") { !web.isLoading }
         tocVisible = false
         web.evaluateJavaScript("!!document.querySelector('nav[aria-label=\"Table of contents\"]:not([hidden])')") { value, _ in tocVisible = value as? Bool ?? false }
         wait("TOC not kept across reload") { tocVisible }
         check(web.pageZoom == 1.1 && flag("toc"))
         // Command-R reloads as the button does, while the view has the keyboard.
-        dot().performClick(nil)
+        _ = try Views.input(target, action: "focus")
         var marked = false
         web.evaluateJavaScript("window.marked = true") { _, _ in marked = true }
         wait("page was not marked") { marked }
@@ -162,8 +185,7 @@ struct CheckToolbar {
             web.evaluateJavaScript("window.marked === undefined") { value, _ in marked = !(value as? Bool ?? false) }
             return !marked && !web.isLoading
         }
-        dot().performClick(nil)
-        check(container.state.owner == .emacs)
+        check(button("Reset to 100%").title == "110%")
         // Colors are the core's; the strip draws them.
         var colors = portal_colors()
         colors.success = portal_color(set: true, red: 0, green: 1, blue: 0)
@@ -173,24 +195,29 @@ struct CheckToolbar {
         check(require(container.toolbar).state.color("background") == NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1))
         Views.paintToolbars(portal_colors())
         check(container.state.color("success") == .systemGreen)
+        dot().performClick(nil)
+        check(container.state.owner == .emacs && container.toolbar == nil)
         try Views.close(target)
         check(require(window.contentView).subviews.count == 1)
         try checkWithoutToolbar(window: window)
         try checkMarkdown(window: window, editor: editor)
-        print("Toolbar layout, focus, zoom limits, TOC, find, back, forward, theme and retained state passed")
+        print("Toolbar over the mode line, focus, zoom limits, TOC, find, back, forward, theme and retained state passed")
     }
 
-    /// A view without a toolbar fills its pane, even while toolbars show.
+    /// A view without a toolbar fills its pane and leaves the mode line,
+    /// even while it has the keyboard.
     @MainActor
     static func checkWithoutToolbar(window: NSWindow) throws {
         let target = try Views.open(kind: "web", options: ViewOptions(values: [
             "toolbar": .string("none"), "hosted": .flag(true)]))
-        try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+        try Views.place(target, edges: edges, title: window.title, bar: bar)
+        _ = try Views.input(target, action: "focus")
         let container = require(require(window.contentView).subviews.compactMap { $0 as? NativeContainer }.first)
         check(container.toolbar == nil && container.content.frame.height == 480)
         Views.showToolbars(false)
         Views.showToolbars(true)
         check(container.toolbar == nil && container.content.frame.height == 480)
+        _ = try Views.input(target, action: "unfocus")
         try Views.close(target)
         print("Views without a toolbar fill their pane")
     }
@@ -210,7 +237,8 @@ struct CheckToolbar {
         func edit(hosted: Bool) throws -> (String, NSButton) {
             let target = try Views.open(kind: "web", options: ViewOptions(values: [
                 "toolbar": .string("markdown"), "hosted": .flag(hosted)]))
-            try Views.place(target, edges: [0, 0, 640, 480], title: window.title)
+            try Views.place(target, edges: edges, title: window.title, bar: bar)
+            _ = try Views.input(target, action: "focus")
             check(!require(container().toolbar).subviews.compactMap { $0 as? NSButton }
                 .first { $0.toolTip == "Table of contents" }!.isHidden)
             return (target, require(require(container().toolbar).subviews.compactMap { $0 as? NSButton }
@@ -219,6 +247,7 @@ struct CheckToolbar {
         // Without a bridge there is no way to ask Emacs, so no button.
         let (plain, hidden) = try edit(hosted: false)
         check(hidden.isHidden, "A preview without a bridge offers Open in Emacs")
+        _ = try Views.input(plain, action: "unfocus")
         try Views.close(plain)
         let (target, button) = try edit(hosted: true)
         check(!button.isHidden)

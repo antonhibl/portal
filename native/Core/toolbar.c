@@ -28,6 +28,10 @@
    token that is never reused, so a result that no request is waiting for,
    or one for a closed view, reaches nothing.
 
+   Showing.  A toolbar covers its pane's mode line while its view has the
+   keyboard, Emacs reads a command for it, or its find field is open; the
+   mode line shows otherwise, and a pane without one shows no toolbar.
+
    Focus.  Opening the find field gives it the keyboard.  Closing it gives
    the view's content the keyboard, but only while the view has it: by then
    the user may have moved to Emacs or another view. */
@@ -165,12 +169,21 @@ static double largest(const struct portal_toolbar_state *toolbar)
 
 /* Drawing. */
 
+/* Whether TOOLBAR can show: it has controls, toolbars show, and its view's
+   pane has a mode line for it to cover. */
+static bool room(const struct portal_toolbar_state *toolbar)
+{
+    return !toolbars.hidden && toolbar->layout != NONE && portal_views_mode_line(toolbar->target);
+}
+
 static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
 {
     portal_toolbar state = {0};
-    /* Ownership also draws the content's inactive cue, without a strip. */
     state.owner = portal_input_owner(toolbar->target);
-    if (toolbars.hidden || toolbar->layout == NONE)
+    /* It shows only while the view has the keyboard, or Emacs reads a
+       command for it, or its find field is open: then it replaces the mode
+       line, which shows Emacs has the keyboard otherwise. */
+    if (!room(toolbar) || (state.owner == PORTAL_OWNER_EMACS && !toolbar->finding))
         return state;
     state.visible = true;
     state.colors = toolbars.colors;
@@ -459,7 +472,7 @@ void portal_toolbar_committed(portal_string target)
 
 static bool open_find(struct portal_toolbar_state *toolbar, portal_text *error)
 {
-    if (toolbars.hidden || !web(toolbar))
+    if (!web(toolbar) || !room(toolbar))
         return fail_with(error, "Find needs a visible web toolbar");
     bool opening = !toolbar->finding;
     toolbar->finding = true;
@@ -606,7 +619,7 @@ bool portal_toolbar_shortcut(portal_string target, portal_chord key)
         button = PORTAL_BUTTON_DECREASE;
     else if (toolbar->kind == PORTAL_TERMINAL && key.character == '0')
         button = PORTAL_BUTTON_RESET;
-    else if (key.character == 'f' && !toolbars.hidden && web(toolbar)
+    else if (key.character == 'f' && web(toolbar) && room(toolbar)
              && portal_input_owner(target) == PORTAL_OWNER_VIEW)
         button = PORTAL_BUTTON_FIND;
     else if (key.character == 'r' && web(toolbar) && portal_input_owner(target) == PORTAL_OWNER_VIEW)

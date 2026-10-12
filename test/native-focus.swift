@@ -85,8 +85,9 @@ struct CheckFocus {
         try checkChannel()
     }
 
-    /// Draw the actual shared container: inactive content loses contrast,
-    /// but its mouse target and toolbar do not change.
+    /// Draw the actual shared container: content keeps its own colors
+    /// whoever has the keyboard, which the toolbar over the mode line shows,
+    /// and gets every click.
     @MainActor
     static func checkInactiveCue(window: NSWindow) {
         let content = BlackContent(frame: .zero)
@@ -95,28 +96,20 @@ struct CheckFocus {
         container.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
         require(window.contentView).addSubview(container)
         defer { container.removeFromSuperview() }
-        func brightness() -> CGFloat {
+        func red() -> CGFloat {
             container.layoutSubtreeIfNeeded()
             let bitmap = require(container.bitmapImageRepForCachingDisplay(in: container.bounds))
             container.cacheDisplay(in: container.bounds, to: bitmap)
             return require(require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
                 .usingColorSpace(.deviceRGB)).redComponent
         }
-        for visible in [false, true] {
-            state.visible = visible
-            state.owner = .view
+        for owner in [ToolbarState.Owner.view, .emacs, .pending] {
+            state.owner = owner
             container.apply(state)
-            let active = brightness()
-            for owner in [ToolbarState.Owner.emacs, .pending] {
-                state.owner = owner
-                container.apply(state)
-                let inactive = brightness()
-                check(inactive > active + 0.03,
-                      "Inactive content has no visible contrast cue (strip: \(visible), active: \(active), inactive: \(inactive))")
-                check(container.hitTest(NSPoint(x: 50, y: 50)) === content, "Inactive cue steals clicks")
-            }
+            check(red() < 0.01, "Content changed color while \(owner) has the keyboard")
+            check(container.hitTest(NSPoint(x: 50, y: 50)) === content, "The container steals clicks")
         }
-        print("Inactive and pending content is visibly muted, with clicks passing through")
+        print("Content keeps its colors and its clicks, whoever has the keyboard")
     }
 
     /// A full pipe delays records, without losing or reordering them: the

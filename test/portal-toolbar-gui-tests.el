@@ -45,9 +45,14 @@
       (portal-terminal-test--wait (lambda () (< (plist-get (portal-terminal-test--state) :columns) columns)))
       (should (= (portal-terminal-text-size-reset) default))
       (portal-terminal-test--wait (lambda () (= (plist-get (portal-terminal-test--state) :rows) rows)))
+      ;; The toolbar covers the mode line, so the grid never changes with it.
+      (portal-input-focus)
       (let ((portal-toolbar nil))
-        (portal-terminal-test--wait (lambda () (> (plist-get (portal-terminal-test--state) :rows) rows))))
-      (portal-terminal-test--wait (lambda () (= (plist-get (portal-terminal-test--state) :rows) rows))))))
+        (sit-for 0.3)
+        (should (= (plist-get (portal-terminal-test--state) :rows) rows)))
+      (sit-for 0.3)
+      (should (= (plist-get (portal-terminal-test--state) :rows) rows))
+      (portal-input-unfocus))))
 
 (ert-deftest portal-toolbar-preview-toc-survives-reload ()
   (portal-test--with-web
@@ -126,12 +131,10 @@
                            '(error "No toolbar controls for this native view")))
             (let ((rows (plist-get (portal-terminal-test--state target) :rows))
                   (regular (plist-get (portal-terminal-test--state) :rows)))
-              ;; Hiding toolbars grows the regular terminal, but not the quick one.
+              ;; Toolbars cover mode lines and take no room from either terminal.
               (let ((portal-toolbar nil))
-                (portal-terminal-test--wait
-                 (lambda () (> (plist-get (portal-terminal-test--state) :rows) regular)))
+                (sit-for 0.3)
+                (should (= (plist-get (portal-terminal-test--state) :rows) regular))
                 (should (= (plist-get (portal-terminal-test--state target) :rows) rows)))
-              (portal-terminal-test--wait
-               (lambda () (= (plist-get (portal-terminal-test--state) :rows) regular)))
               (should (= (plist-get (portal-terminal-test--state target) :rows) rows))))
         (kill-buffer quick)))))

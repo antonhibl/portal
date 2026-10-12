@@ -196,14 +196,18 @@ public func portalViewDestroy(_ view: OpaquePointer, _ error: UnsafeMutablePoint
 /// Find the frame by its temporary title on every call; nothing is cached.
 @_cdecl("portal_view_attach")
 public func portalViewAttach(_ view: OpaquePointer, _ frame: portal_string, _ rect: portal_rect,
+                             _ bar: UnsafePointer<portal_rect>?,
                              _ error: UnsafeMutablePointer<portal_text>) -> Bool {
     let view = native(view), title = String(copying: frame)
-    let rectangle = CGRect(x: Int(rect.x), y: Int(rect.y), width: Int(rect.width), height: Int(rect.height))
+    func rectangle(_ rect: portal_rect) -> CGRect {
+        CGRect(x: Int(rect.x), y: Int(rect.y), width: Int(rect.width), height: Int(rect.height))
+    }
+    let content = rectangle(rect), modeLine = bar.map { rectangle($0.pointee) }
     return perform(error) {
         guard let host = NativeHost.bind(title: title) else {
             throw NativeError.message("Cannot find the requested native Emacs frame")
         }
-        try view.attach(to: host, rectangle: rectangle)
+        try view.attach(to: host, rectangle: content, bar: modeLine)
     } != nil
 }
 
