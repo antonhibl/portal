@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Show relative images in Markdown previews
 
