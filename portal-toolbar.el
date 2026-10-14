@@ -66,13 +66,16 @@ A web page returns nil: its toolbar names the URL on screen itself."
         ((bound-and-true-p portal-web--url) nil)
         (t (buffer-name))))
 
-(defvar-local portal-toolbar--label nil "The label last sent for this buffer's view.")
+(defvar-local portal-toolbar--sent nil
+  "The view target and label last sent for this buffer, as (TARGET . LABEL).
+A new view in the same buffer has a new target, and gets its label again.")
 
 (defun portal-toolbar--sync-labels (&rest _)
   "Send each Portal view's label to its toolbar, where it changed.
 It runs after each command, which is when a new view's buffer is complete
-and renames have happened, and on buffer list changes, for renames outside
-a command."
+and renames have happened; on buffer list changes, for renames outside a
+command; and after native records, which change what a hosted app shows
+or a terminal reports."
   (when (fboundp 'portal--toolbar-label)
     (dolist (buffer (portal-view-buffers))
       (with-current-buffer buffer
@@ -80,9 +83,9 @@ a command."
                     (label (or (with-demoted-errors "Portal toolbar label: %S"
                                  (funcall portal-toolbar-label-function))
                                "")))
-          (unless (equal label portal-toolbar--label)
+          (unless (equal (cons target label) portal-toolbar--sent)
             (portal--toolbar-label target label)
-            (setq portal-toolbar--label label)))))))
+            (setq portal-toolbar--sent (cons target label))))))))
 
 (defun portal-toolbar--changed (_symbol value operation _where)
   "Apply a new toolbar VALUE on variable OPERATION."
@@ -119,6 +122,7 @@ a command."
     (portal-toolbar--theme)
     (add-hook 'post-command-hook #'portal-toolbar--sync-labels)
     (add-hook 'buffer-list-update-hook #'portal-toolbar--sync-labels)
+    (add-hook 'portal-view-records-hook #'portal-toolbar--sync-labels)
     (portal-toolbar--sync-labels)))
 (add-hook 'portal-view-load-hook #'portal-toolbar--initialize)
 (add-hook 'enable-theme-functions #'portal-toolbar--theme)

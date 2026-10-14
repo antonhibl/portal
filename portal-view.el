@@ -93,10 +93,16 @@ RECEIVER must queue interactive work for the command loop, not run it here."
         (setq start (1+ end))))
     (substring input start)))
 
+(defvar portal-view-records-hook nil
+  "Normal hook run after each batch of native records is handled.
+Records change what buffers know about their views outside any command:
+a page a hosted app shows, a terminal's title or directory.")
+
 (defun portal-view--receive (_process text)
   "Dispatch each native record completed by TEXT."
   (setq portal-view--pending
-        (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch)))
+        (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch))
+  (run-hooks 'portal-view-records-hook))
 
 (defun portal-view--read-records ()
   "Handle the records already in the pipe, without waiting or running timers."

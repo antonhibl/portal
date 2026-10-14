@@ -70,7 +70,21 @@
         (rename-buffer "*terminal: renamed*" t)
         (portal-toolbar--sync-labels)
         (should (equal (cdar sent) (buffer-name)))
+        ;; A new view in the same buffer gets its label, even the same one.
+        (setq-local portal-view--target "terminal:5")
+        (portal-toolbar--sync-labels)
+        (should (equal (car sent) (cons "terminal:5" (buffer-name))))
         ;; A failing label function is demoted, and sends an empty label.
         (let ((portal-toolbar-label-function (lambda () (error "No label"))))
           (portal-toolbar--sync-labels))
         (should (equal (cdar sent) ""))))))
+
+(ert-deftest portal-toolbar-labels-sync-after-commands-renames-and-records ()
+  (let (post-command-hook buffer-list-update-hook portal-view-records-hook)
+    (cl-letf (((symbol-function 'portal--toolbar) #'ignore)
+              ((symbol-function 'portal--toolbar-theme) #'ignore)
+              ((symbol-function 'portal--toolbar-label) #'ignore)
+              ((symbol-function 'portal-view-buffers) (lambda (&rest _) nil)))
+      (portal-toolbar--initialize)
+      (dolist (hook (list post-command-hook buffer-list-update-hook portal-view-records-hook))
+        (should (memq #'portal-toolbar--sync-labels hook))))))

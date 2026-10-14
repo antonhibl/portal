@@ -228,8 +228,10 @@ takes its title from its document unless the app sets one:
 Lisp's label, when set, replaces the default. `portal-toolbar-label-function`
 builds it in the view's buffer, and `portal-toolbar--sync-labels` sends it
 with `portal--toolbar-label` only when it changed, after each command, which
-is when a new view's buffer is complete, and on buffer list changes, for
-renames outside a command. A label the function fails to build is reported
+is when a new view's buffer is complete; on buffer list changes, for renames
+outside a command; and after each batch of native records
+(`portal-view-records-hook`), which change what a hosted app shows or a
+terminal reports. A label the function fails to build is reported
 with `with-demoted-errors` and shows the default.
 
 ## Theme
