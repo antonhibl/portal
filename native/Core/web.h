@@ -48,6 +48,10 @@ void portal_web_state_free(struct portal_web_state *state);
    and forward, as the platform last reported; false for a TARGET that names
    no open web view. */
 void portal_web_views_history(portal_string target, bool *back, bool *forward);
+/* For toolbar.c: the URL TARGET's page committed last, if TARGET names a
+   web view that is not a hosted app and has committed one; else "".  A
+   hosted app's address names the app host, not what the app shows. */
+portal_string portal_web_views_page(portal_string target);
 /* The user asked, from hosted web view TARGET's toolbar, to open the
    document it shows in Emacs: give Emacs the keyboard, then send the app's
    buffer an "edit" message.  Does nothing for any other TARGET. */

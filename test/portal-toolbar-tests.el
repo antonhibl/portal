@@ -47,8 +47,9 @@
   (with-temp-buffer
     (rename-buffer "*terminal: portal*" t)
     (should (equal (portal-toolbar-default-label) (buffer-name)))
+    ;; A web page's toolbar names the URL on screen itself.
     (setq-local portal-web--url "https://example.org/docs/")
-    (should (equal (portal-toolbar-default-label) "example.org/docs"))
+    (should-not (portal-toolbar-default-label))
     (setq-local portal-web--hosted-path "/excalidraw/?file=x")
     (should (equal (portal-toolbar-default-label) "/excalidraw/"))
     (setq-local portal-web--preview (concat "file://" (expand-file-name "~/a b/page.html")))

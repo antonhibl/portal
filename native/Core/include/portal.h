@@ -379,8 +379,9 @@ typedef struct portal_toolbar {
     double value;      /* In UNIT, which RESET returns it to STANDARD. */
     double standard;
     portal_unit unit;
-    portal_string label;  /* What the view shows, as Lisp named it: a buffer name,
-                             a URL or a file; "" until Lisp says. */
+    portal_string label;  /* What the view shows: a web page's URL without its
+                             scheme, or what Lisp named instead, such as a buffer
+                             name or a file; "" when neither is known. */
     bool finding;         /* Show the find field and its matches, not the value. */
     portal_string query;  /* The find field's text. */
     int64_t match;        /* The selected match, from 1, or 0 for none, */

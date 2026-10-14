@@ -35,6 +35,7 @@
    Focus.  Opening the find field gives it the keyboard.  Closing it gives
    the view's content the keyboard, but only while the view has it: by then
    the user may have moved to Emacs or another view. */
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,7 +71,7 @@ struct portal_toolbar_state {
     portal_kind kind;
     enum layout layout;
     bool edit;            /* Open in Emacs: a hosted Markdown preview's. */
-    portal_text label;    /* What the view shows, as Lisp named it. */
+    portal_text label;    /* What the view shows, as Lisp named it; "" for the default. */
     double value;
     bool contents;        /* Whether the table of contents is open. */
     int64_t headings;     /* How many the page has. */
@@ -177,6 +178,28 @@ static bool room(const struct portal_toolbar_state *toolbar)
     return !toolbars.hidden && toolbar->layout != NONE && portal_views_mode_line(toolbar->target);
 }
 
+/* What TOOLBAR's view shows, as its toolbar says: Lisp's label where it set
+   one, as a terminal's buffer name; otherwise, for a web view that is not a
+   hosted app, the URL its page committed last without its scheme, so that
+   following links and history needs nothing from Lisp. */
+static portal_string label(const struct portal_toolbar_state *toolbar)
+{
+    if (toolbar->label.length)
+        return borrow(toolbar->label);
+    portal_string page = portal_web_views_page(toolbar->target);
+    size_t scheme = 0;
+    while (scheme < page.length
+           && (isalnum((unsigned char) page.data[scheme]) || strchr("+-.", page.data[scheme])))
+        scheme++;
+    if (scheme + 2 < page.length && !memcmp(page.data + scheme, "://", 3)) {
+        page.data += scheme + 3;
+        page.length -= scheme + 3;
+    }
+    if (page.length > 1 && page.data[page.length - 1] == '/')
+        page.length--;
+    return page;
+}
+
 static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
 {
     portal_toolbar state = {0};
@@ -188,7 +211,7 @@ static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
         return state;
     state.visible = true;
     state.colors = toolbars.colors;
-    state.label = borrow(toolbar->label);
+    state.label = label(toolbar);
     state.buttons = bit(PORTAL_BUTTON_OWNER);
     if (state.owner != PORTAL_OWNER_PENDING)
         state.enabled = bit(PORTAL_BUTTON_OWNER);

@@ -22,7 +22,8 @@ void portal_toolbar_show(bool shown);
 /* Draw every toolbar in COLORS, as portal--toolbar-theme does. */
 void portal_toolbar_paint(const portal_colors *colors);
 /* Show LABEL, what TARGET's view shows as Lisp names it, on its toolbar,
-   as portal--toolbar-label does.  Fails for a TARGET that names no view. */
+   as portal--toolbar-label does; "" shows the toolbar's default, a web
+   page's URL.  Fails for a TARGET that names no view. */
 bool portal_toolbar_label(portal_string target, portal_string label, portal_text *error);
 /* Perform ACTION on TARGET's toolbar, as a click would, and set *STATE to
    the toolbar's state as a JSON object, as portal--toolbar-action does.

@@ -36,9 +36,11 @@ native toolbars with the other theme colors."
 (defcustom portal-toolbar-label-function #'portal-toolbar-default-label
   "Function naming what a native view's toolbar shows, after its dot.
 It is called with no arguments in the view's buffer and returns a string,
-or nil for no label.  It runs whenever buffers or windows change, so it
-should be quick; the label reaches the native toolbar only when it differs
-from the last one sent."
+or nil for the toolbar's own default: a web page's URL, which follows the
+links and history the page navigates, and nothing for other views.  It
+runs after each command and whenever the buffer list changes, so it should
+be quick; the label reaches the native toolbar only when it differs from
+the last one sent."
   :type 'function :group 'portal-toolbar)
 
 (defun portal-toolbar--url-label (url)
@@ -53,23 +55,24 @@ without their scheme."
       (string-remove-suffix "/" (replace-regexp-in-string "\\`[a-z]+://" "" url)))))
 
 (defun portal-toolbar-default-label ()
-  "Name what this buffer's view shows.
-A Markdown or HTML render names its source file, abbreviated; a web page
-its URL without the scheme; a hosted app its path; and a terminal, or any
-other view, its buffer name, which follows `rename-buffer'."
+  "Name what this buffer's view shows, where Emacs knows better than the view.
+A Markdown or HTML render names its source file, abbreviated; a hosted app
+its path; and a terminal its buffer name, which follows `rename-buffer'.
+A web page returns nil: its toolbar names the URL on screen itself."
   (cond ((bound-and-true-p portal-web--markdown) (abbreviate-file-name portal-web--markdown))
         ((bound-and-true-p portal-web--preview) (portal-toolbar--url-label portal-web--preview))
         ((bound-and-true-p portal-web--hosted-path)
          (car (split-string portal-web--hosted-path "?")))
-        ((bound-and-true-p portal-web--url) (portal-toolbar--url-label portal-web--url))
+        ((bound-and-true-p portal-web--url) nil)
         (t (buffer-name))))
 
 (defvar-local portal-toolbar--label nil "The label last sent for this buffer's view.")
 
 (defun portal-toolbar--sync-labels (&rest _)
   "Send each Portal view's label to its toolbar, where it changed.
-Buffer and window change hooks call this; a rename, a new page or a new
-view buffer changes a label."
+It runs after each command, which is when a new view's buffer is complete
+and renames have happened, and on buffer list changes, for renames outside
+a command."
   (when (fboundp 'portal--toolbar-label)
     (dolist (buffer (portal-view-buffers))
       (with-current-buffer buffer
@@ -114,8 +117,8 @@ view buffer changes a label."
   (when (fboundp 'portal--toolbar)
     (portal--toolbar portal-toolbar)
     (portal-toolbar--theme)
+    (add-hook 'post-command-hook #'portal-toolbar--sync-labels)
     (add-hook 'buffer-list-update-hook #'portal-toolbar--sync-labels)
-    (add-hook 'window-state-change-functions #'portal-toolbar--sync-labels)
     (portal-toolbar--sync-labels)))
 (add-hook 'portal-view-load-hook #'portal-toolbar--initialize)
 (add-hook 'enable-theme-functions #'portal-toolbar--theme)

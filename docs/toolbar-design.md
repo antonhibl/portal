@@ -212,22 +212,25 @@ keyboard, and toward `link` during a handoff, with a hairline along the top
 and the dot in the same color. A border around the content was tried on paper
 and rejected as obtrusive.
 
-After the dot, a label names what the view shows, in the tint. Elisp builds
-it with `portal-toolbar-label-function` in the view's buffer and sends it to
-the core with `portal--toolbar-label` whenever it changes, from buffer and
-window change hooks; the core keeps it in the snapshot and draws it like any
-other part. The default, `portal-toolbar-default-label`:
+After the dot, a label names what the view shows, in the tint. The strip is
+infrastructure, like a macOS title bar: the core decides what it holds and
+Swift paints every view's strip the same way. Each app contributes its
+title through one core call, `portal_toolbar_label`, the way a macOS window
+takes its title from its document unless the app sets one:
 
-| View | Label |
-| --- | --- |
-| Terminal | The buffer name, which follows `rename-buffer` |
-| Web page | The URL without its scheme |
-| Markdown or HTML render | The source file, abbreviated |
-| Hosted app | Its app host path |
+| View | Label | Set by |
+| --- | --- | --- |
+| Web page | The URL its page committed last, without its scheme, following links and history | The core, from the web module's committed page; nothing crosses to Lisp |
+| Terminal | The buffer name, which follows `rename-buffer` | Lisp |
+| Markdown or HTML render | The source file, abbreviated | Lisp |
+| Hosted app | Its app host path | Lisp; a hosted app's address names the app host, so it has no default |
 
-A label the function fails to build is reported with `with-demoted-errors`
-and shows as nothing. The label is the only text the toolbar shows that the
-core does not own; the core still decides when it shows.
+Lisp's label, when set, replaces the default. `portal-toolbar-label-function`
+builds it in the view's buffer, and `portal-toolbar--sync-labels` sends it
+with `portal--toolbar-label` only when it changed, after each command, which
+is when a new view's buffer is complete, and on buffer list changes, for
+renames outside a command. A label the function fails to build is reported
+with `with-demoted-errors` and shows the default.
 
 ## Theme
 
@@ -261,7 +264,7 @@ system appearance.
 ;; What the strip says about its view; the default names the buffer,
 ;; page or file.
 (setq portal-toolbar-label-function
-      (lambda () (if (derived-mode-p 'portal-terminal-mode) default-directory
+      (lambda () (if (derived-mode-p 'portal-terminal-mode) (abbreviate-file-name default-directory)
                    (portal-toolbar-default-label))))
 
 ;; The toolbar's functions are also reachable from Emacs.
