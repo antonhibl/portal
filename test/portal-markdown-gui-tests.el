@@ -23,7 +23,8 @@ The folder is `portal-markdown-gui--directory'."
               (concat "# Read me\n\n[Source](<src/main file.ts#L42>)\n\n"
                       (mapconcat (lambda (n) (format "Paragraph %d.\n\n" n)) (number-sequence 1 150))
                       "[Architecture](<docs é/arch notes.md>) [Decisions](<docs é/arch notes.md#decisions>) "
-                      "[Other](other.md) [Missing](missing.md) [Picture](pic.png) [Folder](src/)\n"))
+                      "[Other](other.md) [Missing](missing.md) [Picture](pic.png) [Folder](src/)\n\n"
+                      "![Inline](pic.png)\n"))
              (portal-markdown-gui--write
               "docs é/arch notes.md"
               (concat "# Arch\n\n[Up](../README.md)\n\n"
@@ -277,6 +278,16 @@ The folder is `portal-markdown-gui--directory'."
       (portal-terminal-test--wait (lambda () (equal (buffer-name) "*portal: arch notes.md*")))
       (portal-render-open-in-emacs)
       (should (equal buffer-file-name (portal-markdown-gui--file "docs é/arch notes.md"))))))
+
+(ert-deftest portal-markdown-gui-shows-relative-images ()
+  (portal-markdown-gui--documents
+    (let ((loaded "const i = document.querySelector('img[alt=Inline]');
+                   return i.complete && i.naturalWidth;")
+          (deadline (+ (float-time) 5)))
+      (while (and (not (eql (portal-excalidraw-gui--js loaded) 1))
+                  (< (float-time) deadline))
+        (sit-for 0.05))
+      (should (eql (portal-excalidraw-gui--js loaded) 1)))))
 
 ;; Emacs frames may force an appearance of their own; previews follow the system's.
 (ert-deftest portal-markdown-gui-appearance-follows-the-system-or-the-option ()

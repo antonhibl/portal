@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { stat } from "node:fs/promises";
-import { basename, isAbsolute } from "node:path";
+import { basename, extname, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import styles from "./markdown.css" with { type: "text" };
 
@@ -24,7 +24,7 @@ function page(title: string, body: string, status = 200): Response {
 				"Content-Type": "text/html; charset=utf-8",
 				// Markdown is a document, not executable application code.
 				"Content-Security-Policy":
-					"default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+					"default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: http: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 			},
 		},
 	);
@@ -41,6 +41,20 @@ function errorPage(message: string, status: number): Response {
 // The extensions `portal-render-markdown' accepts, in any case.
 const markdownFile = /\.(?:md|markdown|mdown|mkd|mkdn)$/i;
 
+// The image types `image' serves, by extension in any case.
+const imageTypes: Record<string, string> = {
+	".apng": "image/apng",
+	".avif": "image/avif",
+	".bmp": "image/bmp",
+	".gif": "image/gif",
+	".ico": "image/x-icon",
+	".jpeg": "image/jpeg",
+	".jpg": "image/jpeg",
+	".png": "image/png",
+	".svg": "image/svg+xml",
+	".webp": "image/webp",
+};
+
 // HTMLRewriter reads attribute values as written, and Bun writes these.
 const entities: Record<string, string> = {
 	"&amp;": "&",
@@ -49,42 +63,102 @@ const entities: Record<string, string> = {
 	"&quot;": '"',
 };
 
+/** The local file that HREF in the Markdown file at PATH names, with its
+ * fragment, or null when HREF is a fragment or not a local file. */
+function localFile(
+	href: string,
+	path: string,
+): { file: string; hash: string } | null {
+	if (href.startsWith("#") || href.startsWith("//")) return null;
+	if (/^[a-z][a-z\d+.-]*:/i.test(href) && !/^file:/i.test(href)) return null;
+	try {
+		const url = new URL(href, pathToFileURL(path));
+		if (url.protocol !== "file:") return null;
+		return { file: fileURLToPath(url), hash: url.hash };
+	} catch {
+		return null;
+	}
+}
+
 /** Where a link in the Markdown file at PATH should go, or null to leave it.
  * Local Markdown files open in this preview, as a URL relative to it; other
  * local files and directories become file: URLs, which Emacs visits. */
 export function linkTarget(href: string, path: string): string | null {
-	if (href.startsWith("#") || href.startsWith("//")) return null;
-	if (/^[a-z][a-z\d+.-]*:/i.test(href) && !/^file:/i.test(href)) return null;
-	let url: URL;
-	let file: string;
-	try {
-		url = new URL(href, pathToFileURL(path));
-		if (url.protocol !== "file:") return null;
-		file = fileURLToPath(url);
-	} catch {
-		return null;
+	const local = localFile(href, path);
+	if (!local) return null;
+	if (markdownFile.test(local.file)) {
+		return `markdown?path=${encodeURIComponent(local.file)}${local.hash}`;
 	}
-	if (markdownFile.test(file)) {
-		return `markdown?path=${encodeURIComponent(file)}${url.hash}`;
-	}
-	return pathToFileURL(file).href + url.hash;
+	return pathToFileURL(local.file).href + local.hash;
 }
 
-function rewriteLinks(html: string, path: string): string {
+/** Where the preview loads an image in the Markdown file at PATH from, or
+ * null to leave it. Local images load from this host, relative to the page. */
+export function imageSource(src: string, path: string): string | null {
+	const local = localFile(src, path);
+	return local && `image?path=${encodeURIComponent(local.file)}`;
+}
+
+function rewrite(
+	element: HTMLRewriterTypes.Element,
+	name: string,
+	target: (value: string) => string | null,
+) {
+	const value = target(
+		(element.getAttribute(name) ?? "").replace(
+			/&(?:amp|lt|gt|quot);/g,
+			(entity) => entities[entity] ?? entity,
+		),
+	);
+	// HTMLRewriter escapes only quotes in the values it writes.
+	if (value !== null)
+		element.setAttribute(name, value.replaceAll("&", "&amp;"));
+}
+
+function rewriteLocalPaths(html: string, path: string): string {
 	return new HTMLRewriter()
 		.on("a[href]", {
 			element(link) {
-				const href = (link.getAttribute("href") ?? "").replace(
-					/&(?:amp|lt|gt|quot);/g,
-					(entity) => entities[entity] ?? entity,
-				);
-				const target = linkTarget(href, path);
-				// HTMLRewriter escapes only quotes in the values it writes.
-				if (target !== null)
-					link.setAttribute("href", target.replaceAll("&", "&amp;"));
+				rewrite(link, "href", (href) => linkTarget(href, path));
+			},
+		})
+		.on("img[src]", {
+			element(image) {
+				rewrite(image, "src", (src) => imageSource(src, path));
 			},
 		})
 		.transform(html);
+}
+
+/** The local image file at PATH, for a preview to show inline. */
+export async function image(path: string | null): Promise<Response> {
+	const type = path && imageTypes[extname(path).toLowerCase()];
+	if (!path || !isAbsolute(path) || path.includes("\0") || !type) {
+		return new Response("Not an image path", { status: 400 });
+	}
+	try {
+		if (!(await stat(path)).isFile()) {
+			return new Response("Not a file", { status: 400 });
+		}
+		return new Response(await Bun.file(path).arrayBuffer(), {
+			headers: {
+				"Content-Type": type,
+				// An SVG opened as a page must not run its scripts here.
+				"Content-Security-Policy":
+					"default-src 'none'; style-src 'unsafe-inline'; sandbox",
+			},
+		});
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT" || code === "ENOTDIR") {
+			return new Response("Not found", { status: 404 });
+		}
+		if (code === "EACCES" || code === "EPERM") {
+			return new Response("Not readable", { status: 403 });
+		}
+		console.error("Markdown image failed:", error);
+		return new Response("Not readable", { status: 500 });
+	}
 }
 
 export async function markdown(path: string | null): Promise<Response> {
@@ -104,7 +178,7 @@ export async function markdown(path: string | null): Promise<Response> {
 			noHtmlBlocks: true,
 			noHtmlSpans: true,
 		});
-		return page(basename(path), rewriteLinks(body, path));
+		return page(basename(path), rewriteLocalPaths(body, path));
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
 		if (code === "ENOENT" || code === "ENOTDIR") {

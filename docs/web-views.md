@@ -45,8 +45,9 @@ title-bar appearance with `ns-appearance`. To fix preview appearance, set
 This affects every web view, including Excalidraw;
 open previews change immediately without reloading.
 
-Previews support headings, lists, fenced code, tables, strikethrough, task lists
-and heading anchors. Command-R rereads the displayed file from disk; from
+Previews support headings, lists, fenced code, tables, strikethrough, task lists,
+heading anchors and images. Local images, such as `![diagram](img/arch.png)`,
+resolve like links below and show inline; HTTP(S) and `data:` images also work. Command-R rereads the displayed file from disk; from
 Emacs, `g` (`portal-web-reload`) also starts a stopped host. Loaded previews
 survive host stops or restarts. Missing or unreadable files show an error page.
 
@@ -80,9 +81,8 @@ and press `RET`. From elsewhere, `M-x portal-render-return` shows, selects and
 focuses the preview this frame last opened a file from, without reloading.
 It has no global key; bind one if desired.
 
-This version shows saved contents only, without automatic refresh, relative
-inline images, syntax highlighting, Mermaid or math rendering. HTTP(S) images
-and links can use absolute URLs. Going back past a host restart shows "Not found";
+This version shows saved contents only, without automatic refresh, syntax
+highlighting, Mermaid or math rendering. Going back past a host restart shows "Not found";
 `g` reloads from the running host. Raw HTML appears as text; a page-specific
 Content Security Policy blocks scripts. Bun currently marks its Markdown API unstable;
 Portal tests it with the Bun version in the [build prerequisites](../README.md#build-and-run).

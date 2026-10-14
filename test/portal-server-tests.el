@@ -176,6 +176,70 @@
                 (should (equal (portal-server-test--href page (car link)) (cdr link)))))))
       (delete-directory directory t))))
 
+;; A pixel PNG, as written to disk and as served.
+(defconst portal-server-test--png
+  (base64-decode-string
+   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1sAAAAASUVORK5CYII="))
+
+(defun portal-server-test--src (page alt)
+  "Return the src of the image with ALT in Markdown PAGE."
+  (should (string-match (format "<img src=\"\\([^\"]*\\)\" alt=\"%s\"" (regexp-quote alt)) page))
+  (match-string 1 page))
+
+(ert-deftest portal-server-markdown-serves-local-images ()
+  (let* ((directory (make-temp-file "portal-markdown-" t))
+         (docs (expand-file-name "docs é" directory))
+         (file (expand-file-name "Guide.md" docs))
+         (pic (expand-file-name "img/a&b pic.PNG" docs))
+         (source (lambda (path)
+                   (concat "image?path=" (url-hexify-string (expand-file-name path docs))))))
+    (unwind-protect
+        (portal-server-test--with-host
+          (make-directory (file-name-directory pic) t)
+          (let ((coding-system-for-write 'binary))
+            (write-region portal-server-test--png nil pic))
+          (with-temp-file file
+            (insert "# Pictures\n\n![relative](<img/a&b pic.PNG>) ![encoded](img/a%26b%20pic.PNG#x) "
+                    "![up](../top.svg) ![absolute](/tmp/abs.gif) ![file](file:///tmp/x%20y.jpg) "
+                    "![web](https://example.com/a.png) ![data](data:image/png;base64,AAAA)\n"))
+          (portal-start-server)
+          (portal-server-test--wait #'portal-server-url)
+          (let ((page (decode-coding-string
+                       (portal-server-test--get (concat "/markdown?path=" (url-hexify-string file)))
+                       'utf-8)))
+            (dolist (image `(("relative" . ,(funcall source "img/a&b pic.PNG"))
+                             ("encoded" . ,(funcall source "img/a&b pic.PNG"))
+                             ("up" . ,(funcall source "../top.svg"))
+                             ("absolute" . "image?path=%2Ftmp%2Fabs.gif")
+                             ("file" . "image?path=%2Ftmp%2Fx%20y.jpg")
+                             ("web" . "https://example.com/a.png")
+                             ("data" . "data:image/png;base64,AAAA")))
+              (ert-info ((car image))
+                (should (equal (portal-server-test--src page (car image)) (cdr image)))))
+            (let ((case-fold-search t))
+              (should (string-match-p "content-security-policy:.*img-src 'self'" page))))
+          ;; The page loads its images relative to itself, from the host.
+          (let ((response (portal-server-test--get
+                           (concat "/" (funcall source "img/a&b pic.PNG")))))
+            (should (string-match-p "HTTP/1.1 200" response))
+            (let ((case-fold-search t))
+              (should (string-match-p "content-type: image/png" response))
+              (should (string-match-p "content-security-policy:.*sandbox" response)))
+            (should (string-suffix-p portal-server-test--png response)))
+          ;; Only absolute paths to image files, never other files.
+          (dolist (path (list "image" "image?path=relative.png"
+                              "image?path=%2Ftmp%2Fbad%00.png"
+                              (concat "image?path=" (url-hexify-string file))
+                              (concat "image?path=" (url-hexify-string
+                                                     (file-name-directory pic)))))
+            (ert-info (path)
+              (should (string-match-p "HTTP/1.1 400"
+                                      (portal-server-test--get (concat "/" path))))))
+          (should (string-match-p "HTTP/1.1 404"
+                                  (portal-server-test--get
+                                   (concat "/" (funcall source "missing.png"))))))
+      (delete-directory directory t))))
+
 (ert-deftest portal-server-markdown-rejects-invalid-requests ()
   (let ((directory (make-temp-file "portal-markdown-" t)))
     (unwind-protect
