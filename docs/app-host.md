@@ -15,7 +15,9 @@ and load when the host sends its readiness message. External URLs need no server
 - Each host generates a fresh access token and sends it through the readiness
   pipe. URLs have the form `http://127.0.0.1:PORT/TOKEN/hello`,
   `http://127.0.0.1:PORT/TOKEN/about?portal=VERSION&emacs=VERSION` or
-  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. The host
+  `http://127.0.0.1:PORT/TOKEN/markdown?path=ENCODED_ABSOLUTE_PATH`. Previews
+  load local images from `image?path=ENCODED_ABSOLUTE_PATH`, which serves
+  only files with common image extensions. The host
   validates the token and Host header; responses suppress outgoing referrers.
 - The About page shows the Portal and Emacs versions that `portal-about`
   passes, as text, with the host's Bun version. Its portal is drawn with

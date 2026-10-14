@@ -4,7 +4,7 @@ import { assets } from "./.generated/assets";
 import { about } from "./about";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
-import { markdown } from "./markdown";
+import { image, markdown } from "./markdown";
 
 // Applies only to the local editor. Fonts, images and lazy modules cannot fall
 // back to a CDN; user-authored URLs cannot embed remote pages or run scripts.
@@ -30,6 +30,7 @@ async function respond(request: Request): Promise<Response> {
 		route !== "/hello" &&
 		route !== "/about" &&
 		route !== "/markdown" &&
+		route !== "/image" &&
 		route !== "/excalidraw/" &&
 		!asset
 	) {
@@ -42,6 +43,7 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
+	if (route === "/image") return image(url.searchParams.get("path"));
 	if (route === "/about") return about(url.searchParams);
 	if (asset)
 		return new Response(Bun.file(asset.file), {
