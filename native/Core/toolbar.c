@@ -70,6 +70,7 @@ struct portal_toolbar_state {
     portal_kind kind;
     enum layout layout;
     bool edit;            /* Open in Emacs: a hosted Markdown preview's. */
+    portal_text label;    /* What the view shows, as Lisp named it. */
     double value;
     bool contents;        /* Whether the table of contents is open. */
     int64_t headings;     /* How many the page has. */
@@ -85,10 +86,10 @@ struct portal_toolbar_state {
     struct search search;
     uint64_t generation;      /* 1 + pages loaded. */
     uint64_t contents_token;  /* The call whose result says how many headings there are. */
-    /* The last snapshot drawn, if DRAWN, with its own copy of the query. */
+    /* The last snapshot drawn, if DRAWN, with its own copies of its strings. */
     bool drawn;
     portal_toolbar shown;
-    portal_text shown_query;
+    portal_text shown_label, shown_query;
 };
 
 static struct {
@@ -187,6 +188,7 @@ static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
         return state;
     state.visible = true;
     state.colors = toolbars.colors;
+    state.label = borrow(toolbar->label);
     state.buttons = bit(PORTAL_BUTTON_OWNER);
     if (state.owner != PORTAL_OWNER_PENDING)
         state.enabled = bit(PORTAL_BUTTON_OWNER);
@@ -247,7 +249,8 @@ static bool same_colors(const portal_colors *a, const portal_colors *b)
 {
     return same_color(a->background, b->background) && same_color(a->border, b->border)
         && same_color(a->shadow, b->shadow) && same_color(a->foreground, b->foreground)
-        && same_color(a->success, b->success) && same_color(a->accent, b->accent);
+        && same_color(a->success, b->success) && same_color(a->accent, b->accent)
+        && same_color(a->tint, b->tint);
 }
 
 static bool same_snapshot(const portal_toolbar *a, const portal_toolbar *b)
@@ -255,7 +258,8 @@ static bool same_snapshot(const portal_toolbar *a, const portal_toolbar *b)
     return a->visible == b->visible && same_colors(&a->colors, &b->colors)
         && a->owner == b->owner && a->buttons == b->buttons && a->enabled == b->enabled
         && a->selected == b->selected && a->value == b->value && a->standard == b->standard
-        && a->unit == b->unit && a->finding == b->finding && same(a->query, b->query)
+        && a->unit == b->unit && same(a->label, b->label) && a->finding == b->finding
+        && same(a->query, b->query)
         && a->match == b->match && a->matches == b->matches;
 }
 
@@ -267,17 +271,23 @@ static void refresh(struct portal_toolbar_state *toolbar)
     portal_toolbar state = snapshot(toolbar);
     if (toolbar->drawn && same_snapshot(&state, &toolbar->shown))
         return;
-    portal_text query = {0}, error = {0};
-    if (!set(&query, state.query))
+    portal_text label = {0}, query = {0}, error = {0};
+    if (!set(&label, state.label) || !set(&query, state.query)) {
+        free(label.data);
         return; /* Without memory to remember it, draw it next time. */
+    }
     if (!portal_toolbar_draw(toolbar->native, &state, &error)) {
         ignore(false, &error);
+        free(label.data);
         free(query.data);
         return;
     }
+    free(toolbar->shown_label.data);
     free(toolbar->shown_query.data);
+    toolbar->shown_label = label;
     toolbar->shown_query = query;
     toolbar->shown = state;
+    toolbar->shown.label = borrow(label);
     toolbar->shown.query = borrow(query);
     toolbar->drawn = true;
 }
@@ -687,11 +697,13 @@ void portal_toolbar_state_free(struct portal_toolbar_state *toolbar)
 {
     if (!toolbar)
         return;
+    free(toolbar->label.data);
     free(toolbar->query.data);
     free(toolbar->searched.data);
     free(toolbar->waiting.data);
     free(toolbar->backwards);
     free(toolbar->search.query.data);
+    free(toolbar->shown_label.data);
     free(toolbar->shown_query.data);
     free(toolbar);
 }
@@ -716,6 +728,19 @@ void portal_toolbar_paint(const portal_colors *colors)
 {
     toolbars.colors = *colors;
     portal_views_each_toolbar(refresh_each);
+}
+
+bool portal_toolbar_label(portal_string target, portal_string label, portal_text *error)
+{
+    if (!portal_views_find(target, PORTAL_ANY_KIND, error))
+        return false;
+    struct portal_toolbar_state *toolbar = portal_views_toolbar(target);
+    if (same(label, borrow(toolbar->label)))
+        return true;
+    if (!set(&toolbar->label, label))
+        return fail_with(error, "Portal is out of memory");
+    refresh(toolbar);
+    return true;
 }
 
 static const struct {

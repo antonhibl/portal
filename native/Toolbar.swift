@@ -16,6 +16,8 @@ struct ToolbarState: Sendable {
     var value = 0.0
     var standard = 0.0
     var points = false
+    /// What the view shows, as Lisp named it; "" until Lisp says.
+    var label = ""
     var finding = false
     var query = ""
     var match = 0
@@ -28,7 +30,8 @@ struct ToolbarState: Sendable {
         let colors = state.colors
         for (name, color) in [("background", colors.background), ("border", colors.border),
                               ("shadow", colors.shadow), ("foreground", colors.foreground),
-                              ("success", colors.success), ("accent", colors.accent)] where color.set {
+                              ("success", colors.success), ("accent", colors.accent),
+                              ("tint", colors.tint)] where color.set {
             self.colors[name] = [color.red, color.green, color.blue]
         }
         switch state.owner {
@@ -42,6 +45,7 @@ struct ToolbarState: Sendable {
         value = state.value
         standard = state.standard
         points = state.unit == PORTAL_POINTS
+        label = String(copying: state.label)
         finding = state.finding
         query = String(copying: state.query)
         match = Int(state.match)
@@ -60,8 +64,20 @@ struct ToolbarState: Sendable {
         case "foreground": return .labelColor
         case "success": return .systemGreen
         case "accent": return .systemBlue
+        case "tint": return color("success")
         default: return .secondaryLabelColor
         }
+    }
+
+    /// The color that says who has the keyboard: the tint while the view
+    /// has it, the accent while Emacs reads a command for it.
+    var ownerColor: NSColor { color(owner == .pending ? "accent" : "tint") }
+
+    /// The strip's background: the mode line's, mixed toward the owner's
+    /// color, as an active mode line differs from an inactive one.
+    var tintedBackground: NSColor {
+        let background = color("background")
+        return background.blended(withFraction: 0.18, of: ownerColor) ?? background
     }
 }
 
@@ -170,7 +186,7 @@ private final class ToolbarButton: NSButton {
         let color = (selected ? accent : hovering && isEnabled || !dimmed ? foreground : colors.color("shadow"))
             .withAlphaComponent(isEnabled ? 1 : 0.3)
         if let dot {
-            let dotColor = colors.color(dot == .emacs ? "shadow" : dot == .pending ? "accent" : "success")
+            let dotColor = dot == .emacs ? colors.color("shadow") : colors.ownerColor
             let rect = NSRect(x: bounds.midX - 4, y: bounds.midY - 4, width: 8, height: 8)
             if dot == .view {
                 dotColor.withAlphaComponent(0.13).setFill()
@@ -207,6 +223,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
     private var buttons: [UInt32: ToolbarButton] = [:]
     private let field = NSSearchField()
     private let count = NSTextField(labelWithString: "")
+    /// What the view shows, after the dot, in the owner's color.
+    private let label = NSTextField(labelWithString: "")
     private var separators: [CGFloat] = []
     override var isFlipped: Bool { true }
 
@@ -219,8 +237,12 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         field.font = .systemFont(ofSize: 11)
         field.setAccessibilityLabel("Find in page")
         count.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.font = NSFont(name: "JetBrains Mono", size: 11) ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.lineBreakMode = .byTruncatingMiddle
+        label.cell?.truncatesLastVisibleLine = true
         addSubview(field)
         addSubview(count)
+        addSubview(label)
         let specs: [(portal_button, String, String?)] = [
             (PORTAL_BUTTON_OWNER, "Click to enter", nil), (PORTAL_BUTTON_BACK, "Back", "chevron.left"),
             (PORTAL_BUTTON_FORWARD, "Forward", "chevron.right"),
@@ -274,6 +296,9 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         reset?.setAccessibilityValue(value)
         count.stringValue = "\(state.match) of \(state.matches)"
         count.textColor = state.color("shadow")
+        label.stringValue = state.label
+        label.textColor = state.ownerColor
+        label.toolTip = state.label.isEmpty ? nil : state.label
         if field.stringValue != state.query { field.stringValue = state.query }
         needsLayout = true
         needsDisplay = true
@@ -296,6 +321,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         separators = []
         field.isHidden = !state.finding
         count.isHidden = !state.finding
+        label.isHidden = true
         // The strip is as high as the mode line it covers: center in it.
         let height = min(22, max(14, bounds.height - 4)), top = ((bounds.height - height) / 2).rounded()
         func place(_ id: portal_button, _ x: CGFloat, width: CGFloat = 24) {
@@ -327,17 +353,26 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
                 trailing(PORTAL_BUTTON_FIND)
                 if right >= 93 { separators.append(33); place(PORTAL_BUTTON_BACK, 39); place(PORTAL_BUTTON_FORWARD, 65) }
             }
+            // The label takes what is left between the dot, or the
+            // navigation buttons, and the controls.
+            let left: CGFloat = button(PORTAL_BUTTON_BACK)?.isHidden == false ? 95 : 31
+            let width = right - 8 - left
+            if !state.label.isEmpty, width >= 24 {
+                label.frame = NSRect(x: left, y: ((bounds.height - 16) / 2).rounded(), width: width, height: 16)
+                label.isHidden = false
+            }
         }
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        state.color("background").setFill(); bounds.fill()
+        // The strip tints toward the owner's color, as an active mode line
+        // differs from an inactive one, where the mode line said Emacs had
+        // the keyboard; a hairline along the top in that color edges it.
+        state.tintedBackground.setFill(); bounds.fill()
         state.color("border").setFill()
         for x in separators { NSRect(x: x, y: ((bounds.height - 14) / 2).rounded(), width: 1, height: 14).fill() }
-        // A line along the top in the dot's color says the view has the
-        // keyboard, where the mode line said Emacs had it.
-        state.color(state.owner == .pending ? "accent" : "success").setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 2).fill()
+        state.ownerColor.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
     func controlTextDidChange(_ notification: Notification) {

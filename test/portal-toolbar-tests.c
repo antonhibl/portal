@@ -25,6 +25,11 @@ static const char *drain(void)
     return buffer;
 }
 
+static bool same(portal_string a, portal_string b)
+{
+    return a.length == b.length && !memcmp(a.data, b.data, a.length);
+}
+
 static uint32_t bits(int count, ...)
 {
     uint32_t mask = 0;
@@ -740,6 +745,24 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     colors.success.set = false;
     portal_toolbar_paint(&colors);
     CHECK(draws(web) == count + 1 && !drawn(web).colors.success.set);
+    colors.tint = (portal_color) {true, 1, 0, 1};
+    portal_toolbar_paint(&colors);
+    CHECK(draws(web) == count + 2 && drawn(web).colors.tint.set
+          && drawn(web).colors.tint.blue == 1);
+    /* The label is Lisp's; the toolbar shows it, and only a change draws. */
+    CHECK(drawn(web).label.length == 0);
+    CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
+    CHECK(draws(web) == count + 3 && same(drawn(web).label, text("docs/README.md")));
+    CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
+    CHECK(draws(web) == count + 3);
+    /* A hidden toolbar keeps its label for when it shows again. */
+    CHECK(portal_toolbar_label(text(terminal), text("*terminal: portal*"), &error));
+    CHECK(!drawn(terminal).visible && drawn(terminal).label.length == 0);
+    enter(terminal);
+    CHECK(same(drawn(terminal).label, text("*terminal: portal*")));
+    CHECK(!portal_toolbar_label(text("web:999"), text("gone"), &error)
+          && says(&error, "No Portal view web:999"));
+    enter(web);
     /* A draw the platform refuses is tried again. */
     portal_fake_refuse(true);
     portal_toolbar_show(false);

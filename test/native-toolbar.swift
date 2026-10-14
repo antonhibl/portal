@@ -195,6 +195,23 @@ struct CheckToolbar {
         check(require(container.toolbar).state.color("background") == NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1))
         Views.paintToolbars(portal_colors())
         check(container.state.color("success") == .systemGreen)
+        // The tint is the dot's and the label's color, and falls back to success.
+        check(container.state.color("tint") == .systemGreen && container.state.ownerColor == .systemGreen)
+        colors.tint = portal_color(set: true, red: 1, green: 0, blue: 1)
+        Views.paintToolbars(colors)
+        check(container.state.ownerColor == NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1))
+        check(container.state.tintedBackground != container.state.color("background"), "Strip not tinted")
+        // The label is the core's; the strip shows it, truncated, in the tint.
+        func labelField() -> NSTextField? {
+            require(container.toolbar).subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "~/notes/plan.md" }
+        }
+        check(labelField() == nil)
+        try Views.label(target, "~/notes/plan.md")
+        let shown = require(labelField(), "Missing toolbar label")
+        check(!shown.isHidden && shown.textColor == container.state.ownerColor && shown.frame.minX == 95,
+              "Label at \(shown.frame), hidden \(shown.isHidden)")
+        check(shown.frame.maxX < button("Find in page").frame.minX)
+        Views.paintToolbars(portal_colors())
         dot().performClick(nil)
         check(container.state.owner == .emacs && container.toolbar == nil)
         try Views.close(target)

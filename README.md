@@ -72,7 +72,7 @@ The build produces `build/portal.bundle` and the standalone `build/portal-host`.
 Either way, Emacs should then show **Hello World in a native web view**; its app host
 starts automatically. Click the page or press `RET` to enter it, and press
 Command-period (`⌘.`) to return to Emacs. While the page has the keyboard, its
-toolbar replaces the window's mode line; `RET` re-enters it. Customize `portal-input-escape-key` to change the escape chord.
+tinted toolbar replaces the window's mode line and names the page; `RET` re-enters it. Customize `portal-input-escape-key` to change the escape chord.
 `q` hides the view; killing its buffer closes it.
 
 Try `M-x portal-terminal` for a shell, `M-x portal-render-markdown` for a saved

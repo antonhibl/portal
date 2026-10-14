@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Tint the toolbar strip and label it with its view
 

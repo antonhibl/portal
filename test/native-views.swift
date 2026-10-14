@@ -83,6 +83,13 @@ enum Views {
         return require(try JSONSerialization.jsonObject(with: Data(take(&json).utf8)) as? [String: Any])
     }
 
+    /// Show LABEL on TARGET's toolbar, as `portal--toolbar-label` does.
+    static func label(_ target: String, _ label: String) throws {
+        try with(target) { target in
+            try with(label) { label in try call { portal_toolbar_label(target, label, $0) } }
+        }
+    }
+
     /// Show every toolbar, or none, as `portal--toolbar` does.
     static func showToolbars(_ shown: Bool) { portal_toolbar_show(shown) }
 

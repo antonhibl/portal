@@ -309,6 +309,7 @@ STRINGS(web_receive, portal_web_views_receive(a[0], result, error))
 STRINGS(terminal_themes, portal_terminals_themes(result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
+STRINGS(toolbar_label, portal_toolbar_label(a[0], a[1], error))
 STRINGS(launcher_detach, portal_launcher_detach(error))
 STRINGS(launcher_prepare, portal_launcher_prepare(error))
 STRINGS(launcher_describe, portal_launcher_describe(result, error))
@@ -739,6 +740,7 @@ LISP_FUNCTION(Ftoolbar_theme)
         {"foreground", offsetof(portal_colors, foreground)},
         {"success", offsetof(portal_colors, success)},
         {"accent", offsetof(portal_colors, accent)},
+        {"tint", offsetof(portal_colors, tint)},
     };
     portal_colors colors;
     for (size_t i = 0; i < sizeof roles / sizeof *roles; i++) {
@@ -833,6 +835,8 @@ static const struct export {
      "Apply toolbar face colors from JSON RGB arrays."},
     {"portal--toolbar-action", 2, 2, STRINGS_FUNCTION(toolbar_action, RESULT_STRING),
      "Perform ACTION on TARGET and return its native state as JSON."},
+    {"portal--toolbar-label", 2, 2, STRINGS_FUNCTION(toolbar_label, RESULT_T),
+     "Show LABEL, what TARGET's view shows, on its toolbar."},
 };
 
 /* Run the Lisp function DATA, an export, at Emacs's request (input.h). */
