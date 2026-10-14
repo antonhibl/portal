@@ -387,6 +387,21 @@ Return the view's target."
                          ("ping" ,(get-buffer "second") (,second "2" "x")))))
         (should (eq (current-buffer) (get-buffer "*scratch*")))))))
 
+(ert-deftest portal-view-records-hook-runs-once-after-the-filter-returns ()
+  (portal-view-test--environment
+    (let ((target (portal-view-test--open "view")) runs)
+      (portal-view-test--handling '("ping")
+        (let ((portal-view-records-hook (list (lambda () (push portal-view-test--handled runs)))))
+          (portal-fake-native-send (format "ping %s 1\nping %s 2\n" target target))
+          (portal-fake-native-send "")
+          ;; The handlers ran in the filter; the hook waits for its timer.
+          (should (= (length portal-view-test--handled) 2))
+          (should-not runs)
+          (sit-for 0.05)
+          ;; One run covers every batch handled before it.
+          (should (= (length runs) 1))
+          (should (= (length (car runs)) 2)))))))
+
 (ert-deftest portal-view-record-for-an-unknown-target-is-dropped ()
   (portal-view-test--environment
     (let ((target (portal-view-test--open "view"))
