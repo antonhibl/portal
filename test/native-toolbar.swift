@@ -205,6 +205,12 @@ struct CheckToolbar {
         let tinted = require(container.state.tintedBackground.usingColorSpace(.sRGB))
         check(abs(tinted.hueComponent - 5.0 / 6) < 0.02 && abs(tinted.brightnessComponent - 0.3) < 0.02,
               "Tinted strip is \(tinted)")
+        // A strip color is the background as it is, while the view has the keyboard.
+        colors.strip = portal_color(set: true, red: 0.2, green: 0.4, blue: 0.3)
+        Views.paintToolbars(colors)
+        check(container.state.tintedBackground == NSColor(srgbRed: 0.2, green: 0.4, blue: 0.3, alpha: 1))
+        colors.strip = portal_color()
+        Views.paintToolbars(colors)
         // Text follows Emacs's font; without one, 11 point monospace.
         check(container.state.font.pointSize == 11)
         Views.paintToolbars(colors, family: "Menlo", points: 17)

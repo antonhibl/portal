@@ -331,8 +331,10 @@ typedef struct portal_colors {
     portal_color foreground; /* A button under the pointer, a changed value. */
     portal_color success;    /* The tint's default. */
     portal_color accent;     /* The tint during a handoff, and a button toggled on. */
-    portal_color tint;       /* The dot, the label and the toolbar's tint while the view
-                                has the keyboard; SUCCESS when unset. */
+    portal_color tint;       /* The dot, the label and the hairline while the view has
+                                the keyboard; SUCCESS when unset. */
+    portal_color strip;      /* The toolbar's background while the view has the keyboard;
+                                when unset, BACKGROUND tinted toward TINT. */
 } portal_colors;
 
 /* A toolbar's font, which follows Emacs's default face (portal-toolbar.el):

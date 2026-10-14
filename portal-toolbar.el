@@ -25,12 +25,14 @@ have none."
   :type 'boolean :group 'portal-toolbar)
 
 (defface portal-toolbar-tint
-  '((t :inherit success))
-  "The color of a native view's toolbar while the view has the keyboard.
-The toolbar's background mixes toward this face's foreground, and its dot
-and label are drawn in it, where the pane's mode line shows while Emacs
-has the keyboard.  Themes and users change it like any face; it reaches
-native toolbars with the other theme colors."
+  '((t :inherit highlight))
+  "A native view's toolbar while the view has the keyboard.
+The background is the toolbar's, where the pane's mode line shows while
+Emacs has the keyboard; the foreground draws its dot, hairline and label.
+By default the theme's `highlight', the color it gives the active item,
+with the default foreground.  Without a background, the toolbar tints the
+mode line's color toward the foreground instead.  Themes and users change
+it like any face; it reaches native toolbars with the other theme colors."
   :group 'portal-toolbar)
 
 (defcustom portal-toolbar-label-function #'portal-toolbar-default-label
@@ -121,7 +123,8 @@ family and its height in tenths of a point."
                       ("foreground" default :foreground)
                       ("success" success :foreground)
                       ("accent" link :foreground)
-                      ("tint" portal-toolbar-tint :foreground success)))
+                      ("tint" portal-toolbar-tint :foreground)
+                      ("strip" portal-toolbar-tint :background)))
         (when-let* ((rgb (apply #'portal-toolbar--color (cdr spec))))
           (push (cons (car spec) rgb) colors)))
       (portal--toolbar-theme (if colors (json-encode colors) "{}")))))

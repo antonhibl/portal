@@ -276,7 +276,7 @@ static bool same_colors(const portal_colors *a, const portal_colors *b)
     return same_color(a->background, b->background) && same_color(a->border, b->border)
         && same_color(a->shadow, b->shadow) && same_color(a->foreground, b->foreground)
         && same_color(a->success, b->success) && same_color(a->accent, b->accent)
-        && same_color(a->tint, b->tint);
+        && same_color(a->tint, b->tint) && same_color(a->strip, b->strip);
 }
 
 static bool same_snapshot(const portal_toolbar *a, const portal_toolbar *b)

@@ -742,6 +742,7 @@ LISP_FUNCTION(Ftoolbar_theme)
         {"success", offsetof(portal_colors, success)},
         {"accent", offsetof(portal_colors, accent)},
         {"tint", offsetof(portal_colors, tint)},
+        {"strip", offsetof(portal_colors, strip)},
     };
     portal_colors colors;
     for (size_t i = 0; i < sizeof roles / sizeof *roles; i++) {

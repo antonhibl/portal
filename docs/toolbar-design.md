@@ -68,7 +68,7 @@ place.
 
 | Part | Size |
 | --- | --- |
-| Strip | The mode line's height and width; its background the tint's hue at the mode line's brightness with 40% of its saturation (25% on a light mode line); a 1 px top hairline in the tint |
+| Strip | The mode line's height and width; its background the `portal-toolbar-tint` background, by default the theme's `highlight`, or without one the tint's hue at the mode line's brightness with 40% of its saturation (25% on a light mode line); a 1 px top hairline in the tint |
 | Padding | 5 px left, 6 px right |
 | Ownership dot | 8 px dot centered in a 22 × 22 px click target, at the left |
 | Label | Emacs's default font in the tint, after the dot or the navigation buttons, truncated in the middle; hidden under 24 px or while find is open |
@@ -121,8 +121,8 @@ and with it the dot, is hidden. No new message types are added. Hovering uses th
 
 | State | Appearance |
 | --- | --- |
-| Default | Icon in `shadow` color, no background |
-| Hover | Subtle background, foreground-colored icon; tooltip after the system delay |
+| Default | Icon in the strip's foreground (`portal-toolbar-tint`), the label's color, no background |
+| Hover | Subtle background in that color; tooltip after the system delay |
 | Pressed | Stronger background |
 | Toggled on | Accent-tinted background, accent icon (for example TOC open) |
 | On + hover | Stronger accent tint |
@@ -139,8 +139,7 @@ Zoom and text size show their current value between the − and + buttons.
 
 | State | Appearance |
 | --- | --- |
-| At default | Value dimmed (`shadow`) |
-| Changed | Value in the foreground color; clicking it resets to the default (tooltip "Reset to 100%") |
+| Any | Value in the strip's foreground, like the label; clicking it resets to the default (tooltip "Reset to 100%") |
 | At a limit | The − or + button at that end is disabled |
 
 ## Controls by view
@@ -207,12 +206,15 @@ never reclaiming it from Emacs or another view.
 
 The dot alone was easy to miss, and said nothing about the view. The whole
 strip now carries the signal, the way an active mode line differs from an
-inactive one: its background takes the tint's hue at the mode line's
-brightness while the view has the keyboard, and `link`'s during a handoff,
-with a hairline along the top and the dot in the same color. Mixing the tint
-into the mode line's own color was tried first and turned modus-vivendi's
-blue-gray mode line teal; keeping only the mode line's brightness gives a
-green mode line on any theme. A border around the content was tried on paper
+inactive one: while the view has the keyboard its background is the
+`portal-toolbar-tint` face's background, by default the theme's `highlight`,
+the color the theme already gives its active item, so the strip is always a
+color the theme shows elsewhere; the hairline, dot and label take the face's
+foreground, the default foreground unless set. During a handoff the strip
+takes `link`'s hue at the mode line's brightness, which is also what a face
+without a background gets from its foreground. Mixing a tint into the mode
+line's own color was tried first and turned modus-vivendi's blue-gray mode
+line teal; a fixed green ignored the theme's own accents. A border around the content was tried on paper
 and rejected as obtrusive.
 
 After the dot, a label names what the view shows, in the tint. The strip is
@@ -249,9 +251,9 @@ and the label, this is Elisp's only toolbar data; nothing is sent back.
 | --- | --- |
 | Strip background | `mode-line-active` background, falling back to `mode-line` |
 | Border | `vertical-border` foreground |
-| Icons, dimmed values, Emacs dot | `shadow` foreground |
-| Hovered icon, values | `default` foreground |
-| View-has-keyboard tint: strip background mix, hairline, dot, label | `portal-toolbar-tint` foreground, which inherits from `success` |
+| Emacs dot | `shadow` foreground |
+| View-has-keyboard strip background | `portal-toolbar-tint` background, which inherits from `highlight` |
+| View-has-keyboard hairline, dot, label, icons, values, separators | `portal-toolbar-tint` foreground, the default foreground unless set |
 | Handoff tint and dot, toggled-on button | `link` foreground |
 | Label, value readout, match count font | `default` family and height |
 
@@ -265,8 +267,9 @@ system appearance.
 ;; Show or hide the strip on every native view. Changes apply live.
 (setq portal-toolbar t)
 
-;; The strip's color while a view has the keyboard, by default `success'.
-(set-face-attribute 'portal-toolbar-tint nil :foreground "#c678dd")
+;; The strip while a view has the keyboard: by default the theme's
+;; `highlight' background with the default foreground.
+(set-face-attribute 'portal-toolbar-tint nil :background "#2d3b2d" :foreground "#98be65")
 
 ;; What the strip says about its view; the default names the buffer,
 ;; page or file.

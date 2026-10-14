@@ -35,7 +35,7 @@ struct ToolbarState: Sendable {
         for (name, color) in [("background", colors.background), ("border", colors.border),
                               ("shadow", colors.shadow), ("foreground", colors.foreground),
                               ("success", colors.success), ("accent", colors.accent),
-                              ("tint", colors.tint)] where color.set {
+                              ("tint", colors.tint), ("strip", colors.strip)] where color.set {
             self.colors[name] = [color.red, color.green, color.blue]
         }
         fontFamily = String(copying: state.font.family)
@@ -79,12 +79,15 @@ struct ToolbarState: Sendable {
     /// has it, the accent while Emacs reads a command for it.
     var ownerColor: NSColor { color(owner == .pending ? "accent" : "tint") }
 
-    /// The strip's background: the owner's hue at the mode line's
-    /// brightness with less of its saturation, so that the strip is a green
-    /// mode line on any theme, rather than green mixed into whatever hue the
-    /// mode line had, which turns a blue-gray mode line teal. A light mode
-    /// line takes less saturation still.
+    /// The strip's background: the strip color while the view has the
+    /// keyboard, by default the theme's `highlight` background; otherwise
+    /// the owner's hue at the mode line's brightness with less of its
+    /// saturation, so that the strip is a tinted mode line on any theme
+    /// rather than a hue mixed into whatever hue the mode line had, which
+    /// turns a blue-gray mode line teal. A light mode line takes less
+    /// saturation still.
     var tintedBackground: NSColor {
+        if owner == .view, colors["strip"] != nil { return color("strip") }
         let background = color("background").usingColorSpace(.sRGB) ?? color("background")
         let owner = ownerColor.usingColorSpace(.sRGB) ?? ownerColor
         let brightness = background.brightnessComponent
@@ -180,7 +183,6 @@ private final class ToolbarButton: NSButton {
     var symbol: String?
     var dot: ToolbarState.Owner?
     var selected = false
-    var dimmed = true
     weak var strip: ToolbarView?
     private var hovering = false
     override var acceptsFirstResponder: Bool { false }
@@ -210,13 +212,14 @@ private final class ToolbarButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         let colors = strip?.state ?? ToolbarState()
         let accent = colors.color("accent")
-        let foreground = colors.color("foreground")
+        // Controls match the label: the owner's color, which the strip
+        // draws everything in, so nothing on it reads as dimmer than the rest.
+        let foreground = colors.ownerColor
         if isEnabled && (hovering || isHighlighted || selected) {
             (selected ? accent : foreground).withAlphaComponent(isHighlighted ? 0.20 : hovering ? 0.13 : 0.09).setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).fill()
         }
-        let color = (selected ? accent : hovering && isEnabled || !dimmed ? foreground : colors.color("shadow"))
-            .withAlphaComponent(isEnabled ? 1 : 0.3)
+        let color = (selected ? accent : foreground).withAlphaComponent(isEnabled ? 1 : 0.35)
         if let dot {
             let dotColor = dot == .emacs ? colors.color("shadow") : colors.ownerColor
             let rect = NSRect(x: bounds.midX - 4, y: bounds.midY - 4, width: 8, height: 8)
@@ -322,10 +325,9 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         label(PORTAL_BUTTON_RESET, state.points ? "Reset to \(reading) pt" : "Reset to \(reading)%")
         let reset = button(PORTAL_BUTTON_RESET)
         reset?.title = value
-        reset?.dimmed = state.value == state.standard
         reset?.setAccessibilityValue(value)
         count.stringValue = "\(state.match) of \(state.matches)"
-        count.textColor = state.color("shadow")
+        count.textColor = state.ownerColor
         count.font = state.font
         label.font = state.font
         label.stringValue = state.label
@@ -405,7 +407,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         // differs from an inactive one, where the mode line said Emacs had
         // the keyboard; a hairline along the top in that color edges it.
         state.tintedBackground.setFill(); bounds.fill()
-        state.color("border").setFill()
+        state.ownerColor.withAlphaComponent(0.35).setFill()
         for x in separators { NSRect(x: x, y: ((bounds.height - 14) / 2).rounded(), width: 1, height: 14).fill() }
         state.ownerColor.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
