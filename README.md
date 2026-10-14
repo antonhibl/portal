@@ -1,7 +1,7 @@
 # Portal: native views in Emacs
 
 <p align="center">
-  <img src="assets/portal.png" alt="Portal Companion Buffer: a cube with Emacs and terminal emblems" width="320" height="320">
+  <img src="assets/portal.png" alt="Portal Companion Buffer: a cube with Emacs, terminal and web emblems" width="320" height="320">
 </p>
 
 Portal puts native WebKit pages and Ghostty terminals inside macOS Emacs panes.

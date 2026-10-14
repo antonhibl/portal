@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Update Companion Buffer logo with web badge
 
