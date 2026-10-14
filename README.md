@@ -13,6 +13,8 @@ The bundled app host provides Markdown previews and an offline Excalidraw
 editor. Optional launchers present your own Emacs commands in
 a native panel, invoked by global shortcuts you configure.
 
+![Portals in action](docs/images/portal-panes.png)
+
 ## Scope
 
 Portal requires **GNU Emacs 31.1 or newer, built for macOS's graphical NS
