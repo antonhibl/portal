@@ -392,7 +392,12 @@ Return the view's target."
     (let ((target (portal-view-test--open "view")) runs)
       (portal-view-test--handling '("ping")
         (let ((portal-view-records-hook (list (lambda () (push portal-view-test--handled runs)))))
-          (portal-fake-native-send (format "ping %s 1\nping %s 2\n" target target))
+          ;; A fragment that completes no record schedules nothing.
+          (portal-fake-native-send (format "ping %s 1" target))
+          (portal-fake-native-send "")
+          (sit-for 0.05)
+          (should-not runs)
+          (portal-fake-native-send (format "\nping %s 2\n" target))
           (portal-fake-native-send "")
           ;; The handlers ran in the filter; the hook waits for its timer.
           (should (= (length portal-view-test--handled) 2))
@@ -401,6 +406,31 @@ Return the view's target."
           ;; One run covers every batch handled before it.
           (should (= (length runs) 1))
           (should (= (length (car runs)) 2)))))))
+
+(ert-deftest portal-view-records-handled-while-the-hook-runs-earn-one-more-run ()
+  (portal-view-test--environment
+    (let ((target (portal-view-test--open "view")) (depth 0) (deepest 0) runs)
+      (portal-view-test--handling '("ping")
+        (let ((portal-view-records-hook
+               (list (lambda ()
+                       (cl-incf depth)
+                       (setq deepest (max deepest depth))
+                       (push (length portal-view-test--handled) runs)
+                       ;; The first run waits for input, as a prompt would,
+                       ;; while another record arrives.
+                       (when (= (length runs) 1)
+                         (portal-fake-native-send (format "ping %s 2\n" target))
+                         (portal-fake-native-send "")
+                         (sit-for 0.05))
+                       (cl-decf depth)))))
+          (portal-fake-native-send (format "ping %s 1\n" target))
+          (portal-fake-native-send "")
+          (sit-for 0.05)
+          (sit-for 0.05)
+          ;; The record handled during the first run got its own run, after
+          ;; the first returned, never nested in it.
+          (should (equal runs '(2 1)))
+          (should (= deepest 1)))))))
 
 (ert-deftest portal-view-record-for-an-unknown-target-is-dropped ()
   (portal-view-test--environment
