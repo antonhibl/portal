@@ -208,7 +208,7 @@
                        (portal-server-test--get (concat "/markdown?path=" (url-hexify-string file)))
                        'utf-8)))
             (dolist (image `(("relative" . ,(funcall source "img/a&b pic.PNG"))
-                             ("encoded" . ,(funcall source "img/a&b pic.PNG"))
+                             ("encoded" . ,(concat (funcall source "img/a&b pic.PNG") "#x"))
                              ("up" . ,(funcall source "../top.svg"))
                              ("absolute" . "image?path=%2Ftmp%2Fabs.gif")
                              ("file" . "image?path=%2Ftmp%2Fx%20y.jpg")
@@ -237,7 +237,11 @@
                                       (portal-server-test--get (concat "/" path))))))
           (should (string-match-p "HTTP/1.1 404"
                                   (portal-server-test--get
-                                   (concat "/" (funcall source "missing.png"))))))
+                                   (concat "/" (funcall source "missing.png")))))
+          (set-file-modes pic 0)
+          (should (string-match-p "HTTP/1.1 403"
+                                  (portal-server-test--get
+                                   (concat "/" (funcall source "img/a&b pic.PNG"))))))
       (delete-directory directory t))))
 
 (ert-deftest portal-server-markdown-rejects-invalid-requests ()

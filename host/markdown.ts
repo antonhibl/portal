@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { stat } from "node:fs/promises";
+import { access, constants, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import styles from "./markdown.css" with { type: "text" };
@@ -96,7 +96,7 @@ export function linkTarget(href: string, path: string): string | null {
  * null to leave it. Local images load from this host, relative to the page. */
 export function imageSource(src: string, path: string): string | null {
 	const local = localFile(src, path);
-	return local && `image?path=${encodeURIComponent(local.file)}`;
+	return local && `image?path=${encodeURIComponent(local.file)}${local.hash}`;
 }
 
 function rewrite(
@@ -140,7 +140,9 @@ export async function image(path: string | null): Promise<Response> {
 		if (!(await stat(path)).isFile()) {
 			return new Response("Not a file", { status: 400 });
 		}
-		return new Response(await Bun.file(path).arrayBuffer(), {
+		// Fail here, not mid-stream, when the file is unreadable.
+		await access(path, constants.R_OK);
+		return new Response(Bun.file(path), {
 			headers: {
 				"Content-Type": type,
 				// An SVG opened as a page must not run its scripts here.
