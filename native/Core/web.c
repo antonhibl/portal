@@ -486,6 +486,14 @@ void portal_web_views_history(portal_string target, bool *back, bool *forward)
     *forward = found && web->forward;
 }
 
+portal_string portal_web_views_page(portal_string target)
+{
+    struct portal_web_state *web;
+    if (!find(target, &web) || web->hosted || !web->page.data)
+        return literal("");
+    return (portal_string) {web->page.data, web->page.length};
+}
+
 void portal_web_views_edit(portal_string target)
 {
     struct portal_web_state *web;

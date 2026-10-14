@@ -3,7 +3,8 @@
 Design date: 23 September 2026. Revised 12 October 2026: the strip moved from
 above the content to over the pane's mode line, and shows only while the view
 has the keyboard; see [Placement](#placement). The gray inactive overlay is
-gone. State ownership changed later too: [Ownership](#ownership) and the
+gone. Revised 14 October 2026: the whole strip tints toward one face and
+names what the view shows; see [Tint and label](#tint-and-label). State ownership changed later too: [Ownership](#ownership) and the
 [implementation notes](architecture.md#toolbar-state) describe today's code.
 [Changes to existing code](#changes-to-existing-code) and
 [Rejected alternatives](#rejected-alternatives) are historical.
@@ -18,8 +19,9 @@ act only on that view; Emacs retains Emacs behavior.
 - Swift draws a strip over the pane's mode line while the view has the
   keyboard. It belongs to the view, never overlays content, and never takes
   room from it.
-- The strip holds an ownership dot and view controls, but no file name: the
-  mode line already shows it.
+- The strip holds an ownership dot, a label naming what the view shows, and
+  view controls. The label stands in for the mode line's buffer name, which
+  the strip covers.
 - Buttons call the C core, which asks the platform to act on WebKit, Ghostty or
   the page, without messaging Elisp. The sole exception, Markdown's **Open in
   Emacs**, returns the keyboard and sends an `edit` message over the preview's
@@ -57,8 +59,8 @@ see [Ownership dot](#ownership-dot).
 │                                                             │
 │                    native view content                      │
 │                                                             │
-├━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┤  2 px green line
-│ ●                                  ⌕  ☰ │ −  110%  + │ ⟳    │  strip over the mode line
+├─────────────────────────────────────────────────────────────┤  1 px hairline in the tint
+│ ● │ ‹ › docs/README.md                 ⌕  ☰ │ −  110%  + │ ⟳    │  tinted strip over the mode line
 ```
 
 While Emacs has the keyboard, Emacs's own mode line shows in the strip's
@@ -66,9 +68,10 @@ place.
 
 | Part | Size |
 | --- | --- |
-| Strip | The mode line's height and width; a 2 px top line in the dot's color |
+| Strip | The mode line's height and width; its background mixed 18% toward the tint; a 1 px top hairline in the tint |
 | Padding | 5 px left, 6 px right |
 | Ownership dot | 8 px dot centered in a 22 × 22 px click target, at the left |
+| Label | JetBrains Mono (or the system monospace font) 11 px in the tint, after the dot or the navigation buttons, truncated in the middle; hidden under 24 px or while find is open |
 | Buttons | Up to 22 px high, centered in the strip, minimum 24 px wide, 5 px corner radius, 2 px apart |
 | Icons | 14 px stroke icons, stroke width 1.8 |
 | Group separator | 1 × 14 px rule with 5 px margin on each side |
@@ -106,7 +109,7 @@ include it; changes redraw the strip immediately without polling.
 
 | State | Appearance | Tooltip | Click |
 | --- | --- | --- | --- |
-| The view has the keyboard | Filled `success` green, soft halo | Click to return to Emacs | Return to Emacs, same as the configured escape |
+| The view has the keyboard | Filled in the tint (`portal-toolbar-tint`, by default `success` green), soft halo | Click to return to Emacs | Return to Emacs, same as the configured escape |
 | Handoff pending | Filled accent (`link`) | Emacs is reading a command | None; the minibuffer owns the prompt |
 
 Dot clicks reuse existing paths: entering acts like a view click; returning acts
@@ -200,12 +203,43 @@ close clicks. Opening find focuses the field (`portal_toolbar_focus`); closing
 focuses the page (`portal_view_focus`) only if the view still owns the keyboard,
 never reclaiming it from Emacs or another view.
 
+## Tint and label
+
+The dot alone was easy to miss, and said nothing about the view. The whole
+strip now carries the signal, the way an active mode line differs from an
+inactive one: its background mixes toward the tint while the view has the
+keyboard, and toward `link` during a handoff, with a hairline along the top
+and the dot in the same color. A border around the content was tried on paper
+and rejected as obtrusive.
+
+After the dot, a label names what the view shows, in the tint. The strip is
+infrastructure, like a macOS title bar: the core decides what it holds and
+Swift paints every view's strip the same way. Each app contributes its
+title through one core call, `portal_toolbar_label`, the way a macOS window
+takes its title from its document unless the app sets one:
+
+| View | Label | Set by |
+| --- | --- | --- |
+| Web page | The URL its page committed last, without its scheme, following links and history | The core, from the web module's committed page; nothing crosses to Lisp |
+| Terminal | The buffer name, which follows `rename-buffer` | Lisp |
+| Markdown or HTML render | The source file, abbreviated | Lisp |
+| Hosted app | Its app host path | Lisp; a hosted app's address names the app host, so it has no default |
+
+Lisp's label, when set, replaces the default. `portal-toolbar-label-function`
+builds it in the view's buffer, and `portal-toolbar--sync-labels` sends it
+with `portal--toolbar-label` only when it changed, after each command, which
+is when a new view's buffer is complete; on buffer list changes, for renames
+outside a command; and after native records (`portal-view-records-hook`,
+run from a timer once their process filter has returned), which change what
+a hosted app shows or a terminal reports. A label the function fails to build is reported
+with `with-demoted-errors` and shows the default.
+
 ## Theme
 
 Emacs faces supply theme-matching strip colors, sent at load and each theme
 change (`enable-theme-functions` and `disable-theme-functions`). With the mode
-line's edges sent at each placement, this is Elisp's only toolbar data; nothing
-is sent back.
+line's edges sent at each placement and the label, this is Elisp's only
+toolbar data; nothing is sent back.
 
 | Toolbar color | Face attribute |
 | --- | --- |
@@ -213,8 +247,8 @@ is sent back.
 | Border | `vertical-border` foreground |
 | Icons, dimmed values, Emacs dot | `shadow` foreground |
 | Hovered icon, values | `default` foreground |
-| View-has-keyboard dot and top line | `success` foreground |
-| Handoff dot and top line, toggled-on tint | `link` foreground |
+| View-has-keyboard tint: strip background mix, hairline, dot, label | `portal-toolbar-tint` foreground, which inherits from `success` |
+| Handoff tint and dot, toggled-on button | `link` foreground |
 
 Swift tints hover, pressed and toggled backgrounds translucently from foreground
 and `link` colors. Until colors arrive, built-in dark/light defaults follow
@@ -225,6 +259,15 @@ system appearance.
 ```elisp
 ;; Show or hide the strip on every native view. Changes apply live.
 (setq portal-toolbar t)
+
+;; The strip's color while a view has the keyboard, by default `success'.
+(set-face-attribute 'portal-toolbar-tint nil :foreground "#c678dd")
+
+;; What the strip says about its view; the default names the buffer,
+;; page or file.
+(setq portal-toolbar-label-function
+      (lambda () (if (derived-mode-p 'portal-terminal-mode) (abbreviate-file-name default-directory)
+                   (portal-toolbar-default-label))))
 
 ;; The toolbar's functions are also reachable from Emacs.
 (keymap-set portal-web-mode-map "+" #'portal-zoom-in)

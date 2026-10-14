@@ -2,12 +2,19 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 (require 'portal-view)
 (require 'json)
+(require 'url-parse)
+(require 'url-util)
 
 (defgroup portal-toolbar nil "Native view controls." :group 'applications)
 (declare-function portal--toolbar "portal" (enabled))
 (declare-function portal--toolbar-theme "portal" (json))
 (declare-function portal--toolbar-action "portal" (target action))
+(declare-function portal--toolbar-label "portal" (target label))
 (defvar portal-input--resume)
+(defvar portal-web--url)
+(defvar portal-web--preview)
+(defvar portal-web--markdown)
+(defvar portal-web--hosted-path)
 
 (defcustom portal-toolbar t
   "Whether a native Portal view shows its toolbar over its pane's mode line.
@@ -16,6 +23,69 @@ mode line shows again when Emacs has it.  Changes apply immediately.  Quick
 terminals, web views opened without a toolbar, and panes without a mode line
 have none."
   :type 'boolean :group 'portal-toolbar)
+
+(defface portal-toolbar-tint
+  '((t :inherit success))
+  "The color of a native view's toolbar while the view has the keyboard.
+The toolbar's background mixes toward this face's foreground, and its dot
+and label are drawn in it, where the pane's mode line shows while Emacs
+has the keyboard.  Themes and users change it like any face; it reaches
+native toolbars with the other theme colors."
+  :group 'portal-toolbar)
+
+(defcustom portal-toolbar-label-function #'portal-toolbar-default-label
+  "Function naming what a native view's toolbar shows, after its dot.
+It is called with no arguments in the view's buffer and returns a string,
+or nil for the toolbar's own default: a web page's URL, which follows the
+links and history the page navigates, and nothing for other views.  It
+runs after each command and whenever the buffer list changes, so it should
+be quick; the label reaches the native toolbar only when it differs from
+the last one sent."
+  :type 'function :group 'portal-toolbar)
+
+(defun portal-toolbar--url-label (url)
+  "Name URL for a toolbar: a file URL by its abbreviated path, others
+without their scheme."
+  (let ((parsed (url-generic-parse-url url)))
+    (if (equal (url-type parsed) "file")
+        ;; Decode as `browse-url-file-url' encodes.
+        (abbreviate-file-name
+         (decode-coding-string (url-unhex-string (url-filename parsed))
+                               (or file-name-coding-system default-file-name-coding-system)))
+      (string-remove-suffix "/" (replace-regexp-in-string "\\`[a-z]+://" "" url)))))
+
+(defun portal-toolbar-default-label ()
+  "Name what this buffer's view shows, where Emacs knows better than the view.
+A Markdown or HTML render names its source file, abbreviated; a hosted app
+its path; and a terminal its buffer name, which follows `rename-buffer'.
+A web page returns nil: its toolbar names the URL on screen itself."
+  (cond ((bound-and-true-p portal-web--markdown) (abbreviate-file-name portal-web--markdown))
+        ((bound-and-true-p portal-web--preview) (portal-toolbar--url-label portal-web--preview))
+        ((bound-and-true-p portal-web--hosted-path)
+         (car (split-string portal-web--hosted-path "?")))
+        ((bound-and-true-p portal-web--url) nil)
+        (t (buffer-name))))
+
+(defvar-local portal-toolbar--sent nil
+  "The view target and label last sent for this buffer, as (TARGET . LABEL).
+A new view in the same buffer has a new target, and gets its label again.")
+
+(defun portal-toolbar--sync-labels (&rest _)
+  "Send each Portal view's label to its toolbar, where it changed.
+It runs after each command, which is when a new view's buffer is complete
+and renames have happened; on buffer list changes, for renames outside a
+command; and after native records, which change what a hosted app shows
+or a terminal reports."
+  (when (fboundp 'portal--toolbar-label)
+    (dolist (buffer (portal-view-buffers))
+      (with-current-buffer buffer
+        (when-let* ((target portal-view--target)
+                    (label (or (with-demoted-errors "Portal toolbar label: %S"
+                                 (funcall portal-toolbar-label-function))
+                               "")))
+          (unless (equal (cons target label) portal-toolbar--sent)
+            (portal--toolbar-label target label)
+            (setq portal-toolbar--sent (cons target label))))))))
 
 (defun portal-toolbar--changed (_symbol value operation _where)
   "Apply a new toolbar VALUE on variable OPERATION."
@@ -39,7 +109,8 @@ have none."
                       ("shadow" shadow :foreground)
                       ("foreground" default :foreground)
                       ("success" success :foreground)
-                      ("accent" link :foreground)))
+                      ("accent" link :foreground)
+                      ("tint" portal-toolbar-tint :foreground success)))
         (when-let* ((rgb (apply #'portal-toolbar--color (cdr spec))))
           (push (cons (car spec) rgb) colors)))
       (portal--toolbar-theme (if colors (json-encode colors) "{}")))))
@@ -48,7 +119,11 @@ have none."
   "Configure the toolbar after loading the native module."
   (when (fboundp 'portal--toolbar)
     (portal--toolbar portal-toolbar)
-    (portal-toolbar--theme)))
+    (portal-toolbar--theme)
+    (add-hook 'post-command-hook #'portal-toolbar--sync-labels)
+    (add-hook 'buffer-list-update-hook #'portal-toolbar--sync-labels)
+    (add-hook 'portal-view-records-hook #'portal-toolbar--sync-labels)
+    (portal-toolbar--sync-labels)))
 (add-hook 'portal-view-load-hook #'portal-toolbar--initialize)
 (add-hook 'enable-theme-functions #'portal-toolbar--theme)
 (add-hook 'disable-theme-functions #'portal-toolbar--theme)

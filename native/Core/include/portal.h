@@ -329,8 +329,10 @@ typedef struct portal_colors {
     portal_color border;     /* Its edge, and rules between groups of buttons. */
     portal_color shadow;     /* Buttons at rest, a value at its standard, Emacs's dot. */
     portal_color foreground; /* A button under the pointer, a changed value. */
-    portal_color success;    /* The dot while the view has the keyboard. */
-    portal_color accent;     /* The dot during a handoff, and a button toggled on. */
+    portal_color success;    /* The tint's default. */
+    portal_color accent;     /* The tint during a handoff, and a button toggled on. */
+    portal_color tint;       /* The dot, the label and the toolbar's tint while the view
+                                has the keyboard; SUCCESS when unset. */
 } portal_colors;
 
 /* Who has a view's keyboard, which the toolbar's first button shows:
@@ -377,6 +379,9 @@ typedef struct portal_toolbar {
     double value;      /* In UNIT, which RESET returns it to STANDARD. */
     double standard;
     portal_unit unit;
+    portal_string label;  /* What the view shows: a web page's URL without its
+                             scheme, or what Lisp named instead, such as a buffer
+                             name or a file; "" when neither is known. */
     bool finding;         /* Show the find field and its matches, not the value. */
     portal_string query;  /* The find field's text. */
     int64_t match;        /* The selected match, from 1, or 0 for none, */

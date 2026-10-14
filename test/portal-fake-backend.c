@@ -77,8 +77,8 @@ struct portal_view {
     bool holding;          /* It holds the presses in HELD, after TRIGGER or OFFERED. */
     struct press held[MAX_KEYS];
     size_t held_count;
-    portal_toolbar toolbar; /* The last drawn, whose query is QUERY. */
-    portal_text query;
+    portal_toolbar toolbar; /* The last drawn, whose label and query are these. */
+    portal_text label, query;
     size_t draws;
 };
 
@@ -313,6 +313,7 @@ bool portal_view_destroy(portal_view *view, portal_text *error)
         free(view->properties[i].name.data);
     }
     free(view->target);
+    free(view->label.data);
     free(view->query.data);
     *view = (struct portal_view) {.destroyed = true};
     return true;
@@ -610,9 +611,12 @@ bool portal_toolbar_draw(portal_view *view, const portal_toolbar *state, portal_
 {
     if (!usable(view, -1, error) || refused(error))
         return false;
+    free(view->label.data);
     free(view->query.data);
+    view->label = copy(state->label.data, state->label.length);
     view->query = copy(state->query.data, state->query.length);
     view->toolbar = *state;
+    view->toolbar.label = (portal_string) {view->label.data, view->label.length};
     view->toolbar.query = (portal_string) {view->query.data, view->query.length};
     view->draws++;
     set_flag(view, "strip", state->visible);

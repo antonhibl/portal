@@ -93,10 +93,43 @@ RECEIVER must queue interactive work for the command loop, not run it here."
         (setq start (1+ end))))
     (substring input start)))
 
+(defvar portal-view-records-hook nil
+  "Normal hook run after native records are handled.
+Records change what buffers know about their views outside any command:
+a page a hosted app shows, a terminal's title or directory.  The hook runs
+from a timer once the records' process filter has returned, so its
+functions may prompt or wait for process output; several batches handled
+before it runs share one run, and records handled while it runs earn one
+more run after it returns, never a nested one.")
+
+(defvar portal-view--records-hook-state nil
+  "How `portal-view-records-hook' stands: nil, `scheduled', `running' or
+`again', for records handled while it runs, which earn one more run after
+it returns rather than a nested one.")
+
+(defun portal-view--run-records-hook ()
+  "Run `portal-view-records-hook' for the records handled since it last ran."
+  (setq portal-view--records-hook-state 'running)
+  (unwind-protect (run-hooks 'portal-view-records-hook)
+    (if (eq portal-view--records-hook-state 'again)
+        (progn (setq portal-view--records-hook-state 'scheduled)
+               (run-at-time 0 nil #'portal-view--run-records-hook))
+      (setq portal-view--records-hook-state nil))))
+
 (defun portal-view--receive (_process text)
-  "Dispatch each native record completed by TEXT."
-  (setq portal-view--pending
-        (portal-view--consume-lines portal-view--pending text #'portal-view--dispatch)))
+  "Dispatch each native record completed by TEXT, then schedule the hook.
+A fragment that completes no record schedules nothing."
+  (let (handled)
+    (setq portal-view--pending
+          (portal-view--consume-lines portal-view--pending text
+                                      (lambda (record)
+                                        (setq handled t)
+                                        (portal-view--dispatch record))))
+    (when handled
+      (pcase portal-view--records-hook-state
+        ('nil (setq portal-view--records-hook-state 'scheduled)
+              (run-at-time 0 nil #'portal-view--run-records-hook))
+        ('running (setq portal-view--records-hook-state 'again))))))
 
 (defun portal-view--read-records ()
   "Handle the records already in the pipe, without waiting or running timers."

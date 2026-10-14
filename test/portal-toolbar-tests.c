@@ -25,6 +25,11 @@ static const char *drain(void)
     return buffer;
 }
 
+static bool same(portal_string a, portal_string b)
+{
+    return a.length == b.length && !memcmp(a.data, b.data, a.length);
+}
+
 static uint32_t bits(int count, ...)
 {
     uint32_t mask = 0;
@@ -740,6 +745,44 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     colors.success.set = false;
     portal_toolbar_paint(&colors);
     CHECK(draws(web) == count + 1 && !drawn(web).colors.success.set);
+    colors.tint = (portal_color) {true, 1, 0, 1};
+    portal_toolbar_paint(&colors);
+    CHECK(draws(web) == count + 2 && drawn(web).colors.tint.set
+          && drawn(web).colors.tint.blue == 1);
+    /* A web page's label is the URL it committed last, without its scheme,
+       following links and history; Lisp's label replaces it, and only a
+       change draws. */
+    CHECK(drawn(web).label.length == 0);
+    portal_web_committed(text(web), text("https://example.org/docs/"));
+    CHECK(draws(web) == count + 3 && same(drawn(web).label, text("example.org/docs")));
+    portal_web_committed(text(web), text("https://example.org/docs/"));
+    CHECK(draws(web) == count + 3);
+    portal_web_committed(text(web), text("about:blank"));
+    CHECK(same(drawn(web).label, text("about:blank")));
+    portal_web_committed(text(web), text("data:text/html,<a href=\"http://x/\">"));
+    CHECK(same(drawn(web).label, text("data:text/html,<a href=\"http://x/\">")));
+    CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
+    CHECK(draws(web) == count + 6 && same(drawn(web).label, text("docs/README.md")));
+    CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
+    CHECK(draws(web) == count + 6);
+    portal_web_committed(text(web), text("https://example.org/next"));
+    CHECK(same(drawn(web).label, text("docs/README.md")));
+    CHECK(portal_toolbar_label(text(web), text(""), &error));
+    CHECK(same(drawn(web).label, text("example.org/next")));
+    /* A hosted app's address names the app host: Lisp labels it. */
+    char *hosted = open_web("markdown", true);
+    enter(hosted);
+    portal_web_committed(text(hosted), text("http://127.0.0.1:8080/0123/markdown?path=a.md"));
+    CHECK(drawn(hosted).label.length == 0);
+    close_view(hosted);
+    /* A hidden toolbar keeps its label for when it shows again. */
+    CHECK(portal_toolbar_label(text(terminal), text("*terminal: portal*"), &error));
+    CHECK(!drawn(terminal).visible && drawn(terminal).label.length == 0);
+    enter(terminal);
+    CHECK(same(drawn(terminal).label, text("*terminal: portal*")));
+    CHECK(!portal_toolbar_label(text("web:999"), text("gone"), &error)
+          && says(&error, "No Portal view web:999"));
+    enter(web);
     /* A draw the platform refuses is tried again. */
     portal_fake_refuse(true);
     portal_toolbar_show(false);
