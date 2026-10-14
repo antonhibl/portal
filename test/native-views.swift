@@ -93,10 +93,11 @@ enum Views {
     /// Show every toolbar, or none, as `portal--toolbar` does.
     static func showToolbars(_ shown: Bool) { portal_toolbar_show(shown) }
 
-    /// Draw every toolbar in COLORS, as `portal--toolbar-theme` does.
-    static func paintToolbars(_ colors: portal_colors) {
+    /// Draw every toolbar in COLORS and the font FAMILY at POINTS, as
+    /// `portal--toolbar-theme` does.
+    static func paintToolbars(_ colors: portal_colors, family: String = "", points: Double = 0) {
         var colors = colors
-        portal_toolbar_paint(&colors)
+        with(family) { portal_toolbar_paint(&colors, portal_font(family: $0, points: points)) }
     }
 
     /// Who has TARGET's keyboard, as its toolbar's dot shows.

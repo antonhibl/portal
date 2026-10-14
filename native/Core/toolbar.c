@@ -90,12 +90,14 @@ struct portal_toolbar_state {
     /* The last snapshot drawn, if DRAWN, with its own copies of its strings. */
     bool drawn;
     portal_toolbar shown;
-    portal_text shown_label, shown_query;
+    portal_text shown_family, shown_label, shown_query;
 };
 
 static struct {
     bool hidden; /* Whether Lisp hid every toolbar. */
     portal_colors colors;
+    portal_text family; /* The font's, and */
+    double points;      /* its size, as Lisp last painted them. */
     uint64_t tokens; /* The last token given out. */
 } toolbars;
 
@@ -211,6 +213,7 @@ static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
         return state;
     state.visible = true;
     state.colors = toolbars.colors;
+    state.font = (portal_font) {borrow(toolbars.family), toolbars.points};
     state.label = label(toolbar);
     state.buttons = bit(PORTAL_BUTTON_OWNER);
     if (state.owner != PORTAL_OWNER_PENDING)
@@ -279,6 +282,7 @@ static bool same_colors(const portal_colors *a, const portal_colors *b)
 static bool same_snapshot(const portal_toolbar *a, const portal_toolbar *b)
 {
     return a->visible == b->visible && same_colors(&a->colors, &b->colors)
+        && same(a->font.family, b->font.family) && a->font.points == b->font.points
         && a->owner == b->owner && a->buttons == b->buttons && a->enabled == b->enabled
         && a->selected == b->selected && a->value == b->value && a->standard == b->standard
         && a->unit == b->unit && same(a->label, b->label) && a->finding == b->finding
@@ -294,22 +298,28 @@ static void refresh(struct portal_toolbar_state *toolbar)
     portal_toolbar state = snapshot(toolbar);
     if (toolbar->drawn && same_snapshot(&state, &toolbar->shown))
         return;
-    portal_text label = {0}, query = {0}, error = {0};
-    if (!set(&label, state.label) || !set(&query, state.query)) {
+    portal_text family = {0}, label = {0}, query = {0}, error = {0};
+    if (!set(&family, state.font.family) || !set(&label, state.label)
+        || !set(&query, state.query)) {
+        free(family.data);
         free(label.data);
         return; /* Without memory to remember it, draw it next time. */
     }
     if (!portal_toolbar_draw(toolbar->native, &state, &error)) {
         ignore(false, &error);
+        free(family.data);
         free(label.data);
         free(query.data);
         return;
     }
+    free(toolbar->shown_family.data);
     free(toolbar->shown_label.data);
     free(toolbar->shown_query.data);
+    toolbar->shown_family = family;
     toolbar->shown_label = label;
     toolbar->shown_query = query;
     toolbar->shown = state;
+    toolbar->shown.font.family = borrow(family);
     toolbar->shown.label = borrow(label);
     toolbar->shown.query = borrow(query);
     toolbar->drawn = true;
@@ -726,6 +736,7 @@ void portal_toolbar_state_free(struct portal_toolbar_state *toolbar)
     free(toolbar->waiting.data);
     free(toolbar->backwards);
     free(toolbar->search.query.data);
+    free(toolbar->shown_family.data);
     free(toolbar->shown_label.data);
     free(toolbar->shown_query.data);
     free(toolbar);
@@ -747,9 +758,11 @@ void portal_toolbar_show(bool shown)
     portal_views_each_toolbar(refresh_each);
 }
 
-void portal_toolbar_paint(const portal_colors *colors)
+void portal_toolbar_paint(const portal_colors *colors, portal_font font)
 {
     toolbars.colors = *colors;
+    if (set(&toolbars.family, font.family))
+        toolbars.points = font.points;
     portal_views_each_toolbar(refresh_each);
 }
 

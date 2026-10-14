@@ -715,9 +715,10 @@ static bool read_color(emacs_env *env, emacs_value value, portal_color *color)
 }
 
 /* JSON is an object of colors by name, such as {"background":[0,0.5,1]}:
-   the names of portal_colors' members, each an array of sRGB components.
+   the names of portal_colors' members, each an array of sRGB components;
+   and "font", an object of a "family" string and a "points" number.
    Other names are ignored, and colors of other shapes, like missing ones,
-   leave the platform's defaults. */
+   leave the platform's defaults, as does a font of another shape. */
 LISP_FUNCTION(Ftoolbar_theme)
 {
     emacs_value arguments[] = {args[0], symbol(env, ":object-type"), symbol(env, "alist"),
@@ -749,7 +750,27 @@ LISP_FUNCTION(Ftoolbar_theme)
             || !read_color(env, value, (portal_color *) ((char *) &colors + roles[i].offset)))
             return NULL;
     }
-    portal_toolbar_paint(&colors);
+    portal_text family = {0};
+    double points = 0;
+    emacs_value font = get(env, json, "font");
+    if (!returning(env))
+        return NULL;
+    if (of_type(env, font, "cons")) {
+        emacs_value name = get(env, font, "family"), size = get(env, font, "points");
+        if (!returning(env))
+            return NULL;
+        if (of_type(env, name, "string") && !read_text(env, name, &family))
+            return NULL;
+        if (of_type(env, size, "integer") || of_type(env, size, "float")) {
+            points = env->extract_float(env, env->funcall(env, symbol(env, "float"), 1, &size));
+            if (!returning(env)) {
+                free(family.data);
+                return NULL;
+            }
+        }
+    }
+    portal_toolbar_paint(&colors, (portal_font) {borrow(family), points > 0 ? points : 0});
+    free(family.data);
     return symbol(env, "t");
 }
 

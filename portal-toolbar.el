@@ -38,9 +38,9 @@ native toolbars with the other theme colors."
 It is called with no arguments in the view's buffer and returns a string,
 or nil for the toolbar's own default: a web page's URL, which follows the
 links and history the page navigates, and nothing for other views.  It
-runs after each command and whenever the buffer list changes, so it should
-be quick; the label reaches the native toolbar only when it differs from
-the last one sent."
+runs after each command and after native records, never in a process
+filter, so it may prompt; the label reaches the native toolbar only when
+it differs from the last one sent."
   :type 'function :group 'portal-toolbar)
 
 (defun portal-toolbar--url-label (url)
@@ -73,9 +73,11 @@ A new view in the same buffer has a new target, and gets its label again.")
 (defun portal-toolbar--sync-labels (&rest _)
   "Send each Portal view's label to its toolbar, where it changed.
 It runs after each command, which is when a new view's buffer is complete
-and renames have happened; on buffer list changes, for renames outside a
-command; and after native records, which change what a hosted app shows
-or a terminal reports."
+and renames have happened, and after native records, which change what a
+hosted app shows or a terminal reports, and may rename its buffer.  A
+record handler runs in the process filter, where `buffer-list-update-hook'
+would run label functions too early; `portal-view-records-hook' runs them
+once the filter has returned."
   (when (fboundp 'portal--toolbar-label)
     (dolist (buffer (portal-view-buffers))
       (with-current-buffer buffer
@@ -100,10 +102,19 @@ or a terminal reports."
     (or (when rgb (vconcat (mapcar (lambda (n) (/ n 65535.0)) rgb)))
         (when fallback (portal-toolbar--color fallback attribute)))))
 
+(defun portal-toolbar--font ()
+  "Return the default face's font as a toolbar font, or nil.
+A (\"family\" . FAMILY) and (\"points\" . POINTS) alist, from the face's
+family and its height in tenths of a point."
+  (let ((family (face-attribute 'default :family))
+        (height (face-attribute 'default :height)))
+    (when (and (stringp family) (numberp height) (> height 0))
+      (list (cons "family" family) (cons "points" (/ height 10.0))))))
+
 (defun portal-toolbar--theme (&rest _)
-  "Send current Emacs face colors to native toolbars."
+  "Send current Emacs face colors and font to native toolbars."
   (when (fboundp 'portal--toolbar-theme)
-    (let (colors)
+    (let ((colors (when-let* ((font (portal-toolbar--font))) (list (cons "font" font)))))
       (dolist (spec '(("background" mode-line-active :background mode-line)
                       ("border" vertical-border :foreground)
                       ("shadow" shadow :foreground)
@@ -121,7 +132,6 @@ or a terminal reports."
     (portal--toolbar portal-toolbar)
     (portal-toolbar--theme)
     (add-hook 'post-command-hook #'portal-toolbar--sync-labels)
-    (add-hook 'buffer-list-update-hook #'portal-toolbar--sync-labels)
     (add-hook 'portal-view-records-hook #'portal-toolbar--sync-labels)
     (portal-toolbar--sync-labels)))
 (add-hook 'portal-view-load-hook #'portal-toolbar--initialize)

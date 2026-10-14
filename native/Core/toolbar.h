@@ -19,8 +19,8 @@
 /* Show every view's toolbar, or none, as portal--toolbar does.  Hiding
    them closes every find field.  Toolbars show until Lisp says. */
 void portal_toolbar_show(bool shown);
-/* Draw every toolbar in COLORS, as portal--toolbar-theme does. */
-void portal_toolbar_paint(const portal_colors *colors);
+/* Draw every toolbar in COLORS and FONT, as portal--toolbar-theme does. */
+void portal_toolbar_paint(const portal_colors *colors, portal_font font);
 /* Show LABEL, what TARGET's view shows as Lisp names it, on its toolbar,
    as portal--toolbar-label does; "" shows the toolbar's default, a web
    page's URL.  Fails for a TARGET that names no view. */

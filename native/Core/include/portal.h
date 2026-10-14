@@ -335,6 +335,14 @@ typedef struct portal_colors {
                                 has the keyboard; SUCCESS when unset. */
 } portal_colors;
 
+/* A toolbar's font, which follows Emacs's default face (portal-toolbar.el):
+   a family, "" for the platform's monospace font, and a size in points, 0
+   for the platform's. */
+typedef struct portal_font {
+    portal_string family;
+    double points;
+} portal_font;
+
 /* Who has a view's keyboard, which the toolbar's first button shows:
    Emacs, the view, or Emacs handling the view's handoff. */
 typedef enum portal_owner {
@@ -372,6 +380,7 @@ typedef enum portal_unit { PORTAL_PERCENT, PORTAL_POINTS } portal_unit;
 typedef struct portal_toolbar {
     bool visible; /* Without it, draw no toolbar: the pane's mode line shows. */
     portal_colors colors;
+    portal_font font;
     portal_owner owner;
     uint32_t buttons;  /* The buttons the toolbar has now. */
     uint32_t enabled;  /* Of those, the ones a click can act on. */

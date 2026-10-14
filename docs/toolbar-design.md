@@ -68,14 +68,14 @@ place.
 
 | Part | Size |
 | --- | --- |
-| Strip | The mode line's height and width; its background mixed 18% toward the tint; a 1 px top hairline in the tint |
+| Strip | The mode line's height and width; its background the tint's hue at the mode line's brightness with 40% of its saturation (25% on a light mode line); a 1 px top hairline in the tint |
 | Padding | 5 px left, 6 px right |
 | Ownership dot | 8 px dot centered in a 22 × 22 px click target, at the left |
-| Label | JetBrains Mono (or the system monospace font) 11 px in the tint, after the dot or the navigation buttons, truncated in the middle; hidden under 24 px or while find is open |
+| Label | Emacs's default font in the tint, after the dot or the navigation buttons, truncated in the middle; hidden under 24 px or while find is open |
 | Buttons | Up to 22 px high, centered in the strip, minimum 24 px wide, 5 px corner radius, 2 px apart |
 | Icons | 14 px stroke icons, stroke width 1.8 |
 | Group separator | 1 × 14 px rule with 5 px margin on each side |
-| Value readout | JetBrains Mono (or the system monospace font) 11 px, minimum 40 px wide |
+| Value readout | Emacs's default font, as wide as its widest value |
 
 Controls sit right; navigation (back/forward), if present, sits left after the
 dot, separated by a rule.
@@ -207,9 +207,12 @@ never reclaiming it from Emacs or another view.
 
 The dot alone was easy to miss, and said nothing about the view. The whole
 strip now carries the signal, the way an active mode line differs from an
-inactive one: its background mixes toward the tint while the view has the
-keyboard, and toward `link` during a handoff, with a hairline along the top
-and the dot in the same color. A border around the content was tried on paper
+inactive one: its background takes the tint's hue at the mode line's
+brightness while the view has the keyboard, and `link`'s during a handoff,
+with a hairline along the top and the dot in the same color. Mixing the tint
+into the mode line's own color was tried first and turned modus-vivendi's
+blue-gray mode line teal; keeping only the mode line's brightness gives a
+green mode line on any theme. A border around the content was tried on paper
 and rejected as obtrusive.
 
 After the dot, a label names what the view shows, in the tint. The strip is
@@ -228,18 +231,19 @@ takes its title from its document unless the app sets one:
 Lisp's label, when set, replaces the default. `portal-toolbar-label-function`
 builds it in the view's buffer, and `portal-toolbar--sync-labels` sends it
 with `portal--toolbar-label` only when it changed, after each command, which
-is when a new view's buffer is complete; on buffer list changes, for renames
-outside a command; and after native records (`portal-view-records-hook`,
-run from a timer once their process filter has returned), which change what
-a hosted app shows or a terminal reports. A label the function fails to build is reported
+is when a new view's buffer is complete and renames have happened, and after
+native records (`portal-view-records-hook`, run from a timer once their
+process filter has returned), which change what a hosted app shows or a
+terminal reports, and may rename its buffer. Label functions never run in a
+process filter, so they may prompt. A label the function fails to build is reported
 with `with-demoted-errors` and shows the default.
 
 ## Theme
 
-Emacs faces supply theme-matching strip colors, sent at load and each theme
-change (`enable-theme-functions` and `disable-theme-functions`). With the mode
-line's edges sent at each placement and the label, this is Elisp's only
-toolbar data; nothing is sent back.
+Emacs faces supply theme-matching strip colors and the text font, sent at
+load and each theme change (`enable-theme-functions` and
+`disable-theme-functions`). With the mode line's edges sent at each placement
+and the label, this is Elisp's only toolbar data; nothing is sent back.
 
 | Toolbar color | Face attribute |
 | --- | --- |
@@ -249,6 +253,7 @@ toolbar data; nothing is sent back.
 | Hovered icon, values | `default` foreground |
 | View-has-keyboard tint: strip background mix, hairline, dot, label | `portal-toolbar-tint` foreground, which inherits from `success` |
 | Handoff tint and dot, toggled-on button | `link` foreground |
+| Label, value readout, match count font | `default` family and height |
 
 Swift tints hover, pressed and toggled backgrounds translucently from foreground
 and `link` colors. Until colors arrive, built-in dark/light defaults follow

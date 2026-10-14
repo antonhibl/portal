@@ -9,6 +9,10 @@ struct ToolbarState: Sendable {
     var visible = false
     /// Face colors by role, as sRGB components; a missing role uses AppKit's default.
     var colors: [String: [Double]] = [:]
+    /// Emacs's default font family and size in points; "" and 0 use the
+    /// platform's monospace font at 11 points.
+    var fontFamily = ""
+    var fontPoints = 0.0
     var owner = Owner.emacs
     var buttons: UInt32 = 0
     var enabled: UInt32 = 0
@@ -34,6 +38,8 @@ struct ToolbarState: Sendable {
                               ("tint", colors.tint)] where color.set {
             self.colors[name] = [color.red, color.green, color.blue]
         }
+        fontFamily = String(copying: state.font.family)
+        fontPoints = state.font.points
         switch state.owner {
         case PORTAL_OWNER_VIEW: owner = .view
         case PORTAL_OWNER_PENDING: owner = .pending
@@ -73,11 +79,37 @@ struct ToolbarState: Sendable {
     /// has it, the accent while Emacs reads a command for it.
     var ownerColor: NSColor { color(owner == .pending ? "accent" : "tint") }
 
-    /// The strip's background: the mode line's, mixed toward the owner's
-    /// color, as an active mode line differs from an inactive one.
+    /// The strip's background: the owner's hue at the mode line's
+    /// brightness with less of its saturation, so that the strip is a green
+    /// mode line on any theme, rather than green mixed into whatever hue the
+    /// mode line had, which turns a blue-gray mode line teal. A light mode
+    /// line takes less saturation still.
     var tintedBackground: NSColor {
-        let background = color("background")
-        return background.blended(withFraction: 0.18, of: ownerColor) ?? background
+        let background = color("background").usingColorSpace(.sRGB) ?? color("background")
+        let owner = ownerColor.usingColorSpace(.sRGB) ?? ownerColor
+        let brightness = background.brightnessComponent
+        return NSColor(hue: owner.hueComponent, saturation: owner.saturationComponent * (brightness > 0.6 ? 0.25 : 0.4),
+                       brightness: brightness, alpha: 1)
+    }
+
+    /// The text font: Emacs's default face, so the label reads like the
+    /// mode line it replaces.
+    var font: NSFont {
+        let size = fontPoints > 0 ? fontPoints : 11
+        if !fontFamily.isEmpty, let font = NSFontManager.shared.font(withFamily: fontFamily, traits: [], weight: 5, size: size) {
+            return font
+        }
+        return NSFont(name: "JetBrains Mono", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// How wide TEXT is in the font, with a little room.
+    func width(of text: String) -> CGFloat {
+        ((text as NSString).size(withAttributes: [.font: font]).width + 10).rounded(.up)
+    }
+
+    /// The font's line height, within a strip of HEIGHT.
+    func lineHeight(in height: CGFloat) -> CGFloat {
+        min(height, (font.ascender - font.descender + font.leading).rounded(.up))
     }
 }
 
@@ -205,7 +237,7 @@ private final class ToolbarButton: NSButton {
             }
             tinted.draw(in: NSRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14))
         } else {
-            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont(name: "JetBrains Mono", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular), .foregroundColor: color]
+            let attrs: [NSAttributedString.Key: Any] = [.font: colors.font, .foregroundColor: color]
             let text = title as NSString
             let size = text.size(withAttributes: attrs)
             text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attrs)
@@ -236,8 +268,6 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         field.placeholderString = "Find in page"
         field.font = .systemFont(ofSize: 11)
         field.setAccessibilityLabel("Find in page")
-        count.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.font = NSFont(name: "JetBrains Mono", size: 11) ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
         label.lineBreakMode = .byTruncatingMiddle
         label.cell?.truncatesLastVisibleLine = true
         addSubview(field)
@@ -296,6 +326,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         reset?.setAccessibilityValue(value)
         count.stringValue = "\(state.match) of \(state.matches)"
         count.textColor = state.color("shadow")
+        count.font = state.font
+        label.font = state.font
         label.stringValue = state.label
         label.textColor = state.ownerColor
         label.toolTip = state.label.isEmpty ? nil : state.label
@@ -324,6 +356,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
         label.isHidden = true
         // The strip is as high as the mode line it covers: center in it.
         let height = min(22, max(14, bounds.height - 4)), top = ((bounds.height - height) / 2).rounded()
+        let line = state.lineHeight(in: bounds.height), lineTop = ((bounds.height - line) / 2).rounded()
+        let countWidth = state.width(of: "99 of 99")
         func place(_ id: portal_button, _ x: CGFloat, width: CGFloat = 24) {
             guard state.has(id), id == PORTAL_BUTTON_OWNER || x >= 31 else { return }
             button(id)?.frame = NSRect(x: x, y: top, width: width, height: height)
@@ -340,12 +374,14 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             trailing(PORTAL_BUTTON_CLOSE)
             if bounds.width >= 240 { trailing(PORTAL_BUTTON_NEXT); trailing(PORTAL_BUTTON_PREVIOUS) }
             count.isHidden = bounds.width < 180
-            if !count.isHidden { right -= 68 }
-            count.frame = NSRect(x: right, y: ((bounds.height - 16) / 2).rounded(), width: 66, height: 16)
+            if !count.isHidden { right -= countWidth + 2 }
+            count.frame = NSRect(x: right, y: lineTop, width: countWidth, height: line)
             field.frame = NSRect(x: 33, y: top, width: max(20, right - 38), height: height)
         } else {
             if state.has(PORTAL_BUTTON_RELOAD) { trailing(PORTAL_BUTTON_RELOAD); separator() }
-            trailing(PORTAL_BUTTON_INCREASE); trailing(PORTAL_BUTTON_RESET, width: 46); trailing(PORTAL_BUTTON_DECREASE)
+            trailing(PORTAL_BUTTON_INCREASE)
+            trailing(PORTAL_BUTTON_RESET, width: max(46, state.width(of: state.points ? "255 pt" : "300%")))
+            trailing(PORTAL_BUTTON_DECREASE)
             if state.has(PORTAL_BUTTON_FIND) {
                 separator()
                 trailing(PORTAL_BUTTON_CONTENTS)
@@ -358,7 +394,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             let left: CGFloat = button(PORTAL_BUTTON_BACK)?.isHidden == false ? 95 : 31
             let width = right - 8 - left
             if !state.label.isEmpty, width >= 24 {
-                label.frame = NSRect(x: left, y: ((bounds.height - 16) / 2).rounded(), width: width, height: 16)
+                label.frame = NSRect(x: left, y: lineTop, width: width, height: line)
                 label.isHidden = false
             }
         }

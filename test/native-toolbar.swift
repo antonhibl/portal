@@ -201,6 +201,16 @@ struct CheckToolbar {
         Views.paintToolbars(colors)
         check(container.state.ownerColor == NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1))
         check(container.state.tintedBackground != container.state.color("background"), "Strip not tinted")
+        // The strip keeps the tint's hue at the mode line's brightness.
+        let tinted = require(container.state.tintedBackground.usingColorSpace(.sRGB))
+        check(abs(tinted.hueComponent - 5.0 / 6) < 0.02 && abs(tinted.brightnessComponent - 0.3) < 0.02,
+              "Tinted strip is \(tinted)")
+        // Text follows Emacs's font; without one, 11 point monospace.
+        check(container.state.font.pointSize == 11)
+        Views.paintToolbars(colors, family: "Menlo", points: 17)
+        check(container.state.font.pointSize == 17 && container.state.font.familyName == "Menlo",
+              "Font is \(container.state.font)")
+        Views.paintToolbars(colors)
         // The label is the core's; the strip shows it, truncated, in the tint.
         func labelField() -> NSTextField? {
             require(container.toolbar).subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "~/notes/plan.md" }

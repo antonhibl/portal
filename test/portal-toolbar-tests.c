@@ -734,37 +734,46 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     enter(terminal);
     enter(web);
     portal_colors colors = {.background = {true, 0.1, 0.2, 0.3}, .success = {true, 0, 1, 0}};
-    portal_toolbar_paint(&colors);
+    portal_toolbar_paint(&colors, (portal_font) {text(""), 0});
     CHECK(drawn(web).colors.background.set && drawn(web).colors.background.blue == 0.3);
     /* A toolbar that does not show draws no colors. */
     CHECK(!drawn(terminal).visible && !drawn(terminal).colors.background.set);
     CHECK(drawn(web).colors.success.green == 1 && !drawn(web).colors.accent.set);
     count = draws(web);
-    portal_toolbar_paint(&colors);
+    portal_toolbar_paint(&colors, (portal_font) {text(""), 0});
     CHECK(draws(web) == count);
     colors.success.set = false;
-    portal_toolbar_paint(&colors);
+    portal_toolbar_paint(&colors, (portal_font) {text(""), 0});
     CHECK(draws(web) == count + 1 && !drawn(web).colors.success.set);
     colors.tint = (portal_color) {true, 1, 0, 1};
-    portal_toolbar_paint(&colors);
+    portal_toolbar_paint(&colors, (portal_font) {text(""), 0});
     CHECK(draws(web) == count + 2 && drawn(web).colors.tint.set
           && drawn(web).colors.tint.blue == 1);
+    /* The font follows Emacs's, and only a change draws. */
+    CHECK(drawn(web).font.family.length == 0 && drawn(web).font.points == 0);
+    portal_toolbar_paint(&colors, (portal_font) {text("JetBrainsMono Nerd Font"), 17});
+    CHECK(draws(web) == count + 3 && same(drawn(web).font.family, text("JetBrainsMono Nerd Font"))
+          && drawn(web).font.points == 17);
+    portal_toolbar_paint(&colors, (portal_font) {text("JetBrainsMono Nerd Font"), 17});
+    CHECK(draws(web) == count + 3);
+    portal_toolbar_paint(&colors, (portal_font) {text(""), 0});
+    CHECK(draws(web) == count + 4);
     /* A web page's label is the URL it committed last, without its scheme,
        following links and history; Lisp's label replaces it, and only a
        change draws. */
     CHECK(drawn(web).label.length == 0);
     portal_web_committed(text(web), text("https://example.org/docs/"));
-    CHECK(draws(web) == count + 3 && same(drawn(web).label, text("example.org/docs")));
+    CHECK(draws(web) == count + 5 && same(drawn(web).label, text("example.org/docs")));
     portal_web_committed(text(web), text("https://example.org/docs/"));
-    CHECK(draws(web) == count + 3);
+    CHECK(draws(web) == count + 5);
     portal_web_committed(text(web), text("about:blank"));
     CHECK(same(drawn(web).label, text("about:blank")));
     portal_web_committed(text(web), text("data:text/html,<a href=\"http://x/\">"));
     CHECK(same(drawn(web).label, text("data:text/html,<a href=\"http://x/\">")));
     CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
-    CHECK(draws(web) == count + 6 && same(drawn(web).label, text("docs/README.md")));
+    CHECK(draws(web) == count + 8 && same(drawn(web).label, text("docs/README.md")));
     CHECK(portal_toolbar_label(text(web), text("docs/README.md"), &error));
-    CHECK(draws(web) == count + 6);
+    CHECK(draws(web) == count + 8);
     portal_web_committed(text(web), text("https://example.org/next"));
     CHECK(same(drawn(web).label, text("docs/README.md")));
     CHECK(portal_toolbar_label(text(web), text(""), &error));
@@ -791,7 +800,7 @@ static void test_state_is_kept_and_drawn_only_when_it_changes(void)
     portal_toolbar_refresh(text(web));
     CHECK(!drawn(web).visible);
     portal_toolbar_show(true);
-    portal_toolbar_paint(&(portal_colors) {0});
+    portal_toolbar_paint(&(portal_colors) {0}, (portal_font) {text(""), 0});
     close_view(terminal);
     close_view(web);
 }

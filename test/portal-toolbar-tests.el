@@ -79,12 +79,15 @@
           (portal-toolbar--sync-labels))
         (should (equal (cdar sent) ""))))))
 
-(ert-deftest portal-toolbar-labels-sync-after-commands-renames-and-records ()
+(ert-deftest portal-toolbar-labels-sync-after-commands-and-records ()
   (let (post-command-hook buffer-list-update-hook portal-view-records-hook)
     (cl-letf (((symbol-function 'portal--toolbar) #'ignore)
               ((symbol-function 'portal--toolbar-theme) #'ignore)
               ((symbol-function 'portal--toolbar-label) #'ignore)
               ((symbol-function 'portal-view-buffers) (lambda (&rest _) nil)))
       (portal-toolbar--initialize)
-      (dolist (hook (list post-command-hook buffer-list-update-hook portal-view-records-hook))
-        (should (memq #'portal-toolbar--sync-labels hook))))))
+      (dolist (hook (list post-command-hook portal-view-records-hook))
+        (should (memq #'portal-toolbar--sync-labels hook)))
+      ;; Never from `buffer-list-update-hook': a record handler renames its
+      ;; buffer in the process filter, where a label function must not run.
+      (should-not (memq #'portal-toolbar--sync-labels buffer-list-update-hook)))))
