@@ -12,8 +12,8 @@ explicit `BUN`, a compatible `bun` on `PATH`, a cached copy of the pinned Bun in
 checked against the manifest's digest. `M-x portal-build` runs the same script
 with Emacs's `exec-path` and a cache under `user-emacs-directory`, so package
 upgrades reuse it. See [Bun in the installation guide](install.md#bun).
-This follows the [native package installation research](../tasks/04-public-release-readiness/01-fix-use-package-installation.md#private-bun-bootstrap),
-which preferred an Emacs-owned persistent cache to a per-checkout directory.
+This follows the native package installation research, which preferred an
+Emacs-owned persistent cache to a per-checkout directory.
 
 Bun is a **build dependency**, not a runtime installation requirement: the host
 contains the Bun runtime, server code, and Hello World assets. See
