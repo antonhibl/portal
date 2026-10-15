@@ -58,5 +58,3 @@ feature ships today; see the user guides for current behavior.
   updates, with historical alternatives.
 - [Bun distribution options](bun-distribution.md): the private Bun bootstrap,
   size measurements and alternatives to revisit.
-- [Public-release preparation tasks](../tasks/04-public-release-readiness/README.md): implementation
-  briefs; task 1 includes native compilation and Bun bootstrap research.

@@ -32,7 +32,10 @@ add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/portal-host"
     COMMAND "${BUN}" install --cwd "${CMAKE_SOURCE_DIR}/host" --frozen-lockfile
     COMMAND "${BUN}" run "${CMAKE_SOURCE_DIR}/host/build-editor.ts"
-    COMMAND "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
+    # Bun 1.4 leaves a copy of its runtime in the working directory: keep it
+    # in the build directory, which --prune clears, not in the sources.
+    COMMAND "${CMAKE_COMMAND}" -E chdir "${CMAKE_BINARY_DIR}"
+        "${BUN}" build "${CMAKE_SOURCE_DIR}/host/server.ts"
         --compile --minify --sourcemap
         --no-compile-autoload-dotenv --no-compile-autoload-bunfig
         --metafile=${CMAKE_BINARY_DIR}/portal-host.meta.json

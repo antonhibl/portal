@@ -13,16 +13,25 @@ package installation test runs them. Keep their markers when editing them.
   [supported platforms](platforms.md) for what has been verified.
 - Xcode with Swift 6.2 or newer, CMake 3.29 or newer and Ninja. Install CMake
   and Ninja with `brew install cmake ninja` or your tool manager.
-- Bun is optional. A build uses a compatible Bun on `exec-path`; otherwise it
-  downloads Portal's pinned Bun once (see [Bun](#bun)).
+- Bun is optional. A build uses a compatible Bun where it finds its other tools;
+  otherwise it downloads Portal's pinned Bun once (see [Bun](#bun)).
 
-Graphical Emacs started from the Dock may not see your shell's `PATH`. The build
-searches Emacs's `exec-path`, so make sure that includes CMake, Ninja and Xcode's
-`xcrun`, for example through `exec-path-from-shell` or by setting `exec-path`.
-Portal does not read your shell's startup files.
+Graphical Emacs started from the Dock or Finder does not see your shell's `PATH`.
+The build searches Emacs's `exec-path`, then the directories where Homebrew
+(`/opt/homebrew/bin`, `/usr/local/bin`) and MacPorts (`/opt/local/bin`) install
+tools, so tools from either need no setup. For tools installed elsewhere, such
+as by a tool manager, add their directory to `exec-path`:
+
+```elisp
+(add-to-list 'exec-path (expand-file-name "~/.local/bin"))
+```
+
+or copy your shell's `PATH` with
+[exec-path-from-shell](https://github.com/purcell/exec-path-from-shell). Portal
+does not read your shell's startup files.
 
 The first build downloads locked host dependencies and the pinned GhosttyKit
-binary (about 77 MB) and takes several minutes. Later builds are incremental.
+binary (about 77 MB) and takes several minutes.
 
 ## With use-package and package-vc
 
@@ -46,8 +55,15 @@ To prepare Portal ahead of time, run `M-x portal-build` yourself.
 The first build takes several minutes and needs the network. It downloads the
 app host's locked dependencies, the pinned GhosttyKit binary (about 77 MB) and
 its Swift wrapper, and Portal's pinned Bun if Emacs finds no compatible one
-(see [Bun](#bun)). Bun is cached outside the package; the rest stays in the
-build directory. Emacs stays usable while it builds.
+(see [Bun](#bun)). Emacs stays usable while it builds.
+
+When it succeeds, the build keeps only what Portal runs, about 100 MB, and
+deletes its intermediate files and the app host's packages, about 750 MB more.
+So a later build, after an upgrade that changes the native sources, starts
+afresh. It is faster than the first: SwiftPM and Bun keep their downloads in
+their own caches, and Portal's pinned Bun stays in
+`portal-build-tools-directory`. A failed build keeps its files for diagnosis
+and continues from them.
 
 A finished build says "Portal is ready: retry your command". Then
 `M-x portal-hello` shows **Hello World in a native web view**, and
@@ -72,9 +88,10 @@ git clone https://github.com/xiaoxinghu/portal ~/src/portal
 
 Without use-package, `(add-to-list 'load-path "~/src/portal")` and
 `(require 'portal)` do the same. Build from Emacs with `M-x portal-build`, or
-from the clone with `./build.sh -DBUILD_TESTING=OFF`; the
-[contributor build](../CONTRIBUTING.md#build-and-editor-setup) also builds tests.
-Both use the same script and the same [Bun selection](#bun).
+from the clone with `./build.sh --prune`. Both use the same script and the same
+[Bun selection](#bun), and keep only what Portal runs. Without `--prune`, the
+[contributor build](../CONTRIBUTING.md#build-and-editor-setup) also builds
+tests and keeps its intermediate files for incremental builds.
 
 ## With straight.el or Elpaca
 
@@ -104,7 +121,7 @@ package-vc:
 (use-package portal
   :vc (:url "https://github.com/xiaoxinghu/portal"
        :rev :newest
-       :shell-command "./build.sh -DBUILD_TESTING=OFF"))
+       :shell-command "./build.sh --prune"))
 ```
 
 This build blocks Emacs while it runs, and package-vc reports a failed build only
@@ -150,7 +167,8 @@ uses, in order:
 
 1. The Bun you name: `portal-build-bun` in Emacs, or `BUN` for `./build.sh`.
    The build fails if this Bun is missing or incompatible.
-2. A compatible `bun` on `exec-path` (the shell's `PATH` for `./build.sh`).
+2. A compatible `bun` where the build finds CMake and Ninja (the shell's `PATH`
+   for `./build.sh`).
    An incompatible one is reported and skipped.
 3. Portal's pinned Bun, cached in `portal-build-tools-directory`
    (`~/.emacs.d/portal/tools/` by default; `PORTAL_TOOLS_DIR` or `build/tools/`
@@ -188,11 +206,12 @@ that cannot succeed.
 Messages below are what Emacs or `*portal-build*` shows. For a failed build,
 read the end of `*portal-build*` or `build/portal-build.log` first.
 
-**"Portal's build needs cmake, ninja on `exec-path`".** Emacs started from the
-Dock or Finder does not read your shell's startup files. The build runs with
-Emacs's `exec-path` as its `PATH`, so add the directory that holds CMake and
-Ninja, for example `(add-to-list 'exec-path "/opt/homebrew/bin")`, or use
-`exec-path-from-shell`. `M-: (executable-find "cmake")` shows what Emacs finds.
+**"Portal's build needs cmake, ninja".** The build found them neither on
+Emacs's `exec-path` nor in Homebrew's or MacPorts' directories. Install them,
+or, if they are installed elsewhere, add that directory to `exec-path` as in
+[prerequisites](#prerequisites). Emacs started from the Dock or Finder does not
+read your shell's startup files. `M-: (executable-find "cmake")` shows what
+Emacs finds on `exec-path`.
 
 **"…needs xcrun", or Swift errors early in the build.** Install Xcode, open it
 once to finish its setup, and select it with

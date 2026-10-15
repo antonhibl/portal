@@ -90,6 +90,12 @@ then writes `build/portal-build.eld`, the record that `portal-build.el` checks
 before Emacs loads the module; see [what Portal checks](docs/install.md#what-portal-checks).
 Only one `./build.sh` runs per checkout at a time.
 
+`./build.sh --prune`, which `M-x portal-build` runs for installed packages,
+builds without tests and then deletes everything else in `build/` except
+`tools/`, the lock and the build log, as well as `host/node_modules` and
+`host/.generated`: about 750 MB. Its next build starts afresh. Build without
+`--prune` for development.
+
 `./build.sh` chooses Bun with `tools/resolve-bun.sh`: the `BUN` environment
 variable, then a compatible `bun` on `PATH`, then Portal's pinned Bun cached in
 `build/tools/` (or `PORTAL_TOOLS_DIR`), downloaded and verified when missing.

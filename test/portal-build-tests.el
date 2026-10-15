@@ -161,7 +161,7 @@ stand-in build.sh, Lisp and a node_modules directory.  No build is running."
                                                             :type 'user-error))))
               (delete-process portal-build--process)))
           ;; A build that cannot succeed is explained, not offered.
-          (let ((exec-path nil))
+          (let ((exec-path nil) (portal-build--tool-directories nil))
             (should (string-match-p "cmake, ninja, xcrun"
                                     (cadr (should-error (portal-build-ensure)
                                                         :type 'user-error))))))))))
@@ -238,7 +238,7 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
       (should (string-match-p "finished, but" (portal-build-test--run)))
       (with-current-buffer "*portal-build*"
         (let ((text (buffer-string)))
-          (should (string-match-p "^args: -DBUILD_TESTING=OFF$" text))
+          (should (string-match-p "^args: --prune$" text))
           (should (string-search (concat "PATH=" (string-join exec-path ":")) text))
           (should (string-search (concat "EMACS=" (expand-file-name invocation-name
                                                                     invocation-directory))
@@ -247,10 +247,33 @@ echo \"TOOLS=$PORTAL_TOOLS_DIR\"\nmkdir -p build\n")
           (should (string-search "DOWNLOAD=0" text))
           (should (string-search "TOOLS=/tools cache/" text))))
       ;; The log outlives the buffer.
-      (should (string-search "-DBUILD_TESTING=OFF"
+      (should (string-search "--prune"
                              (with-temp-buffer
                                (insert-file-contents (portal-build-file "portal-build.log"))
                                (buffer-string)))))))
+
+(ert-deftest portal-build-finds-tools-where-package-managers-install-them ()
+  ;; Emacs started from the Dock lacks Homebrew's directory in `exec-path'.
+  (portal-build-test--with-root
+    (let* ((bin (car (portal-build-test--tools)))
+           (portal-build--tool-directories (list "/bin" bin))
+           (exec-path '("/usr/bin" "/bin")))
+      (portal-build-test--write "build.sh" "echo started\n")
+      (portal-build-test--run)
+      (with-current-buffer "*portal-build*"
+        (should (string-search "\nstarted\n" (buffer-string))))
+      (should (equal exec-path '("/usr/bin" "/bin")))
+      (let ((portal-build--tool-directories nil))
+        (should (string-match-p "needs cmake, ninja: install CMake and Ninja"
+                                (cadr (should-error (portal-build) :type 'user-error))))))))
+
+(ert-deftest portal-build-sh-searches-the-same-tool-directories ()
+  ;; Outside the test macro, `portal-build-root' is this checkout.
+  (should (string-search
+           (concat "for dir in " (string-join portal-build--tool-directories " ") "; do")
+           (with-temp-buffer
+             (insert-file-contents (expand-file-name "build.sh" portal-build-root))
+             (buffer-string)))))
 
 (ert-deftest portal-build-reports-success-failure-and-restarts ()
   (portal-build-test--with-root
