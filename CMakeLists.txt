@@ -213,8 +213,9 @@ execute_process(
     OUTPUT_VARIABLE native_bin OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY)
 add_custom_target(portal ALL
+    # tools/swift-build.sh drops SwiftPM's per-update download progress lines.
     COMMAND "${CMAKE_COMMAND}" -E env "EMACS_INCLUDE=${EMACS_INCLUDE}"
-        xcrun swift build --package-path "${native_package}"
+        /bin/sh "${CMAKE_SOURCE_DIR}/tools/swift-build.sh" --package-path "${native_package}"
         --scratch-path "${native_scratch}" -c release --product portal
         --force-resolved-versions
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${native_bundle}/MacOS" "${native_bundle}/Resources"
