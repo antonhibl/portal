@@ -43,8 +43,12 @@ downloads and verifies Portal's pinned Bun (1.3.14). The first build downloads
 locked host/test dependencies and the pinned GhosttyKit binary (about 77 MB) and
 Swift wrapper. No Zig installation is needed.
 
-Graphical Emacs started from the Dock may not see your shell's `PATH`; make sure
-its `exec-path` includes CMake and Ninja.
+Graphical Emacs started from the Dock does not see your shell's `PATH`. Portal's
+build looks for CMake and Ninja on Emacs's `exec-path`, then where Homebrew and
+MacPorts install them, so a Homebrew installation needs no setup. For tools
+installed elsewhere, add their directory to `exec-path` in your configuration,
+for example `(add-to-list 'exec-path (expand-file-name "~/.local/bin"))`, or use
+[exec-path-from-shell](https://github.com/purcell/exec-path-from-shell).
 
 To install Portal, add it to your Emacs configuration:
 

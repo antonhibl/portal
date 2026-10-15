@@ -52,9 +52,10 @@ reports it.  Batch Emacs never builds or asks."
 
 (defcustom portal-build-bun nil
   "Absolute file name of the Bun that builds Portal's app host, or nil.
-nil uses a compatible bun on `exec-path', then Portal's pinned Bun, cached
-in `portal-build-tools-directory'.  A Bun named here that is missing or
-incompatible fails the build rather than being replaced."
+nil uses a compatible bun where the build finds its other tools, then
+Portal's pinned Bun, cached in `portal-build-tools-directory'.  A Bun
+named here that is missing or incompatible fails the build rather than
+being replaced."
   :type '(choice (const :tag "Find or download" nil) file))
 
 (defcustom portal-build-download-bun t
@@ -68,6 +69,13 @@ digest in tools/bun.manifest before it runs."
   "Directory where builds keep the tools they download, such as Bun.
 It is outside the package, so upgrades and reinstalls reuse its contents."
   :type 'directory)
+
+(defconst portal-build--tool-directories
+  '("/opt/homebrew/bin" "/usr/local/bin" "/opt/local/bin")
+  "Where Homebrew and MacPorts install tools; build.sh searches them after PATH.
+Emacs started from the Dock or Finder does not see the shell's PATH, so its
+`exec-path' often lacks them even when CMake and Ninja are installed there.
+Keep this list the same as build.sh's.")
 
 (defconst portal-build--artifacts
   '("portal.bundle/Contents/Info.plist"
@@ -189,6 +197,12 @@ from another version of Portal is stale."
     ('stale "Portal's native build is older than its sources")
     ('restart "Portal's native module changed after Emacs loaded it")))
 
+(defun portal-build--exec-path ()
+  "Return the directories a build searches for its tools, in order.
+They are `exec-path', which a build gets as PATH, then the
+`portal-build--tool-directories' that build.sh adds."
+  (append exec-path (seq-difference portal-build--tool-directories exec-path)))
+
 (defun portal-build--check-prerequisites ()
   "Signal a `user-error' if `portal-build' cannot succeed, saying why."
   (let ((build (portal-build-file "")))
@@ -202,10 +216,11 @@ which `portal-build' does not make" portal-build-directory))
           ((not (file-writable-p (if (file-exists-p build) build portal-build-root)))
            (user-error "Portal cannot build in %s: it is not writable.  \
 Build Portal elsewhere and set `portal-build-directory'" build)))
-    (when-let* ((missing (seq-remove #'executable-find '("cmake" "ninja" "xcrun"))))
-      (user-error "Portal's build needs %s on `exec-path': install CMake and Ninja, \
-for example with Homebrew, and Xcode.  Graphical Emacs may not share your \
-shell's PATH" (string-join missing ", ")))))
+    (when-let* ((missing (let ((exec-path (portal-build--exec-path)))
+                           (seq-remove #'executable-find '("cmake" "ninja" "xcrun")))))
+      (user-error "Portal's build needs %s: install CMake and Ninja, for example \
+with `brew install cmake ninja', and Xcode.  If they are installed elsewhere, \
+add their directory to `exec-path'" (string-join missing ", ")))))
 
 (defun portal-build--environment ()
   "Return the process environment for a build that this Emacs will load."
@@ -224,11 +239,14 @@ shell's PATH" (string-join missing ", ")))))
 (defun portal-build ()
   "Build Portal's native module and app host in the background.
 The build shows its progress in *portal-build*, uses this Emacs and its
-module header, and finds tools on `exec-path'.  The first build downloads
-dependencies, and Portal's pinned Bun when `exec-path' has no compatible
-one: see `portal-build-bun'.  A finished build's log is also kept in
-portal-build.log in the build directory.  When this Emacs has already
-loaded Portal's module, restart Emacs to use the new one."
+module header, and finds tools on `exec-path', then where Homebrew and
+MacPorts install them.  The first build downloads dependencies, and
+Portal's pinned Bun when it finds no compatible one: see
+`portal-build-bun'.  The build keeps only what Portal runs and deletes
+its intermediate files, so the next build starts afresh.  A finished
+build's log is also kept in portal-build.log in the build directory.
+When this Emacs has already loaded Portal's module, restart Emacs to use
+the new one."
   (interactive)
   (if (process-live-p portal-build--process)
       (progn (display-buffer (process-buffer portal-build--process))
@@ -241,7 +259,7 @@ loaded Portal's module, restart Emacs to use the new one."
            (buffer (compilation-start
                     (mapconcat #'shell-quote-argument
                                (list "/bin/sh" (expand-file-name "build.sh" portal-build-root)
-                                     "-DBUILD_TESTING=OFF")
+                                     "--prune")
                                " ")
                     nil (lambda (_mode) "*portal-build*"))))
       (setq portal-build--process (get-buffer-process buffer))
