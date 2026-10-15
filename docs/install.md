@@ -62,8 +62,8 @@ deletes its intermediate files and the app host's packages, about 750 MB more.
 So a later build, after an upgrade that changes the native sources, starts
 afresh. It is faster than the first: SwiftPM and Bun keep their downloads in
 their own caches, and Portal's pinned Bun stays in
-`portal-build-tools-directory`. A failed build keeps its files for diagnosis
-and continues from them.
+`portal-build-tools-directory` (see [disk use](#disk-use-and-removal)). A
+failed build keeps its files for diagnosis and continues from them.
 
 A finished build says "Portal is ready: retry your command". Then
 `M-x portal-hello` shows **Hello World in a native web view**, and
@@ -180,6 +180,22 @@ uses, in order:
 A compatible Bun has `Bun.markdown.html` and is at least the pinned version.
 Set `portal-build-download-bun` to nil, or `PORTAL_BUN_DOWNLOAD=0`, to never
 download. Portal never changes your shell configuration or installed Bun.
+
+## Disk use and removal
+
+An installed Portal and the caches its build fills, measured on Apple Silicon:
+
+| What | Where | Size |
+| --- | --- | ---: |
+| Portal and its build | The package directory, which `M-: portal-build-root` prints | 110 MB |
+| The app host's packages, in Bun's cache | `~/.bun/install/cache/`, or `BUN_INSTALL_CACHE_DIR` | 330 MB |
+| GhosttyKit and its Swift wrapper, in SwiftPM's cache | `~/Library/Caches/org.swift.swiftpm/` | 80 MB |
+| Portal's pinned Bun, if a build downloaded it | `portal-build-tools-directory` | 60 MB |
+
+The caches spare a rebuild after an upgrade most of its downloads. Removing
+Portal's package leaves them. Other Bun and Swift projects share Bun's and
+SwiftPM's caches: delete those only if nothing else uses them. A later build
+downloads again what is missing.
 
 ## Supplied builds and read-only installations
 
