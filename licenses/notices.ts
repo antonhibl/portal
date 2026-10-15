@@ -123,10 +123,10 @@ function bundledInputs(build: string, problems: string[]): string[] {
 		problems.push("the bundler records are missing; build Portal first");
 		return [];
 	}
-	// CMake runs the host build from the repository root.
+	// CMake compiles the host from the build directory.
 	return [
 		...Object.keys(JSON.parse(read(hostInputs)).inputs).map((input) =>
-			resolve(root, input),
+			resolve(build, input),
 		),
 		...(JSON.parse(read(editorInputs)) as string[]).map((input) =>
 			resolve(host, input),
