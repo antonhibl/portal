@@ -7,6 +7,7 @@
 - [Names, projects and directories](#names-projects-and-directories)
 - [Choosing terminals](#choosing-terminals)
 - [Consult and Embark](#consult-and-embark)
+- [Ivy](#ivy)
 - [Appearance and native bindings](#appearance-and-native-bindings)
 
 For native test procedures, see [Testing Portal](testing.md#view-graphical-checks).
@@ -297,6 +298,34 @@ projects, `M-a`, New, quick panels, closed terminals and kill confirmation.
 downloaded to `build/elpa` and hash-verified by CMake. A keyboard macro types into
 a real minibuffer, exercising Consult narrowing/preview/lookup and Embark targets,
 actions and Ibuffer export as in normal use.
+
+### Ivy
+
+Loading `portal.el` and Ivy, in either order, enables `portal-terminal-ivy-mode`
+without configuration: `portal-terminal-choose` and
+`portal-terminal-choose-project` then read with Ivy. Candidates keep their
+order, most recently selected first, match any part of a terminal's name,
+project, directory or title, and say whether a terminal is quick or has exited.
+`M-a` switches between the project's terminals and every terminal, keeping the
+input, and the New entries start terminals as before.
+
+`M-o` offers actions on the terminal at point, which keep the minibuffer open
+for another:
+
+| Key | Action |
+| --- | --- |
+| `r` | Rename it |
+| `d` | Open Dired in its directory |
+| `c` | Start another shell in its directory |
+| `W` | Copy its directory |
+| `p` | Assign it to another project, or with `C-u` to none |
+| `k` | End it, asking as killing it asks |
+
+Opt out with `portal-terminal-ivy-auto-enable` set to nil before loading Portal
+and Ivy, or disable it with `M-x portal-terminal-ivy-mode`. With Consult loaded
+too, the integration enabled last reads terminals. The actions are the Embark
+adapter's, whose file loads without Embark. The adapter is tested with Ivy
+0.15.1.
 
 ## Appearance and native bindings
 

@@ -9,10 +9,13 @@ Run shell examples from the repository root, not `docs/`.
 | I want to… | Guide |
 | --- | --- |
 | Install Portal, build its native part, upgrade it or fix installation problems | [Install Portal](install.md) |
+| Install Portal with Nix | [Portal with Nix](nix.md) |
 | Move between Emacs and a native view | [Keyboard ownership and toolbars](keyboard.md) |
 | Open HTML, URLs or a saved Markdown preview | [Web views and previews](web-views.md) |
+| Go to an address, answer a page's dialogs, bookmark a page or open `portal:` links | [Web views and previews](web-views.md#going-to-another-address) |
+| Preview an Org file, following its links and Org-roam IDs | [Org previews](web-views.md#org-previews) |
 | Draw and save offline | [Local Excalidraw drawings](excalidraw.md) |
-| Run shells, switch terminals or use a quick terminal | [Terminals and optional Consult/Embark adapters](terminals.md) |
+| Run shells, switch terminals or use a quick terminal | [Terminals and optional Consult, Embark and Ivy adapters](terminals.md) |
 | Present a command in a panel or set a global shortcut | [Launchers and global shortcuts](launcher.md) |
 | Diagnose a blank hosted app or restart its process | [App host lifecycle and diagnostics](app-host.md) |
 

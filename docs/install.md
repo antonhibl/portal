@@ -199,6 +199,9 @@ downloads again what is missing.
 
 ## Supplied builds and read-only installations
 
+Nix users can install a supplied build from Portal's flake: see
+[Portal with Nix](nix.md).
+
 Portal looks for its native part in `build/` beside its sources. To use one
 built elsewhere, for example by a distribution, set `portal-build-directory` to
 the directory holding `portal.bundle`, `portal-host` and `portal-build.eld`.

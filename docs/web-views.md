@@ -23,6 +23,50 @@ To open a local HTML file programmatically:
 In a web buffer, `g` reloads and `q` (`quit-window`) hides the still-running
 page. Killing the buffer closes it.
 
+### Going to another address
+
+`G`, Command-L, or the toolbar's globe button (Go to address) runs
+`M-x portal-web-goto`, which reads an address in the minibuffer, starting with
+the one on screen, and loads it in the same page. It takes a URL; a host, with
+or without a path, such as `example.com/docs`, which loads over HTTPS, or
+`localhost:8080`, over HTTP; a local file starting with `/`, `~` or `.`; or
+any other words, which it searches for at `portal-web-search-url` (DuckDuckGo
+by default). From a preview, a hosted app or any other buffer, or with a
+prefix argument, the address opens in a new buffer instead. `w` copies the
+address on screen. Command-L works while the page has the keyboard, unless the
+page uses that chord itself.
+
+### Dialogs and windows a page opens
+
+A page's JavaScript `alert`, `confirm` and `prompt` dialogs ask in the
+minibuffer, naming the page's origin: an alert shows its message, a
+confirmation asks `y-or-n-p`, and a prompt reads a line, starting with the
+page's default. The page waits for the answer, and gets one however the
+dialog ends: `C-g` cancels it. The view gets the keyboard back if it had it.
+
+A window the page opens, with `window.open` or a link to a new tab, shows in a
+web buffer of its own, in another pane, as `portal-web-popup-display-action`
+says. It is the page WebKit made for that window, still related to the page
+that opened it, so sign-in pop-ups that report back to their opener work. When
+the window's page closes it, as a sign-in pop-up does when it is done, its
+buffer and pane close too. Set `portal-web-popups` to `browser` to open such
+windows in the default browser instead, or to nil to ignore them. A window
+Emacs has not shown within a minute goes.
+
+### Bookmarks and Org links
+
+`C-x r m` (`bookmark-set`) in a web buffer bookmarks it: a page by its address,
+named after its title, and a Markdown or Org preview by its file, since the app
+host's address changes. Other hosted apps cannot be bookmarked. Jumping to the
+bookmark opens the page or preview again.
+
+Once Org's links load, a `portal:` link, such as
+`[[portal:https://example.com/docs][Docs]]`, opens its URL in a web view; with
+a prefix argument, `C-u C-c C-o` opens it in the default browser. In a web
+buffer, `org-store-link` stores a `portal:` link named after the page's title,
+or a file link for a preview. Exported, a `portal:` link is an ordinary link
+to its URL.
+
 ## Markdown previews
 
 Run `M-x portal-render-markdown` in a Markdown file buffer to preview it;
@@ -87,6 +131,27 @@ highlighting, Mermaid or math rendering. Going back past a host restart shows "N
 Content Security Policy blocks scripts. Bun currently marks its Markdown API unstable;
 Portal tests it with the Bun version in the [build prerequisites](../README.md#build-and-run).
 
+## Org previews
+
+Run `M-x portal-render-org` in an Org buffer, or a buffer visiting a `.org`
+file, to preview it; other buffers prompt for a file, as `C-u M-x
+portal-render-org` always does. Emacs exports the file to HTML, so a buffer
+visiting it shows its text, saved or not, and the app host shows the result
+with the Markdown preview's styles, in a buffer such as `*portal: notes.org*`.
+Code blocks never run for a preview: they show as code. A link Org cannot
+resolve shows as a broken link rather than stopping the export. Previewing the
+same file again reuses its buffer, and `g` exports the file on screen again.
+The HTML lives in `portal-org-preview-directory`, one file per Org file.
+
+Links work as in Markdown previews, except that only Emacs can export Org: a
+link to another Org file opens it in the same preview, keeping the keyboard in
+the page, where `l` and `r` go back and forward; a link to any other local
+file opens it in Emacs, in another pane. ID links, including Org-roam's, go to
+their file and the heading with that ID, which Org-roam's database resolves
+when it is loaded. Images show from disk, and web links open in the default
+browser. Toolbar **Open in Emacs**, or `M-x portal-render-open-in-emacs`,
+visits the Org file on screen.
+
 ## Web view behaviour
 
 Web views are Portal views of the web kind. Remote pages use
@@ -115,7 +180,10 @@ scripts, styles and images. JavaScript is enabled by default.
 - With page focus, unused chords reach Emacs and the configured escape
   (Command-period by default) returns control to Emacs. Clicking
   to enter sends `select TARGET`; Emacs selects the view's pane.
-- This URL viewer has no address bar, downloads, popups or JavaScript dialog UI.
+- Pages ask Emacs for addresses, dialogs and new windows, as
+[above](#dialogs-and-windows-a-page-opens). These requests wait outside the
+record pipe, as bridge messages do, so their text can be any length. There are
+no downloads.
   Inspect failed loads through `:error` in
   `(portal--inspect (portal-view-target))`.
 
