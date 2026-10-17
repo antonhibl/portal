@@ -279,6 +279,64 @@
                                     (portal-server-test--get "/markdown")))))
       (delete-directory directory t))))
 
+(ert-deftest portal-server-org-serves-an-exported-body-with-local-links-for-emacs ()
+  (let* ((directory (make-temp-file "portal-org-" t))
+         (notes (expand-file-name "notes é" directory))
+         (source (expand-file-name "Index.org" notes))
+         (exported (expand-file-name "export/7f3a.html" directory))
+         (visit (lambda (path)
+                  (concat "file://" (url-hexify-string (expand-file-name path notes)
+                                                       (cons ?/ url-unreserved-chars))))))
+    (unwind-protect
+        (portal-server-test--with-host
+          (make-directory notes t)
+          (make-directory (file-name-directory exported) t)
+          (with-temp-file exported
+            (insert "<h1 class=\"title\">Index</h1>\n"
+                    "<p><a href=\"#org1\">same</a> <a href=\"other note.org#ID-42\">other</a> "
+                    "<a href=\"../todo.org\">up</a> <a href=\"src/main.go\">code</a> "
+                    "<a href=\"https://example.com/a.org\">web</a> "
+                    "<img src=\"img/diagram.png\" alt=\"diagram\"></p>\n"))
+          (portal-start-server)
+          (portal-server-test--wait #'portal-server-url)
+          (let ((page (decode-coding-string
+                       (portal-server-test--get
+                        (concat "/org?path=" (url-hexify-string exported)
+                                "&source=" (url-hexify-string source)))
+                       'utf-8)))
+            (should (string-match-p "HTTP/1.1 200" page))
+            ;; The Org file names the page, which keeps scripts out.
+            (should (string-match-p "<title>Index.org</title>" page))
+            (should (string-match-p "Content-Security-Policy: default-src 'none'" page))
+            (dolist (link `(("same" . "#org1")
+                            ;; Every local file, Org or not, goes to Emacs.
+                            ("other" . ,(concat (funcall visit "other note.org") "#ID-42"))
+                            ("up" . ,(funcall visit "../todo.org"))
+                            ("code" . ,(funcall visit "src/main.go"))
+                            ("web" . "https://example.com/a.org")))
+              (ert-info ((car link))
+                (should (equal (portal-server-test--href page (car link)) (cdr link)))))
+            (should (equal (portal-server-test--src page "diagram")
+                           (concat "image?path="
+                                   (url-hexify-string (expand-file-name "img/diagram.png" notes))))))
+          ;; Only an absolute exported HTML file of an absolute Org file.
+          (dolist (path (list "/org"
+                              (concat "/org?path=" (url-hexify-string exported))
+                              (concat "/org?path=relative.html&source=" (url-hexify-string source))
+                              (concat "/org?path=" (url-hexify-string source)
+                                      "&source=" (url-hexify-string source))
+                              (concat "/org?path=" (url-hexify-string exported) "&source=x.org")))
+            (ert-info (path)
+              (let ((page (portal-server-test--get path)))
+                (should (string-match-p "HTTP/1.1 400" page))
+                (should (string-match-p "Org preview unavailable" page)))))
+          (should (string-match-p
+                   "HTTP/1.1 404"
+                   (portal-server-test--get
+                    (concat "/org?path=" (url-hexify-string (expand-file-name "gone.html" directory))
+                            "&source=" (url-hexify-string source))))))
+      (delete-directory directory t))))
+
 (ert-deftest portal-server-about-names-versions-as-text ()
   (portal-server-test--with-host
     (portal-start-server)

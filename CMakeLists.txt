@@ -46,7 +46,7 @@ add_custom_command(
     BYPRODUCTS "${CMAKE_BINARY_DIR}/portal-host.meta.json"
         "${CMAKE_SOURCE_DIR}/host/.generated/editor-inputs.json"
     DEPENDS host/server.ts host/hello.html host/about.ts host/about.html
-        host/markdown.ts host/markdown.css
+        host/markdown.ts host/markdown.css host/org.ts
         host/icons/portal-32.png host/icons/portal-64.png host/icons/portal-256.png
         host/package.json host/bun.lock host/tsconfig.json host/build-editor.ts
         host/editor-bootstrap.ts host/excalidraw.tsx host/excalidraw.html host/excalidraw.css "${BUN}"
@@ -179,6 +179,11 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-web-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(web PROPERTIES TIMEOUT 30)
+    add_test(NAME org
+        COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
+            -l "${CMAKE_SOURCE_DIR}/test/portal-org-tests.el"
+            -f ert-run-tests-batch-and-exit)
+    set_tests_properties(org PROPERTIES TIMEOUT 30)
     add_test(NAME toolbar
         COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}"
             -l "${CMAKE_SOURCE_DIR}/test/portal-toolbar-tests.el"

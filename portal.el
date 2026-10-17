@@ -49,5 +49,9 @@ can still be enabled or disabled with `portal-terminal-consult-mode'."
     (require 'portal-terminal-consult)
     (portal-terminal-consult-mode 1)))
 
+;; "portal:" links, and storing links to web buffers, once Org's links load.
+(with-eval-after-load 'ol
+  (require 'portal-org))
+
 (provide 'portal)
 ;;; portal.el ends here

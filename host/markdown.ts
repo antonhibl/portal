@@ -4,7 +4,9 @@ import { basename, extname, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import styles from "./markdown.css" with { type: "text" };
 
-function page(title: string, body: string, status = 200): Response {
+/** A document page showing BODY, safe HTML, with the preview's styles and
+ * no scripts. */
+export function page(title: string, body: string, status = 200): Response {
 	return new Response(
 		`<!doctype html>
 <html lang="en">
@@ -22,7 +24,7 @@ function page(title: string, body: string, status = 200): Response {
 			status,
 			headers: {
 				"Content-Type": "text/html; charset=utf-8",
-				// Markdown is a document, not executable application code.
+				// A document is not executable application code.
 				"Content-Security-Policy":
 					"default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: http: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 			},
@@ -30,9 +32,14 @@ function page(title: string, body: string, status = 200): Response {
 	);
 }
 
-function errorPage(message: string, status: number): Response {
+/** A page saying why a preview cannot show its file. */
+export function errorPage(
+	message: string,
+	status: number,
+	title = "Markdown preview unavailable",
+): Response {
 	return page(
-		"Markdown preview unavailable",
+		title,
 		`<h1>Cannot preview this file</h1><p>${Bun.escapeHTML(message)}</p>`,
 		status,
 	);
@@ -65,7 +72,7 @@ const entities: Record<string, string> = {
 
 /** The local file that HREF in the Markdown file at PATH names, with its
  * fragment, or null when HREF is a fragment or not a local file. */
-function localFile(
+export function localFile(
 	href: string,
 	path: string,
 ): { file: string; hash: string } | null {
@@ -115,11 +122,17 @@ function rewrite(
 		element.setAttribute(name, value.replaceAll("&", "&amp;"));
 }
 
-function rewriteLocalPaths(html: string, path: string): string {
+/** HTML with its links and images to local files, relative to the file at
+ * PATH, rewritten: links as LINK says, and images to load from this host. */
+export function rewriteLocalPaths(
+	html: string,
+	path: string,
+	link: (href: string, path: string) => string | null = linkTarget,
+): string {
 	return new HTMLRewriter()
 		.on("a[href]", {
-			element(link) {
-				rewrite(link, "href", (href) => linkTarget(href, path));
+			element(element) {
+				rewrite(element, "href", (href) => link(href, path));
 			},
 		})
 		.on("img[src]", {

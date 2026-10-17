@@ -5,6 +5,7 @@ import { about } from "./about";
 import editor from "./excalidraw.html" with { type: "text" };
 import hello from "./hello.html" with { type: "text" };
 import { image, markdown } from "./markdown";
+import { org } from "./org";
 
 // Applies only to the local editor. Fonts, images and lazy modules cannot fall
 // back to a CDN; user-authored URLs cannot embed remote pages or run scripts.
@@ -30,6 +31,7 @@ async function respond(request: Request): Promise<Response> {
 		route !== "/hello" &&
 		route !== "/about" &&
 		route !== "/markdown" &&
+		route !== "/org" &&
 		route !== "/image" &&
 		route !== "/excalidraw/" &&
 		!asset
@@ -43,6 +45,8 @@ async function respond(request: Request): Promise<Response> {
 		});
 	}
 	if (route === "/markdown") return markdown(url.searchParams.get("path"));
+	if (route === "/org")
+		return org(url.searchParams.get("path"), url.searchParams.get("source"));
 	if (route === "/image") return image(url.searchParams.get("path"));
 	if (route === "/about") return about(url.searchParams);
 	if (asset)
