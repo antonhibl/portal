@@ -3,9 +3,57 @@ import AppKit
 import PortalCore
 import WebKit
 
+/// How Emacs answered a page's request (portal_web_answer): the core has
+/// checked that its JSON is true, false, null or a string.
+private enum Answer: Sendable {
+    case yes, no, cancelled
+    case text(String)
+
+    init(json: String) throws {
+        switch json {
+        case "true": self = .yes
+        case "false": self = .no
+        case "null": self = .cancelled
+        default:
+            guard let text = try JSONSerialization.jsonObject(with: Data(json.utf8),
+                                                              options: .fragmentsAllowed) as? String else {
+                throw NativeError.message("An answer must be JSON true, false, null or a string")
+            }
+            self = .text(text)
+        }
+    }
+}
+
+/// Windows that pages opened, waiting for Emacs to show each in a buffer of
+/// its own, which adopts it with the :window option, or to discard it.
+/// WebKit made each page related to its opener, so `window.opener` and
+/// `postMessage` work as sign-in pop-ups expect. One Emacs never adopts goes
+/// after a minute.
+@MainActor
+private enum OpenedWindows {
+    private static var waiting: [String: WebPage] = [:]
+    private static var count: UInt64 = 0
+
+    static func keep(_ page: WebPage) -> String {
+        count += 1
+        let name = "window-\(count)"
+        waiting[name] = page
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            MainActor.assumeIsolated { discard(name) }
+        }
+        return name
+    }
+
+    static func take(_ name: String) -> WebPage? { waiting.removeValue(forKey: name) }
+
+    static func discard(_ name: String) { waiting.removeValue(forKey: name)?.end() }
+}
+
 /// One WebKit page. It loads what the core decides and reports what the page
 /// does: its navigations, commits, loads, history and failures, and a hosted
-/// app's messages.
+/// app's messages. What the page asks its buffer for, such as an alert, a
+/// confirmation or a new window, goes to Emacs as a request, and the page
+/// waits for the answer.
 @MainActor
 private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, NativeSurface {
     var nativeView: NSView { self }
@@ -80,14 +128,31 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     }
 
     var loadError: String?
-    /// The view's target, which names it in every call to the core.
-    let target: String
+    /// The view's target, which names it in every call to the core: "" for
+    /// a window a page opened, until a view adopts it (`adopt`).
+    private(set) var target: String
+    /// Whether a view shows this page, so the core knows its target.
+    private var adopted: Bool
+    private let hosted: Bool
 
-    /// With CONTENTS, the page runs the contents script for its toolbar.
-    init(target: String, contents: Bool, hosted: Bool) {
+    /// The requests the page waits on, by ID, and the windows it opened that
+    /// no view has adopted yet, by the request that announced them.
+    private var requests: UInt64 = 0
+    private var waiting: [UInt64: CheckedContinuation<Answer, Never>] = [:]
+    private var windows: [UInt64: String] = [:]
+
+    /// With CONTENTS, the page runs the contents script for its toolbar. With
+    /// CONFIGURATION, the one WebKit gave for a window a page opens, the page
+    /// is that window, which waits for a view to adopt it.
+    init(target: String, contents: Bool, hosted: Bool, configuration opened: WKWebViewConfiguration? = nil) {
         self.target = target
-        let configuration = WKWebViewConfiguration()
+        self.hosted = hosted
+        adopted = opened == nil
+        let configuration = opened ?? WKWebViewConfiguration()
         if hosted { configuration.websiteDataStore = .nonPersistent() }
+        // The opener's configuration carries its script handlers, which name
+        // the opener; this page installs its own.
+        if opened != nil { configuration.userContentController = WKUserContentController() }
         super.init(frame: .zero, configuration: configuration)
         if contents { toolbar = WebToolbar(web: self, target: target) }
         if hosted { PageMessages.install(in: self) }
@@ -102,6 +167,117 @@ private final class WebPage: WKWebView, WKNavigationDelegate, WKUIDelegate, Nati
     }
 
     private func historyChanged() { Core.history(target, back: canGoBack, forward: canGoForward) }
+
+    /// Become TARGET's page, a window that a page opened. The core learns of
+    /// the view after it is made, so the page reports what it already did
+    /// once the current call returns.
+    func adopt(_ target: String) {
+        self.target = target
+        adopted = true
+        toolbar?.target = target
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let url = self.url { Core.committed(target, url: url.absoluteString) }
+                self.historyChanged()
+                if !self.isLoading { Core.loaded(target) }
+            }
+        }
+    }
+
+    /// End the page: answer whatever it waits on as if cancelled, discard
+    /// the windows it opened that no view adopted, and stop it.
+    func end() {
+        for (_, continuation) in waiting { continuation.resume(returning: .cancelled) }
+        waiting = [:]
+        for (_, window) in windows { OpenedWindows.discard(window) }
+        windows = [:]
+        configuration.userContentController.removeAllScriptMessageHandlers()
+        stopLoading()
+    }
+
+    /// The next request's ID.
+    private func nextRequest() -> UInt64 {
+        requests += 1
+        return requests
+    }
+
+    /// Ask Emacs REQUEST, an alert, confirmation or prompt, and wait for its
+    /// answer. A window no view has adopted yet has no buffer to ask.
+    private func ask(_ request: [String: Any]) async -> Answer {
+        guard adopted else { return .cancelled }
+        return await withCheckedContinuation { continuation in
+            let id = nextRequest()
+            waiting[id] = continuation
+            var request = request
+            request["id"] = id
+            Core.requested(target, request)
+        }
+    }
+
+    /// Emacs answered request ID: a dialog it waits on, or a window it opened,
+    /// which false discards.
+    func respond(_ id: UInt64, _ answer: Answer) throws {
+        if let continuation = waiting.removeValue(forKey: id) {
+            continuation.resume(returning: answer)
+        } else if let window = windows.removeValue(forKey: id) {
+            if case .no = answer { OpenedWindows.discard(window) }
+        } else {
+            throw NativeError.message("The page is not waiting on request \(id)")
+        }
+    }
+
+    /// Where a dialog comes from, for Emacs to show: its frame's origin.
+    private func origin(_ frame: WKFrameInfo) -> String {
+        let origin = frame.securityOrigin
+        guard !origin.host.isEmpty else { return origin.protocol }
+        return origin.port == 0 ? "\(origin.protocol)://\(origin.host)"
+            : "\(origin.protocol)://\(origin.host):\(origin.port)"
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async {
+        _ = await ask(["type": "alert", "message": message, "origin": origin(frame)])
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async -> Bool {
+        if case .yes = await ask(["type": "confirm", "message": message, "origin": origin(frame)]) {
+            return true
+        }
+        return false
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo) async -> String? {
+        let answer = await ask(["type": "prompt", "message": prompt, "default": defaultText ?? "",
+                                "origin": origin(frame)])
+        if case .text(let text) = answer { return text }
+        return nil
+    }
+
+    /// A page opens a window, with `window.open` or a link to a new one.
+    /// WebKit has already asked the core whether it may navigate there.  The
+    /// window is a new page, related to this one, which waits for Emacs to
+    /// show it in a buffer of its own.  A hosted app opens none.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard adopted, !hosted else { return nil }
+        let opened = WebPage(target: "", contents: true, hosted: false, configuration: configuration)
+        let window = OpenedWindows.keep(opened)
+        let id = nextRequest()
+        windows[id] = window
+        var request: [String: Any] = ["id": id, "type": "popup", "window": window]
+        if let url = action.request.url?.absoluteString, !url.isEmpty { request["url"] = url }
+        Core.requested(target, request)
+        return opened
+    }
+
+    /// The page closes its window, as a sign-in pop-up does when it is done.
+    func webViewDidClose(_ webView: WKWebView) {
+        guard adopted else { return }
+        Core.requested(target, ["id": nextRequest(), "type": "close"])
+    }
 
     /// Follows the system's appearance while the page shows it.
     private var system: NSKeyValueObservation?
@@ -321,12 +497,22 @@ final class WebSession: PortalView {
 
     /// A view with a `:toolbar`, which the core has checked, runs the contents
     /// script. With `:hosted`, the page keeps no data between sessions and
-    /// gets the bridge's scripts. It starts in its `:appearance`, which the
-    /// core has checked too.
+    /// gets the bridge's scripts. With `:window`, the view adopts the window
+    /// a page opened, which runs the contents script whatever its toolbar.
+    /// It starts in its `:appearance`, which the core has checked too.
     init(target: String, options: ViewOptions) throws {
         let toolbar = try options.string("toolbar").map { $0 != "none" } ?? false
         let hosted = options.flag("hosted")
-        let page = WebPage(target: target, contents: toolbar, hosted: hosted)
+        let page: WebPage
+        if let window = try options.string("window") {
+            guard !hosted, let opened = OpenedWindows.take(window) else {
+                throw NativeError.message("The window \(window) has closed")
+            }
+            page = opened
+            page.adopt(target)
+        } else {
+            page = WebPage(target: target, contents: toolbar, hosted: hosted)
+        }
         let appearance = switch try options.string("appearance") {
         case "light": PORTAL_APPEARANCE_LIGHT
         case "dark": PORTAL_APPEARANCE_DARK
@@ -342,10 +528,10 @@ final class WebSession: PortalView {
         input.offer = { [weak page] event in page?.offer(event) }
     }
 
-    func close() {
-        page.configuration.userContentController.removeAllScriptMessageHandlers()
-        page.stopLoading()
-    }
+    func close() { page.end() }
+
+    /// Emacs answered the page's request ID with ANSWER, JSON the core checked.
+    func answer(_ id: UInt64, json: String) throws { try page.respond(id, Answer(json: json)) }
 
     func load(_ address: String) throws {
         guard let url = URL(string: address) else { throw NativeError.message("WebKit cannot parse the URL \(address)") }

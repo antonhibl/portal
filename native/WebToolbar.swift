@@ -17,7 +17,9 @@ extension WKContentWorld {
 @MainActor
 final class WebToolbar: NSObject, WKScriptMessageHandler {
     private weak var web: WKWebView?
-    private let target: String
+    /// The view it reports as, which changes once, when a view adopts a
+    /// window that a page opened.
+    var target: String
 
     /// Run the contents script in WEB, which reports as TARGET.
     init(web: WKWebView, target: String) {

@@ -71,6 +71,7 @@ struct portal_toolbar_state {
     portal_kind kind;
     enum layout layout;
     bool edit;            /* Open in Emacs: a hosted Markdown preview's. */
+    bool address;         /* Go to another address: a web page's that is not hosted. */
     portal_text label;    /* What the view shows, as Lisp named it; "" for the default. */
     double value;
     bool contents;        /* Whether the table of contents is open. */
@@ -261,6 +262,10 @@ static portal_toolbar snapshot(const struct portal_toolbar_state *toolbar)
     if (toolbar->edit) {
         state.buttons |= bit(PORTAL_BUTTON_EDIT);
         state.enabled |= bit(PORTAL_BUTTON_EDIT);
+    }
+    if (toolbar->address) {
+        state.buttons |= bit(PORTAL_BUTTON_ADDRESS);
+        state.enabled |= bit(PORTAL_BUTTON_ADDRESS);
     }
     return state;
 }
@@ -612,6 +617,9 @@ static bool act(struct portal_toolbar_state *toolbar, portal_button button, port
     case PORTAL_BUTTON_EDIT:
         portal_web_views_edit(toolbar->target);
         return true;
+    case PORTAL_BUTTON_ADDRESS:
+        portal_web_views_address(toolbar->target);
+        return true;
     case PORTAL_BUTTON_DECREASE:
     case PORTAL_BUTTON_RESET:
     case PORTAL_BUTTON_INCREASE:
@@ -713,6 +721,8 @@ struct portal_toolbar_state *portal_toolbar_state_new(portal_kind kind,
     toolbar->kind = kind;
     toolbar->layout = layout;
     toolbar->edit = layout == MARKDOWN && hosted;
+    /* A page anyone can browse away from: not a preview or a hosted app. */
+    toolbar->address = layout == NAVIGATION && !hosted;
     toolbar->value = standard(toolbar);
     toolbar->generation = 1;
     return toolbar;

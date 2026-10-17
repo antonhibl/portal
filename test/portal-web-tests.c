@@ -580,6 +580,160 @@ static void test_an_appearance_reaches_every_web_view(void)
     close_view(terminal);
 }
 
+/* TARGET's waiting requests, taken, as a string to free. */
+static char *take_requests(const char *target)
+{
+    portal_text json = {0}, error = {0};
+    if (!portal_web_views_requests(text(target), &json, &error)) {
+        fprintf(stderr, "Taking requests failed: %s\n", error.data);
+        free(error.data);
+        return strdup("(failed)");
+    }
+    return json.data;
+}
+
+/* Whether taking TARGET's requests returns EXPECTED. */
+static bool requests(const char *target, const char *expected)
+{
+    char *json = take_requests(target);
+    bool same = !strcmp(json, expected);
+    if (!same)
+        fprintf(stderr, "Expected requests %s, got %s\n", expected, json);
+    free(json);
+    return same;
+}
+
+static bool answer(const char *target, const char *id, const char *json, portal_text *error)
+{
+    return portal_web_views_answer(text(target), text(id), text(json), error);
+}
+
+/* Any web view's page asks its buffer for things, hosted or not, under one
+   record at a time, and their text stays out of the pipe. */
+static void test_requests_wait_under_one_record(void)
+{
+    char *page = open_web(false), *app_view = open_app();
+    drain();
+    CHECK(requests(page, "[]"));
+    portal_web_requested(text(page), text("{\"id\":1,\"type\":\"alert\",\"message\":\"Hi\"}"));
+    CHECK(sent(page, "request %s\n"));
+    portal_web_requested(text(page), text("{\"id\":2,\"type\":\"confirm\",\"message\":\"Sure?\"}"));
+    CHECK(sent(page, ""));
+    CHECK(requests(page, "[{\"id\":1,\"type\":\"alert\",\"message\":\"Hi\"},"
+                         "{\"id\":2,\"type\":\"confirm\",\"message\":\"Sure?\"}]"));
+    /* Taking them lets the next one send a record. */
+    CHECK(requests(page, "[]"));
+    size_t size = 4 * PIPE_BUF;
+    char *large = malloc(size + 64);
+    int length = snprintf(large, 64, "{\"id\":3,\"type\":\"popup\",\"url\":\"https://e.com/");
+    memset(large + length, 'x', size);
+    strcpy(large + length + size, "\"}");
+    portal_web_requested(text(page), text(large));
+    CHECK(sent(page, "request %s\n"));
+    char *json = take_requests(page);
+    CHECK(strlen(json) == strlen(large) + 2 && !strncmp(json + 1, large, strlen(large)));
+    free(json);
+    free(large);
+    /* A hosted app's requests are its own, apart from its bridge. */
+    portal_web_requested(text(app_view), text("{\"id\":1,\"type\":\"close\"}"));
+    CHECK(sent(app_view, "request %s\n"));
+    CHECK(receives(app_view, "[]"));
+    CHECK(requests(app_view, "[{\"id\":1,\"type\":\"close\"}]"));
+    /* What is not an object never reaches Emacs. */
+    portal_web_requested(text(page), text("[]"));
+    portal_web_requested(text(page), text(""));
+    CHECK(sent(page, ""));
+    CHECK(requests(page, "[]"));
+    /* Requests left waiting go with their view. */
+    portal_web_requested(text(page), text("{\"id\":4,\"type\":\"alert\",\"message\":\"Bye\"}"));
+    CHECK(sent(page, "request %s\n"));
+    char *target = strdup(page);
+    close_view(page);
+    portal_web_requested(text(target), text("{\"id\":5,\"type\":\"alert\",\"message\":\"Late\"}"));
+    CHECK(sent(target, ""));
+    portal_text error = {0}, taken = {0};
+    char message[64];
+    snprintf(message, sizeof message, "No Portal view %s", target);
+    CHECK(!portal_web_views_requests(text(target), &taken, &error));
+    CHECK(says(&error, message));
+    CHECK(!answer(target, "4", "true", &error));
+    CHECK(says(&error, message));
+    free(target);
+    close_view(app_view);
+}
+
+/* The core checks an answer before the platform sees it. */
+static void test_answers_are_checked(void)
+{
+    portal_text error = {0};
+    char *page = open_web(false);
+    CHECK(answer(page, "1", "true", &error));
+    CHECK(answer(page, "2", "false", &error));
+    CHECK(answer(page, "3", "null", &error));
+    CHECK(answer(page, "18446744073709551615", "\"r\\u00e9sum\\u00e9 \\\"quoted\\\"\"", &error));
+    CHECK(shows(page, "\"answers\":\"1=true 2=false 3=null "
+                      "18446744073709551615=\\\"r\\\\u00e9sum\\\\u00e9 \\\\\\\"quoted\\\\\\\"\\\"\"",
+                NULL));
+    const char *const ids[] = {"", "0", "01", "-1", "1.5", "x", "18446744073709551616"};
+    for (size_t i = 0; i < sizeof ids / sizeof *ids; i++) {
+        char message[64];
+        snprintf(message, sizeof message, "Not a web request ID: %s", ids[i]);
+        CHECK(!answer(page, ids[i], "true", &error));
+        CHECK(says(&error, message));
+    }
+    const char *const answers[] = {"", "1", "True", "{}", "[]", "\"", "\"a\"b\"", "\"a\\\"",
+                                   "\"tab\there\"", "\"x\" "};
+    for (size_t i = 0; i < sizeof answers / sizeof *answers; i++) {
+        CHECK(!answer(page, "5", answers[i], &error));
+        CHECK(says(&error, "A web request's answer must be JSON true, false, null or a string"));
+    }
+    /* The platform refuses a request it does not wait on. */
+    CHECK(!answer(page, "404", "true", &error));
+    CHECK(says(&error, "No web request 404"));
+    char *terminal = open_view("terminal", &error, "directory", "/", NULL);
+    char message[64];
+    snprintf(message, sizeof message, "No Portal view %s", terminal);
+    CHECK(!answer(terminal, "1", "true", &error));
+    CHECK(says(&error, message));
+    close_view(terminal);
+    close_view(page);
+}
+
+/* The toolbar's Address asks Emacs for another address, after giving it the
+   keyboard, with the page on screen as the one to edit. */
+static void test_the_toolbar_asks_emacs_for_an_address(void)
+{
+    portal_text error = {0};
+    bool focused = false;
+    portal_option options[] = {{.name = text("toolbar"), .is_string = true,
+                                .string = text("navigation")}};
+    portal_text target = {0};
+    CHECK(portal_views_open(text("web"), options, 1, &target, &error));
+    char *web = target.data;
+    CHECK(portal_views_place(text(web), (portal_edges) {0, 0, 100, 100},
+                             &(portal_edges) {0, 100, 100, 120}, text("frame"), &error));
+    CHECK(load(web, "https://example.com/a b", &error));
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
+    drain();
+    portal_toolbar_clicked(text(web), PORTAL_BUTTON_ADDRESS);
+    CHECK(portal_input_owner(text(web)) == PORTAL_OWNER_EMACS);
+    CHECK(sent(web, "request %s\n"));
+    /* Before a commit, it is the address Emacs loaded. */
+    CHECK(requests(web, "[{\"id\":0,\"type\":\"address\",\"url\":\"https://example.com/a%20b\"}]"));
+    CHECK(portal_input_perform(text(web), text("focus"), 0, &focused, &error) && focused);
+    portal_web_committed(text(web), text("https://example.com/next"));
+    drain();
+    portal_toolbar_clicked(text(web), PORTAL_BUTTON_ADDRESS);
+    CHECK(requests(web, "[{\"id\":0,\"type\":\"address\",\"url\":\"https://example.com/next\"}]"));
+    close_view(web);
+    /* A hosted app, whose address is the app host's, has no address to edit. */
+    char *hosted = open_app();
+    portal_web_views_address(text(hosted));
+    CHECK(sent(hosted, ""));
+    CHECK(requests(hosted, "[]"));
+    close_view(hosted);
+}
+
 static void test_the_shared_scripts(void)
 {
     portal_script scripts[] = {PORTAL_SCRIPT_LINKS, PORTAL_SCRIPT_CONTENTS};
@@ -615,6 +769,9 @@ int main(void)
     test_the_shared_scripts();
     test_appearance_at_open();
     test_an_appearance_reaches_every_web_view();
+    test_requests_wait_under_one_record();
+    test_answers_are_checked();
+    test_the_toolbar_asks_emacs_for_an_address();
     CHECK(!portal_fake_calls().misused);
     portal_channel_connect(-1);
     close(records);

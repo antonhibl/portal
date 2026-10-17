@@ -104,6 +104,14 @@ enum Core {
         borrow(target) { portal_web_loaded($0) }
     }
 
+    /// The page in TARGET asks its buffer for something: REQUEST, a JSON
+    /// object with an "id" and a "type" (portal_web_requested).
+    static func requested(_ target: String, _ request: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(request),
+              let data = try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys]) else { return }
+        borrowing([target, String(decoding: data, as: UTF8.self)]) { portal_web_requested($0[0], $0[1]) }
+    }
+
     static func history(_ target: String, back: Bool, forward: Bool) {
         borrow(target) { portal_web_history($0, back, forward) }
     }

@@ -694,6 +694,23 @@ bool portal_web_set_appearance(portal_view *web, portal_appearance appearance,
     return true;
 }
 
+/* A web view records each answer in "answers", such as "3=true 4=\"x\"".
+   Its page waits on no request of its own: tests make them by calling
+   portal_web_requested as the platform does.  An ID of 404 is one the page
+   is not waiting on. */
+bool portal_web_answer(portal_view *web, uint64_t id, portal_string answer, portal_text *error)
+{
+    if (!usable(web, PORTAL_WEB, error) || refused(error))
+        return false;
+    if (id == 404)
+        return fail(error, "No web request 404");
+    char entry[512];
+    int length = snprintf(entry, sizeof entry, "%llu=%.*s", (unsigned long long) id,
+                          (int) answer.length, answer.data);
+    append(web, "answers", " ", entry, (size_t) length);
+    return true;
+}
+
 bool portal_web_find(portal_view *web, portal_string query, bool backwards, uint64_t token,
                      portal_text *error)
 {

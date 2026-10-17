@@ -285,7 +285,8 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
             (PORTAL_BUTTON_DECREASE, "Zoom out", "minus"), (PORTAL_BUTTON_RESET, "Reset to 100%", nil),
             (PORTAL_BUTTON_INCREASE, "Zoom in", "plus"), (PORTAL_BUTTON_RELOAD, "Reload", "arrow.clockwise"),
             (PORTAL_BUTTON_PREVIOUS, "Previous match", "chevron.up"),
-            (PORTAL_BUTTON_NEXT, "Next match", "chevron.down"), (PORTAL_BUTTON_CLOSE, "Close find", "xmark")]
+            (PORTAL_BUTTON_NEXT, "Next match", "chevron.down"), (PORTAL_BUTTON_CLOSE, "Close find", "xmark"),
+            (PORTAL_BUTTON_ADDRESS, "Go to address", "globe")]
         for (id, tooltip, symbol) in specs {
             let button = ToolbarButton(tooltip, symbol: symbol) { [weak self] in self?.click(id) }
             button.strip = self
@@ -388,6 +389,7 @@ final class ToolbarView: NSView, NSSearchFieldDelegate {
                 separator()
                 trailing(PORTAL_BUTTON_CONTENTS)
                 trailing(PORTAL_BUTTON_EDIT)
+                trailing(PORTAL_BUTTON_ADDRESS)
                 trailing(PORTAL_BUTTON_FIND)
                 if right >= 93 { separators.append(33); place(PORTAL_BUTTON_BACK, 39); place(PORTAL_BUTTON_FORWARD, 65) }
             }

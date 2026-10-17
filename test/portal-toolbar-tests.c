@@ -55,6 +55,7 @@ enum {
     PREVIOUS = PORTAL_BUTTON_PREVIOUS,
     NEXT = PORTAL_BUTTON_NEXT,
     CLOSE = PORTAL_BUTTON_CLOSE,
+    ADDRESS = PORTAL_BUTTON_ADDRESS,
 };
 
 /* The toolbar the core last drew for TARGET, which it must have drawn. */
@@ -241,11 +242,12 @@ static void test_each_layout_has_its_buttons(void)
     }
     enter(navigation);
     portal_toolbar toolbar = drawn(navigation);
-    CHECK(toolbar.visible && toolbar.buttons == page && !toolbar.finding);
+    /* A page anyone can browse away from can ask Emacs for another address. */
+    CHECK(toolbar.visible && toolbar.buttons == (page | bits(1, ADDRESS)) && !toolbar.finding);
     CHECK(toolbar.owner == PORTAL_OWNER_VIEW && toolbar.unit == PORTAL_PERCENT);
     CHECK(toolbar.value == 100 && toolbar.standard == 100);
     /* Nothing to go back or forward to yet. */
-    CHECK(toolbar.enabled == bits(6, OWNER, FIND, RELOAD, DECREASE, RESET, INCREASE));
+    CHECK(toolbar.enabled == bits(7, OWNER, FIND, RELOAD, DECREASE, RESET, INCREASE, ADDRESS));
     enter(contents);
     CHECK(drawn(contents).buttons == (page | bits(1, CONTENTS)));
     /* Headings arrive once the page has them. */

@@ -260,7 +260,7 @@ static emacs_value done(emacs_env *env, bool succeeded, portal_text *error)
     return NULL;
 }
 
-/* A Lisp function whose arguments, at most two, are all strings.  OPERATION
+/* A Lisp function whose arguments, at most three, are all strings.  OPERATION
    receives their copies, and RESULT says what reaches Lisp. */
 struct strings_function {
     bool (*operation)(const portal_string *arguments, portal_text *result, portal_text *error);
@@ -270,8 +270,8 @@ struct strings_function {
 LISP_FUNCTION(Fstrings)
 {
     const struct strings_function *function = data;
-    portal_text copies[2] = {{0}}, result = {0}, error = {0};
-    portal_string arguments[2];
+    portal_text copies[3] = {{0}}, result = {0}, error = {0};
+    portal_string arguments[3];
     emacs_value value = NULL;
     ptrdiff_t count = 0;
     while (count < nargs && read_text(env, args[count], &copies[count])) {
@@ -306,6 +306,8 @@ STRINGS(inspect, portal_views_inspect(a[0], result, error))
 STRINGS(web_load, portal_web_views_load(a[0], a[1], error))
 STRINGS(web_send, portal_web_views_send(a[0], a[1], error))
 STRINGS(web_receive, portal_web_views_receive(a[0], result, error))
+STRINGS(web_requests, portal_web_views_requests(a[0], result, error))
+STRINGS(web_answer, portal_web_views_answer(a[0], a[1], a[2], error))
 STRINGS(terminal_themes, portal_terminals_themes(result, error))
 STRINGS(terminal_text, portal_terminals_text(a[0], result, error))
 STRINGS(toolbar_action, portal_toolbar_perform(a[0], a[1], result, error))
@@ -806,6 +808,10 @@ static const struct export {
      "Send the JSON object JSON to hosted web view TARGET's app over its bridge."},
     {"portal--web-receive", 1, 1, STRINGS_FUNCTION(web_receive, RESULT_STRING),
      "Return the messages hosted web view TARGET's app sent over its bridge, as a JSON array."},
+    {"portal--web-requests", 1, 1, STRINGS_FUNCTION(web_requests, RESULT_STRING),
+     "Return what web view TARGET's page asks its buffer for, as a JSON array of requests."},
+    {"portal--web-answer", 3, 3, STRINGS_FUNCTION(web_answer, RESULT_T),
+     "Answer web view TARGET's request ID with ANSWER: JSON true, false, null or a string."},
     {"portal--web-appearance", 1, 1, Fweb_appearance, NULL,
      "Show every web view in APPEARANCE, \"light\" or \"dark\"; nil follows the system's."},
     {"portal--terminal-theme", 1, 1, Fterminal_theme, NULL,

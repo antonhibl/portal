@@ -31,6 +31,15 @@ bool portal_web_views_send(portal_string target, portal_string json, portal_text
 /* Return, as a JSON array, the messages waiting on hosted web view TARGET's
    bridge, oldest first; the next message sends a new bridge record. */
 bool portal_web_views_receive(portal_string target, portal_text *json, portal_text *error);
+/* Return, as a JSON array, the requests waiting for web view TARGET's buffer,
+   oldest first (portal_web_requested, and the toolbar's "address"); the next
+   request sends a new request record. */
+bool portal_web_views_requests(portal_string target, portal_text *json, portal_text *error);
+/* Answer web view TARGET's request ID, a positive decimal number, with
+   ANSWER: JSON true, false, null or a string.  The platform decides what an
+   answer means for each request, and fails for an ID it is not waiting on. */
+bool portal_web_views_answer(portal_string target, portal_string id, portal_string answer,
+                             portal_text *error);
 
 /* For the view registry, views.c: what the core keeps for one web view, its
    bridge and its pages. */
@@ -56,6 +65,10 @@ portal_string portal_web_views_page(portal_string target);
    document it shows in Emacs: give Emacs the keyboard, then send the app's
    buffer an "edit" message.  Does nothing for any other TARGET. */
 void portal_web_views_edit(portal_string target);
+/* The user asked, from web view TARGET's toolbar, to go to another address:
+   give Emacs the keyboard, then queue an "address" request, with the "url"
+   on screen, for the buffer to read one.  Does nothing for a hosted app. */
+void portal_web_views_address(portal_string target);
 
 /* For web.c, from views.c: TARGET's platform view, and its state in *STATE,
    if TARGET names an open web view.  Otherwise return NULL and, unless ERROR

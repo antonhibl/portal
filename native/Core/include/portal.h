@@ -230,6 +230,19 @@ typedef enum portal_appearance {
    without loading it again. */
 bool portal_web_set_appearance(portal_view *web, portal_appearance appearance,
                                portal_text *error);
+/* Answer request ID, which WEB's page made through portal_web_requested,
+   with ANSWER, JSON the core has checked is true, false, null or a string.
+   An alert takes any answer; a confirmation, true to confirm; a prompt, the
+   string the user entered, or null to cancel; and a window the page opened,
+   false to discard it, when Emacs will not show it.  A request is answered
+   once: fail, changing nothing, for an ID WEB is not waiting on.  When WEB
+   is destroyed, the platform answers what it still waits on itself: as if
+   cancelled, and discarding windows. */
+bool portal_web_answer(portal_view *web, uint64_t id, portal_string answer, portal_text *error);
+/* A web view's option :window, a string, adopts the window that a page
+   opened, which portal_web_requested announced with that "window", instead
+   of making a new page.  Fail if that window has gone: discarded, adopted,
+   or kept too long. */
 
 /* Terminal views.  The core implements the terminal Lisp functions with
    these primitives, each on one terminal, and keeps Portal's rules: it checks
@@ -371,6 +384,7 @@ typedef enum portal_button {
     PORTAL_BUTTON_PREVIOUS,
     PORTAL_BUTTON_NEXT,
     PORTAL_BUTTON_CLOSE,
+    PORTAL_BUTTON_ADDRESS, /* Go to another address, which Emacs reads. */
 } portal_button;
 
 /* What a toolbar's value measures: a page's zoom in percent, or a font size
@@ -634,6 +648,16 @@ void portal_web_committed(portal_string target, portal_string url);
    portal_web_post sent with TOKEN.  MESSAGE says what, for the app's buffer;
    a delivery to a page that has since gone is ignored. */
 void portal_web_failed(portal_string target, uint64_t token, portal_string message);
+/* The page in TARGET asks its buffer for something, as JSON, an object the
+   platform built.  It has a positive integer "id", unique to the view, and
+   a "type": "alert", "confirm" or "prompt", with the page's "message" and,
+   for a prompt, its "default", which wait for portal_web_answer; "popup", a
+   window the page opened, with the "url" it loads, if any, and the "window"
+   option that adopts it, which waits for an adoption or a discarding
+   answer; or "close", the page asking to close its window, which waits for
+   nothing.  The core keeps it for TARGET's buffer, which takes it as it
+   takes bridge messages, out of the pipe. */
+void portal_web_requested(portal_string target, portal_string json);
 /* The page in TARGET finished loading its document: the scripts that run
    at a document's end have run. */
 void portal_web_loaded(portal_string target);

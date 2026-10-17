@@ -26,6 +26,16 @@
    for the toolbar's Open in Emacs.  It also adds "error" for failures the
    app cannot report, a type apps use too.
 
+   Requests.  Any web view's page may ask its buffer for something: to show
+   an alert, ask for confirmation or a line of text, open a window, or close
+   its own.  The platform describes each one as a JSON object with an "id" it
+   chose and a "type", and the core queues them for Emacs as it queues bridge
+   messages, behind one "request TARGET" record at a time, so their text
+   never crosses the pipe.  Emacs answers those the page waits on through
+   the core, which checks the answer before the platform sees it.  The core
+   adds its own: "address", with "id" 0, when the user asks the toolbar for
+   another address, after giving Emacs the keyboard to read it.
+
    Appearance.  A web view's pages see the system's appearance, following
    its changes, unless Lisp forces light or dark, at open or later for every
    web view at once.  The core checks the name; the platform shows it.
@@ -60,6 +70,8 @@ struct portal_web_state {
     uint64_t generation;         /* 1 + pages committed: the token of posts now. */
     struct message *first, *last; /* Waiting messages, oldest first. */
     bool announced;              /* Whether a bridge record went out for them. */
+    struct message *requests, *requests_last; /* Waiting requests, oldest first. */
+    bool requested;              /* Whether a request record went out for them. */
     bool back, forward;          /* Whether the page can go back and forward. */
 };
 
@@ -292,14 +304,69 @@ static void queue_own(struct portal_web_state *web, portal_string target, const 
     free(json.data);
 }
 
+/* Free the list from *FIRST to *LAST, leaving it empty. */
+static void free_list(struct message **first, struct message **last)
+{
+    while (*first) {
+        struct message *next = (*first)->next;
+        free(*first);
+        *first = next;
+    }
+    *last = NULL;
+}
+
 static void free_messages(struct portal_web_state *web)
 {
-    while (web->first) {
-        struct message *next = web->first->next;
-        free(web->first);
-        web->first = next;
+    free_list(&web->first, &web->last);
+}
+
+/* Set *JSON to the list from *FIRST to *LAST as a JSON array, oldest first,
+   and empty the list.  Without memory, the list stays. */
+static bool drain(struct message **first, struct message **last, portal_text *json,
+                  portal_text *error)
+{
+    size_t length = 2;
+    for (struct message *message = *first; message; message = message->next)
+        length += message->length + (message != *first);
+    char *data = malloc(length + 1);
+    if (!data)
+        return out_of_memory(error);
+    char *end = data;
+    *end++ = '[';
+    for (struct message *message = *first; message; message = message->next) {
+        if (message != *first)
+            *end++ = ',';
+        memcpy(end, message->json, message->length);
+        end += message->length;
     }
-    web->last = NULL;
+    *end++ = ']';
+    *end = '\0';
+    free_list(first, last);
+    *json = (portal_text) {data, length};
+    return true;
+}
+
+/* Requests. */
+
+/* Queue the LENGTH bytes of JSON, a request, for TARGET's buffer, and send
+   its request record unless one went out for requests Emacs has not taken.
+   A record the pipe refuses is tried again with the next request.  Without
+   memory for it, the request is lost. */
+static void queue_request(struct portal_web_state *web, portal_string target, const char *json,
+                          size_t length)
+{
+    struct message *request = malloc(sizeof *request + length);
+    if (!request)
+        return;
+    *request = (struct message) {.length = length};
+    memcpy(request->json, json, length);
+    if (web->requests_last)
+        web->requests_last->next = request;
+    else
+        web->requests = request;
+    web->requests_last = request;
+    if (!web->requested)
+        web->requested = portal_channel_send(literal("request"), target, NULL, 0);
 }
 
 /* The open web view TARGET, for the platform's calls: NULL when it is gone. */
@@ -344,6 +411,7 @@ void portal_web_state_free(struct portal_web_state *web)
     if (!web)
         return;
     free_messages(web);
+    free_list(&web->requests, &web->requests_last);
     free(web->address.data);
     free(web->page.data);
     free(web);
@@ -452,28 +520,70 @@ bool portal_web_views_send(portal_string target, portal_string json, portal_text
 bool portal_web_views_receive(portal_string target, portal_text *json, portal_text *error)
 {
     struct portal_web_state *web;
-    if (!find_hosted(target, &web, error))
+    if (!find_hosted(target, &web, error) || !drain(&web->first, &web->last, json, error))
         return false;
-    size_t length = 2;
-    for (struct message *message = web->first; message; message = message->next)
-        length += message->length + (message != web->first);
-    char *data = malloc(length + 1);
-    if (!data)
-        return out_of_memory(error);
-    char *end = data;
-    *end++ = '[';
-    for (struct message *message = web->first; message; message = message->next) {
-        if (message != web->first)
-            *end++ = ',';
-        memcpy(end, message->json, message->length);
-        end += message->length;
-    }
-    *end++ = ']';
-    *end = '\0';
-    free_messages(web);
     web->announced = false;
-    *json = (portal_text) {data, length};
     return true;
+}
+
+bool portal_web_views_requests(portal_string target, portal_text *json, portal_text *error)
+{
+    struct portal_web_state *web;
+    if (!portal_views_find_web(target, &web, error)
+        || !drain(&web->requests, &web->requests_last, json, error))
+        return false;
+    web->requested = false;
+    return true;
+}
+
+/* ID, a request's ID in decimal, as a number in *VALUE: positive, without
+   leading zeros, and fitting in 64 bits. */
+static bool request_id(portal_string id, uint64_t *value)
+{
+    if (!id.length || id.length > 20 || id.data[0] == '0')
+        return false;
+    uint64_t number = 0;
+    for (size_t i = 0; i < id.length; i++) {
+        if (id.data[i] < '0' || id.data[i] > '9')
+            return false;
+        uint64_t digit = (uint64_t) (id.data[i] - '0');
+        if (number > (UINT64_MAX - digit) / 10)
+            return false;
+        number = number * 10 + digit;
+    }
+    *value = number;
+    return true;
+}
+
+/* Whether ANSWER is one JSON string, with no raw control characters and
+   every quote inside it escaped. */
+static bool json_string(portal_string answer)
+{
+    if (answer.length < 2 || answer.data[0] != '"' || answer.data[answer.length - 1] != '"')
+        return false;
+    for (size_t i = 1; i < answer.length - 1; i++) {
+        unsigned char c = (unsigned char) answer.data[i];
+        if (c < 0x20 || c == '"')
+            return false;
+        if (c == '\\' && ++i == answer.length - 1)
+            return false; /* The closing quote is escaped. */
+    }
+    return true;
+}
+
+bool portal_web_views_answer(portal_string target, portal_string id, portal_string answer,
+                             portal_text *error)
+{
+    struct portal_web_state *web;
+    portal_view *native = portal_views_find_web(target, &web, error);
+    if (!native)
+        return false;
+    uint64_t number;
+    if (!request_id(id, &number))
+        return fail(error, "Not a web request ID: ", id);
+    if (!is(answer, "true") && !is(answer, "false") && !is(answer, "null") && !json_string(answer))
+        return fail_with(error, "A web request's answer must be JSON true, false, null or a string");
+    return portal_web_answer(native, number, answer, error);
 }
 
 /* For toolbar.c. */
@@ -499,6 +609,25 @@ void portal_web_views_edit(portal_string target)
     struct portal_web_state *web;
     if (find(target, &web) && web->hosted)
         hand_off(target, "edit", literal(""));
+}
+
+void portal_web_views_address(portal_string target)
+{
+    struct portal_web_state *web;
+    if (!find(target, &web) || web->hosted)
+        return;
+    /* Emacs reads the address, so it needs the keyboard first. */
+    portal_input_escape(target);
+    if (!find(target, &web)) /* The platform cannot close it, but check. */
+        return;
+    struct json json = {0};
+    put(&json, "{\"id\":0,\"type\":\"address\",\"url\":", 31);
+    put_string(&json, web->page.data ? borrow(web->page) : web->address.data ? borrow(web->address)
+                                                                             : literal(""));
+    put(&json, "}", 1);
+    if (!json.failed)
+        queue_request(web, target, json.data, json.length);
+    free(json.data);
 }
 
 /* The platform's calls, from portal.h. */
@@ -538,6 +667,14 @@ void portal_web_committed(portal_string target, portal_string url)
     if (web->hosted)
         queue_own(web, target, "page", "url", url);
     portal_toolbar_committed(target);
+}
+
+void portal_web_requested(portal_string target, portal_string json)
+{
+    struct portal_web_state *web;
+    if (find(target, &web) && json.length >= 2 && json.data[0] == '{'
+        && json.data[json.length - 1] == '}')
+        queue_request(web, target, json.data, json.length);
 }
 
 void portal_web_failed(portal_string target, uint64_t token, portal_string message)

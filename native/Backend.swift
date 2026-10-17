@@ -292,6 +292,13 @@ public func portalWebSetAppearance(_ web: OpaquePointer, _ appearance: portal_ap
     return perform(error) { try session(web, as: WebSession.self).show(appearance) } != nil
 }
 
+@_cdecl("portal_web_answer")
+public func portalWebAnswer(_ web: OpaquePointer, _ id: UInt64, _ answer: portal_string,
+                            _ error: UnsafeMutablePointer<portal_text>) -> Bool {
+    let web = native(web), answer = String(copying: answer)
+    return perform(error) { try session(web, as: WebSession.self).answer(id, json: answer) } != nil
+}
+
 @_cdecl("portal_web_find")
 public func portalWebFind(_ web: OpaquePointer, _ query: portal_string, _ backwards: Bool, _ token: UInt64,
                           _ error: UnsafeMutablePointer<portal_text>) -> Bool {
