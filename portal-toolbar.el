@@ -14,6 +14,7 @@
 (defvar portal-web--url)
 (defvar portal-web--preview)
 (defvar portal-web--markdown)
+(defvar portal-web--org)
 (defvar portal-web--hosted-path)
 
 (defcustom portal-toolbar t
@@ -58,10 +59,11 @@ without their scheme."
 
 (defun portal-toolbar-default-label ()
   "Name what this buffer's view shows, where Emacs knows better than the view.
-A Markdown or HTML render names its source file, abbreviated; a hosted app
+A Markdown, Org or HTML render names its source file, abbreviated; a hosted app
 its path; and a terminal its buffer name, which follows `rename-buffer'.
 A web page returns nil: its toolbar names the URL on screen itself."
   (cond ((bound-and-true-p portal-web--markdown) (abbreviate-file-name portal-web--markdown))
+        ((bound-and-true-p portal-web--org) (abbreviate-file-name portal-web--org))
         ((bound-and-true-p portal-web--preview) (portal-toolbar--url-label portal-web--preview))
         ((bound-and-true-p portal-web--hosted-path)
          (car (split-string portal-web--hosted-path "?")))

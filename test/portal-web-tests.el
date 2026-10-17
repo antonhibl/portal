@@ -692,5 +692,202 @@ Markdown FILE gets its preview URL, and any other a file: URL."
       (should (eq (selected-window) origin))
       (should (plist-get (portal-web-test--state target) :focused)))))
 
+;; Requests: what a page asks its buffer for.
+
+(defun portal-web-test--answers (target)
+  "Return the answers given to TARGET's requests, oldest first, as (ID ANSWER)."
+  (mapcar #'cdr (cl-remove-if-not (lambda (call) (equal (car call) target))
+                                  (portal-fake-native-calls 'portal--web-answer))))
+
+(ert-deftest portal-web-dialogs-ask-in-the-minibuffer-and-always-answer ()
+  (portal-web-test--environment
+    (portal-open-url "https://example.com/")
+    (portal-view-sync)
+    (let ((target (portal-view-target))
+          (page (current-buffer)))
+      (portal-input-focus)
+      (should (plist-get (portal-web-test--state target) :focused))
+      ;; Requests wait for the command loop, and arrive in order.
+      (portal-fake-native-request
+       target
+       "{\"id\":1,\"type\":\"alert\",\"message\":\"Saved\",\"origin\":\"https://example.com\"}"
+       "{\"id\":2,\"type\":\"confirm\",\"message\":\"Leave?\",\"origin\":\"https://example.com\"}"
+       "{\"id\":3,\"type\":\"prompt\",\"message\":\"Name:\",\"default\":\"Ada\",\"origin\":\"\"}")
+      (should (= (length unread-command-events) 3))
+      (let (prompts)
+        (cl-letf (((symbol-function 'y-or-n-p)
+                   (lambda (prompt) (push prompt prompts) t))
+                  ((symbol-function 'read-string)
+                   (lambda (prompt _initial _history default)
+                     (push (list prompt default) prompts) "Grace \"Hopper\"")))
+          (with-current-buffer "*scratch*" (portal-web-test--run-events)))
+        (should (equal (reverse prompts)
+                       '("https://example.com says: Leave? " ("Name: " "Ada")))))
+      (should (equal (portal-web-test--answers target)
+                     '(("1" "true") ("2" "true") ("3" "\"Grace \\\"Hopper\\\"\""))))
+      ;; The view, which had the keyboard, has it back.
+      (should (plist-get (portal-web-test--state target) :focused))
+      (should (eq (window-buffer (selected-window)) page))
+      ;; Declining and quitting answer too.
+      (setq portal-fake-native-log nil)
+      (portal-fake-native-request target "{\"id\":4,\"type\":\"confirm\",\"message\":\"Sure?\"}"
+                                  "{\"id\":5,\"type\":\"prompt\",\"message\":\"Why\"}")
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'read-string) (lambda (&rest _) (signal 'quit nil))))
+        (portal-web-test--run-events-in "*scratch*" 1)
+        (should (eq (condition-case nil
+                        (portal-web-test--run-events-in "*scratch*" 1)
+                      (quit 'quit))
+                    'quit)))
+      (should (equal (portal-web-test--answers target) '(("4" "false") ("5" "null")))))))
+
+(defun portal-web-test--run-events-in (buffer count)
+  "Run COUNT queued native commands with BUFFER current."
+  (with-current-buffer buffer
+    (dotimes (_ count)
+      (let ((event (pop unread-command-events)))
+        (funcall (lookup-key global-map (vector (car event))) event)))))
+
+(ert-deftest portal-web-a-window-a-page-opens-gets-its-own-buffer ()
+  (portal-web-test--environment
+    (portal-open-url "https://example.com/")
+    (portal-view-sync)
+    (let ((opener (portal-view-target))
+          (origin (selected-window))
+          (display-buffer-alist nil))
+      (portal-fake-native-request
+       opener "{\"id\":7,\"type\":\"popup\",\"window\":\"window-3\",\"url\":\"https://login.example.org/sso\"}")
+      (portal-web-test--run-events)
+      ;; It shows in another pane, adopting the window the page opened.
+      (should (equal (buffer-name) "*portal: login.example.org*"))
+      (should-not (eq (selected-window) origin))
+      (let* ((window (portal-view-target))
+             (options (plist-get (portal-web-test--state window) :options)))
+        (should (equal (plist-get options :window) "window-3"))
+        (should (equal (plist-get options :toolbar) "navigation"))
+        ;; Adopting loads nothing, as the window's page is loading already:
+        ;; only the opener loaded.
+        (should (equal (portal-fake-native-calls 'portal--web-load)
+                       `((,opener "https://example.com/"))))
+        ;; When its page closes the window, its buffer and pane go.
+        (let ((buffer (current-buffer)))
+          (portal-fake-native-request window "{\"id\":1,\"type\":\"close\"}")
+          (portal-web-test--run-events)
+          (should-not (buffer-live-p buffer))
+          (should (eq (selected-window) origin))))
+      ;; An ordinary page that closes its window keeps its buffer.
+      (let ((buffer (current-buffer)))
+        (portal-fake-native-request opener "{\"id\":8,\"type\":\"close\"}")
+        (portal-web-test--run-events)
+        (should (buffer-live-p buffer)))
+      ;; Other choices discard the window.
+      (let ((portal-web-popups nil))
+        (setq portal-fake-native-log nil)
+        (portal-fake-native-request opener "{\"id\":9,\"type\":\"popup\",\"window\":\"window-4\"}")
+        (portal-web-test--run-events)
+        (should (equal (portal-web-test--answers opener) '(("9" "false")))))
+      (let ((portal-web-popups 'browser) browsed)
+        (setq portal-fake-native-log nil)
+        (cl-letf (((symbol-function 'browse-url-default-browser)
+                   (lambda (url &rest _) (push url browsed))))
+          (portal-fake-native-request
+           opener "{\"id\":10,\"type\":\"popup\",\"window\":\"window-5\",\"url\":\"https://e.com/x\"}")
+          (portal-web-test--run-events))
+        (should (equal browsed '("https://e.com/x")))
+        (should (equal (portal-web-test--answers opener) '(("10" "false")))))
+      ;; A window that has gone by the time Emacs adopts it is discarded.
+      (setq portal-fake-native-log nil)
+      (let ((portal-fake-native-failures '(portal--open))
+            (buffers (buffer-list)))
+        (portal-fake-native-request opener "{\"id\":11,\"type\":\"popup\",\"window\":\"window-6\"}")
+        (should-error (portal-web-test--run-events))
+        (should (equal (portal-web-test--answers opener) '(("11" "false"))))
+        (should (equal (buffer-list) buffers))))))
+
+(ert-deftest portal-web-goto-reads-addresses-hosts-files-and-searches ()
+  (let ((file (make-temp-file "portal-page-" nil ".html")))
+    (unwind-protect
+        (progn
+          (should (equal (portal-web--address "https://a.example/x") "https://a.example/x"))
+          (should (equal (portal-web--address "  example.com/docs?q=1 ") "https://example.com/docs?q=1"))
+          (should (equal (portal-web--address "localhost:8080/app") "http://localhost:8080/app"))
+          (should (equal (portal-web--address "127.0.0.1") "http://127.0.0.1"))
+          (should (equal (portal-web--address "emacs portal") "https://duckduckgo.com/?q=emacs%20portal"))
+          ;; As in a browser, a name with a dot and a top-level domain is a host.
+          (should (equal (portal-web--address "notes.md") "https://notes.md"))
+          (should (equal (portal-web--address "what is 2.5") "https://duckduckgo.com/?q=what%20is%202.5"))
+          (should (equal (portal-web--address file) (browse-url-file-url file)))
+          (should-error (portal-web--address "  ") :type 'user-error))
+      (delete-file file))))
+
+(ert-deftest portal-web-goto-loads-in-place-or-in-a-new-buffer ()
+  (portal-web-test--environment
+    (portal-open-url "https://example.com/")
+    (portal-view-sync)
+    (let ((page (current-buffer)) (target (portal-view-target)))
+      ;; The address on screen is where reading starts.
+      (let (initial)
+        (cl-letf (((symbol-function 'read-string)
+                   (lambda (_prompt start &rest _) (setq initial start) "example.org/next")))
+          (call-interactively #'portal-web-goto))
+        (should (equal initial "https://example.com/")))
+      (should (eq (current-buffer) page))
+      (should (equal (plist-get (portal-web-test--state target) :url) "https://example.org/next"))
+      (should (equal (portal-web-current-url) "https://example.org/next"))
+      ;; w copies it.
+      (portal-web-copy-url)
+      (should (equal (current-kill 0) "https://example.org/next"))
+      ;; The toolbar's Go to address asks for one in the view's buffer.
+      (with-current-buffer "*scratch*"
+        (portal-fake-native-request
+         target "{\"id\":0,\"type\":\"address\",\"url\":\"https://example.org/next\"}")
+        (let (initial)
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (_prompt start &rest _) (setq initial start) "https://gnu.org/")))
+            (portal-web-test--run-events))
+          (should (equal initial "https://example.org/next"))))
+      (should (equal (plist-get (portal-web-test--state target) :url) "https://gnu.org/"))
+      ;; The page has the keyboard again, to use the new address.
+      (should (plist-get (portal-web-test--state target) :focused))
+      ;; A prefix argument opens a new buffer instead.
+      (portal-web-goto "https://example.net/" t)
+      (should-not (eq (current-buffer) page))
+      (should (equal (buffer-name) "*portal: example.net*")))))
+
+(ert-deftest portal-web-bookmarks-remember-pages-and-previews ()
+  (portal-web-test--markdown
+    (require 'bookmark)
+    (let ((bookmark-alist nil)
+          (bookmark-save-flag nil)
+          (readme (portal-web-test--file "README.md")))
+      ;; A page: its address and title.
+      (portal-open-url "https://example.com/")
+      (portal-view-sync)
+      (puthash (portal-view-target)
+               (plist-put (plist-put (portal-web-test--state) :url "https://example.com/a")
+                          :title "Example A")
+               portal-fake-native--views)
+      (bookmark-set "page")
+      (should (equal (bookmark-prop-get "page" 'location) "https://example.com/a"))
+      (should (eq (bookmark-prop-get "page" 'portal) 'page))
+      ;; Its default name is the page's title.
+      (should (equal (car (portal-web-bookmark-make-record)) "Example A"))
+      ;; A Markdown preview: its file, whatever the app host's address.
+      (portal-web-test--preview readme)
+      (bookmark-set "readme")
+      (should (equal (bookmark-prop-get "readme" 'filename) readme))
+      ;; Jumping opens each again.
+      (switch-to-buffer "*scratch*")
+      (setq portal-fake-native-log nil)
+      (bookmark-jump "page")
+      (should (equal (portal-fake-native-calls 'portal--web-load)
+                     `((,(portal-view-target) "https://example.com/a"))))
+      (switch-to-buffer "*scratch*")
+      (bookmark-jump "readme")
+      (should (equal portal-web--markdown readme))
+      ;; Other hosted apps cannot be bookmarked.
+      (portal-hello)
+      (should-error (portal-web-bookmark-make-record) :type 'user-error))))
+
 (provide 'portal-web-tests)
 ;;; portal-web-tests.el ends here

@@ -9,6 +9,10 @@
 ;; A Markdown preview follows links to other Markdown files itself, and hands
 ;; links to other local files to Emacs, which visits them in another pane.
 ;; Its view reports the pages it shows, and those links, over the bridge.
+;; Any page may ask its buffer for something: an alert, a confirmation or a
+;; line of text, which Emacs reads in the minibuffer; a window it opens,
+;; which gets a buffer of its own; or another address, from the toolbar.
+;; Those requests wait outside the record pipe, as bridge messages do.
 
 (require 'browse-url)
 (require 'json)
@@ -23,6 +27,10 @@
 (declare-function portal--web-send "portal-web" (target json))
 (declare-function portal--web-receive "portal-web" (target))
 (declare-function portal--web-appearance "portal-web" (appearance))
+(declare-function portal--web-requests "portal-web" (target))
+(declare-function portal--web-answer "portal-web" (target id answer))
+(declare-function portal--inspect "portal-view" (target))
+(declare-function bookmark-prop-get "bookmark" (bookmark prop))
 
 (defun portal-web--appearance-changed (_symbol value operation _where)
   "Check appearance VALUE and show every web view in it, on OPERATION `set'."
@@ -61,6 +69,18 @@ It is nil while a hosted app waits for the app host.")
 (defvar-local portal-web--preview nil "The URL this buffer previews, in a `portal-render-html' buffer.")
 (defvar-local portal-web--hosted-path nil "The app host path of this buffer's hosted app, or nil.")
 (defvar-local portal-web--markdown nil "The Markdown file this preview shows, or nil.")
+(defvar-local portal-web--org nil "The Org file this preview shows, or nil.")
+(defvar-local portal-web--popup nil
+  "Non-nil in a buffer that shows a window a page opened.
+Such a buffer closes when its page closes its window.")
+(defvar-local portal-web--refresh-function nil
+  "Function that `portal-web-reload' calls first, with no arguments, or nil.
+An Org preview exports its file again before the view loads it.")
+(defvar-local portal-web--follow-function nil
+  "Function that takes a local file this hosted page links to, or nil.
+It is called with the file and the link's fragment, or nil, in the
+command loop, and returns non-nil if it showed the file itself, as an Org
+preview does for other Org files.  Otherwise the file opens in Emacs.")
 (defvar-local portal-web-bridge-function nil
   "Function called with each message this buffer's hosted app sends, in order.
 Each message is a JSON object parsed into a plist.  The function runs with
@@ -73,15 +93,21 @@ RET or a click enters the page; `portal-input-escape-key' returns to Emacs.
 A chord the page does not use reaches Emacs, which runs it in this buffer.
 g or Command-R loads the page again, l and r go back and forward, and
 Command-F finds text in the page, whether Emacs or the page owns the
-keyboard, unless the page uses those chords itself.  q hides the view
-while the page keeps running, and killing the buffer closes it."
+keyboard, unless the page uses those chords itself.  G or Command-L goes
+to another address, and w copies the page's.  q hides the view while the
+page keeps running, and killing the buffer closes it.  \\[bookmark-set]
+bookmarks the page."
   (setq-local cursor-type nil)
+  (setq-local bookmark-make-record-function #'portal-web-bookmark-make-record)
   (portal-input-mode 1))
 (keymap-set portal-web-mode-map "g" #'portal-web-reload)
 (keymap-set portal-web-mode-map "l" #'portal-web-back)
 (keymap-set portal-web-mode-map "r" #'portal-web-forward)
 (keymap-set portal-web-mode-map "s-f" #'portal-find)
 (keymap-set portal-web-mode-map "s-r" #'portal-web-reload)
+(keymap-set portal-web-mode-map "G" #'portal-web-goto)
+(keymap-set portal-web-mode-map "s-l" #'portal-web-goto)
+(keymap-set portal-web-mode-map "w" #'portal-web-copy-url)
 
 (defun portal-web--check-url (url)
   "Signal a user error unless URL is a URL a web view can load."
@@ -136,6 +162,7 @@ The view starts in `portal-web-appearance'."
 A hosted app loads from the app host, which starts first if needed."
   (interactive)
   (unless portal-web--target (user-error "No web view in this buffer"))
+  (when portal-web--refresh-function (funcall portal-web--refresh-function))
   (if portal-web--hosted-path
       (portal-web--load-hosted)
     (portal--web-load portal-web--target portal-web--url)))
@@ -316,6 +343,15 @@ identity, so previewing the file finds this buffer."
         (setq portal-web--markdown file
               portal-web--hosted-path (portal-web--markdown-path file))
         (unless (string-prefix-p name (buffer-name))
+          (rename-buffer name t))))
+    (when (and portal-web--org
+               (equal (url-type parsed) "http") (equal (url-host parsed) "127.0.0.1")
+               (string-match "\\`/[[:xdigit:]]+/org\\?\\(?:[^#]*&\\)?source=\\([^&#]*\\)"
+                             (url-filename parsed)))
+      (let* ((file (portal-web--unhex (match-string 1 (url-filename parsed))))
+             (name (format "*portal: %s*" (file-name-nondirectory file))))
+        (setq portal-web--org file)
+        (unless (string-prefix-p name (buffer-name))
           (rename-buffer name t))))))
 
 (defun portal-web--display-elsewhere (buffer alist)
@@ -362,11 +398,15 @@ A fragment such as #L42 or #L42-L50 moves to line 42."
      target
      (lambda ()
        (let* ((parsed (url-generic-parse-url url))
-              (fragment (or (url-target parsed) "")))
-         (portal-web--hand-off
-          (portal-web--unhex (url-filename parsed))
-          (and (string-match "\\`L\\([0-9]+\\)\\(?:-L[0-9]+\\)?\\'" fragment)
-               (string-to-number (match-string 1 fragment)))))))))
+              (fragment (or (url-target parsed) ""))
+              (file (portal-web--unhex (url-filename parsed))))
+         (unless (and portal-web--follow-function
+                      (funcall portal-web--follow-function file
+                               (and (not (string-empty-p fragment)) fragment)))
+           (portal-web--hand-off
+            file
+            (and (string-match "\\`L\\([0-9]+\\)\\(?:-L[0-9]+\\)?\\'" fragment)
+                 (string-to-number (match-string 1 fragment))))))))))
 
 (defun portal-web--edit (event)
   "Open the Markdown file on screen in EVENT's preview, from its toolbar."
@@ -378,11 +418,12 @@ A fragment such as #L42 or #L42-L50 moves to line 42."
 
 ;;;###autoload
 (defun portal-render-open-in-emacs ()
-  "Visit the Markdown file this preview shows, in another pane.
+  "Visit the Markdown or Org file this preview shows, in another pane.
 Emacs gets the keyboard, and `portal-render-return' comes back here."
   (interactive)
-  (unless portal-web--markdown (user-error "This buffer is not a Markdown preview"))
-  (portal-web--hand-off portal-web--markdown))
+  (unless (or portal-web--markdown portal-web--org)
+    (user-error "This buffer is not a Markdown or Org preview"))
+  (portal-web--hand-off (or portal-web--markdown portal-web--org)))
 
 ;;;###autoload
 (defun portal-render-return ()
@@ -445,6 +486,238 @@ Hosted apps that have already loaded keep their page."
         (portal--web-load portal-web--target portal-web--url)))))
 
 (add-hook 'portal-server-ready-hook #'portal-web--host-ready)
+
+;; Addresses.
+(defcustom portal-web-search-url "https://duckduckgo.com/?q=%s"
+  "Where `portal-web-goto' looks up words that are not an address.
+%s stands for the words, percent-encoded."
+  :type 'string :group 'portal)
+
+(defvar portal-web--address-history nil "Addresses `portal-web-goto' has read.")
+
+(defun portal-web-current-url ()
+  "Return the URL this buffer's web view shows now, or nil without one.
+It follows the links and history the page navigates; before the view
+reports any, it is the URL the buffer loaded."
+  (when portal-web--target
+    (or (plist-get (portal--inspect portal-web--target) :url) portal-web--url)))
+
+(defun portal-web--address (input)
+  "Return the URL that INPUT names: a URL, a host, a file or words to search.
+A host may have a path, as example.com/docs does; localhost and IP
+addresses load over http, other hosts over https."
+  (let ((input (string-trim input)))
+    (cond
+     ((string-empty-p input) (user-error "Enter an address or words to search for"))
+     ((string-match-p "\\`\\(?:https?\\|file\\|data\\|about\\):" input) input)
+     ((string-match-p "\\`\\(?:localhost\\|[0-9]+\\(?:\\.[0-9]+\\)\\{3\\}\\)\\(?::[0-9]+\\)?\\(?:[/?#].*\\)?\\'"
+                      input)
+      (concat "http://" input))
+     ((string-match-p "\\`[^[:space:]/?#]+\\.[[:alpha:]]\\{2,\\}\\(?::[0-9]+\\)?\\(?:[/?#][^[:space:]]*\\)?\\'"
+                      input)
+      (concat "https://" input))
+     ((and (file-name-absolute-p (expand-file-name input))
+           (string-match-p "\\`[~/.]" input)
+           (file-regular-p (expand-file-name input)))
+      (browse-url-file-url (expand-file-name input)))
+     (t (format portal-web-search-url (url-hexify-string input))))))
+
+(defun portal-web--read-address (initial)
+  "Read an address for a web view, starting with INITIAL, and return its URL."
+  (portal-web--address
+   (read-string "Go to address or search: " initial 'portal-web--address-history)))
+
+;;;###autoload
+(defun portal-web-goto (url &optional new)
+  "Go to URL in this buffer's web page, or in a new buffer.
+Interactively, read an address, a host, a local file or words to search
+for with `portal-web-search-url', starting with the address on screen.
+A preview, a hosted app or a buffer without a web view opens URL in a new
+buffer instead, as does a prefix argument, NEW."
+  (interactive
+   (list (portal-web--read-address (and (derived-mode-p 'portal-web-mode)
+                                        (not portal-web--hosted-path)
+                                        (portal-web-current-url)))
+         current-prefix-arg))
+  (portal-web--check-url url)
+  (if (or new (not portal-web--target) portal-web--hosted-path portal-web--preview)
+      (portal-open-url url)
+    (portal--web-load portal-web--target url)
+    (setq portal-web--url url)))
+
+(defun portal-web-copy-url ()
+  "Copy the address this buffer's web page shows to the kill ring."
+  (interactive)
+  (let ((url (or (portal-web-current-url) (user-error "No web page in this buffer"))))
+    (kill-new url)
+    (message "Copied %s" url)))
+
+;; Requests: what a page asks its buffer for.
+(defcustom portal-web-popups 'buffer
+  "What happens to a window that a web page opens.
+Pages open windows for sign-in pop-ups, links to new tabs, and the like.
+`buffer' shows the window in a web buffer of its own, in another pane,
+where the page that opened it can still talk to it, as sign-in pop-ups
+need; the window's buffer closes when its page closes the window.
+`browser' opens the window's address in the default browser instead, and
+nil ignores the window."
+  :type '(choice (const :tag "A new web buffer" buffer)
+                 (const :tag "The default browser" browser)
+                 (const :tag "Ignore it" nil))
+  :group 'portal)
+
+(defcustom portal-web-popup-display-action nil
+  "How a buffer showing a window a page opened is displayed.
+This is the ACTION of `pop-to-buffer', where nil uses
+`display-buffer-alist' and Emacs's defaults."
+  :type '(choice (const :tag "Default" nil) sexp)
+  :group 'portal)
+
+(defun portal-web--requests (target)
+  "Queue each request that TARGET's page made, for the command loop.
+This runs in the record pipe's process filter, which must never prompt."
+  (dolist (request (json-parse-string (portal--web-requests target)
+                                      :object-type 'plist :array-type 'list
+                                      :null-object nil :false-object nil))
+    (portal-web--queue 'portal-web-request target request)))
+
+(setf (alist-get "request" portal-view-record-handlers nil nil #'equal) #'portal-web--requests)
+
+(defun portal-web--answer (target id answer)
+  "Answer request ID of TARGET's page with ANSWER.
+ANSWER is t, nil for false, `cancel' for none, or a string."
+  (portal--web-answer target (number-to-string id)
+                      (pcase answer
+                        ('t "true")
+                        ('nil "false")
+                        ('cancel "null")
+                        (_ (json-encode-string answer)))))
+
+(defun portal-web--request (event)
+  "Act on the request in EVENT, which a web page made of its buffer."
+  (interactive "e")
+  (pcase-let ((`(,target ,request) (cadr event)))
+    (portal-web--from-view
+     target
+     (lambda ()
+       (pcase (plist-get request :type)
+         ((or "alert" "confirm" "prompt") (portal-web--dialog target request))
+         ("popup" (portal-web--open-window target request))
+         ("close" (portal-web--close-window))
+         ("address"
+          ;; From the toolbar: the page gets the keyboard back with its address.
+          (portal-web-goto (portal-web--read-address (plist-get request :url)))
+          (when (equal (portal-view-target) target)
+            (portal-view-focus))))))))
+
+(define-key global-map [portal-web-request] #'portal-web--request)
+
+(defun portal-web--dialog (target request)
+  "Ask, in the minibuffer, what REQUEST, a dialog of TARGET's page, asks.
+The page waits for the answer, which it gets however the dialog ends:
+quitting cancels it.  The view gets the keyboard back if it had it."
+  (let* ((id (plist-get request :id))
+         (message (string-trim-right (or (plist-get request :message) "")))
+         (origin (plist-get request :origin))
+         (text (if (and origin (not (string-empty-p origin)))
+                   (format "%s says: %s" origin message)
+                 message))
+         (focused (plist-get (portal--inspect target) :focused))
+         (answer 'cancel))
+    (portal-input--action "unfocus" target)
+    (unwind-protect
+        (setq answer
+              (pcase (plist-get request :type)
+                ("alert" (message "%s" text) t)
+                ("confirm" (and (y-or-n-p (concat text " ")) t))
+                ("prompt" (read-string (concat (string-remove-suffix ":" text) ": ")
+                                       nil nil (plist-get request :default)))))
+      (with-demoted-errors "Portal web request: %S"
+        (portal-web--answer target id answer))
+      (when (and focused (equal (portal-view-target) target))
+        (portal-view-focus)))))
+
+(defun portal-web--open-window (target request)
+  "Show the window that REQUEST says TARGET's page opened.
+`portal-web-popups' says how."
+  (let ((id (plist-get request :id))
+        (url (plist-get request :url)))
+    (pcase portal-web-popups
+      ('buffer
+       (let ((buffer (generate-new-buffer
+                      (format "*portal: %s*" (if url (portal-web--page-name url) "window"))))
+             opened)
+         (unwind-protect
+             (progn
+               (pop-to-buffer buffer portal-web-popup-display-action)
+               (portal-web-mode)
+               (let ((inhibit-read-only t))
+                 (insert "Web view: a window a page opened\n\n"
+                         "RET or a click enters the page. The configured escape returns to Emacs.\n"
+                         "It closes when its page closes the window; killing the buffer closes it too.\n"))
+               (portal-input--connect)
+               (setq portal-web--target
+                     (portal-view-open 'web (append (and portal-web-appearance
+                                                         (list :appearance
+                                                               (symbol-name portal-web-appearance)))
+                                                    (list :toolbar "navigation"
+                                                          :window (plist-get request :window))))
+                     portal-web--url (or url "about:blank")
+                     portal-web--popup t
+                     opened t)
+               (portal-input-mode 1))
+           (unless opened
+             (with-demoted-errors "Portal web window: %S"
+               (portal-web--answer target id nil))
+             (when (buffer-live-p buffer)
+               (if-let* ((window (get-buffer-window buffer)))
+                   (quit-window t window)
+                 (kill-buffer buffer)))))))
+      ('browser
+       (when url (browse-url-default-browser url))
+       (portal-web--answer target id nil))
+      (_ (portal-web--answer target id nil)))))
+
+(defun portal-web--close-window ()
+  "Close this buffer, if it shows a window its page opened and now closes."
+  (when portal-web--popup
+    (if-let* ((window (get-buffer-window (current-buffer))))
+        (quit-window t window)
+      (kill-buffer (current-buffer)))))
+
+;; Bookmarks.
+(defun portal-web-bookmark-make-record ()
+  "Return a bookmark record for this web buffer, as `bookmark-set' makes.
+A preview remembers its file, and a page its address.  Other hosted apps,
+whose address changes with each app host, cannot be bookmarked."
+  (let* ((url (portal-web-current-url))
+         (title (and portal-web--target (plist-get (portal--inspect portal-web--target) :title))))
+    (when (and portal-web--hosted-path (not (or portal-web--markdown portal-web--org)))
+      (user-error "Portal cannot bookmark this hosted app"))
+    `(,(cond ((and title (not (string-empty-p title))) title)
+             ((or portal-web--markdown portal-web--org)
+              (file-name-nondirectory (or portal-web--markdown portal-web--org)))
+             (t (or url (buffer-name))))
+      ,@(cond (portal-web--markdown `((filename . ,portal-web--markdown) (portal . markdown)))
+              (portal-web--org `((filename . ,portal-web--org) (portal . org)))
+              (portal-web--preview `((location . ,portal-web--preview) (portal . html)))
+              (t `((location . ,url) (portal . page))))
+      (handler . portal-web-bookmark-jump))))
+
+;;;###autoload
+(defun portal-web-bookmark-jump (bookmark)
+  "Show BOOKMARK, a Portal page or preview, in a web buffer."
+  (require 'bookmark)
+  (let ((file (bookmark-prop-get bookmark 'filename))
+        (url (bookmark-prop-get bookmark 'location)))
+    (pcase (bookmark-prop-get bookmark 'portal)
+      ('markdown (portal-render-markdown file))
+      ('org (if (fboundp 'portal-render-org)
+                (funcall 'portal-render-org file)
+              (user-error "Load Org to preview %s" file)))
+      ('html (portal-render-html url))
+      (_ (portal-open-url url)))))
+(put 'portal-web-bookmark-jump 'bookmark-handler-type "Portal")
 
 (provide 'portal-web)
 ;;; portal-web.el ends here

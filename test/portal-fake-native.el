@@ -134,6 +134,26 @@ Send the `bridge' record with `portal-fake-native-send'."
     (puthash target (plist-put view :messages (append (plist-get view :messages) messages))
              portal-fake-native--views)))
 
+(defun portal--web-requests (target)
+  (portal-fake-native--call 'portal--web-requests target)
+  (let* ((view (portal-fake-native--view target))
+         (requests (plist-get view :requests)))
+    (puthash target (plist-put view :requests nil) portal-fake-native--views)
+    (format "[%s]" (string-join requests ","))))
+
+(defun portal--web-answer (target id answer)
+  (portal-fake-native--call 'portal--web-answer target id answer)
+  (portal-fake-native--view target)
+  t)
+
+(defun portal-fake-native-request (target &rest requests)
+  "Queue REQUESTS, JSON object strings, as web view TARGET's page makes them.
+Then send its `request' record, as the native module does."
+  (let ((view (portal-fake-native--view target)))
+    (puthash target (plist-put view :requests (append (plist-get view :requests) requests))
+             portal-fake-native--views))
+  (portal-fake-native-send (format "request %s\n" target)))
+
 (defun portal--inspect (target)
   (copy-sequence (gethash target portal-fake-native--views)))
 
