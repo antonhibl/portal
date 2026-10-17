@@ -27,10 +27,11 @@ A chosen quick terminal opens in its quick panel, as
   "Function that reads a terminal choice.
 It is called with PROMPT, TERMINALS, ACTIONS and INITIAL.  TERMINALS and
 ACTIONS are lists of (STRING . VALUE), in order: VALUE is a terminal
-buffer, or `new' or `named'.  It returns the chosen VALUE, and must
-require a match.  INITIAL is the initial input.  While it reads,
+buffer, or `new' or `named'.  It returns the chosen VALUE, or `handled'
+when another of its actions, such as renaming a terminal, acted instead,
+and must require a match.  INITIAL is the initial input.  While it reads,
 `portal-terminal-choose-map' must be active.
-`portal-terminal-consult-mode' replaces it.")
+`portal-terminal-consult-mode' and `portal-terminal-ivy-mode' replace it.")
 
 (defun portal-terminal--candidates (buffers)
   "Return completion candidates for BUFFERS, as (STRING . BUFFER) pairs.
@@ -193,6 +194,7 @@ applies to the editing window behind it; cancelling returns to the panel."
           (pcase choice
             ((pred bufferp) (portal-terminal--visit choice))
             ((or 'new 'named) (portal-terminal--new-in (or project (cdr context)) (eq choice 'named)))
+            ('handled nil)
             (_ (user-error "No terminal chosen")))
           (setq done t))
       (unless (or done (not (window-live-p origin)))

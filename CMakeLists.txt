@@ -160,7 +160,9 @@ if(BUILD_TESTING)
             -l "${CMAKE_SOURCE_DIR}/test/portal-package-tests.el"
             -f ert-run-tests-batch-and-exit)
     set_tests_properties(package PROPERTIES TIMEOUT 300)
-    foreach(adapter consult embark)
+    # The Ivy adapter's suite skips itself without Ivy on the load path; pin
+    # GNU ELPA's ivy above to run it.
+    foreach(adapter consult embark ivy)
         add_test(NAME terminal-${adapter}
             COMMAND ${test_emacs} -L "${CMAKE_SOURCE_DIR}" ${elpa_load_path}
                 -l "${CMAKE_SOURCE_DIR}/test/portal-terminal-${adapter}-tests.el"

@@ -43,11 +43,25 @@ can still be enabled or disabled with `portal-terminal-consult-mode'."
   :group 'portal-terminal)
 
 (declare-function portal-terminal-consult-mode "portal-terminal-consult" (&optional arg))
+(declare-function portal-terminal-ivy-mode "portal-terminal-ivy" (&optional arg))
+
+(defcustom portal-terminal-ivy-auto-enable t
+  "Whether loading Portal and Ivy enables their terminal integration.
+Set this to nil before loading either package to opt out.  The integration
+can still be enabled or disabled with `portal-terminal-ivy-mode'.  With
+Consult loaded too, the one enabled last reads terminals."
+  :type 'boolean
+  :group 'portal-terminal)
 
 (with-eval-after-load 'consult
   (when portal-terminal-consult-auto-enable
     (require 'portal-terminal-consult)
     (portal-terminal-consult-mode 1)))
+
+(with-eval-after-load 'ivy
+  (when portal-terminal-ivy-auto-enable
+    (require 'portal-terminal-ivy)
+    (portal-terminal-ivy-mode 1)))
 
 ;; "portal:" links, and storing links to web buffers, once Org's links load.
 (with-eval-after-load 'ol
